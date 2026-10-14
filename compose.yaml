@@ -1,0 +1,22 @@
+# Postgres local para desenvolvimento e testes (mesma família de versão do Neon).
+# Porta 5433 porque a 5432 já está em uso nesta máquina.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: organicos
+      POSTGRES_PASSWORD: organicos
+      POSTGRES_DB: organicos
+      TZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - organicos_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U organicos -d organicos"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  organicos_pg:
