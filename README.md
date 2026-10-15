@@ -24,6 +24,8 @@ Toda mudança entra por branch e pull request para `main`; push direto é bloque
 config/            configuração do Django (settings por ambiente, urls, wsgi)
 apps/              apps de domínio, criadas por fatia
 templates/ static/ telas no servidor (HTMX entra com a primeira tela)
+apps/nucleo/       núcleo técnico sem regra de negócio (valores, tempo, auditoria)
+tests/apoio/       app só de testes (modelos de apoio e utilitários), registrado apenas em settings/test.py
 tests/ambiente/    verificação do andaime técnico
 tests/aceitacao/   cenários da especificação §16
 tests/tecnicos/    testes técnicos T-n da infraestrutura

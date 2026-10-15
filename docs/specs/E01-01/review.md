@@ -17,7 +17,7 @@ Exceção técnica ao TDD conforme `spec.md` (workflow e configuração do repos
 | A-10 | `git push origin main` e `git push --force origin main`: `[remote rejected] main -> main (protected branch hook declined)` / `Required status check "verificacoes" is expected` |
 | A-11 | `gh api repos/WillGalvaoDev/organicos-meier/branches/main/protection`: contexts `["verificacoes"]`, strict true, enforce_admins true, force pushes e exclusão false |
 | A-12 | `secret_scanning: enabled`, `secret_scanning_push_protection: enabled` |
-| A-1 | Execução do push na `main` após o merge do PR #1 (registrada no review da fatia seguinte) |
+| A-1 | Push na `main` após o merge do PR #1, job `verificacoes` verde: https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38730849149 |
 
 ## Comandos de configuração (reprodutíveis)
 
@@ -32,4 +32,5 @@ gh api -X PATCH repos/WillGalvaoDev/organicos-meier \
 
 ## Limitações
 
-- Nenhuma revisão independente feita ainda. A-1 depende do merge.
+- Nenhuma revisão independente feita ainda.
+- As branches e PRs temporários foram fechados sem merge e as branches apagadas; as execuções permanecem no histórico do Actions.
