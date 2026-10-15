@@ -1,6 +1,6 @@
 # E01-05 — Revisão
 
-Estado atual: **REPROVADO** (revisão independente ao final).
+Estado atual: **REPROVADO** no commit `6b7b9ab` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -163,3 +163,115 @@ uv run ruff format --check .     -> ok
 uv run mypy .                    -> Success: no issues found in 40 source files
 manage.py makemigrations --check --dry-run (test) -> No changes detected
 ```
+
+## Revalidação independente — commit 6b7b9ab — 2026-10-15
+
+Revisor: Codex (agente 3). Base exata: `6b7b9ab4282cc87b8f211385ebeb8be264b864da`, inicialmente sem alterações locais. Fontes e critérios de aceitação relidos; funcional v1.6, infraestrutura v1.7 e specs não mudaram desde a revisão anterior. A decisão desta seção substitui a decisão anterior para este commit, sem apagar o histórico.
+
+### Comandos e resultados desta reexecução
+
+| Comando | Resultado independente |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados, lockfile inalterado |
+| `uv run pytest -q -rA` | **127 passed em 6,68 s**; cada teste da matriz abaixo consta no relatório de execução |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | **10 passed, 1 failed em 3,56 s**; única falha: timeout durante abertura de conexão (E01-05/R05) |
+
+Banco local: Postgres 17.11 real, serviço saudável. A execução de push do commit auditado foi consultada: [CI 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451), 127 passed em 6,28 s, Postgres 17.11. Os probes independentes ficaram em arquivo temporário; o cenário ainda falho está preservado integralmente no review da E01-05. Nenhum código de produção ou teste versionado foi alterado nesta revalidação.
+
+### Matriz completa reexecutada
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | test_utilitario_devolve_resultados_na_ordem_das_operacoes |
+| A-2 | PASSOU | test_utilitario_cada_operacao_tem_conexao_propria |
+| A-3 | PASSOU | test_demonstracao_corrida_sem_trava_perde_atualizacao: contador 1 |
+| A-4 | PASSOU | test_demonstracao_select_for_update_nao_perde_atualizacao: 20 repetições, contador 2 |
+| A-5 | PASSOU | test_utilitario_devolve_excecao_de_uma_operacao_e_valor_da_outra |
+| A-6 | PASSOU | test_utilitario_tempo_esgotado_identifica_operacao_pendente; probe SQL pg_sleep com timeout também passou |
+| A-7 | FALHOU | Casos existentes passam, inclusive retomada e trava de linha; probe de abertura lenta deixa 1 conexão após TempoEsgotado (R05 abaixo). |
+
+### R05 — PARCIALMENTE CORRIGIDO; decisão da fatia: REPROVADO
+
+A retomada original foi corrigida: após timeout, cursor() não reabre o wrapper já registrado e levanta TempoEsgotado. Probe independente de retomada passou, sem SELECT 42 executado e sem o PID anterior em pg_stat_activity. O teste versionado de liberação de trava com select_for_update(nowait=True) também passou.
+
+**Bloqueador remanescente R05/A-7 — conexão ainda não registrada durante abertura.** Em `tests/apoio/concorrencia.py:74`, ensure_connection() é executado antes da publicação em conexoes[indice] (linha 75). Se o timeout ocorre nessa janela, a linha 103 encontra None e ignora a limpeza. O wrapper já pode ter conexão real aberta enquanto inicializa ou aguarda retorno. Após TempoEsgotado, o chamador pode prosseguir com uma conexão da thread ainda aberta.
+
+O probe injeta uma espera controlada na abertura após obter conexão real. Não simula pg_stat_activity: consulta o Postgres real e observa **1 conexão**, esperado **0**, após timeout de 0,3 s. Reproduzido duas vezes: na bateria (1 failed, 10 passed) e isoladamente (`-k timeout_durante_abertura`: 1 failed, 10 deselected). O finally libera a espera e faz join para não deixar a própria prova contaminando os testes seguintes.
+
+Origem: spec E01-05, fechamento com sucesso/erro/timeout, A-7 e devolução anterior que já solicitava cobertura de abertura/limpeza. É lacuna técnica da mesma garantia; não requer decisão comercial.
+
+### Reprodução independente completa do bloqueador
+
+Salvar o trecho em arquivo temporário e executar `uv run pytest -c pyproject.toml <arquivo> -q` a partir da raiz:
+
+```python
+import threading
+import pytest
+from django.db import connection
+from django.db.backends.postgresql.base import DatabaseWrapper
+from tests.apoio.concorrencia import executar_em_paralelo, TempoEsgotado
+
+
+@pytest.mark.django_db(transaction=True)
+def test_r05_timeout_durante_abertura(monkeypatch):
+    liberar = threading.Event()
+    entrou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.ensure_connection
+
+    def abertura_lenta(self):
+        original(self)
+        if threading.current_thread().name.startswith("concorrencia-") and not entrou.is_set():
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = self.connection.info.backend_pid
+            entrou.set()
+            liberar.wait(5)
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", abertura_lenta)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: None, tempo_limite=0.3)
+        assert entrou.is_set()
+        with connection.cursor() as c:
+            c.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s", [registro["pid"]])
+            total = c.fetchone()[0]
+        assert total == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+```
+
+### Devolução e próximo gate
+
+Garantir limpeza e impedimento de acesso também quando o prazo termina antes de concluir a abertura/publicação do wrapper, inclusive abertura que retorne tarde ou falhe. Não resolver apenas acrescentando uma espera sem limite ao chamador. Implementador deve acrescentar a regressão, registrar Red antes da correção e Green depois, reexecutar A-1 a A-7 e a suíte relevante; agente 3 revalida. Nenhuma correção foi feita nesta revisão.
+
+### Reavaliação de E01-TDD
+
+Conferido o complemento do implementador: comando `uv run pytest -q`, baseline 111, Red declarado de 11 failed/116 passed, nomes das regressões, causas e Green de 127 passed. O diff mantém os testes anteriores e acrescenta 16 casos; não houve remoção ou afrouxamento para esconder defeitos. Os registros transcritos são aceitos como evidência documental prevista no AGENTS.md, que não exige logs brutos ou um commit por ciclo. A ordem histórica não foi observada diretamente pelo revisor e não pode ser reconstruída a partir do commit único: essa limitação permanece explícita. E01-TDD fica encerrado como ressalva documental, não como bloqueador adicional. Os testes executados agora comprovam o estado atual, não o passado.
+
+## Correção da revalidação 6b7b9ab — R05 remanescente (implementador)
+
+**Causa.** A conexão era registrada em `conexoes[indice]` só depois de `ensure_connection()`. Um timeout durante a abertura não encontrava o wrapper e deixava a conexão aberta pela thread.
+
+**Correção** (`tests/apoio/concorrencia.py`): o wrapper é registrado antes de abrir; um `Event` `expirado` é definido no timeout; se a abertura retornar depois dele, a thread levanta `TempoEsgotado` sem executar a operação. O `connect` do wrapper expirado continua inutilizado, então uma abertura que ainda não terminou também falha ao tentar conectar.
+
+**Red** (probe do revisor incorporado como `test_utilitario_timeout_durante_a_abertura_nao_deixa_conexao`, `uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q`):
+
+```
+E   assert 1 == 0
+FAILED test_apoio_concorrencia.py::test_utilitario_timeout_durante_a_abertura_nao_deixa_conexao
+1 failed, 13 passed
+```
+
+**Green:** `14 passed` no módulo (5 execuções seguidas) e `130 passed` na suíte; ruff, ruff format, mypy limpos.
+
+Testes acrescentados: o do probe; `test_utilitario_abertura_tardia_nao_executa_a_operacao` (abertura que só conclui depois do tempo limite: a operação não executa e nenhuma conexão sobra) e `test_utilitario_falha_na_abertura_vira_resultado_sem_vazar_conexao` (falha na abertura vira `Resultado.excecao`, sem vazamento). Os dois últimos já passavam antes da correção (cobertura); a primeira versão do segundo assumia que a conexão chegava a abrir, e a asserção foi ajustada para a garantia real (sem execução e sem conexões residuais), sem enfraquecer o que verifica.
+

@@ -1,6 +1,6 @@
 # E01-01 — Revisão
 
-Estado atual: **REPROVADO** (revisão independente ao final).
+Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -137,3 +137,57 @@ git push --force origin HEAD:main
 
 `main` permaneceu em `6fe5b84`. A recusa vem da exigência de pull request, com o check já verde, para administrador (`enforce_admins: true`). A branch temporária e o PR #11 foram descartados.
 
+## Revalidação independente — commit 6b7b9ab — 2026-10-15
+
+Revisor: Codex (agente 3). Base exata: `6b7b9ab4282cc87b8f211385ebeb8be264b864da`, inicialmente sem alterações locais. Fontes e critérios de aceitação relidos; funcional v1.6, infraestrutura v1.7 e specs não mudaram desde a revisão anterior. A decisão desta seção substitui a decisão anterior para este commit, sem apagar o histórico.
+
+### Comandos e resultados desta reexecução
+
+| Comando | Resultado independente |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados, lockfile inalterado |
+| `uv run pytest -q -rA` | **127 passed em 6,68 s**; cada teste da matriz abaixo consta no relatório de execução |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | **10 passed, 1 failed em 3,56 s**; única falha: timeout durante abertura de conexão (E01-05/R05) |
+
+Banco local: Postgres 17.11 real, serviço saudável. A execução de push do commit auditado foi consultada: [CI 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451), 127 passed em 6,28 s, Postgres 17.11. Os probes independentes ficaram em arquivo temporário; o cenário ainda falho está preservado integralmente no review da E01-05. Nenhum código de produção ou teste versionado foi alterado nesta revalidação.
+
+### Matriz completa reexecutada
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | [run 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451) — push de 6b7b9ab, todas as etapas verdes. |
+| A-2 | PASSOU | [run 38736289522](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38736289522) — novo PR #17, branch derivada de 6b7b9ab com commit vazio, verificacoes verde. |
+| A-3 | PASSOU | [run 38736502533](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38736502533) — PR #13, falha proposital somente em pytest; lint/formatação/tipos verdes. |
+| A-4 | PASSOU | [run 38736259905](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38736259905) — PR #14, import os não usado, falha em ruff check. |
+| A-5 | PASSOU | [run 38736267742](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38736267742) — PR #15, str atribuída a int, falha em mypy. |
+| A-6 | PASSOU | [run 38736280240](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38736280240) — PR #16, dependência acrescentada sem lock; uv sync --locked recusa lock desatualizado. |
+| A-7 | PASSOU | test_banco_e_postgres passou localmente; workflow postgres:17 e log do CI confirmam 17.11. |
+| A-8 | PASSOU | ci.yml relido: sem secrets.*, credenciais locais de teste; permissions contents: read. |
+| A-9 | PASSOU | Tentativa administrativa de merge do PR #13 vermelho recusada: Required status check "verificacoes" is failing. |
+| A-10 | PASSOU | Push direto e forçado com lease do commit verde do PR #17 já fechado: ambos GH006, Changes must be made through a pull request. |
+| A-11 | PASSOU | gh api: verificacoes obrigatório, strict=true, enforce_admins.enabled=true; PR obrigatório com zero aprovações humanas. |
+| A-12 | PASSOU | gh api: secret_scanning e secret_scanning_push_protection enabled. |
+
+### R01 — ENCERRADO; decisão da fatia: APROVADO
+
+A configuração remota foi consultada novamente: required_pull_request_reviews.required_approving_review_count=0, required_status_checks.strict=true, contexts=[verificacoes], enforce_admins.enabled=true, allow_force_pushes.enabled=false e allow_deletions.enabled=false. Rulesets adicionais: []. Credencial utilizada: WillGalvaoDev, admin=true, conforme API. Segurança: secret scanning e push protection ativos.
+
+Reexecução real com novo commit vazio `3a4337034ca4a4b757b7d136ae05e7ec48360355`, baseado em 6b7b9ab. PR #17 e CI verde; PR fechado sem merge antes dos pushes:
+
+```powershell
+git push origin 3a4337034ca4a4b757b7d136ae05e7ec48360355:refs/heads/main
+git push --force-with-lease=refs/heads/main:6b7b9ab4282cc87b8f211385ebeb8be264b864da origin 3a4337034ca4a4b757b7d136ae05e7ec48360355:refs/heads/main
+```
+
+Ambos terminaram com exit 1, GH006, `Changes must be made through a pull request` e `protected branch hook declined`. A modalidade forçada foi protegida por lease do SHA auditado; não se tentou reescrever histórico. A main permaneceu exatamente em 6b7b9ab.
+
+A-9 foi reexecutado com `gh pr merge 13 --merge --admin --match-head-commit 73ed6f1d260bd55746adf602659993f8807585d8`: recusa GraphQL `Required status check "verificacoes" is failing. (mergePullRequest)`. PR permaneceu OPEN, mergedAt=null, até ser fechado na limpeza.
+
+Probes A-3 a A-6 foram realizados em branches temporárias derivadas do commit auditado. A primeira tentativa de A-3 (run 38736249206) falhou antes, em mypy, por comparação de literais 1 == 2; foi corrigido apenas o probe para `assert len([1]) == 2`, gerando a execução válida da matriz. Não houve alteração do projeto para fazê-lo passar.
+
+PRs #13 a #17 foram fechados sem merge; branches remotas/locais temporárias e worktree de CI removidos. Nenhuma regra remota foi alterada. A-1 usa a execução de push já existente do SHA exato: não foi gerado novo push na main. A exceção técnica ao TDD continua adequada. Próximo gate desta fatia: encerrado; a E01 global continua reprovada por E01-05.

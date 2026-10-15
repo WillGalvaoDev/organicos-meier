@@ -1,6 +1,6 @@
 # E01-04 — Revisão
 
-Estado atual: **REPROVADO** (revisão independente ao final).
+Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -144,3 +144,53 @@ uv run ruff format --check .     -> ok
 uv run mypy .                    -> Success: no issues found in 40 source files
 manage.py makemigrations --check --dry-run (test) -> No changes detected
 ```
+
+## Revalidação independente — commit 6b7b9ab — 2026-10-15
+
+Revisor: Codex (agente 3). Base exata: `6b7b9ab4282cc87b8f211385ebeb8be264b864da`, inicialmente sem alterações locais. Fontes e critérios de aceitação relidos; funcional v1.6, infraestrutura v1.7 e specs não mudaram desde a revisão anterior. A decisão desta seção substitui a decisão anterior para este commit, sem apagar o histórico.
+
+### Comandos e resultados desta reexecução
+
+| Comando | Resultado independente |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados, lockfile inalterado |
+| `uv run pytest -q -rA` | **127 passed em 6,68 s**; cada teste da matriz abaixo consta no relatório de execução |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | **10 passed, 1 failed em 3,56 s**; única falha: timeout durante abertura de conexão (E01-05/R05) |
+
+Banco local: Postgres 17.11 real, serviço saudável. A execução de push do commit auditado foi consultada: [CI 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451), 127 passed em 6,28 s, Postgres 17.11. Os probes independentes ficaram em arquivo temporário; o cenário ainda falho está preservado integralmente no review da E01-05. Nenhum código de produção ou teste versionado foi alterado nesta revalidação.
+
+### Matriz completa reexecutada
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | test_aplicacao_salva_objeto_novo |
+| A-2 | PASSOU | test_aplicacao_recusa_alterar_objeto_gravado e objeto_relido |
+| A-3 | PASSOU | test_aplicacao_recusa_delete_de_instancia |
+| A-4 | PASSOU | test_aplicacao_recusa_operacoes_em_lote |
+| A-5 | PASSOU | test_trigger_recusa_update_e_delete_por_sql_direto |
+| A-6 | PASSOU | test_auditoria_registra_autor_acao_momento_motivo_alteracoes_objeto |
+| A-7 | PASSOU | test_auditoria_sem_motivo_e_autor_sistema |
+| A-8 | PASSOU | test_auditoria_recusa_alterar_ou_apagar |
+| A-9 | PASSOU | test_auditoria_recusa_chaves_com_segredo [9 estruturas] |
+| A-10 | PASSOU | test_auditoria_sobrevive_a_remocao_do_usuario |
+| A-11 | PASSOU | test_auditoria_desfeita_junto_com_a_transacao |
+| A-12 | PASSOU | test_auditoria_bulk_create_funciona e bulk_create do modelo de apoio |
+| A-13 | PASSOU | test_auditoria_banco_recusa_combinacoes_invalidas_de_autor + R04, SQL/save/bulk_create |
+| A-14 | PASSOU | test_auditoria_recusa_autor_ausente e acao_vazia |
+
+### R04 — ENCERRADO; decisão da fatia: APROVADO
+
+Modelo e migração 0002 exigem simultaneamente IS NOT NULL e regex de caractere não branco para usuário; sistema continua com NULL. Probes independentes de string vazia, espaços e tabulação por SQL levantaram IntegrityError. Testes versionados cobrem também save/bulk_create e os casos NULL/tipo desconhecido. A migração foi aplicada pelo setup do banco de testes; makemigrations não aponta divergência. Referências: funcional §14, spec E01-04 e A-13.
+
+Matriz executada em `test_nucleo_so_insercao.py` e `test_nucleo_auditoria.py`. Limites de TRUNCATE/privilégios administrativos descritos anteriormente permanecem fora da garantia específica de UPDATE/DELETE. Nenhum achado funcional aberto nesta fatia.
+
+### Reavaliação de E01-TDD
+
+Conferido o complemento do implementador: comando `uv run pytest -q`, baseline 111, Red declarado de 11 failed/116 passed, nomes das regressões, causas e Green de 127 passed. O diff mantém os testes anteriores e acrescenta 16 casos; não houve remoção ou afrouxamento para esconder defeitos. Os registros transcritos são aceitos como evidência documental prevista no AGENTS.md, que não exige logs brutos ou um commit por ciclo. A ordem histórica não foi observada diretamente pelo revisor e não pode ser reconstruída a partir do commit único: essa limitação permanece explícita. E01-TDD fica encerrado como ressalva documental, não como bloqueador adicional. Os testes executados agora comprovam o estado atual, não o passado.
+
+Próximo gate desta fatia: encerrado. A E01 global continua reprovada pelo bloqueador de E01-05.
