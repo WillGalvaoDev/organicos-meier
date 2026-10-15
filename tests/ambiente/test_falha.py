@@ -1,2 +1,3 @@
 def test_falha_de_proposito() -> None:
-    assert 1 == 2
+    valores = [1, 2]
+    assert sum(valores) == 4
