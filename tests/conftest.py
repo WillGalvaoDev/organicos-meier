@@ -6,6 +6,11 @@ import pytest
 import time_machine
 
 from apps.nucleo.tempo import InstanteSemFuso
+from tests.apoio.concorrencia import (
+    LimpezaIncompleta,
+    aguardar_limpezas_pendentes,
+    limpezas_pendentes,
+)
 
 
 class RelogioControlado:
@@ -41,3 +46,24 @@ def relogio() -> Iterator[RelogioControlado]:
         yield controle
     finally:
         controle.parar()
+
+
+def guarda_entre_testes(prazo: float = 30.0) -> None:
+    """Resolve limpezas de conexão pendentes de um teste anterior (E01-05, correção R05).
+
+    Só age se `executar_em_paralelo` levantou `LimpezaIncompleta`. Se ainda restar sessão,
+    falha o teste atual, citando a operação de origem, para que ninguém siga com conexão herdada.
+    """
+    if limpezas_pendentes() == 0:
+        return
+    try:
+        aguardar_limpezas_pendentes(prazo)
+    except LimpezaIncompleta as erro:
+        pytest.fail(f"conexão herdada de um teste anterior: {erro}", pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _guarda_de_conexoes(django_db_blocker: Any) -> None:
+    if limpezas_pendentes():
+        with django_db_blocker.unblock():
+            guarda_entre_testes()

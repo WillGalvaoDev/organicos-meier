@@ -1,6 +1,6 @@
 # E01-04 — Revisão
 
-Estado atual: **APROVADO** no commit `e7eec3c` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `523cd9c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -202,3 +202,11 @@ Revisor: Codex, agente 3. Commit exato: `e7eec3c81b9455af94cb23acb0adc2886a4f97f
 O diff desde 6b7b9ab altera apenas o utilitário/testes de concorrência e relatórios. Não modifica código de produção, configurações, workflow, dependências, documentos-base ou critérios de aceitação. Reexecutados `uv run pytest -q` (130 passed em 6,89 s, Postgres 17.11 real), `uv run ruff check .` (limpo), `uv run ruff format --check .` (54 arquivos), `uv run mypy .` (40 arquivos, sem erros), `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` (sem mudanças) e `uv run python manage.py check --settings=config.settings.test` (0 issues). Os critérios automatizados das matrizes anteriores permanecem verdes.
 
 Os 11 probes independentes da revalidação anterior foram repetidos sem alteração e passaram (3,78 s), incluindo R02, R03, R04 e o cenário anterior de R05. A aprovação das quatro primeiras fatias permanece; o novo cenário falho de conexão em abertura está documentado na E01-05. CI do SHA auditado: [run 38739955114](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38739955114), 130 passed em 6,64 s.
+
+## Revalidação independente — 523cd9c — 2026-10-15
+
+Revisor: Codex, agente 3. SHA: `523cd9c2780ba50fdd4f962873c86844b1ca7b8b`. **APROVADO nesta fatia, decisão mantida.** A E01 global continua REPROVADA por R05/A-7 da E01-05.
+
+O diff desde e7eec3c altera somente utilitário/testes de concorrência e relatórios; código de produção, configurações, workflow, dependências, fontes de verdade e critérios permanecem iguais. Reexecução independente: `uv run pytest -q` → 131 passed em 7,81 s, Postgres 17.11; ruff check limpo; ruff format --check: 54 arquivos; mypy: 40 arquivos sem erros; makemigrations --check --dry-run (settings test): sem mudanças; manage.py check (settings test): 0 issues. Doze probes anteriores também passaram, sem modificação. A única falha adicional está reproduzida no relatório E01-05.
+
+CI de push do SHA exato: [run 38743418962](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38743418962), 131 passed em 8,40 s, Postgres 17.11. Ressalvas documentais de TDD já registradas permanecem; não surgiu achado nesta fatia. Nenhuma implementação foi alterada pelo revisor.

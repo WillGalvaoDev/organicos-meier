@@ -1,6 +1,6 @@
 # E01-05 — Revisão
 
-Estado atual: **REPROVADO** no commit `e7eec3c` (revalidação independente ao final).
+Estado atual: **REPROVADO** no commit `523cd9c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -412,3 +412,193 @@ Regressões cobertas pelos testes do módulo: retomada tardia, trava de linha re
 
 **Limitação residual.** Se o backend ainda estiver no handshake de autenticação, ele não aparece em `pg_stat_activity` no instante do encerramento; nesse caso a thread, ao retornar da abertura, vê `expirado` e fecha a própria conexão (sem executar a operação). Não há ponto em que a operação executada depois do timeout acesse o banco.
 
+
+## Revalidação independente — 523cd9c — 2026-10-15
+
+Revisor: Codex, agente 3. SHA auditado: `523cd9c2780ba50fdd4f962873c86844b1ca7b8b`, árvore inicialmente limpa. Spec e acceptance da E01-05 relidos. **Decisão: REPROVADO.** A E01 global permanece reprovada exclusivamente pelo bloqueador R05/A-7 abaixo; as outras quatro fatias continuam aprovadas.
+
+### Verificações independentes
+
+| Comando/evidência | Resultado |
+|---|---|
+| `uv run pytest -q` | 131 passed em 7,81 s, Postgres 17.11 real |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| Probes independentes das revisões anteriores | 12 passaram sem alteração, incluindo o cenário de conexão já aberta mas ainda não entregue ao wrapper |
+| Probe novo: abertura em andamento conclui depois da consulta de limpeza | 1 failed: assert 1 == 0 |
+| Bateria conjunta dos probes | 1 failed, 12 passed em 3,75 s |
+| [CI do commit](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38743418962) | 131 passed em 8,40 s, Postgres 17.11 |
+
+Comando da bateria conjunta, a partir da raiz (arquivos temporários da revisão):
+
+```powershell
+uv run pytest -c pyproject.toml "$env:TEMP/om_e01_523cd9c_abertura_apos_varredura.py" "$env:TEMP/om_e01_e7eec3c_conexao_em_abertura.py" "$env:TEMP/om_e01_6b7b9ab_probes.py" -q
+```
+
+### Matriz E01-05
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | Resultados na ordem de entrada |
+| A-2 | PASSOU | PIDs distintos, conexão própria por operação |
+| A-3 | PASSOU | Corrida sem trava produz contador 1 |
+| A-4 | PASSOU | select_for_update, 20 repetições com contador 2 |
+| A-5 | PASSOU | Valores e exceções por operação preservados |
+| A-6 | PASSOU | Casos de timeout de barreira e consulta dos testes/probes passaram |
+| A-7 | FALHOU | Abertura em andamento pode estabelecer conexão depois da consulta de limpeza; conexão permanece após retorno de TempoEsgotado |
+
+### R05 — correção parcial confirmada; bloqueador remanescente
+
+**Referência:** spec E01-05, regra Conexões (encerrar inclusive por timeout, sem conexões para testes seguintes), A-7 e devolução anterior sobre abertura em andamento/tardia. **Classificação: bloqueador.**
+
+O application_name exclusivo e pg_terminate_backend resolvem o cenário anterior: o backend já visível no Postgres é encerrado, mesmo sem self.connection no wrapper. A prova anterior passou sem alteração. O filtro usa os nomes das operações pendentes e exclui o PID do chamador; não foi constatado encerramento de conexões de outras operações nos testes executados.
+
+Entretanto, `_encerrar_no_servidor` (`tests/apoio/concorrencia.py:56-83`) retorna assim que a consulta encontra zero sessões, ou ao acabar o prazo de limpeza. Zero sessões naquele instante não significa que as aberturas pendentes terminaram. Uma chamada connect já iniciada pode estabelecer sua conexão depois da consulta. Trocar o método connect (linha 48) não cancela essa chamada em andamento, e o Event expirado só é consultado após ensure_connection retornar (linha 115).
+
+Sequência reproduzida:
+
+1. A thread já entrou em get_new_connection, mas ainda não estabeleceu a sessão; a abertura é pausada de forma determinística.
+2. O prazo de 0,3 s vence. A consulta no servidor não encontra o application_name e a função retorna TempoEsgotado.
+3. A chamada de abertura em andamento é liberada; estabelece uma conexão real com o application_name da operação expirada.
+4. Antes de o driver entregar a conexão ao wrapper, o chamador consulta pg_stat_activity: **1 sessão, esperado 0**. A limpeza já terminou e não volta a executar.
+5. Ao liberar o retorno do driver, a thread finalmente fecha a sessão e não executa a operação de negócio. Essa limpeza eventual não garante isolamento dos testes seguintes no intervalo.
+
+O probe utiliza atraso controlado na chamada do driver; não é alegação de que um handshake real de rede foi observado. Conexão, PID e contagem são reais no Postgres. É a sequência tardia também reconhecida como limitação residual pelo implementador. Não executar a operação depois do timeout e não deixar conexões residuais são garantias distintas; a primeira passou e a segunda ainda falha. Não se está reabrindo R01 a R04 nem adicionando regra de negócio.
+
+### Reprodução independente completa
+
+Salvar como arquivo temporário e executar `uv run pytest -c pyproject.toml <arquivo> -q`. A prova libera eventos e aguarda a thread no finally, evitando deixar a própria sessão de teste aberta.
+
+```python
+import threading
+import pytest
+from django.db import connection
+from django.db.backends.postgresql.base import DatabaseWrapper
+from tests.apoio.concorrencia import executar_em_paralelo, TempoEsgotado
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_abertura_em_andamento_conclui_apos_varredura(monkeypatch):
+    permitir_abertura = threading.Event()
+    permitir_retorno = threading.Event()
+    entrou = threading.Event()
+    abriu = threading.Event()
+    executou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abertura_atrasada(self, params):
+        if not threading.current_thread().name.startswith("concorrencia-"):
+            return original(self, params)
+        registro["thread"] = threading.current_thread()
+        entrou.set()
+        permitir_abertura.wait(5)
+        raw = original(self, params)
+        registro["pid"] = raw.info.backend_pid
+        registro["nome"] = params["application_name"]
+        abriu.set()
+        permitir_retorno.wait(5)
+        return raw
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura_atrasada)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert entrou.is_set()
+        # O cleanup no servidor ja terminou; a chamada connect original ainda esta em curso.
+        permitir_abertura.set()
+        assert abriu.wait(3)
+        with connection.cursor() as c:
+            c.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid=%s AND application_name=%s",
+                [registro["pid"], registro["nome"]],
+            )
+            restantes = c.fetchone()[0]
+        assert restantes == 0
+    finally:
+        permitir_abertura.set()
+        permitir_retorno.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+```
+
+### TDD, devolução e próximo gate
+
+O Red transcrito de 1 failed/14 passed e o Green de 15 testes no módulo/131 na suíte são coerentes com o diff e com a regressão anterior agora aprovada. Não foram removidos testes antigos. Mantida a ressalva documental já aceita: cronologia histórica relatada pelo implementador, sem logs brutos ou commits intermediários; os resultados desta revisão foram executados independentemente.
+
+Para encerrar R05, tratar o ciclo completo de abertura e encerramento, incluindo chamadas já iniciadas que ainda não aparecem no servidor. A condição de término da limpeza precisa assegurar que não resta abertura capaz de criar sessão após o retorno; uma consulta vazia ou uma espera fixa, isoladamente, não fornece essa garantia. A solução deve também preservar o timeout limitado e a ausência de execução da operação expirada. Não basta acrescentar outra consulta em um instante diferente.
+
+Implementador deve acrescentar a regressão acima antes da correção, registrar Red → Green e cobrir a sequência inteira: antes de iniciar connect, connect em curso sem sessão, sessão estabelecida ainda não entregue, conexão entregue, erro de abertura e retomada depois do timeout. Revalidar A-1 a A-7 e a suíte, seguido de revisão independente. Nenhuma implementação foi corrigida pelo revisor e nenhuma decisão comercial é necessária.
+
+**Decisão global:** E01-01 a E01-04 APROVADAS; E01-05 e E01 REPROVADAS. Os cinco review.md foram atualizados; não houve alteração remota, push ou merge nesta revisão.
+
+## Correção R05 conforme "Correção R05" do spec.md (implementador)
+
+Base: revisão `523cd9c` (REPROVADO por abertura em andamento que cria a sessão depois da consulta de limpeza) e seção "Correção R05" do `spec.md` e critérios A-8 a A-18 do `acceptance.md`, escritos pelo especificador. Implementado o desenho obrigatório, sem repetir as abordagens listadas em "O que não fazer".
+
+**Andaime (sem comportamento, registrado como exceção técnica):** `LimpezaIncompleta`, `aguardar_limpezas_pendentes`, `limpezas_pendentes`, argumento `tempo_limite_limpeza` e `guarda_entre_testes` entraram como stubs; a suíte seguiu em `131 passed`.
+
+**Red pela asserção** (`uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q`, com os testes novos e os stubs):
+
+```
+5 failed, 18 passed
+E   assert 1 == 0                                        test_r05_revisor_abertura_em_andamento_conclui_apos_varredura  (A-9)
+E   assert 0.5 <= 0.2039999999997235                     test_r05_abertura_lenta_liberada_por_timer_termina_sem_sessao  (A-10)
+E   KeyError: 'application_name'                         test_r05_erro_na_abertura_com_tempo_esgotado_e_sem_sessao       (A-14)
+E   TempoEsgotado: ... (esperado LimpezaIncompleta)      test_r05_limpeza_incompleta_quando_a_abertura_passa_do_prazo   (A-15, A-16)
+E   TypeError: '<' not supported between 'int' and 'NoneType'  test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout (A-17)
+```
+
+A-8 e A-11 já passavam antes da correção (herdados das correções anteriores) e ficam como cobertura de regressão, junto com A-12 e A-13, como previsto no acceptance.
+
+**Implementação** (`tests/apoio/concorrencia.py`, `tests/conftest.py`):
+
+- Fases `ANTES`, `ABRINDO`, `ABERTA`, `SEM_CONEXAO` por operação; fase e `expirado` só mudam sob um `threading.Condition` por chamada.
+- Cada thread instala em seu wrapper um `connect` controlado: se expirado, recusa sem abrir; senão `ABRINDO`, chama o `connect` original (que usa `get_new_connection` da classe, sem sobrescrevê-lo), e ao retornar passa a `ABERTA` ou, se expirou durante a abertura, fecha a própria conexão, passa a `SEM_CONEXAO` e levanta `TempoEsgotado` sem executar a operação. Erro na abertura leva a `SEM_CONEXAO`. No `finally`, a thread fecha as conexões e passa a `SEM_CONEXAO`.
+- Timeout no chamador: marca `expirado` e o retrato das pendentes sob a trava, aborta as barreiras, encerra no servidor as sessões já abertas (`application_name` único por operação), espera com `Condition.wait_for` e prazo (`tempo_limite_limpeza`, 30 s) as aberturas em andamento, e confirma em `pg_stat_activity` zero sessões (repetindo, pois `pg_terminate_backend` é assíncrono). Limpo: `TempoEsgotado`. Prazo estourado ou sessão restante: registra a pendência e levanta `LimpezaIncompleta` com operação e fase.
+- `connect_timeout` das threads = 10 s (menor que o prazo de limpeza).
+- Guarda: fixture `autouse` em `tests/conftest.py`, ativa só com pendência registrada; resolve com `aguardar_limpezas_pendentes` e, se restar sessão, `pytest.fail` citando a operação.
+
+**Verificação (final):**
+
+```
+uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q (5 execuções seguidas) -> 23 passed em todas
+   duração do módulo: 39,4 s; 39,4 s; 39,6 s; 40,0 s; 43,7 s
+uv run pytest -q                -> 139 passed em 39,5 s
+uv run ruff check .             -> All checks passed
+uv run ruff format --check .    -> ok
+uv run mypy .                   -> Success: no issues found in 40 source files
+manage.py makemigrations --check --dry-run (test) -> No changes detected
+```
+
+**Matriz:**
+
+| Critério | Teste | Resultado |
+|---|---|---|
+| A-1 a A-7 | testes existentes `test_utilitario_*` e `test_demonstracao_*` | passam |
+| A-8 | `test_r05_antes_da_abertura_a_operacao_nao_abre_conexao_nem_executa` | passa (cobertura; já passava) |
+| A-9 | `test_r05_revisor_abertura_em_andamento_conclui_apos_varredura` (probe de 523cd9c, ~10 s) | Red → Green |
+| A-10 | `test_r05_abertura_lenta_liberada_por_timer_termina_sem_sessao` | Red → Green |
+| A-11 | `test_r05_revisor_connect_ja_em_execucao` (probe de e7eec3c, ~5 s) | passa (já passava) |
+| A-12 | `test_r05_revisor_timeout_durante_abertura` (probe de 6b7b9ab) e `test_utilitario_operacao_expirada_nao_reabre_conexao` | passam (cobertura) |
+| A-13 | `test_utilitario_timeout_libera_trava_de_linha` | passa (cobertura) |
+| A-14 | `test_r05_erro_na_abertura_com_tempo_esgotado_e_sem_sessao` e `test_utilitario_falha_na_abertura_vira_resultado_sem_vazar_conexao` | Red → Green |
+| A-15, A-16 | `test_r05_limpeza_incompleta_quando_a_abertura_passa_do_prazo` | Red → Green |
+| A-17 | `test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout` | Red → Green |
+| A-18 | 5 execuções do módulo e suíte completa, acima | passam |
+
+**Observações:**
+
+- Os três probes do revisor foram extraídos por script diretamente dos blocos de código deste `review.md`, sem alterar o corpo. Só foram renomeados para `test_r05_revisor_*` (nome original no comentário acima de cada um) e receberam comentários `# type: ignore[...]` em algumas linhas, porque o mypy estrito acusa as anotações ausentes e os tipos do dicionário `registro`. Nenhuma asserção foi alterada.
+- Os testes anteriores de R05 foram mantidos. Há sobreposição com os probes literais (mesmo cenário, versões adaptadas), o que soma ~15 s à duração do módulo.
+- Erro meu durante o ciclo: a primeira versão do teste A-14 instrumentava `get_new_connection` também para a thread do chamador (a conexão do chamador ainda não estava aberta), e a limpeza falhou por isso. Corrigido no teste (filtro por nome da thread e conexão do chamador aberta antes); não houve alteração da implementação.
+- Desvio de nomenclatura: o spec cita `aguardar_limpezas_pendentes` como a função da guarda e a fixture `autouse` a chama; a função auxiliar que converte `LimpezaIncompleta` em `pytest.fail` e que o A-16 testa diretamente foi nomeada `guarda_entre_testes` em `tests/conftest.py`.
+- Limitação: a guarda resolve apenas pendências registradas por `LimpezaIncompleta`. Uma thread pendente continua viva se bloqueada fora do banco, mas sem conexão e sem poder abrir outra.
