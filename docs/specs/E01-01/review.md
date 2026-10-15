@@ -108,7 +108,7 @@ gh api -X PUT repos/WillGalvaoDev/organicos-meier/branches/main/protection --inp
 
 Resposta: `required_approving_review_count: 0` (PR exigido, sem aprovação de outro humano, conforme o escopo), `strict: true`, `enforce_admins: true`, `allow_force_pushes: false`.
 
-Validação da recusa por exigência de PR (commit já verde): ver "Validação R01" abaixo, preenchida depois da execução do CI deste commit.
+Validação: ver "Validação R01" ao final.
 
 Verificação após as correções (todas as fatias, mesma execução):
 
@@ -119,3 +119,21 @@ uv run ruff format --check .     -> ok
 uv run mypy .                    -> Success: no issues found in 40 source files
 manage.py makemigrations --check --dry-run (test) -> No changes detected
 ```
+
+### Validação R01
+
+1. **Primeira tentativa, sem valor probatório.** Com o CI do PR #10 verde, `git push origin HEAD:main` foi aceito. O commit era a cabeça de um PR aberto e que cumpria as regras, e o GitHub tratou o push como o merge do PR (#10 passou a `MERGED`). O conteúdo que entrou em `main` é o do PR #10, com `verificacoes` verde (run 38734352142). Isso não mostra se a regra de PR vale para commit fora de PR.
+2. **Verificação correta.** Branch `tmp-r01-pr-obrigatorio` com commit vazio, PR #11 aberto, `verificacoes` verde (run 38734533703), PR fechado sem merge, e então:
+
+```
+git push origin HEAD:main
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote: - Changes must be made through a pull request.
+ ! [remote rejected] HEAD -> main (protected branch hook declined)
+
+git push --force origin HEAD:main
+ ! [remote rejected] HEAD -> main (protected branch hook declined)
+```
+
+`main` permaneceu em `6fe5b84`. A recusa vem da exigência de pull request, com o check já verde, para administrador (`enforce_admins: true`). A branch temporária e o PR #11 foram descartados.
+
