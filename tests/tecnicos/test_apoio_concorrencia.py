@@ -9,8 +9,17 @@ import pytest
 from django.db import OperationalError, connection, connections, transaction
 from django.db.backends.postgresql.base import DatabaseWrapper
 
-from tests.apoio.concorrencia import Resultado, TempoEsgotado, executar_em_paralelo
+from tests.apoio.concorrencia import (
+    TEMPO_LIMITE_PADRAO,
+    LimpezaIncompleta,
+    Resultado,
+    TempoEsgotado,
+    aguardar_limpezas_pendentes,
+    executar_em_paralelo,
+    limpezas_pendentes,
+)
 from tests.apoio.models import ModeloContador
+from tests.conftest import guarda_entre_testes
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
 
@@ -332,3 +341,307 @@ def test_utilitario_timeout_com_connect_ja_em_execucao_nao_deixa_conexao(
             registro["thread"].join(3)
             assert not registro["thread"].is_alive()
         assert not executou.is_set()
+
+
+# Probe do revisor, copiado sem alteração de revalidação 6b7b9ab (A-12).
+# Nome original: test_r05_timeout_durante_abertura
+@pytest.mark.django_db(transaction=True)
+def test_r05_revisor_timeout_durante_abertura(monkeypatch):  # type: ignore[no-untyped-def]
+    liberar = threading.Event()
+    entrou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.ensure_connection
+
+    def abertura_lenta(self):  # type: ignore[no-untyped-def]
+        original(self)
+        if threading.current_thread().name.startswith("concorrencia-") and not entrou.is_set():
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = self.connection.info.backend_pid
+            entrou.set()
+            liberar.wait(5)
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", abertura_lenta)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: None, tempo_limite=0.3)
+        assert entrou.is_set()
+        with connection.cursor() as c:
+            c.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s", [registro["pid"]])  # type: ignore[list-item]
+            total = c.fetchone()[0]
+        assert total == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+
+
+# Probe do revisor, copiado sem alteração de revalidação e7eec3c (A-11).
+# Nome original: test_timeout_com_connect_ja_em_execucao
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_r05_revisor_connect_ja_em_execucao(monkeypatch):  # type: ignore[no-untyped-def]
+    liberar = threading.Event()
+    abriu = threading.Event()
+    executou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abrir_com_retorno_lento(self, params):  # type: ignore[no-untyped-def]
+        raw = original(self, params)
+        if threading.current_thread().name.startswith("concorrencia-"):
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = raw.info.backend_pid
+            registro["wrapper_sem_conexao"] = self.connection is None  # type: ignore[assignment]
+            abriu.set()
+            liberar.wait(5)
+        return raw
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abrir_com_retorno_lento)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert abriu.is_set()
+        assert registro["wrapper_sem_conexao"]
+        with connection.cursor() as c:
+            c.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s", [registro["pid"]])  # type: ignore[list-item]
+            quantidade = c.fetchone()[0]
+        assert quantidade == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+
+
+# Probe do revisor, copiado sem alteração de revalidação 523cd9c (A-9).
+# Nome original: test_abertura_em_andamento_conclui_apos_varredura
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_r05_revisor_abertura_em_andamento_conclui_apos_varredura(monkeypatch):  # type: ignore[no-untyped-def]
+    permitir_abertura = threading.Event()
+    permitir_retorno = threading.Event()
+    entrou = threading.Event()
+    abriu = threading.Event()
+    executou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abertura_atrasada(self, params):  # type: ignore[no-untyped-def]
+        if not threading.current_thread().name.startswith("concorrencia-"):
+            return original(self, params)
+        registro["thread"] = threading.current_thread()
+        entrou.set()
+        permitir_abertura.wait(5)
+        raw = original(self, params)
+        registro["pid"] = raw.info.backend_pid
+        registro["nome"] = params["application_name"]
+        abriu.set()
+        permitir_retorno.wait(5)
+        return raw
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura_atrasada)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert entrou.is_set()
+        # O cleanup no servidor ja terminou; a chamada connect original ainda esta em curso.
+        permitir_abertura.set()
+        assert abriu.wait(3)
+        with connection.cursor() as c:
+            c.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid=%s AND application_name=%s",
+                [registro["pid"], registro["nome"]],  # type: ignore[list-item]
+            )
+            restantes = c.fetchone()[0]
+        assert restantes == 0
+    finally:
+        permitir_abertura.set()
+        permitir_retorno.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+
+
+# --- Correção R05: critérios A-8 a A-17 (spec.md, "Correção R05") ---------------------------
+
+
+def _sessoes_por_nome(nome: str) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", [nome])
+        (total,) = cursor.fetchone()
+    return int(total)
+
+
+def test_r05_antes_da_abertura_a_operacao_nao_abre_conexao_nem_executa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-8
+    liberar = threading.Event()
+    executou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.ensure_connection
+
+    def pausa_antes_de_abrir(self: Any) -> None:
+        if threading.current_thread().name.startswith("concorrencia-"):
+            registro["thread"] = threading.current_thread()
+            registro["nome"] = self.settings_dict["OPTIONS"]["application_name"]
+            liberar.wait(5)
+        original(self)
+
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", pausa_antes_de_abrir)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert _sessoes_por_nome(registro["nome"]) == 0
+        liberar.set()
+        registro["thread"].join(3)
+        assert not registro["thread"].is_alive()
+        assert _sessoes_por_nome(registro["nome"]) == 0  # a abertura foi recusada
+        assert not executou.is_set()
+    finally:
+        liberar.set()
+
+
+def test_r05_abertura_lenta_liberada_por_timer_termina_sem_sessao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-10 (versão rápida do A-9)
+    liberar = threading.Event()
+    executou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abertura_atrasada(self: Any, params: Any) -> Any:
+        if not threading.current_thread().name.startswith("concorrencia-"):
+            return original(self, params)
+        registro["thread"] = threading.current_thread()
+        registro["nome"] = params["application_name"]
+        liberar.wait(5)
+        return original(self, params)
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura_atrasada)
+    temporizador = threading.Timer(0.5, liberar.set)
+    temporizador.start()
+    inicio = time.monotonic()
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(
+                lambda _b: executou.set(), tempo_limite=0.2, tempo_limite_limpeza=10
+            )
+        decorrido = time.monotonic() - inicio
+        assert 0.5 <= decorrido < 10.2
+        assert _sessoes_por_nome(registro["nome"]) == 0
+    finally:
+        temporizador.cancel()
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+
+
+def test_r05_erro_na_abertura_com_tempo_esgotado_e_sem_sessao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-14 (com tempo esgotado; sem tempo esgotado já coberto)
+    liberar = threading.Event()
+    registro: dict[str, Any] = {}
+
+    original = DatabaseWrapper.get_new_connection
+
+    def abertura_que_falha(self: Any, params: Any) -> Any:
+        if not threading.current_thread().name.startswith("concorrencia-"):
+            return original(self, params)
+        registro["nome"] = params["application_name"]
+        liberar.wait(5)
+        raise OperationalError("falha simulada na abertura")
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura_que_falha)
+    temporizador = threading.Timer(0.5, liberar.set)
+    temporizador.start()
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: "nunca", tempo_limite=0.2, tempo_limite_limpeza=10)
+        assert _sessoes_por_nome(registro["nome"]) == 0
+    finally:
+        temporizador.cancel()
+        liberar.set()
+
+
+def test_r05_limpeza_incompleta_quando_a_abertura_passa_do_prazo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-15 e A-16
+    liberar = threading.Event()
+    executou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abertura_pausada(self: Any, params: Any) -> Any:
+        if not threading.current_thread().name.startswith("concorrencia-"):
+            return original(self, params)
+        registro["thread"] = threading.current_thread()
+        registro["nome"] = params["application_name"]
+        liberar.wait(10)
+        return original(self, params)
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura_pausada)
+    try:
+        inicio = time.monotonic()
+        with pytest.raises(LimpezaIncompleta) as erro:  # não é TempoEsgotado
+            executar_em_paralelo(
+                lambda _b: executou.set(), tempo_limite=0.2, tempo_limite_limpeza=0.5
+            )
+        decorrido = time.monotonic() - inicio
+        assert 0.6 <= decorrido < 2.0
+        assert "ABRINDO" in str(erro.value)
+        assert "<lambda>" in str(erro.value)
+        assert not isinstance(erro.value, TempoEsgotado)
+
+        # A-16: a pendência está registrada; com a abertura ainda pausada a guarda acusa.
+        with pytest.raises(LimpezaIncompleta, match="ABRINDO"):
+            aguardar_limpezas_pendentes(0.2)
+        with pytest.raises(pytest.fail.Exception, match="<lambda>"):
+            guarda_entre_testes(prazo=0.2)
+
+        # Liberada a abertura, a guarda termina com 0 sessões e esvazia o registro.
+        liberar.set()
+        aguardar_limpezas_pendentes(10)
+        assert _sessoes_por_nome(registro["nome"]) == 0
+        assert limpezas_pendentes() == 0
+        guarda_entre_testes()  # sem pendência: não faz nada
+        registro["thread"].join(3)
+        assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+    finally:
+        liberar.set()
+        monkeypatch.undo()
+        aguardar_limpezas_pendentes(10)
+
+
+def test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout() -> None:  # A-17
+    def descrever(_barreira: threading.Barrier) -> tuple[str, Any]:
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW application_name")
+            (nome,) = cursor.fetchone()
+        return nome, connection.get_connection_params().get("connect_timeout")
+
+    r1, r2 = executar_em_paralelo(descrever, descrever)
+    assert r1.excecao is None
+    assert r2.excecao is None
+    nome1, timeout1 = r1.valor
+    nome2, timeout2 = r2.valor
+    assert nome1.startswith("concorrencia-")
+    assert nome1 != nome2
+    assert timeout1 == timeout2
+    assert 0 < timeout1 < TEMPO_LIMITE_PADRAO

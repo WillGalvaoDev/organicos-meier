@@ -1,6 +1,6 @@
 # E01-01 — Revisão
 
-Estado atual: **APROVADO** no commit `e7eec3c` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `523cd9c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -201,3 +201,13 @@ O diff desde 6b7b9ab altera apenas o utilitário/testes de concorrência e relat
 Os 11 probes independentes da revalidação anterior foram repetidos sem alteração e passaram (3,78 s), incluindo R02, R03, R04 e o cenário anterior de R05. A aprovação das quatro primeiras fatias permanece; o novo cenário falho de conexão em abertura está documentado na E01-05. CI do SHA auditado: [run 38739955114](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38739955114), 130 passed em 6,64 s.
 
 Configuração remota consultada novamente: PR obrigatório com zero aprovações humanas, verificacoes obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection enabled. Os cenários negativos A-3 a A-6 e tentativas reais A-9/A-10 da revisão anterior continuam aplicáveis, pois workflow e configuração não mudaram. Não foram criados novos PRs negativos nem repetidas tentativas de push/merge nesta rodada. A-1 confirmado pelo CI do SHA exato; A-2 pelo CI verde do PR #18, run 38739814975. R01 permanece encerrado.
+
+## Revalidação independente — 523cd9c — 2026-10-15
+
+Revisor: Codex, agente 3. SHA: `523cd9c2780ba50fdd4f962873c86844b1ca7b8b`. **APROVADO nesta fatia, decisão mantida.** A E01 global continua REPROVADA por R05/A-7 da E01-05.
+
+O diff desde e7eec3c altera somente utilitário/testes de concorrência e relatórios; código de produção, configurações, workflow, dependências, fontes de verdade e critérios permanecem iguais. Reexecução independente: `uv run pytest -q` → 131 passed em 7,81 s, Postgres 17.11; ruff check limpo; ruff format --check: 54 arquivos; mypy: 40 arquivos sem erros; makemigrations --check --dry-run (settings test): sem mudanças; manage.py check (settings test): 0 issues. Doze probes anteriores também passaram, sem modificação. A única falha adicional está reproduzida no relatório E01-05.
+
+CI de push do SHA exato: [run 38743418962](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38743418962), 131 passed em 8,40 s, Postgres 17.11. Ressalvas documentais de TDD já registradas permanecem; não surgiu achado nesta fatia. Nenhuma implementação foi alterada pelo revisor.
+
+Proteção e segurança remotas consultadas novamente: PR obrigatório com zero aprovações humanas, verificacoes obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection ativos. CI do PR #19 também verde (run 38743263411). Os cenários negativos reais da revalidação 6b7b9ab permanecem válidos para workflow/configuração inalterados; não foram recriados nesta rodada. R01 permanece encerrado.
