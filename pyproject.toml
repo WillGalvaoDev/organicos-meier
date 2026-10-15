@@ -5,6 +5,7 @@ description = "Plataforma de compras coletivas Orgânicos Méier"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "httpx==0.28.1",
     "django>=5.2,<6",
     "django-allauth[mfa,socialaccount]>=65",
     "django-environ>=0.12",
