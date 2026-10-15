@@ -1,6 +1,6 @@
 # E01-02 — Revisão
 
-Estado atual: **REPROVADO** (revisão independente ao final).
+Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -130,3 +130,59 @@ uv run ruff format --check .     -> ok
 uv run mypy .                    -> Success: no issues found in 40 source files
 manage.py makemigrations --check --dry-run (test) -> No changes detected
 ```
+
+## Revalidação independente — commit 6b7b9ab — 2026-10-15
+
+Revisor: Codex (agente 3). Base exata: `6b7b9ab4282cc87b8f211385ebeb8be264b864da`, inicialmente sem alterações locais. Fontes e critérios de aceitação relidos; funcional v1.6, infraestrutura v1.7 e specs não mudaram desde a revisão anterior. A decisão desta seção substitui a decisão anterior para este commit, sem apagar o histórico.
+
+### Comandos e resultados desta reexecução
+
+| Comando | Resultado independente |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados, lockfile inalterado |
+| `uv run pytest -q -rA` | **127 passed em 6,68 s**; cada teste da matriz abaixo consta no relatório de execução |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | **10 passed, 1 failed em 3,56 s**; única falha: timeout durante abertura de conexão (E01-05/R05) |
+
+Banco local: Postgres 17.11 real, serviço saudável. A execução de push do commit auditado foi consultada: [CI 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451), 127 passed em 6,28 s, Postgres 17.11. Os probes independentes ficaram em arquivo temporário; o cenário ainda falho está preservado integralmente no review da E01-05. Nenhum código de produção ou teste versionado foi alterado nesta revalidação.
+
+### Matriz completa reexecutada
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | test_conversao_dinheiro_texto_com_duas_casas |
+| A-2 | PASSOU | test_conversao_dinheiro_inteiro_vira_duas_casas |
+| A-3 | PASSOU | test_conversao_dinheiro_recusa_excesso_de_casas + regressões R02 |
+| A-4 | PASSOU | test_conversao_recusa_float [dinheiro/quantidade] |
+| A-5 | PASSOU | test_conversao_dinheiro_recusa_entradas_invalidas e decimal_nao_finito |
+| A-6 | PASSOU | test_conversao_quantidade_aceita_ate_tres_casas |
+| A-7 | PASSOU | test_conversao_quantidade_recusa_excesso_de_casas + regressões R02 |
+| A-8 | PASSOU | test_arredondamento_7_99_vezes_0_25 |
+| A-9 | PASSOU | test_arredondamento_2_50_vezes_0_25 |
+| A-10 | PASSOU | test_arredondamento_12_99_vezes_0_35 |
+| A-11 | PASSOU | test_arredondamento_idempotente |
+| A-12 | PASSOU | test_arredondamento_recusa_float |
+| A-13 | PASSOU | test_multiplo_exato_verdadeiro [3 pares] |
+| A-14 | PASSOU | test_multiplo_exato_falso [2 pares] |
+| A-15 | PASSOU | test_multiplo_passo_invalido [0/-0.25] |
+| A-16 | PASSOU | test_campos_limite_da_precisao_gravam_e_relem_identicos |
+| A-17 | PASSOU | test_campos_recusam_valor_acima_da_precisao [2 campos] |
+| A-18 | PASSOU | test_conversao_dinheiro_notacao_com_expoente_normaliza |
+| A-19 | PASSOU | test_campos_recusam_float_na_validacao |
+| A-20 | PASSOU | test_app_de_testes_fora_da_producao; configurações inspecionadas |
+
+### R02 — ENCERRADO; decisão da fatia: APROVADO
+
+Inspeção de `apps/nucleo/valores.py` confirma uso de as_tuple sem normalize antes da validação. Probes independentes repetiram as duas entradas originais com texto e Decimal (quatro casos), todos recusados com ValorInvalido. Regressões versionadas de zeros finais equivalentes também passaram. Referências: funcional §4.2/§9, infraestrutura 4.12, spec e A-3/A-7.
+
+Matriz executada em `tests/tecnicos/test_nucleo_valores.py` e `test_nucleo_campos_decimais.py`. Nenhum achado funcional aberto nesta fatia.
+
+### Reavaliação de E01-TDD
+
+Conferido o complemento do implementador: comando `uv run pytest -q`, baseline 111, Red declarado de 11 failed/116 passed, nomes das regressões, causas e Green de 127 passed. O diff mantém os testes anteriores e acrescenta 16 casos; não houve remoção ou afrouxamento para esconder defeitos. Os registros transcritos são aceitos como evidência documental prevista no AGENTS.md, que não exige logs brutos ou um commit por ciclo. A ordem histórica não foi observada diretamente pelo revisor e não pode ser reconstruída a partir do commit único: essa limitação permanece explícita. E01-TDD fica encerrado como ressalva documental, não como bloqueador adicional. Os testes executados agora comprovam o estado atual, não o passado.
+
+Próximo gate desta fatia: encerrado. A E01 global continua reprovada pelo bloqueador de E01-05.

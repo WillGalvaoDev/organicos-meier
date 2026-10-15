@@ -6,7 +6,8 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from django.db import connection, connections, transaction
+from django.db import OperationalError, connection, connections, transaction
+from django.db.backends.postgresql.base import DatabaseWrapper
 
 from tests.apoio.concorrencia import Resultado, TempoEsgotado, executar_em_paralelo
 from tests.apoio.models import ModeloContador
@@ -207,3 +208,86 @@ def test_utilitario_timeout_libera_trava_de_linha(contador: ModeloContador) -> N
             ModeloContador.objects.select_for_update(nowait=True).get(pk=contador.pk)
     finally:
         liberar.set()
+
+
+def test_utilitario_timeout_durante_a_abertura_nao_deixa_conexao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # R05 (revalidação)
+    liberar = threading.Event()
+    entrou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.ensure_connection
+
+    def abertura_lenta(self: Any) -> None:
+        original(self)
+        if threading.current_thread().name.startswith("concorrencia-") and not entrou.is_set():
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = self.connection.info.backend_pid
+            entrou.set()
+            liberar.wait(5)
+
+    with connection.cursor() as cursor:  # conexão do chamador aberta antes do patch
+        cursor.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", abertura_lenta)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: None, tempo_limite=0.3)
+        assert entrou.is_set()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid = %s", [registro["pid"]]
+            )
+            (total,) = cursor.fetchone()
+        assert total == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+
+
+def test_utilitario_abertura_tardia_nao_executa_a_operacao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # R05 (revalidação)
+    antes = _conexoes_do_usuario_no_banco()
+    liberar = threading.Event()
+    executou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.ensure_connection
+
+    def abertura_lenta(self: Any) -> None:
+        if threading.current_thread().name.startswith("concorrencia-"):
+            registro["thread"] = threading.current_thread()
+            liberar.wait(5)  # abertura que só começa a concluir depois do tempo limite
+        original(self)
+
+    def operacao(_barreira: threading.Barrier) -> None:
+        executou.set()
+
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", abertura_lenta)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(operacao, tempo_limite=0.3)
+        liberar.set()
+        registro["thread"].join(3)
+        assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+        monkeypatch.undo()
+        assert _esperar_conexoes(antes) == antes
+    finally:
+        liberar.set()
+
+
+def test_utilitario_falha_na_abertura_vira_resultado_sem_vazar_conexao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # R05 (revalidação)
+    antes = _conexoes_do_usuario_no_banco()
+
+    def abertura_com_falha(self: Any) -> None:
+        raise OperationalError("falha simulada na abertura")
+
+    monkeypatch.setattr(DatabaseWrapper, "ensure_connection", abertura_com_falha)
+    (resultado,) = executar_em_paralelo(lambda _b: "nunca")
+    assert isinstance(resultado.excecao, OperationalError)
+    assert resultado.valor is None
+    monkeypatch.undo()
+    assert _esperar_conexoes(antes) == antes

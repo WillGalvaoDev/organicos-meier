@@ -1,6 +1,6 @@
 # E01-03 — Revisão
 
-Estado atual: **REPROVADO** (revisão independente ao final).
+Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -132,3 +132,49 @@ uv run ruff format --check .     -> ok
 uv run mypy .                    -> Success: no issues found in 40 source files
 manage.py makemigrations --check --dry-run (test) -> No changes detected
 ```
+
+## Revalidação independente — commit 6b7b9ab — 2026-10-15
+
+Revisor: Codex (agente 3). Base exata: `6b7b9ab4282cc87b8f211385ebeb8be264b864da`, inicialmente sem alterações locais. Fontes e critérios de aceitação relidos; funcional v1.6, infraestrutura v1.7 e specs não mudaram desde a revisão anterior. A decisão desta seção substitui a decisão anterior para este commit, sem apagar o histórico.
+
+### Comandos e resultados desta reexecução
+
+| Comando | Resultado independente |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados, lockfile inalterado |
+| `uv run pytest -q -rA` | **127 passed em 6,68 s**; cada teste da matriz abaixo consta no relatório de execução |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | **10 passed, 1 failed em 3,56 s**; única falha: timeout durante abertura de conexão (E01-05/R05) |
+
+Banco local: Postgres 17.11 real, serviço saudável. A execução de push do commit auditado foi consultada: [CI 38734822451](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38734822451), 127 passed em 6,28 s, Postgres 17.11. Os probes independentes ficaram em arquivo temporário; o cenário ainda falho está preservado integralmente no review da E01-05. Nenhum código de produção ou teste versionado foi alterado nesta revalidação.
+
+### Matriz completa reexecutada
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | test_agora_devolve_utc_com_fuso |
+| A-2 | PASSOU | test_agora_reflete_relogio_congelado |
+| A-3 | PASSOU | test_agora_avanca_com_o_relogio_controlado |
+| A-4 | PASSOU | test_fronteira_prazo_encerrado_exclusivo |
+| A-5 | PASSOU | test_fronteira_ate_o_limite_inclusivo |
+| A-6 | PASSOU | test_fuso_somar_24h_atravessa_meia_noite_em_sao_paulo + transição civil de R03 |
+| A-7 | PASSOU | test_fuso_exibicao_em_sao_paulo_preserva_o_instante |
+| A-8 | PASSOU | test_fuso_recusa_instante_sem_fuso [6 chamadas] e congelar sem fuso |
+| A-9 | PASSOU | test_persistencia_instante_com_microssegundos_volta_igual |
+| A-10 | PASSOU | test_dtz_ruff_acusa_datetime_now_sem_fuso; utcnow recusado e now(UTC) aceito |
+
+### R03 — ENCERRADO; decisão da fatia: APROVADO
+
+As comparações agora convertem ambos os argumentos para UTC por _em_utc. Probe independente com America/Sao_Paulo em 2019-02-16 23:30, fold 0/1, passou nas quatro direções de comparação. Regressão de soma durante transição civil passou, com 24h absolutas e exibição local correta. Fronteiras originais e rejeição de naive preservadas. Referências: infraestrutura 4.3 e funcional §15.
+
+Matriz executada em `test_nucleo_tempo.py`, `test_nucleo_tempo_persistencia.py` e `test_regras_estaticas.py`. Nenhum achado funcional aberto nesta fatia.
+
+### Reavaliação de E01-TDD
+
+Conferido o complemento do implementador: comando `uv run pytest -q`, baseline 111, Red declarado de 11 failed/116 passed, nomes das regressões, causas e Green de 127 passed. O diff mantém os testes anteriores e acrescenta 16 casos; não houve remoção ou afrouxamento para esconder defeitos. Os registros transcritos são aceitos como evidência documental prevista no AGENTS.md, que não exige logs brutos ou um commit por ciclo. A ordem histórica não foi observada diretamente pelo revisor e não pode ser reconstruída a partir do commit único: essa limitação permanece explícita. E01-TDD fica encerrado como ressalva documental, não como bloqueador adicional. Os testes executados agora comprovam o estado atual, não o passado.
+
+Próximo gate desta fatia: encerrado. A E01 global continua reprovada pelo bloqueador de E01-05.

@@ -67,12 +67,15 @@ def executar_em_paralelo(
     interna = threading.Barrier(total)
     resultados = [Resultado() for _ in operacoes]
     conexoes: list[BaseDatabaseWrapper | None] = [None] * total
+    expirado = threading.Event()
 
     def executar(indice: int) -> None:
         try:
             conexao = connections["default"]
+            conexoes[indice] = conexao  # registrada antes de abrir: o timeout sempre a alcança
             conexao.ensure_connection()  # todas abertas antes do início: pids distintos
-            conexoes[indice] = conexao
+            if expirado.is_set():  # a abertura retornou depois do tempo limite
+                raise TempoEsgotado("operação expirada durante a abertura da conexão")
             inicio.wait(timeout=tempo_limite)
             resultados[indice].valor = operacoes[indice](interna)
         except BaseException as erro:
@@ -96,6 +99,7 @@ def executar_em_paralelo(
 
     pendentes = [i for i, thread in enumerate(threads) if thread.is_alive()]
     if pendentes:
+        expirado.set()
         inicio.abort()
         interna.abort()
         for i in pendentes:
