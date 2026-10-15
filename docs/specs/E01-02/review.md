@@ -1,6 +1,6 @@
 # E01-02 — Revisão
 
-Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `e7eec3c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -186,3 +186,11 @@ Matriz executada em `tests/tecnicos/test_nucleo_valores.py` e `test_nucleo_campo
 Conferido o complemento do implementador: comando `uv run pytest -q`, baseline 111, Red declarado de 11 failed/116 passed, nomes das regressões, causas e Green de 127 passed. O diff mantém os testes anteriores e acrescenta 16 casos; não houve remoção ou afrouxamento para esconder defeitos. Os registros transcritos são aceitos como evidência documental prevista no AGENTS.md, que não exige logs brutos ou um commit por ciclo. A ordem histórica não foi observada diretamente pelo revisor e não pode ser reconstruída a partir do commit único: essa limitação permanece explícita. E01-TDD fica encerrado como ressalva documental, não como bloqueador adicional. Os testes executados agora comprovam o estado atual, não o passado.
 
 Próximo gate desta fatia: encerrado. A E01 global continua reprovada pelo bloqueador de E01-05.
+
+## Revalidação independente — e7eec3c — 2026-10-15
+
+Revisor: Codex, agente 3. Commit exato: `e7eec3c81b9455af94cb23acb0adc2886a4f97f5`. **Decisão desta fatia: APROVADO, mantida.** A E01 global continua REPROVADA por R05/A-7 da E01-05, conforme relatório atualizado daquela fatia.
+
+O diff desde 6b7b9ab altera apenas o utilitário/testes de concorrência e relatórios. Não modifica código de produção, configurações, workflow, dependências, documentos-base ou critérios de aceitação. Reexecutados `uv run pytest -q` (130 passed em 6,89 s, Postgres 17.11 real), `uv run ruff check .` (limpo), `uv run ruff format --check .` (54 arquivos), `uv run mypy .` (40 arquivos, sem erros), `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` (sem mudanças) e `uv run python manage.py check --settings=config.settings.test` (0 issues). Os critérios automatizados das matrizes anteriores permanecem verdes.
+
+Os 11 probes independentes da revalidação anterior foram repetidos sem alteração e passaram (3,78 s), incluindo R02, R03, R04 e o cenário anterior de R05. A aprovação das quatro primeiras fatias permanece; o novo cenário falho de conexão em abertura está documentado na E01-05. CI do SHA auditado: [run 38739955114](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38739955114), 130 passed em 6,64 s.

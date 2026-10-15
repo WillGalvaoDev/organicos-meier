@@ -1,6 +1,6 @@
 # E01-05 — Revisão
 
-Estado atual: **REPROVADO** no commit `6b7b9ab` (revalidação independente ao final).
+Estado atual: **REPROVADO** no commit `e7eec3c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -274,4 +274,141 @@ FAILED test_apoio_concorrencia.py::test_utilitario_timeout_durante_a_abertura_na
 **Green:** `14 passed` no módulo (5 execuções seguidas) e `130 passed` na suíte; ruff, ruff format, mypy limpos.
 
 Testes acrescentados: o do probe; `test_utilitario_abertura_tardia_nao_executa_a_operacao` (abertura que só conclui depois do tempo limite: a operação não executa e nenhuma conexão sobra) e `test_utilitario_falha_na_abertura_vira_resultado_sem_vazar_conexao` (falha na abertura vira `Resultado.excecao`, sem vazamento). Os dois últimos já passavam antes da correção (cobertura); a primeira versão do segundo assumia que a conexão chegava a abrir, e a asserção foi ajustada para a garantia real (sem execução e sem conexões residuais), sem enfraquecer o que verifica.
+
+
+## Revalidação independente — e7eec3c — 2026-10-15
+
+Revisor: Codex, agente 3. Commit exato: `e7eec3c81b9455af94cb23acb0adc2886a4f97f5`; árvore inicialmente limpa. **Decisão: REPROVADO. A E01 ainda não está aprovada.** R01 a R04 permanecem encerrados; R05/A-7 continua com bloqueador de limpeza da conexão em abertura. Esta decisão substitui a decisão anterior para o SHA auditado, preservando o histórico.
+
+### Verificações executadas
+
+| Comando/evidência | Resultado |
+|---|---|
+| `uv run pytest -q` | 130 passed em 6,89 s, Postgres 17.11 real |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 40 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_6b7b9ab_probes.py" -q` | 11 passed em 3,78 s; inclui o probe anterior de R05, sem alterações |
+| `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_e7eec3c_conexao_em_abertura.py" -q` | 1 failed em 1,45 s: conexão em abertura já iniciada permanece no Postgres após timeout |
+| [CI do commit auditado](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38739955114) | 130 passed em 6,64 s, Postgres 17.11 |
+
+### Matriz de aceitação atual
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| A-1 | PASSOU | Resultados na ordem das operações |
+| A-2 | PASSOU | Conexões próprias e PIDs distintos |
+| A-3 | PASSOU | Atualização perdida determinística, contador 1 |
+| A-4 | PASSOU | select_for_update, 20 repetições com contador 2 |
+| A-5 | PASSOU | Valor e exceção preservados por operação |
+| A-6 | PASSOU | TempoEsgotado identifica operação; timeout de barreira e consulta real passam |
+| A-7 | FALHOU | Casos existentes e abertura anterior passam; conexão ainda não entregue ao wrapper permanece aberta após timeout (R05 abaixo) |
+
+### R05 — correção anterior confirmada, abertura em andamento ainda não coberta
+
+Referências: spec E01-05, regra Conexões (fechar ao final inclusive por timeout, sem conexões herdadas por testes seguintes), A-7 e devolução anterior (abertura que retorne tarde ou falhe). **Classificação: bloqueador.** Não é nova regra comercial nem ampliação para outra entrega.
+
+A publicação do wrapper antes de ensure_connection resolve o probe anterior: quando o wrapper já possui self.connection, close() alcança a conexão. O Event também impede executar a operação depois de uma abertura tardia. Ambos foram verificados; não são novamente reprovados.
+
+Permanece outra janela da mesma abertura: connect() já entrou em execução, get_new_connection() estabeleceu a conexão real, mas ainda não retornou para a atribuição a self.connection. Nesse intervalo:
+
+1. A thread principal encontra o wrapper registrado e troca seu método connect (`tests/apoio/concorrencia.py:47`). Isso só afeta chamadas futuras, não cancela o connect que já está em execução.
+2. close() (linha 50) encontra self.connection=None e retorna sem encerrar a conexão real ainda em abertura.
+3. executar_em_paralelo levanta TempoEsgotado; pg_stat_activity ainda contém a conexão da thread. O encerramento só ocorre depois que a abertura retorna e a thread chega ao finally.
+
+Conferido no Django instalado pelo lockfile: `django/db/backends/base/base.py:256` atribui `self.connection = self.get_new_connection(conn_params)`; close() nas linhas 344–353 retorna quando self.connection é None. O novo teste de abertura tardia do implementador pausa antes de entrar em connect, portanto valida a substituição do método para uma chamada futura, mas não cobre a chamada já em execução.
+
+O probe abaixo pausa deterministicamente o retorno de get_new_connection depois de criar conexão real; não inventa um PID nem altera a contagem do servidor. Ao retornar TempoEsgotado em 0,3 s, confirmou self.connection=None no wrapper e **1 conexão no Postgres, esperado 0**. Após liberar a abertura no finally, a thread termina e a operação de negócio não executa. Portanto o defeito comprovado é a ausência de limpeza antes do retorno, não execução indevida da operação. Uma sessão remanescente pode interferir no encerramento/recriação do banco dos testes seguintes.
+
+### Reprodução completa
+
+Salvar como arquivo temporário e rodar `uv run pytest -c pyproject.toml <arquivo> -q` a partir da raiz. Resultado observado: `assert 1 == 0`.
+
+```python
+import threading
+import pytest
+from django.db import connection
+from django.db.backends.postgresql.base import DatabaseWrapper
+from tests.apoio.concorrencia import executar_em_paralelo, TempoEsgotado
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_timeout_com_connect_ja_em_execucao(monkeypatch):
+    liberar = threading.Event()
+    abriu = threading.Event()
+    executou = threading.Event()
+    registro = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abrir_com_retorno_lento(self, params):
+        raw = original(self, params)
+        if threading.current_thread().name.startswith("concorrencia-"):
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = raw.info.backend_pid
+            registro["wrapper_sem_conexao"] = self.connection is None
+            abriu.set()
+            liberar.wait(5)
+        return raw
+
+    with connection.cursor() as c:
+        c.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abrir_com_retorno_lento)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert abriu.is_set()
+        assert registro["wrapper_sem_conexao"]
+        with connection.cursor() as c:
+            c.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s", [registro["pid"]])
+            quantidade = c.fetchone()[0]
+        assert quantidade == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
+```
+
+### TDD e devolução ao implementador
+
+O relato Red de 1 failed/13 passed, seguido de Green de 14 testes e suíte de 130, é coerente com o diff e com o probe anterior agora verde. Nenhum teste anterior foi removido para ocultar falhas. Mantida a ressalva já documentada: a sequência temporal original é evidência transcrita pelo implementador, não execução presenciada pelo revisor.
+
+Para encerrar R05, controlar também a abertura real já em andamento: o retorno por timeout precisa respeitar a garantia de ausência de conexões residuais, sem esperar indefinidamente e sem depender somente de substituir connect para chamadas futuras. Acrescentar este cenário antes de corrigir, registrar Red → Green e revalidar A-1 a A-7, retomada, trava e abertura tardia/falha. Não foi feita correção pelo revisor.
+
+### Decisão global
+
+E01-01 a E01-04 continuam APROVADAS. A E01-05 e, portanto, a E01 permanecem REPROVADAS por R05/A-7. O próximo gate é correção técnica com TDD e nova revisão independente; não há decisão de negócio pendente. Alterações desta revisão limitam-se aos cinco review.md. Nenhuma alteração remota, push ou merge foi realizado.
+
+## Correção da revalidação e7eec3c — conexão em abertura já em andamento (implementador)
+
+**Causa.** Entre o driver estabelecer a conexão (`get_new_connection`) e o Django atribuí-la a `self.connection`, o wrapper está sem conexão: `close()` não tem o que fechar e trocar `connect` só afeta chamadas futuras.
+
+**Correção** (`tests/apoio/concorrencia.py`): cada thread conecta com um `application_name` único (`concorrencia-<id>-<i>`, via `OPTIONS` do wrapper da própria thread). No timeout, o chamador encerra no servidor os backends das operações pendentes (`pg_terminate_backend` filtrado por esse nome) e espera, de forma limitada (2 s), que desapareçam de `pg_stat_activity`. Não depende do estado Python da thread e não espera a abertura terminar. O que já existia continua: wrapper registrado antes de abrir, `connect` inutilizado, evento `expirado`.
+
+**Red** (probe do revisor incorporado como `test_utilitario_timeout_com_connect_ja_em_execucao_nao_deixa_conexao`):
+
+```
+uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q
+E   assert 1 == 0
+FAILED test_apoio_concorrencia.py::test_utilitario_timeout_com_connect_ja_em_execucao_nao_deixa_conexao
+1 failed, 14 passed
+```
+
+**Green:**
+
+```
+uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q (5 execuções seguidas) -> 15 passed em todas
+uv run pytest -q                -> 131 passed
+uv run ruff check .             -> All checks passed
+uv run ruff format --check .    -> ok
+uv run mypy .                   -> Success: no issues found in 40 source files
+```
+
+Regressões cobertas pelos testes do módulo: retomada tardia, trava de linha real, timeout durante a abertura (`ensure_connection`), abertura tardia, falha de abertura e este cenário (`connect` já em execução).
+
+**Limitação residual.** Se o backend ainda estiver no handshake de autenticação, ele não aparece em `pg_stat_activity` no instante do encerramento; nesse caso a thread, ao retornar da abertura, vê `expirado` e fecha a própria conexão (sem executar a operação). Não há ponto em que a operação executada depois do timeout acesse o banco.
 

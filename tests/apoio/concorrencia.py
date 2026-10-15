@@ -7,6 +7,7 @@ encontro definido pelo teste, por exemplo depois de ler e antes de gravar.
 
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -52,6 +53,36 @@ def _inutilizar(conexao: BaseDatabaseWrapper) -> None:
         pass
 
 
+def _encerrar_no_servidor(nomes: list[str], prazo: float = 2.0) -> None:
+    """Encerra no Postgres os backends das operações expiradas, pelo `application_name`.
+
+    Alcança também a conexão que o driver já estabeleceu mas que ainda não foi entregue
+    ao wrapper do Django (nesse intervalo `close()` do wrapper não tem o que fechar).
+    Espera, de forma limitada, o desaparecimento deles.
+    """
+    if not nomes:
+        return
+    limite = time.monotonic() + prazo
+    try:
+        with connections["default"].cursor() as cursor:
+            while True:
+                cursor.execute(
+                    "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
+                    "WHERE application_name = ANY(%s) AND pid <> pg_backend_pid()",
+                    [nomes],
+                )
+                cursor.execute(
+                    "SELECT count(*) FROM pg_stat_activity WHERE application_name = ANY(%s)",
+                    [nomes],
+                )
+                (restantes,) = cursor.fetchone()
+                if restantes == 0 or time.monotonic() >= limite:
+                    return
+                time.sleep(0.02)
+    except Exception:  # noqa: S110 — o chamador ainda recebe TempoEsgotado
+        pass
+
+
 def executar_em_paralelo(
     *operacoes: Operacao, tempo_limite: float = TEMPO_LIMITE_PADRAO
 ) -> list[Resultado]:
@@ -68,10 +99,17 @@ def executar_em_paralelo(
     resultados = [Resultado() for _ in operacoes]
     conexoes: list[BaseDatabaseWrapper | None] = [None] * total
     expirado = threading.Event()
+    prefixo = f"concorrencia-{uuid.uuid4().hex[:12]}"
+    nomes_de_aplicacao = [f"{prefixo}-{i}" for i in range(total)]
 
     def executar(indice: int) -> None:
         try:
             conexao = connections["default"]
+            # Nome único por operação: permite encerrar a conexão no servidor mesmo antes
+            # de o driver entregá-la ao wrapper (ver `_encerrar_no_servidor`).
+            opcoes = {**conexao.settings_dict.get("OPTIONS", {})}
+            opcoes["application_name"] = nomes_de_aplicacao[indice]
+            conexao.settings_dict = {**conexao.settings_dict, "OPTIONS": opcoes}
             conexoes[indice] = conexao  # registrada antes de abrir: o timeout sempre a alcança
             conexao.ensure_connection()  # todas abertas antes do início: pids distintos
             if expirado.is_set():  # a abertura retornou depois do tempo limite
@@ -106,6 +144,7 @@ def executar_em_paralelo(
             conexao = conexoes[i]
             if conexao is not None:
                 _inutilizar(conexao)
+        _encerrar_no_servidor([nomes_de_aplicacao[i] for i in pendentes])
         nomes = ", ".join(_nome(operacoes[i], i) for i in pendentes)
         raise TempoEsgotado(f"operações pendentes após {tempo_limite}s: {nomes}")
     return resultados

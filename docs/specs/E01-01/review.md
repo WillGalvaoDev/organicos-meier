@@ -1,6 +1,6 @@
 # E01-01 — Revisão
 
-Estado atual: **APROVADO** no commit `6b7b9ab` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `e7eec3c` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -191,3 +191,13 @@ A-9 foi reexecutado com `gh pr merge 13 --merge --admin --match-head-commit 73ed
 Probes A-3 a A-6 foram realizados em branches temporárias derivadas do commit auditado. A primeira tentativa de A-3 (run 38736249206) falhou antes, em mypy, por comparação de literais 1 == 2; foi corrigido apenas o probe para `assert len([1]) == 2`, gerando a execução válida da matriz. Não houve alteração do projeto para fazê-lo passar.
 
 PRs #13 a #17 foram fechados sem merge; branches remotas/locais temporárias e worktree de CI removidos. Nenhuma regra remota foi alterada. A-1 usa a execução de push já existente do SHA exato: não foi gerado novo push na main. A exceção técnica ao TDD continua adequada. Próximo gate desta fatia: encerrado; a E01 global continua reprovada por E01-05.
+
+## Revalidação independente — e7eec3c — 2026-10-15
+
+Revisor: Codex, agente 3. Commit exato: `e7eec3c81b9455af94cb23acb0adc2886a4f97f5`. **Decisão desta fatia: APROVADO, mantida.** A E01 global continua REPROVADA por R05/A-7 da E01-05, conforme relatório atualizado daquela fatia.
+
+O diff desde 6b7b9ab altera apenas o utilitário/testes de concorrência e relatórios. Não modifica código de produção, configurações, workflow, dependências, documentos-base ou critérios de aceitação. Reexecutados `uv run pytest -q` (130 passed em 6,89 s, Postgres 17.11 real), `uv run ruff check .` (limpo), `uv run ruff format --check .` (54 arquivos), `uv run mypy .` (40 arquivos, sem erros), `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` (sem mudanças) e `uv run python manage.py check --settings=config.settings.test` (0 issues). Os critérios automatizados das matrizes anteriores permanecem verdes.
+
+Os 11 probes independentes da revalidação anterior foram repetidos sem alteração e passaram (3,78 s), incluindo R02, R03, R04 e o cenário anterior de R05. A aprovação das quatro primeiras fatias permanece; o novo cenário falho de conexão em abertura está documentado na E01-05. CI do SHA auditado: [run 38739955114](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38739955114), 130 passed em 6,64 s.
+
+Configuração remota consultada novamente: PR obrigatório com zero aprovações humanas, verificacoes obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection enabled. Os cenários negativos A-3 a A-6 e tentativas reais A-9/A-10 da revisão anterior continuam aplicáveis, pois workflow e configuração não mudaram. Não foram criados novos PRs negativos nem repetidas tentativas de push/merge nesta rodada. A-1 confirmado pelo CI do SHA exato; A-2 pelo CI verde do PR #18, run 38739814975. R01 permanece encerrado.
