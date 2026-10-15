@@ -2,6 +2,7 @@
 
 from django.db import models
 
+from apps.nucleo.so_insercao import RegistroSoInsercao
 from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 
 
@@ -18,3 +19,10 @@ class ModeloInstante(models.Model):
 
     def __str__(self) -> str:
         return self.momento.isoformat()
+
+
+class ModeloSoInsercao(RegistroSoInsercao):
+    nome = models.CharField(max_length=50)
+
+    def __str__(self) -> str:
+        return self.nome
