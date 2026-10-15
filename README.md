@@ -14,6 +14,10 @@ uv run pytest                    # suíte de testes
 uv run ruff check . ; uv run ruff format --check . ; uv run mypy .
 ```
 
+## Fluxo de contribuição
+
+Toda mudança entra por branch e pull request para `main`; push direto é bloqueado. O job `verificacoes` do GitHub Actions (ruff check, ruff format --check, mypy e pytest contra Postgres 17) precisa estar verde e a branch precisa estar atualizada com a `main` para o merge.
+
 ## Estrutura
 
 ```
