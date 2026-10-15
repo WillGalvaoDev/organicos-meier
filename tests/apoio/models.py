@@ -11,3 +11,10 @@ class ModeloValores(models.Model):
 
     def __str__(self) -> str:
         return f"{self.preco} / {self.peso}"
+
+
+class ModeloInstante(models.Model):
+    momento = models.DateTimeField()
+
+    def __str__(self) -> str:
+        return self.momento.isoformat()
