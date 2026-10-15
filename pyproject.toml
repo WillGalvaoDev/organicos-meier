@@ -10,6 +10,7 @@ dependencies = [
     "django-environ>=0.12",
     "procrastinate[django]>=3",
     "psycopg[binary]>=3.2",
+    "tzdata>=2024.1",
 ]
 
 [dependency-groups]
