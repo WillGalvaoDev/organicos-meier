@@ -33,6 +33,25 @@ def _nome(operacao: Operacao, indice: int) -> str:
     return f"{indice}:{getattr(operacao, '__name__', repr(operacao))}"
 
 
+def _inutilizar(conexao: BaseDatabaseWrapper) -> None:
+    """Fecha a conexão de uma operação expirada e impede que ela abra outra.
+
+    A thread continua viva e pode retomar depois do tempo limite. Sem isto, o próximo
+    `cursor()` reabriria a conexão (e executaria SQL durante outro teste). Cada thread tem
+    seu próprio wrapper, então trocar `connect` afeta só a operação expirada.
+    """
+
+    def _recusar() -> None:
+        raise TempoEsgotado("operação expirada: acesso ao banco não é mais permitido")
+
+    conexao.connect = _recusar  # type: ignore[method-assign]
+    conexao.inc_thread_sharing()
+    try:
+        conexao.close()
+    except Exception:  # noqa: S110
+        pass
+
+
 def executar_em_paralelo(
     *operacoes: Operacao, tempo_limite: float = TEMPO_LIMITE_PADRAO
 ) -> list[Resultado]:
@@ -82,11 +101,7 @@ def executar_em_paralelo(
         for i in pendentes:
             conexao = conexoes[i]
             if conexao is not None:
-                conexao.inc_thread_sharing()
-                try:
-                    conexao.close()
-                except Exception:  # noqa: S110
-                    pass
+                _inutilizar(conexao)
         nomes = ", ".join(_nome(operacoes[i], i) for i in pendentes)
         raise TempoEsgotado(f"operações pendentes após {tempo_limite}s: {nomes}")
     return resultados

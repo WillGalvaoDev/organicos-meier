@@ -129,3 +129,33 @@ def test_multiplo_passo_invalido(passo: Decimal) -> None:  # A-15
 def test_multiplo_recusa_float() -> None:
     with pytest.raises(ValorInvalido, match="tipo"):
         eh_multiplo(1.25, D("0.25"))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("funcao", "entrada"),
+    [
+        (dinheiro, "1.00000000000000000000000000001"),
+        (dinheiro, D("1.00000000000000000000000000001")),
+        (quantidade, "0.25000000000000000000000000001"),
+        (quantidade, D("0.25000000000000000000000000001")),
+    ],
+)
+def test_conversao_recusa_excesso_de_casas_alem_da_precisao_do_contexto(
+    funcao: Any, entrada: Any
+) -> None:  # R02
+    with pytest.raises(ValorInvalido, match="casas"):
+        funcao(entrada)
+
+
+@pytest.mark.parametrize(
+    ("funcao", "entrada", "esperado"),
+    [
+        (dinheiro, "1.00000000000000000000000000000", D("1.00")),
+        (dinheiro, D("7.990000000000000000000000000000"), D("7.99")),
+        (quantidade, "0.250000000000000000000000000000", D("0.250")),
+    ],
+)
+def test_conversao_zeros_finais_continuam_equivalentes(
+    funcao: Any, entrada: Any, esperado: Decimal
+) -> None:  # R02
+    assert funcao(entrada) == esperado

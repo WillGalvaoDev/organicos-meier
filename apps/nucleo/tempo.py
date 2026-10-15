@@ -20,6 +20,11 @@ def _com_fuso(instante: datetime) -> datetime:
     return instante
 
 
+def _em_utc(instante: datetime) -> datetime:
+    """Instante absoluto em UTC. A comparação nunca depende do fuso nem da dobra (fold)."""
+    return _com_fuso(instante).astimezone(UTC)
+
+
 def agora() -> datetime:
     """Instante atual do servidor, em UTC e com fuso."""
     return datetime.now(UTC)
@@ -27,17 +32,17 @@ def agora() -> datetime:
 
 def somar_horas(instante: datetime, horas: int) -> datetime:
     """Soma uma duração absoluta em horas, em UTC. Não depende de horário de verão."""
-    return _com_fuso(instante).astimezone(UTC) + timedelta(hours=horas)
+    return _em_utc(instante) + timedelta(hours=horas)
 
 
 def prazo_encerrado(instante: datetime, limite: datetime) -> bool:
     """Limite exclusivo: verdadeiro quando `instante >= limite` (janela [início, limite))."""
-    return _com_fuso(instante) >= _com_fuso(limite)
+    return _em_utc(instante) >= _em_utc(limite)
 
 
 def ate_o_limite(instante: datetime, limite: datetime) -> bool:
     """Limite inclusivo: verdadeiro quando `instante <= limite`."""
-    return _com_fuso(instante) <= _com_fuso(limite)
+    return _em_utc(instante) <= _em_utc(limite)
 
 
 def no_fuso_da_operacao(instante: datetime) -> datetime:

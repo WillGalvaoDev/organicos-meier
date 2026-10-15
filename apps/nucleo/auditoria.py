@@ -47,7 +47,7 @@ class EntradaAuditoria(RegistroSoInsercao):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(autor_tipo="usuario", autor_id__isnull=False)
+                    models.Q(autor_tipo="usuario", autor_id__isnull=False, autor_id__regex=r"\S")
                     | models.Q(autor_tipo="sistema", autor_id__isnull=True)
                 ),
                 name="auditoria_autor_id_conforme_tipo",

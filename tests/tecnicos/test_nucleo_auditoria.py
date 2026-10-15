@@ -165,3 +165,36 @@ def test_auditoria_recusa_acao_vazia(acao: str, objeto: ModeloValores) -> None: 
 def test_auditoria_recusa_usuario_nao_salvo(objeto: ModeloValores) -> None:
     with pytest.raises(ValueError, match="autor"):
         registrar_auditoria(get_user_model()(username="novo"), "x.y", objeto, {})
+
+
+@pytest.mark.parametrize("autor_id", ["", "   ", "\t"])
+def test_auditoria_banco_recusa_usuario_com_identificador_vazio_por_sql(
+    autor_id: str,
+) -> None:  # R04
+    with pytest.raises(DatabaseError), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO nucleo_entradaauditoria "
+            "(autor_tipo, autor_id, acao, momento, motivo, alteracoes, objeto_tipo, objeto_id) "
+            "VALUES ('usuario', %s, 'a.b', now(), '', '{}', 'x.y', '1')",
+            [autor_id],
+        )
+    assert EntradaAuditoria.objects.count() == 0
+
+
+@pytest.mark.parametrize("autor_id", ["", "  "])
+def test_auditoria_banco_recusa_usuario_com_identificador_vazio_pelo_modelo(
+    autor_id: str,
+) -> None:  # R04
+    entrada = EntradaAuditoria(
+        autor_tipo="usuario",
+        autor_id=autor_id,
+        acao="a.b",
+        momento=T,
+        objeto_tipo="x.y",
+        objeto_id="1",
+    )
+    with pytest.raises(DatabaseError), transaction.atomic():
+        entrada.save()
+    with pytest.raises(DatabaseError), transaction.atomic():
+        EntradaAuditoria.objects.bulk_create([entrada])
+    assert EntradaAuditoria.objects.count() == 0

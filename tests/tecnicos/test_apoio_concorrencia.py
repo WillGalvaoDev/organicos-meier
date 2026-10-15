@@ -150,3 +150,60 @@ def test_utilitario_nao_deixa_conexoes_abertas(cenario: str) -> None:  # A-7
         executar_em_paralelo(*operacoes[cenario])
     assert _esperar_conexoes(antes) == antes
     assert connections["default"].is_usable()
+
+
+def test_utilitario_operacao_expirada_nao_reabre_conexao(contador: ModeloContador) -> None:  # R05
+    liberar = threading.Event()
+    terminou = threading.Event()
+    registro: dict[str, Any] = {}
+
+    def atrasada(_barreira: threading.Barrier) -> None:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid()")
+                (registro["pid"],) = cursor.fetchone()
+            liberar.wait(5)
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 42")
+                    registro["resultado"] = cursor.fetchone()
+            except BaseException as erro:
+                registro["erro"] = erro
+        finally:
+            terminou.set()
+
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(atrasada, tempo_limite=0.3)
+        liberar.set()
+        assert terminou.wait(5)
+        assert "resultado" not in registro
+        assert "erro" in registro
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid = %s", [registro["pid"]]
+            )
+            (total,) = cursor.fetchone()
+        assert total == 0
+    finally:
+        liberar.set()
+
+
+def test_utilitario_timeout_libera_trava_de_linha(contador: ModeloContador) -> None:  # R05
+    segurando = threading.Event()
+    liberar = threading.Event()
+
+    def trava_e_espera(_barreira: threading.Barrier) -> None:
+        with transaction.atomic():
+            ModeloContador.objects.select_for_update().get(pk=contador.pk)
+            segurando.set()
+            liberar.wait(5)
+
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(trava_e_espera, tempo_limite=0.5)
+        assert segurando.is_set()
+        with transaction.atomic():  # nowait: falha se a trava continuasse presa
+            ModeloContador.objects.select_for_update(nowait=True).get(pk=contador.pk)
+    finally:
+        liberar.set()

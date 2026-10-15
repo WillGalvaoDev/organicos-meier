@@ -31,8 +31,12 @@ def _converter(entrada: object, casas: int) -> Decimal:
         raise ValorInvalido(f"tipo não aceito: {type(entrada).__name__}")
     if not valor.is_finite():
         raise ValorInvalido("valor não finito")
-    expoente = valor.normalize().as_tuple().exponent
-    if isinstance(expoente, int) and expoente < -casas:
+    # as_tuple() é exato (não aplica a precisão do contexto, ao contrário de normalize()).
+    _, digitos, expoente = valor.as_tuple()
+    if not isinstance(expoente, int):
+        raise ValorInvalido("valor não finito")
+    excedentes = -expoente - casas
+    if excedentes > 0 and any(digitos[-excedentes:]):
         raise ValorInvalido(f"mais de {casas} casas decimais")
     try:
         return valor.quantize(Decimal(1).scaleb(-casas))

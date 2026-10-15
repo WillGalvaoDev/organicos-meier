@@ -108,3 +108,21 @@ def test_fuso_recusa_instante_sem_fuso(chamada: Any) -> None:  # A-8
     naive = datetime(2026, 10, 14, 15, 0)  # noqa: DTZ001
     with pytest.raises(InstanteSemFuso):
         chamada(naive)
+
+
+def test_fronteira_instantes_civis_repetidos_comparam_em_utc() -> None:  # R03
+    # Fim do horário de verão em São Paulo: 23:30 ocorre duas vezes (fold 0: -02, fold 1: -03).
+    primeiro = datetime(2019, 2, 16, 23, 30, tzinfo=SAO_PAULO, fold=0)
+    segundo = datetime(2019, 2, 16, 23, 30, tzinfo=SAO_PAULO, fold=1)
+    assert segundo.astimezone(UTC) - primeiro.astimezone(UTC) == timedelta(hours=1)
+    assert prazo_encerrado(primeiro, segundo) is False
+    assert prazo_encerrado(segundo, primeiro) is True
+    assert ate_o_limite(primeiro, segundo) is True
+    assert ate_o_limite(segundo, primeiro) is False
+
+
+def test_fuso_somar_horas_atravessa_transicao_civil_com_24h_exatas() -> None:  # R03
+    inicio = datetime(2019, 2, 16, 22, 0, tzinfo=SAO_PAULO)  # -02, antes do fim do verão
+    fim = somar_horas(inicio, 24)
+    assert fim - inicio.astimezone(UTC) == timedelta(hours=24)
+    assert no_fuso_da_operacao(fim) == datetime(2019, 2, 17, 21, 0, tzinfo=SAO_PAULO)

@@ -1,6 +1,8 @@
 # E01-04 — Revisão
 
-Estado: **aguardando revisão independente (agente 3)**. Abaixo, evidências do implementador.
+Estado atual: **REPROVADO** (revisão independente ao final).
+
+Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
 ## Ciclos Red → Green → Refactor
 
@@ -35,5 +37,110 @@ manage.py makemigrations --check --dry-run (test) → No changes detected
 
 ## Limitações
 
-- Nenhuma revisão independente feita ainda.
+- Na data deste relato histórico, a revisão independente ainda não havia ocorrido. Resultado atual ao final.
 - Sem teste de concorrência de auditoria (spec dispensa).
+
+## Revisão independente — 2026-10-15
+
+Revisor: Codex (agente 3). Commit auditado: `72288d3dcc9d618940276d61f83d84110f5b0bb8`.
+Fontes: funcional v1.6, infraestrutura v1.7, AGENTS.md, spec.md e acceptance.md. Versões compatíveis. Considerada a liberação da especificação por decisão registrada em 2026-10-15.
+
+**Decisão: REPROVADO.** A revisão está concluída; a entrega tem bloqueador aberto e não atende ao Definition of Done. Nenhuma implementação foi corrigida pelo revisor.
+
+### Verificações independentes
+
+| Comando | Resultado |
+|---|---|
+| `uv sync --locked` | 50 pacotes resolvidos, 49 verificados; lockfile inalterado |
+| `uv run pytest -q` | 111 passed em 5,51 s, Postgres 17.11 real |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 54 files already formatted |
+| `uv run mypy .` | Success: no issues found in 39 source files |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | 0 issues |
+
+O Postgres estava parado na primeira tentativa, que foi interrompida. Foi iniciado por `docker compose up -d db`, e a suíte acima passou. Uma tentativa com `pytest --noinput` foi recusada por opção inválida, sem executar testes. O serviço local ficou iniciado. Nenhum dado de produção foi acessado.
+
+CI do mesmo commit consultado: [run 38732287853](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38732287853), 111 passed em 5,35 s, Postgres 17.11. Os probes adicionais, fora da suíte versionada, resultaram em **6 failed, 1 passed**; as falhas esperadas demonstram os defeitos descritos nos relatórios E01-02 a E01-05. Reprodução: salvar os trechos abaixo em arquivo temporário e executar `uv run pytest -c pyproject.toml <arquivo> -q` na raiz. Não foram incorporados testes ou correções à implementação auditada.
+
+### Matriz de aceitação
+
+| Critérios | Evidência |
+|---|---|
+| A-1 a A-5 | Inserção e recusa save/delete/lotes/SQL passam em test_nucleo_so_insercao.py. |
+| A-6, A-7 | Conteúdo, relógio, sistema e motivo opcional passam. |
+| A-8 | Recusas update/delete na aplicação e SQL passam. |
+| A-9 | Termos reservados, caixa e estruturas aninhadas passam; filtro especificado é por chave, não detector universal de segredo em texto livre. |
+| A-10 | Remoção do usuário preserva entrada e referência. |
+| A-11 | Rollback elimina entrada. |
+| A-12 | Bulk create de três entradas passa. |
+| A-13 | Três combinações previstas passam; identificador vazio não coberto é aceito (R04). |
+| A-14 | Autor ausente e ação vazia recusados pelo serviço. |
+
+### R04 — Bloqueador: banco permite usuário sem identificador
+
+Origem: funcional §14, spec E01-04 (autor nunca vazio, identificador obrigatório garantido por constraint), extensão negativa de A-13.
+Local: `apps/nucleo/auditoria.py:50` e constraint em `apps/nucleo/migrations/0001_auditoria.py`.
+
+A condição IS NOT NULL aceita string vazia. SQL direto ou inserção direta pelo modelo/bulk_create pode gravar autor_tipo='usuario', autor_id='', deixando uma entrada imutável sem identificação do autor. Não basta validar no serviço.
+
+Devolução: impedir identificador vazio por constraint, manter sistema sem identificador e registrar migração/testes dos caminhos de inserção. Conferir espaços vazios de forma coerente com identificadores textuais.
+
+```python
+import pytest
+from django.db import connection, transaction, IntegrityError
+
+
+@pytest.mark.django_db(transaction=True)
+def test_autor_vazio_no_banco():
+    with pytest.raises(IntegrityError), transaction.atomic(), connection.cursor() as c:
+        c.execute(
+            "INSERT INTO nucleo_entradaauditoria (autor_tipo,autor_id,acao,momento,motivo,alteracoes,objeto_tipo,objeto_id) VALUES ('usuario','','teste',CURRENT_TIMESTAMP,'','{}','teste.objeto','1')"
+        )
+```
+
+Probe no banco de testes: failed, DID NOT RAISE IntegrityError.
+
+### Limites de escopo
+
+A proteção cobre UPDATE/DELETE conforme especificado, não TRUNCATE nem alterações por proprietário privilegiado. A decisão histórica foi identificada; não se atesta proteção universal contra administração do banco. Permissões de produção pertencem à etapa operacional. Autorização de domínio e transações financeiras não são implementadas nesta fatia.
+
+### Evidência TDD — importante (E01-TDD)
+
+Os relatos anteriores são evidência declarada pelo implementador, preservada. Git contém testes e implementação juntos no commit de cada fatia; PRs #6 a #9 só apontam para a especificação. Não foram encontrados logs originais ou estados intermediários que confirmem independentemente a sequência temporal Red → Green por comportamento. Falhas de coleta por módulo ausente demonstram falta da interface, mas não exercitam as asserções individuais. Isso não prova ausência de TDD; limita o que se pode atestar (AGENTS.md §3 e §8).
+
+Na devolução, vincular os registros originais disponíveis aos comandos e testes; apresentar Red → Green das regressões antes das correções. Remover artificialmente a implementação agora não comprova TDD histórico. A conferência dessa rastreabilidade permanece pendente para aprovação; não se exige commit por teste.
+
+### Próximo gate
+
+Correção com TDD e revalidação de R04, constraints/migrações, preservação de autor, atomicidade e imutabilidade.
+
+## Correção após a reprovação (implementador)
+
+**R04 — banco aceitava autor `usuario` com identificador vazio.** Correção: a constraint `auditoria_autor_id_conforme_tipo` agora exige, para `usuario`, `autor_id IS NOT NULL` e `autor_id ~ '\S'` (ao menos um caractere não branco); `sistema` continua exigindo NULL. Migração `nucleo/0002_autor_id_nao_vazio`.
+
+Observação do ciclo: a primeira versão da constraint usava só o regex, e o teste A-13 já existente acusou que `NULL ~ '\S'` é NULL e o CHECK aceita; por isso o `IS NOT NULL` explícito.
+
+Testes novos (`tests/tecnicos/test_nucleo_auditoria.py`): identificador `""`, `"   "` e tabulação por SQL direto; `""` e `"  "` por `save()` e `bulk_create`.
+
+Rastreabilidade TDD (E01-TDD): os resultados Red originais da fatia estão transcritos nas tabelas "Ciclos" acima, copiados das saídas dos comandos executados na ordem teste → falha → código. Não foram salvos logs brutos nem commits intermediários (cada fatia entrou em um commit), e isso não pode ser reconstruído agora; fica registrado como limitação. As regressões abaixo seguem Red → Green com a saída do Red anotada antes da correção.
+Red das regressões, antes de qualquer correção (`uv run pytest -q`, baseline 111 passed):
+
+```
+11 failed, 116 passed
+FAILED test_nucleo_valores.py::test_conversao_recusa_excesso_de_casas_alem_da_precisao_do_contexto[x4]
+FAILED test_nucleo_tempo.py::test_fronteira_instantes_civis_repetidos_comparam_em_utc
+FAILED test_nucleo_auditoria.py::test_auditoria_banco_recusa_usuario_com_identificador_vazio_por_sql[x3]
+FAILED test_nucleo_auditoria.py::test_auditoria_banco_recusa_usuario_com_identificador_vazio_pelo_modelo[x2]
+FAILED test_apoio_concorrencia.py::test_utilitario_operacao_expirada_nao_reabre_conexao
+```
+
+Verificação após as correções (todas as fatias, mesma execução):
+
+```
+uv run pytest -q                 -> 127 passed (111 anteriores + 16 regressões)
+uv run ruff check .              -> All checks passed
+uv run ruff format --check .     -> ok
+uv run mypy .                    -> Success: no issues found in 40 source files
+manage.py makemigrations --check --dry-run (test) -> No changes detected
+```
