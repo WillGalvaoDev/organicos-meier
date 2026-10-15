@@ -26,3 +26,10 @@ class ModeloSoInsercao(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return self.nome
+
+
+class ModeloContador(models.Model):
+    valor = models.IntegerField(default=0)
+
+    def __str__(self) -> str:
+        return str(self.valor)
