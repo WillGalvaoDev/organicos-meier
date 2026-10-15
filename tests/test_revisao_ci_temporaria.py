@@ -1,2 +1,2 @@
 def test_falha_ci_revisao() -> None:
-    assert 1 == 2
+    assert len([1]) == 2
