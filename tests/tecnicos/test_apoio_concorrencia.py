@@ -291,3 +291,44 @@ def test_utilitario_falha_na_abertura_vira_resultado_sem_vazar_conexao(
     assert resultado.valor is None
     monkeypatch.undo()
     assert _esperar_conexoes(antes) == antes
+
+
+def test_utilitario_timeout_com_connect_ja_em_execucao_nao_deixa_conexao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # R05 (revalidação e7eec3c)
+    liberar = threading.Event()
+    abriu = threading.Event()
+    executou = threading.Event()
+    registro: dict[str, Any] = {}
+    original = DatabaseWrapper.get_new_connection
+
+    def abrir_com_retorno_lento(self: Any, params: Any) -> Any:
+        bruta = original(self, params)
+        if threading.current_thread().name.startswith("concorrencia-"):
+            registro["thread"] = threading.current_thread()
+            registro["pid"] = bruta.info.backend_pid
+            registro["wrapper_sem_conexao"] = self.connection is None
+            abriu.set()
+            liberar.wait(5)
+        return bruta
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abrir_com_retorno_lento)
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(lambda _b: executou.set(), tempo_limite=0.3)
+        assert abriu.is_set()
+        assert registro["wrapper_sem_conexao"]
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid = %s", [registro["pid"]]
+            )
+            (quantidade,) = cursor.fetchone()
+        assert quantidade == 0
+    finally:
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(3)
+            assert not registro["thread"].is_alive()
+        assert not executou.is_set()
