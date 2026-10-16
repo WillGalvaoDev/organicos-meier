@@ -60,6 +60,11 @@ exclude = ["\\.venv/"]
 module = ["environ.*", "procrastinate.*", "allauth.*", "factory.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Chamadas às fábricas do factory-boy (declarações sem tipos) nos testes.
+module = ["tests.*"]
+disallow_untyped_calls = false
+
 [tool.django-stubs]
 django_settings_module = "config.settings.test"
 

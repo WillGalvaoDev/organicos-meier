@@ -8,6 +8,8 @@ Requisitos: Python 3.12, [uv](https://docs.astral.sh/uv/), Docker Desktop e Git.
 
 ```powershell
 docker compose up -d db          # Postgres 17 em localhost:5433
+                                 # (se o banco local já existia antes da E02-01, recrie-o:
+                                 #  docker compose down -v ; docker compose up -d db ; uv run python manage.py migrate)
 copy .env.example .env           # ajuste SECRET_KEY
 uv sync                          # cria .venv com dependências e ferramentas de teste
 uv run pytest                    # suíte de testes
@@ -24,6 +26,8 @@ Toda mudança entra por branch e pull request para `main`; push direto é bloque
 config/            configuração do Django (settings por ambiente, urls, wsgi)
 apps/              apps de domínio, criadas por fatia
 templates/ static/ telas no servidor (HTMX entra com a primeira tela)
+apps/contas/       contas, papéis, e-mail normalizado e e-mails banidos
+apps/fornecedores/ entidade de fornecedor (mínima na E02-01)
 apps/nucleo/       núcleo técnico sem regra de negócio (valores, tempo, auditoria)
 tests/apoio/       app só de testes (modelos de apoio e utilitários), registrado apenas em settings/test.py
 tests/ambiente/    verificação do andaime técnico
