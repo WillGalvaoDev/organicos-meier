@@ -28,6 +28,11 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("inicio/", contas_views.inicio, name="inicio"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
     path(
+        "administracao/convites/",
+        contas_views.convites_administracao,
+        name="convites_administracao",
+    ),
+    path(
         "seguranca/webauthn/keys/<int:pk>/remove/",
         contas_views.remover_passkey,
         name="mfa_remove_webauthn",

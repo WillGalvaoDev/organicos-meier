@@ -1,5 +1,7 @@
 """Conta, papéis e e-mails banidos (E02-01)."""
 
+import hashlib
+from datetime import timedelta
 from typing import Any, ClassVar
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
@@ -10,7 +12,7 @@ from django.db.models.functions import Lower, Trim
 from apps.contas.emails import EmailInvalido, normalizar_email
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.so_insercao import RegistroSoInsercao
-from apps.nucleo.tempo import agora
+from apps.nucleo.tempo import agora, prazo_encerrado
 
 
 class EmailEmUso(Exception):
@@ -144,3 +146,72 @@ class EmailBanido(RegistroSoInsercao):
         if self._state.adding:
             self.email_normalizado = normalizar_email(self.email_normalizado)
         super().save(*args, **kwargs)
+
+
+class Convite(models.Model):
+    """Convite individual, de uso único, com validade fixa de 24 horas (E02-04).
+
+    O token em texto nunca é gravado: só o hash SHA-256 em hexadecimal.
+    """
+
+    email_normalizado = models.CharField(max_length=254)
+    papel = models.CharField(max_length=15, choices=Papel.choices)
+    fornecedor = models.ForeignKey(Fornecedor, null=True, blank=True, on_delete=models.PROTECT)
+    token_hash = models.CharField(max_length=64)
+    emitido_por = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, related_name="convites_emitidos"
+    )
+    emitido_em = models.DateTimeField(default=agora)
+    expira_em = models.DateTimeField()
+    consumido_em = models.DateTimeField(null=True, blank=True)
+    conta_criada = models.ForeignKey(
+        Conta, null=True, blank=True, on_delete=models.PROTECT, related_name="convite_de_origem"
+    )
+
+    # Preenchido por `emitir_convite` quando o envio já ocorreu (True/False); `None` se ainda
+    # pendente (transação externa aberta). Não é coluna.
+    email_enviado: bool | None = None
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["token_hash"], name="convite_token_unico"),
+            models.CheckConstraint(
+                condition=_ja_normalizado(), name="convite_email_ja_normalizado"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(papel__in=["comprador", "fornecedor"]),
+                name="convite_papel_valido",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(papel="fornecedor", fornecedor__isnull=False)
+                    | (~models.Q(papel="fornecedor") & models.Q(fornecedor__isnull=True))
+                ),
+                name="convite_fornecedor_vinculado",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(expira_em=models.F("emitido_em") + timedelta(hours=24)),
+                name="convite_validade_24h",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"convite {self.pk}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self._state.adding:
+            self.email_normalizado = normalizar_email(self.email_normalizado)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def hash_do_token(cls, token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @property
+    def situacao(self) -> str:
+        """Derivada, sem coluna. No instante exato de `expira_em` o prazo já está encerrado."""
+        if self.consumido_em is not None:
+            return "consumido"
+        if prazo_encerrado(agora(), self.expira_em):
+            return "expirado"
+        return "pendente"

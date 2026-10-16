@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titulo %}Convites · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Convites</h1>
+  <h2>Emitir convite</h2>
+  <form method="post" action="{% url 'convites_administracao' %}">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.email.id_for_label }}">E-mail</label>
+      {{ form.email }}
+      {{ form.email.errors }}
+    </p>
+    <p>
+      <label for="{{ form.papel.id_for_label }}">Papel</label>
+      {{ form.papel }}
+      {{ form.papel.errors }}
+    </p>
+    <p>
+      <label for="{{ form.fornecedor.id_for_label }}">Fornecedor (somente para o papel fornecedor)</label>
+      {{ form.fornecedor }}
+      {{ form.fornecedor.errors }}
+    </p>
+    <button type="submit">Emitir convite</button>
+  </form>
+
+  <h2>Convites emitidos</h2>
+  {% if convites %}
+    <table>
+      <thead>
+        <tr>
+          <th>E-mail</th><th>Papel</th><th>Fornecedor</th><th>Emissão</th><th>Expiração</th>
+          <th>Situação</th><th>Conta criada</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for convite in convites %}
+          <tr>
+            <td>{{ convite.email_normalizado }}</td>
+            <td>{{ convite.papel }}</td>
+            <td>{{ convite.fornecedor.nome|default:"—" }}</td>
+            <td>{{ convite.emitido_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ convite.expira_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ convite.situacao }}</td>
+            <td>{{ convite.conta_criada.nome|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhum convite emitido.</p>
+  {% endif %}
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+{% endblock %}

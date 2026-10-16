@@ -72,3 +72,10 @@ def administrador_com_passkey(client: Client) -> tuple[Conta, bytes]:
     credencial_id = cadastrar_passkey(client)
     client.post("/sair/")
     return conta, credencial_id
+
+
+def administrador_logado(client: Client) -> Conta:
+    """Administrador autenticado por passkey (dublê) no `client`."""
+    conta, credencial_id = administrador_com_passkey(client)
+    entrar_com_passkey_direta(client, credencial_id, conta)
+    return conta

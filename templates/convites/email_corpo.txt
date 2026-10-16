@@ -1,0 +1,12 @@
+{% autoescape off %}Olá!
+
+Você foi convidado para se cadastrar no Orgânicos Méier{% if papel == "fornecedor" %} como fornecedor{% if nome_fornecedor %} ({{ nome_fornecedor }}){% endif %}{% else %} como comprador{% endif %}.
+
+Para criar sua conta, abra o link abaixo (uso único):
+
+{{ link }}
+
+Este convite vale até {{ expira_em }} (horário de Brasília). Depois disso, será preciso pedir um novo convite.
+
+Se você não esperava este convite, ignore esta mensagem.
+{% endautoescape %}
