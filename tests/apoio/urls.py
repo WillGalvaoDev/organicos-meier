@@ -4,6 +4,7 @@ import json
 
 from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.helpers import complete_social_login
+from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.urls import URLPattern, URLResolver, path
 from django.views.decorators.csrf import csrf_exempt
@@ -33,8 +34,19 @@ def retorno_google_simulado(request: HttpRequest) -> HttpResponse:
     return resposta
 
 
+CHAMADAS_DA_ROTA_AUTENTICADA: list[str] = []
+
+
+@login_required
+def rota_autenticada(request: HttpRequest) -> HttpResponse:
+    """Conta quantas vezes a view executou (E02-08, A-6)."""
+    CHAMADAS_DA_ROTA_AUTENTICADA.append(request.method or "")
+    return HttpResponse("executou")
+
+
 urlpatterns: list[URLPattern | URLResolver] = [
     *rotas_reais,
     path("teste/acao-sensivel/", acao_sensivel, name="teste_acao_sensivel"),
+    path("teste/rota-autenticada/", rota_autenticada, name="teste_rota_autenticada"),
     path("teste/retorno-google/", retorno_google_simulado, name="teste_retorno_google"),
 ]

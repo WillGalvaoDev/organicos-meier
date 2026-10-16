@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block titulo %}Remover usuário · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Remover usuário</h1>
+  <p>Você vai remover <strong>{{ conta.nome }}</strong> ({{ conta.email_normalizado }}).</p>
+  <p>A remoção é definitiva e bane o e-mail.</p>
+  <form method="post" action="{% url 'confirmar_remocao' pk=conta.pk %}">
+    {% csrf_token %}
+    <button type="submit">Confirmar remoção</button>
+  </form>
+  <p><a href="{% url 'usuarios_administracao' %}">Cancelar</a></p>
+{% endblock %}

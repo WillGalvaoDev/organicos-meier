@@ -9,8 +9,8 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
+from django.http import Http404, HttpRequest, HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.contas.administracao import somente_administrador
@@ -31,7 +31,8 @@ from apps.contas.google import (
     recusar_login_google,
 )
 from apps.contas.link_de_acesso import LinkInvalido, pedir_link, usar_link, validar_link
-from apps.contas.models import Convite, EmailEmUso
+from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
+from apps.contas.moderacao import ModeracaoInvalida, reativar, remover, suspender
 
 
 @login_required
@@ -225,3 +226,65 @@ def concluir_cadastro_google(request: HttpRequest) -> HttpResponse:
 def google_recusado(request: HttpRequest) -> HttpResponse:
     """Erro ou cancelamento no Google: a mesma recusa única."""
     return recusar_login_google(request)
+
+
+def _acoes_permitidas(conta: Conta) -> list[str]:
+    """Botões da tela, conforme a tabela de alvos da moderação."""
+    if conta.situacao == Situacao.REMOVIDA:
+        return []
+    acoes: list[str] = []
+    if conta.papel == Papel.COMPRADOR:
+        acoes.append("suspender" if conta.situacao == Situacao.ATIVA else "reativar")
+    acoes.append("remover")
+    return acoes
+
+
+@somente_administrador
+def usuarios_administracao(request: HttpRequest) -> HttpResponse:
+    """Lista de compradores e fornecedores, com as ações permitidas para cada um."""
+    contas = (
+        Conta.objects.exclude(papel=Papel.ADMINISTRADOR)
+        .select_related("fornecedor")
+        .order_by("nome", "pk")
+    )
+    itens = [{"conta": conta, "acoes": _acoes_permitidas(conta)} for conta in contas]
+    return render(request, "usuarios/administracao.html", {"itens": itens})
+
+
+@somente_administrador
+@require_POST
+def acao_de_moderacao(request: HttpRequest, pk: int, acao: str) -> HttpResponse:
+    """Suspende ou reativa um comprador. A remoção tem página de confirmação própria."""
+    servicos = {
+        "suspender": (suspender, "Conta suspensa."),
+        "reativar": (reativar, "Conta reativada."),
+    }
+    if acao not in servicos:
+        raise Http404
+    conta = get_object_or_404(Conta, pk=pk)
+    servico, sucesso = servicos[acao]
+    try:
+        servico(request.user, conta)  # type: ignore[arg-type]
+    except ModeracaoInvalida:
+        messages.error(request, "Esta ação não é permitida para esta conta.")
+    else:
+        messages.success(request, sucesso)
+    return redirect("usuarios_administracao")
+
+
+@somente_administrador
+def confirmar_remocao(request: HttpRequest, pk: int) -> HttpResponse:
+    """GET pede a confirmação; POST remove a conta (definitivo) e bane o e-mail."""
+    conta = get_object_or_404(Conta, pk=pk)
+    if request.method == "POST":
+        try:
+            remover(request.user, conta)  # type: ignore[arg-type]
+        except ModeracaoInvalida:
+            messages.error(request, "Esta ação não é permitida para esta conta.")
+        else:
+            messages.success(request, "Conta removida e e-mail banido.")
+        return redirect("usuarios_administracao")
+    if "remover" not in _acoes_permitidas(conta) or conta.papel == Papel.ADMINISTRADOR:
+        messages.error(request, "Esta ação não é permitida para esta conta.")
+        return redirect("usuarios_administracao")
+    return render(request, "usuarios/confirmar_remocao.html", {"conta": conta})

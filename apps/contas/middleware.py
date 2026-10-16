@@ -4,6 +4,8 @@ import re
 from collections.abc import Callable
 
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import SESSION_KEY, logout
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseRedirect
 from django.urls import reverse
 
@@ -12,7 +14,8 @@ from apps.contas.administracao import (
     redirecionar_para_reautenticacao,
     tem_passkey,
 )
-from apps.contas.models import Papel
+from apps.contas.emails import email_banido
+from apps.contas.models import Conta, Papel, Situacao
 
 PREFIXO_MFA = "/seguranca/"
 _GERENCIA_PASSKEYS = re.compile(r"^/seguranca/webauthn/(add/|keys/\d+/(remove|edit)/)$")
@@ -61,4 +64,35 @@ class ProtegeRotasDeMfa:
                 and not passkey_recente(request)
             ):
                 return redirecionar_para_reautenticacao(request)
+        return self.get_response(request)
+
+
+class RecusaContaSemAcesso:
+    """Recusa requisição de sessão cuja conta foi removida ou cujo e-mail foi banido.
+
+    Relê a situação do banco a cada requisição, olhando a sessão diretamente (o Django já trata a
+    sessão de conta removida como anônima, mas aqui a requisição é recusada e a sessão encerrada).
+    Cobre sessões criadas durante uma corrida com a remoção (infraestrutura 4.11). A view nunca
+    executa: GET redireciona para o login; os demais métodos recebem 403.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        identificador = request.session.get(SESSION_KEY)
+        if identificador is not None:
+            conta = (
+                Conta.objects.filter(pk=identificador)
+                .values("situacao", "email_normalizado")
+                .first()
+            )
+            if conta is not None and (
+                conta["situacao"] == Situacao.REMOVIDA or email_banido(conta["email_normalizado"])
+            ):
+                logout(request)
+                if request.method == "GET":
+                    messages.info(request, "Sua sessão foi encerrada.")
+                    return HttpResponseRedirect(reverse("account_login"))
+                return HttpResponseForbidden()
         return self.get_response(request)

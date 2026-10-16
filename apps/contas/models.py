@@ -95,6 +95,11 @@ class Conta(AbstractBaseUser):
         return self.nome
 
     @property
+    def pode_adicionar_interesse(self) -> bool:
+        """Só comprador ativo adiciona interesses (suspenso, fornecedor e administrador não)."""
+        return self.papel == Papel.COMPRADOR and self.situacao == Situacao.ATIVA
+
+    @property
     def is_active(self) -> bool:  # type: ignore[override]
         """Suspensa continua ativa para autenticar (§2); só a removida fica bloqueada."""
         return self.situacao != Situacao.REMOVIDA

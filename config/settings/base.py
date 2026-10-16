@@ -48,6 +48,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "allauth.usersessions.middleware.UserSessionsMiddleware",
+    "apps.contas.middleware.RecusaContaSemAcesso",
     "apps.contas.middleware.ProtegeRotasDeMfa",
     "apps.contas.middleware.ExigePasskeyDoAdministrador",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

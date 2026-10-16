@@ -54,6 +54,21 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("inicio/", contas_views.inicio, name="inicio"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
     path(
+        "administracao/usuarios/",
+        contas_views.usuarios_administracao,
+        name="usuarios_administracao",
+    ),
+    path(
+        "administracao/usuarios/<int:pk>/remover/",
+        contas_views.confirmar_remocao,
+        name="confirmar_remocao",
+    ),
+    path(
+        "administracao/usuarios/<int:pk>/<str:acao>/",
+        contas_views.acao_de_moderacao,
+        name="acao_de_moderacao",
+    ),
+    path(
         "administracao/convites/",
         contas_views.convites_administracao,
         name="convites_administracao",
