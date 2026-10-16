@@ -1,5 +1,5 @@
 from allauth.account import views as allauth_views
-from django.urls import URLPattern, URLResolver, path, re_path
+from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.contas import views as contas_views
 
@@ -8,6 +8,7 @@ from apps.contas import views as contas_views
 urlpatterns: list[URLPattern | URLResolver] = [
     path("entrar/", allauth_views.login, name="account_login"),
     path("sair/", allauth_views.logout, name="account_logout"),
+    path("reautenticar/", allauth_views.reauthenticate, name="account_reauthenticate"),
     path("recuperar-acesso/", allauth_views.password_reset, name="account_reset_password"),
     path(
         "recuperar-acesso/enviado/",
@@ -25,4 +26,11 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="account_reset_password_from_key_done",
     ),
     path("inicio/", contas_views.inicio, name="inicio"),
+    path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
+    path(
+        "seguranca/webauthn/keys/<int:pk>/remove/",
+        contas_views.remover_passkey,
+        name="mfa_remove_webauthn",
+    ),
+    path("seguranca/", include("allauth.mfa.urls")),
 ]

@@ -105,11 +105,16 @@ def test_login_de_alias_nao_e_afetado_pelo_banimento_do_endereco_base(
     assert _autenticado(client)
 
 
-def test_login_por_senha_do_administrador_e_recusado_nesta_fatia(client: Client) -> None:  # A-8
+def test_login_por_senha_do_administrador_sem_passkey_fica_restrito(client: Client) -> None:
+    # A-8 da E02-02, substituído pelo A-14 da E02-03: a recusa temporária acabou. A sessão
+    # existe, mas só alcança o cadastro da primeira passkey.
     _conta(administrador=True, email_normalizado="admin@x.com")
     resposta = _entrar(client, "admin@x.com")
-    assert not _autenticado(client)
-    assert GENERICA in resposta.content.decode()
+    assert resposta.status_code == 302
+    assert _autenticado(client)
+    restrita = client.get("/administracao/")
+    assert restrita.status_code == 302
+    assert restrita["Location"].startswith("/seguranca/webauthn/add/")
 
 
 def test_cadastro_aberto_inexistente(client: Client) -> None:  # A-12

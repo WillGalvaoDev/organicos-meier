@@ -78,3 +78,11 @@ def _cache_limpo() -> None:
     from django.core.cache import cache
 
     cache.clear()
+
+
+@pytest.fixture
+def webauthn(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Dublê determinístico da cerimônia WebAuthn (E02-03)."""
+    from tests.apoio.webauthn_falso import instalar
+
+    return instalar(monkeypatch)

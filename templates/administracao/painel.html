@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Administração · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Administração</h1>
+  <p>Olá, {{ conta.nome }}.</p>
+  <form method="post" action="{% url 'account_logout' %}">
+    {% csrf_token %}
+    <button type="submit">Sair</button>
+  </form>
+{% endblock %}
