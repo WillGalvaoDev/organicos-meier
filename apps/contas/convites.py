@@ -6,18 +6,21 @@ hash. O e-mail sai em `transaction.on_commit`, depois que convite e auditoria fo
 
 import logging
 import secrets
+from enum import StrEnum
 
+from allauth.account.models import EmailAddress
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import EmailMessage
 from django.db import transaction
 from django.template.loader import render_to_string
 
 from apps.contas.emails import email_banido, normalizar_email
-from apps.contas.models import Conta, Convite, EmailEmUso, Papel
+from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.auditoria import registrar_auditoria
-from apps.nucleo.tempo import agora, no_fuso_da_operacao, somar_horas
+from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,20 @@ VALIDADE_EM_HORAS = 24
 
 
 class ConviteInvalido(Exception):
-    """Combinação inválida de papel e fornecedor."""
+    """Convite que não pode ser emitido ou usado. `codigo` é interno (testes e logs).
+
+    Emissão: `papel_invalido`, `fornecedor_inconsistente`. Uso (cadastro): `inexistente`,
+    `consumido`, `expirado`, `banido`, `email_em_uso`.
+    """
+
+    def __init__(self, codigo: str, mensagem: str | None = None) -> None:
+        super().__init__(mensagem or codigo)
+        self.codigo = codigo
+        self.mensagem = mensagem or codigo
+
+
+class MetodoCadastro(StrEnum):
+    SENHA = "senha"
 
 
 class EmailBanidoErro(Exception):
@@ -69,9 +85,14 @@ def emitir_convite(
         raise PermissionDenied
     normalizado = normalizar_email(email)
     if papel not in (Papel.COMPRADOR, Papel.FORNECEDOR):
-        raise ConviteInvalido("o papel do convite deve ser comprador ou fornecedor")
+        raise ConviteInvalido(
+            "papel_invalido", "o papel do convite deve ser comprador ou fornecedor"
+        )
     if (papel == Papel.FORNECEDOR) != (fornecedor is not None):
-        raise ConviteInvalido("convite de fornecedor exige fornecedor; o de comprador não aceita")
+        raise ConviteInvalido(
+            "fornecedor_inconsistente",
+            "convite de fornecedor exige fornecedor; o de comprador não aceita",
+        )
     if Conta.objects.filter(email_normalizado=normalizado).exists():
         raise EmailEmUso("já existe uma conta com este e-mail")
     if email_banido(normalizado):
@@ -103,3 +124,79 @@ def emitir_convite(
         nome = fornecedor.nome if fornecedor is not None else None
         transaction.on_commit(lambda: _enviar_email(convite, token, base, nome))
     return convite
+
+
+def _conferir(convite: Convite | None) -> Convite:
+    """Regras de uso do convite, com o relógio do servidor. Levanta `ConviteInvalido(codigo)`."""
+    if convite is None:
+        raise ConviteInvalido("inexistente")
+    if convite.consumido_em is not None:
+        raise ConviteInvalido("consumido")
+    if prazo_encerrado(agora(), convite.expira_em):
+        raise ConviteInvalido("expirado")
+    if email_banido(convite.email_normalizado):
+        raise ConviteInvalido("banido")
+    if Conta.objects.filter(email_normalizado=convite.email_normalizado).exists():
+        raise ConviteInvalido("email_em_uso")
+    return convite
+
+
+def validar_convite(token: str) -> Convite:
+    """Valida o convite sem consumi-lo (página do cadastro)."""
+    convite = (
+        Convite.objects.select_related("fornecedor")
+        .filter(token_hash=Convite.hash_do_token(token))
+        .first()
+    )
+    return _conferir(convite)
+
+
+def consumir_convite(
+    token: str, nome: str, senha: str | None = None, *, metodo: MetodoCadastro
+) -> Conta:
+    """Cria a conta do convite e o consome, numa única transação.
+
+    Papel, e-mail e fornecedor vêm do convite. O convite é travado (`select_for_update`) e todas
+    as regras são conferidas de novo, de modo que duas tentativas simultâneas resultam em uma
+    conta e um consumo. Levanta `ConviteInvalido` (com `codigo`) ou `ValidationError` (nome ou
+    senha); em qualquer erro nada é gravado.
+    """
+    with transaction.atomic():
+        convite = _conferir(
+            Convite.objects.select_for_update(of=("self",))
+            .select_related("fornecedor")
+            .filter(token_hash=Convite.hash_do_token(token))
+            .first()
+        )
+        nome = (nome or "").strip()
+        if not nome or len(nome) > 150:
+            raise ValidationError({"nome": "Informe um nome de 1 a 150 caracteres."})
+        conta = Conta(
+            email_normalizado=convite.email_normalizado,
+            nome=nome,
+            papel=convite.papel,
+            fornecedor=convite.fornecedor,
+            situacao=Situacao.ATIVA,
+        )
+        if metodo == MetodoCadastro.SENHA:
+            if not senha:
+                raise ValidationError({"senha": "Informe uma senha."})
+            validate_password(senha, user=conta)
+            conta.set_password(senha)
+        try:
+            conta.save()
+        except EmailEmUso:  # corrida com outro convite do mesmo e-mail: vence o banco
+            raise ConviteInvalido("email_em_uso") from None
+        EmailAddress.objects.create(
+            user=conta, email=conta.email_normalizado, verified=True, primary=True
+        )
+        convite.consumido_em = agora()
+        convite.conta_criada = conta
+        convite.save(update_fields=["consumido_em", "conta_criada"])
+        registrar_auditoria(
+            conta,
+            "convite.consumir",
+            convite,
+            {"convite": convite.pk, "conta": conta.pk, "papel": convite.papel},
+        )
+    return conta

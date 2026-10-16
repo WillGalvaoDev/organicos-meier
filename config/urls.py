@@ -25,6 +25,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
         allauth_views.password_reset_from_key_done,
         name="account_reset_password_from_key_done",
     ),
+    path("convite/<str:token>/", contas_views.aceitar_convite, name="aceitar_convite"),
     path("inicio/", contas_views.inicio, name="inicio"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
     path(
