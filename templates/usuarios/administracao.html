@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Usuários</h1>
+  {% if itens %}
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th><th>E-mail</th><th>Papel</th><th>Fornecedor</th><th>Situação</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+          <tr>
+            <td>{{ item.conta.nome }}</td>
+            <td>{{ item.conta.email_normalizado }}</td>
+            <td>{{ item.conta.papel }}</td>
+            <td>{{ item.conta.fornecedor.nome|default:"—" }}</td>
+            <td>{{ item.conta.situacao }}</td>
+            <td>
+              {% for acao in item.acoes %}
+                {% if acao == "remover" %}
+                  <a href="{% url 'confirmar_remocao' pk=item.conta.pk %}">Remover</a>
+                {% else %}
+                  <form method="post" action="{% url 'acao_de_moderacao' pk=item.conta.pk acao=acao %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit">{% if acao == "suspender" %}Suspender{% else %}Reativar{% endif %}</button>
+                  </form>
+                {% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhum usuário.</p>
+  {% endif %}
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+{% endblock %}

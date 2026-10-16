@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.contas.models import Conta, Papel
-from apps.contas.sessoes import encerrar_sessoes_da_conta
+from apps.contas.sessoes import encerrar_sessoes
 from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 
 
@@ -20,7 +20,7 @@ class Command(BaseCommand):
             if administrador is None:
                 raise CommandError("não existe administrador")
             removidas, _ = Authenticator.objects.filter(user=administrador).delete()
-            encerradas = encerrar_sessoes_da_conta(administrador)
+            encerradas = encerrar_sessoes(administrador)
             registrar_auditoria(
                 SISTEMA,
                 "conta.redefinir_passkeys",
