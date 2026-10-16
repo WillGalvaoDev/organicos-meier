@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block titulo %}Criar conta · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Criar sua conta</h1>
+  <p>
+    Você foi convidado como
+    {% if convite.papel == "fornecedor" %}fornecedor{% if convite.fornecedor %} ({{ convite.fornecedor.nome }}){% endif %}{% else %}comprador{% endif %}.
+  </p>
+  <p>E-mail da conta: <strong>{{ convite.email_normalizado }}</strong></p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.nome.id_for_label }}">Nome</label>
+      {{ form.nome }}
+      {{ form.nome.errors }}
+    </p>
+    <p>
+      <label for="{{ form.senha.id_for_label }}">Senha</label>
+      {{ form.senha }}
+      {{ form.senha.errors }}
+    </p>
+    <p>
+      <label for="{{ form.confirmacao.id_for_label }}">Repita a senha</label>
+      {{ form.confirmacao }}
+      {{ form.confirmacao.errors }}
+    </p>
+    <button type="submit">Criar conta</button>
+  </form>
+{% endblock %}

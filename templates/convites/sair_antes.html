@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Convite · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Convite</h1>
+  <p>Saia da conta atual para usar este convite.</p>
+  <form method="post" action="{% url 'account_logout' %}">
+    {% csrf_token %}
+    <button type="submit">Sair</button>
+  </form>
+{% endblock %}
