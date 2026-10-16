@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}{% if produto %}Editar produto{% else %}Novo produto{% endif %} · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>{% if produto %}Editar {{ produto.nome }}{% else %}Cadastrar produto de {{ fornecedor.nome }}{% endif %}</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p><label for="{{ form.nome.id_for_label }}">Nome</label> {{ form.nome }} {{ form.nome.errors }}</p>
+    <p><label for="{{ form.descricao.id_for_label }}">Descrição (opcional)</label> {{ form.descricao }} {{ form.descricao.errors }}</p>
+    {% if produto %}
+      <p>Unidade: {{ produto.get_unidade_display }}. Incremento: {{ produto.incremento|quantidade_br }}. Estes dois não mudam depois do cadastro (o incremento só muda pela tela própria).</p>
+      <p>Múltiplo de compra: {{ produto.multiplo|quantidade_br|default:"sem múltiplo" }}. <a href="{% url 'produtos_multiplo' pk=produto.pk %}">Alterar o múltiplo</a></p>
+    {% else %}
+      <p><label for="{{ form.unidade.id_for_label }}">Unidade de medida</label> {{ form.unidade }} {{ form.unidade.errors }}</p>
+      <p><label for="{{ form.incremento.id_for_label }}">Incremento (ex.: 1, 0,5, 0,25)</label> {{ form.incremento }} {{ form.incremento.errors }}</p>
+      <p><label for="{{ form.multiplo.id_for_label }}">Múltiplo de compra (opcional, divisível pelo incremento)</label> {{ form.multiplo }} {{ form.multiplo.errors }}</p>
+    {% endif %}
+    <p><label for="{{ form.preco.id_for_label }}">Preço unitário (R$, ex.: 7,99)</label> {{ form.preco }} {{ form.preco.errors }}</p>
+    <p><label for="{{ form.disponivel.id_for_label }}">Disponível</label> {{ form.disponivel }} {{ form.disponivel.errors }}</p>
+    <button type="submit">Salvar</button>
+  </form>
+  <p><a href="{% url 'fornecedores_detalhe' pk=fornecedor.pk %}">Voltar ao fornecedor</a></p>
+{% endblock %}

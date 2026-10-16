@@ -9,6 +9,7 @@ from factory.declarations import LazyAttribute, LazyFunction, Sequence, SubFacto
 from factory.django import DjangoModelFactory
 from factory.helpers import post_generation
 
+from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.tempo import agora
@@ -99,3 +100,19 @@ class RodadaFactory(DjangoModelFactory[Rodada]):
     fornecedor = SubFactory(FornecedorFactory)
     etapa = Etapa.INTERESSE
     aberta_por = LazyFunction(_administrador_existente)
+
+
+class ProdutoFactory(DjangoModelFactory[Produto]):
+    """Produto em kg, incremento 1, preço R$ 10,00, sem múltiplo."""
+
+    class Meta:
+        model = Produto
+
+    fornecedor = SubFactory(FornecedorFactory)
+    nome = Sequence(lambda n: f"Produto {n}")
+    descricao = ""
+    unidade = Unidade.KG
+    incremento = Decimal("1.000")
+    preco = Decimal("10.00")
+    multiplo = None
+    disponivel = True

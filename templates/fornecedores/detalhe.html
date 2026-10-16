@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load catalogo %}
 {% block titulo %}{{ fornecedor.nome }} · Orgânicos Méier{% endblock %}
 {% block conteudo %}
   <h1>{{ fornecedor.nome }}</h1>
@@ -21,6 +22,28 @@
       {% csrf_token %}
       <button type="submit">Abrir rodada</button>
     </form>
+  {% endif %}
+
+  <h2>Produtos</h2>
+  <p><a href="{% url 'produtos_novo' pk=fornecedor.pk %}">Cadastrar produto</a></p>
+  {% if produtos %}
+    <table>
+      <thead><tr><th>Nome</th><th>Unidade</th><th>Incremento</th><th>Preço (R$)</th><th>Múltiplo</th><th>Disponível</th></tr></thead>
+      <tbody>
+        {% for produto in produtos %}
+          <tr>
+            <td><a href="{% url 'produtos_detalhe' pk=produto.pk %}">{{ produto.nome }}</a></td>
+            <td>{{ produto.get_unidade_display }}</td>
+            <td>{{ produto.incremento|quantidade_br }}</td>
+            <td>{{ produto.preco|floatformat:2 }}</td>
+            <td>{{ produto.multiplo|quantidade_br|default:"—" }}</td>
+            <td>{% if produto.disponivel %}sim{% else %}não{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhum produto cadastrado.</p>
   {% endif %}
 
   <h2>Contas de fornecedor vinculadas</h2>
