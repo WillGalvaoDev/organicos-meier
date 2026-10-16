@@ -1,6 +1,8 @@
 # E02-03 — Revisão
 
-Estado: **aguardando revisão independente (agente 3)**. Abaixo, evidências do implementador.
+Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+
+Abaixo, evidências históricas do implementador, preservadas.
 
 ## Ciclo Red → Green → Refactor
 
@@ -65,3 +67,42 @@ uv run mypy .                                     -> Success: no issues found in
 - Nenhuma revisão independente feita ainda.
 - A cerimônia criptográfica real do WebAuthn (navegador e autenticador) não é exercida nos testes; é a responsabilidade do allauth/`fido2`. Fica para verificação manual na homologação.
 - Telas de negócio da administração e o uso concreto da nova autenticação em operações financeiras ficam para etapas seguintes (spec).
+
+
+## Revisão independente — 8f4dc36 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: REPROVADO.**
+
+### Matriz da fatia
+
+A-1 a A-15: login por senha seguido de passkey, login direto, primeira passkey, autorização, recência e recuperação cobertos. A fronteira de 300 s exclusiva está registrada conforme autorização da spec para observar o allauth real. A-11/A-12 passam sequencialmente, mas a invariante da última passkey falha sob concorrência (E02-R02).
+
+### Verificação independente comum
+
+SHA auditado: `8f4dc36e91833ad11e327bcfb99e34fa81ba6eb8`, main/PR #32. Documentos de referência: especificação funcional v1.6 (§§2, 3 e 15), infraestrutura v1.7 (§§2, 4.11 e 5), spec e acceptance de cada fatia. Nenhuma mudança de regra de negócio foi presumida.
+
+- `uv run pytest -q`: **594 passed em 75,74 s**, banco Postgres real, incluindo E01 e todas as fatias E02.
+- `uv run ruff check .`: limpo; `uv run ruff format --check .`: 156 arquivos.
+- `uv run mypy .`: 120 arquivos, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: sem mudanças.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: lock resolvido (51 pacotes), ambiente conferido (50 pacotes).
+- CI do SHA exato: [run 38914653756](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38914653756), sucesso.
+
+A suíte verde não basta para aprovar E02: os probes adicionais do revisor terminaram em **6 failed, 1 passed em 2,65 s**, reproduzindo quatro achados distintos. Script, comando e matriz global estão em `../E02-10/review.md`, seção de revisão independente. O probe de PNG/EXIF passou e não gerou achado.
+
+### Evidência TDD e limites
+
+Conferidos os relatos de andaime, Red por asserção/comportamento, Green e refatoração de cada fatia, comparados com o diff e os testes. As alterações autorizadas de testes anteriores estão identificadas: fábrica de conta na auditoria E01; regra temporária de login administrativo substituída pela E02-03. Ajustes de instrumentação relatados pelo implementador não foram tratados como prova de defeito em produção. Limitação: a cronologia dos ciclos é documentada pelo implementador, sem logs brutos/commits intermediários para comprovar independentemente cada passo. A execução Green acima é independente; não foi apresentada como prova retrospectiva de toda a sequência TDD.
+
+WebAuthn usa o dublê criptográfico expressamente previsto, com views, sessão e Authenticator reais. Google usa o fluxo real do allauth com resposta simulada, sem chamada ao provedor. Cerimônia física de passkey, OAuth/credenciais reais, SES, R2 e efeitos futuros sobre pedidos/interesses não foram validados nesta etapa; permanecem nos gates previstos pelos documentos. D-1 da E02-08 (suspensão de fornecedor) não foi implementado nem reaberto.
+
+### E02-R02 — importante: duas remoções podem apagar a última passkey
+
+Referência: spec E02-03, Gestão de passkeys e invariante de conservar ao menos uma fora do comando de recuperação; A-11/A-12; infraestrutura §2. Locais: `apps/contas/adaptadores.py:111` e `apps/contas/views.py:59`.
+
+A consulta que permite excluir porque existe outra passkey e a exclusão não são serializadas. Com duas passkeys, duas sessões realmente autenticadas pelo fluxo de passkey e dois POSTs simultâneos, cada requisição vê a outra chave e ambas apagam. Resultado observado: **zero Authenticator**, fora do comando de recuperação. Não houve erro de infraestrutura nem exceção nas operações.
+
+Reprodução: `test_duas_remocoes_preservam_ultima_passkey`. O monkeypatch apenas acrescenta uma barreira depois do resultado real de `can_delete_authenticator`; não altera a decisão. Views, sessões, banco e exclusões são reais. `executar_em_paralelo` executa os dois POSTs. Falha: `assert 0 >= 1`.
+
+Devolução: tornar a verificação e a exclusão uma operação serializada por administrador, revalidando sob a mesma proteção; registrar Red → Green com duas exclusões concorrentes e conservar os testes de recência/permissão. A frase da spec sobre ausência de concorrência crítica não revoga a invariante explícita da última chave. Não é necessária decisão comercial.

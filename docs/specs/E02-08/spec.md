@@ -127,6 +127,27 @@ Os efeitos da suspensão sobre interesses e pedidos (especificação §2) depend
 - **Requisição em andamento durante a remoção:** a próxima requisição é recusada pelo middleware.
 - **Falha durante a remoção** (por exemplo, erro forçado ao apagar sessões): a transação é desfeita, a situação não muda e o `EmailBanido` não é gravado.
 
+## Correção E02-R01 (integração) — revisão da especificação em 2026-10-16
+
+O revisor reprovou esta fatia no aceite integrado por causa do achado E02-R01. Os serviços de moderação travam a linha e gravam só a situação, mas outras gravações que copiam a conta inteira restauravam a situação anterior. Os serviços desta fatia não mudam.
+
+Fica explícita a invariante que faltava:
+
+- **Só a moderação altera a situação.** `situacao` e `is_active` de uma conta existente só são gravados pelos serviços `suspender`, `reativar` e `remover`.
+- **Toda outra gravação de uma conta existente** obedece a uma de duas formas:
+  - usa `update_fields` restrito às colunas que altera;
+  - ou relê a conta com `select_for_update` na mesma transação antes de gravar.
+
+As correções e os critérios estão nas fatias donas de cada gravação:
+
+| Gravação | Fatia | Critérios |
+|---|---|---|
+| perfil | E02-09 | A-20 a A-25 |
+| redefinição de senha | E02-02 | A-25 |
+| vínculo de conta existente com o Google | E02-07 | A-21 |
+
+O aceite integrado desta fatia depende desses critérios.
+
 ## Dependências e decisões em aberto
 
 - Depende de E02-03 (área administrativa) e E02-02 (`usersessions`).

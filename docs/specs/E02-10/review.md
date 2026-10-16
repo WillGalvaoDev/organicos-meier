@@ -1,6 +1,8 @@
 # E02-10 — Revisão
 
-Estado: **aguardando revisão independente (agente 3)**. Abaixo, evidências do implementador.
+Estado atual: **APROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+
+Abaixo, evidências históricas do implementador, preservadas.
 
 ## Ciclo Red → Green → Refactor
 
@@ -77,3 +79,209 @@ Nenhuma consulta com valor não normalizado foi encontrada.
 
 - Nenhuma revisão independente feita ainda.
 - As rotas reais de carrinho, pagamento e fornecedor chegam nas etapas E05, E08 e E13; os decoradores estão provados nas rotas de teste. O isolamento de dados entre fornecedores dentro das consultas fica com essas etapas (spec).
+
+
+## Revisão independente — 8f4dc36 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+### Matriz da fatia
+
+A-1 a A-16: decoradores/mixins, GET/POST/PUT/PATCH/DELETE e HX-Request, papéis, registro de políticas, varredura negativa, trigger de papel imutável e normalização por propriedade/AST cobertos. Rotas reais de negócio e isolamento das consultas futuras continuam fora do escopo aprovado.
+
+### Verificação independente comum
+
+SHA auditado: `8f4dc36e91833ad11e327bcfb99e34fa81ba6eb8`, main/PR #32. Documentos de referência: especificação funcional v1.6 (§§2, 3 e 15), infraestrutura v1.7 (§§2, 4.11 e 5), spec e acceptance de cada fatia. Nenhuma mudança de regra de negócio foi presumida.
+
+- `uv run pytest -q`: **594 passed em 75,74 s**, banco Postgres real, incluindo E01 e todas as fatias E02.
+- `uv run ruff check .`: limpo; `uv run ruff format --check .`: 156 arquivos.
+- `uv run mypy .`: 120 arquivos, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: sem mudanças.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: lock resolvido (51 pacotes), ambiente conferido (50 pacotes).
+- CI do SHA exato: [run 38914653756](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38914653756), sucesso.
+
+A suíte verde não basta para aprovar E02: os probes adicionais do revisor terminaram em **6 failed, 1 passed em 2,65 s**, reproduzindo quatro achados distintos. Script, comando e matriz global estão em `../E02-10/review.md`, seção de revisão independente. O probe de PNG/EXIF passou e não gerou achado.
+
+### Evidência TDD e limites
+
+Conferidos os relatos de andaime, Red por asserção/comportamento, Green e refatoração de cada fatia, comparados com o diff e os testes. As alterações autorizadas de testes anteriores estão identificadas: fábrica de conta na auditoria E01; regra temporária de login administrativo substituída pela E02-03. Ajustes de instrumentação relatados pelo implementador não foram tratados como prova de defeito em produção. Limitação: a cronologia dos ciclos é documentada pelo implementador, sem logs brutos/commits intermediários para comprovar independentemente cada passo. A execução Green acima é independente; não foi apresentada como prova retrospectiva de toda a sequência TDD.
+
+WebAuthn usa o dublê criptográfico expressamente previsto, com views, sessão e Authenticator reais. Google usa o fluxo real do allauth com resposta simulada, sem chamada ao provedor. Cerimônia física de passkey, OAuth/credenciais reais, SES, R2 e efeitos futuros sobre pedidos/interesses não foram validados nesta etapa; permanecem nos gates previstos pelos documentos. D-1 da E02-08 (suspensão de fornecedor) não foi implementado nem reaberto.
+
+Nenhum achado próprio impede o aceite desta fatia no escopo entregue. A aprovação da E02 completa depende da correção dos achados E02-R01 a E02-R04.
+
+### T-37: conferência independente das consultas
+
+`rg -n 'email_normalizado=' apps --glob '!**/migrations/**'` conferido com os chamadores: emissão, pedido de link, comando administrativo, normalização e Conta.save normalizam antes de consultar; Google recebe o resultado normalizado de `_email_verificado`; consumo/moderação consultam por valores persistidos e protegidos pelos CHECKs. As atribuições em Forms e na criação da Conta não são novas consultas por entrada crua. Não foi encontrada comparação de entrada externa sem normalização. Os testes de propriedade e AST passaram; a análise manual não foi substituída pelo AST.
+
+### Decisão global E02
+
+**REPROVADA no commit `8f4dc36e91833ad11e327bcfb99e34fa81ba6eb8`.**
+
+| Fatia | Critérios versionados na suíte | Decisão integrada |
+|---|---|---|
+| E02-01 | A-1 a A-20 verdes | APROVADO |
+| E02-02 | A-1 a A-21 verdes, A-8 substituído por E02-03/A-14 | REPROVADO: E02-R04 |
+| E02-03 | A-1 a A-15 verdes | REPROVADO: E02-R02 |
+| E02-04 | A-1 a A-19 verdes | APROVADO |
+| E02-05 | A-1 a A-18 verdes | REPROVADO: integração E02-R04 |
+| E02-06 | A-1 a A-17 verdes | APROVADO |
+| E02-07 | A-1 a A-17 verdes | REPROVADO: E02-R03 |
+| E02-08 | A-1 a A-19 verdes | REPROVADO: integração E02-R01 |
+| E02-09 | A-1 a A-19 verdes | REPROVADO: E02-R01 |
+| E02-10 | A-1 a A-16 verdes | APROVADO no escopo dos decoradores/varreduras |
+
+| Achado | Classificação | Evidência |
+|---|---|---|
+| E02-R01 | Bloqueador | Perfil sobrescreve suspensão, remoção e senha atualizadas depois de sua leitura. Três probes falham; causa em `perfil.py:124`. |
+| E02-R02 | Importante | Duas exclusões concorrentes deixam zero passkeys fora do comando de recuperação. |
+| E02-R03 | Importante | Payload Google `verified_email=true` aceito no retorno é recusado na conclusão. |
+| E02-R04 | Importante | Validador de similaridade usa atributos ausentes no modelo e aceita senha igual ao nome. |
+
+Os testes existentes não cobrem essas intercalações/variantes, por isso seus 594 resultados verdes não encerram a entrega. Próximo gate: implementador incorporar regressões antes das correções, registrar Red → Green e retornar para revisão independente. Não é necessária decisão comercial do usuário. A aprovação histórica da E01 não foi alterada.
+
+### Probes independentes reproduzíveis
+
+Comando PowerShell: `uv run pytest -c pyproject.toml "$env:TEMP/om_e02_8f4dc36_probes.py" -q --tb=short`.
+
+Resultado final: **6 failed, 1 passed em 2,65 s**. Uma primeira execução, antes do probe de similaridade, produziu 5 failed/1 passed em 3,07 s. São seis asserções falhas para quatro achados; o teste de PNG/EXIF é a confirmação adicional que passou. O script abaixo permite reconstruir o arquivo temporário sem depender de o TEMP desta máquina ser preservado. Nenhum teste versionado nem código de produção foi editado pelo revisor.
+
+```python
+import json
+import threading
+from io import BytesIO
+import pytest
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client
+from PIL import Image
+from allauth.mfa.models import Authenticator
+from apps.contas import views
+from apps.contas.models import Conta, Convite
+from apps.contas.moderacao import suspender, remover
+from apps.contas.perfil import processar_avatar
+from apps.contas.adaptadores import AdaptadorMFA
+from tests.fabricas import ContaFactory, ConviteFactory
+from tests.apoio import imagens
+from tests.apoio.concorrencia import executar_em_paralelo
+from tests.apoio.webauthn_falso import instalar
+from tests.apoio.admin_fluxos import (
+    administrador_com_passkey,
+    entrar_com_passkey_direta,
+    cadastrar_passkey,
+)
+
+
+@pytest.fixture(autouse=True)
+def limpar_cache():
+    cache.clear()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("acao", ["suspender", "remover", "senha"])
+def test_perfil_preserva_alteracao_concorrente(client, monkeypatch, acao):
+    admin = ContaFactory.create(administrador=True)
+    conta = ContaFactory.create()
+    conta.set_password("senha-antiga-forte-9271!")
+    conta.save()
+    client.force_login(conta)
+    original = views.atualizar_perfil
+
+    def intercalar(lida, **kwargs):
+        atual = Conta.objects.get(pk=lida.pk)
+        if acao == "suspender":
+            suspender(admin, atual)
+        elif acao == "remover":
+            remover(admin, atual)
+        else:
+            atual.set_password("senha-nova-forte-9262!")
+            atual.save(update_fields=["password"])
+        return original(lida, **kwargs)
+
+    monkeypatch.setattr(views, "atualizar_perfil", intercalar)
+    resposta = client.post("/perfil/", {"nome": "Nome editado"})
+    assert resposta.status_code == 302
+    conta.refresh_from_db()
+    if acao == "senha":
+        assert conta.check_password("senha-nova-forte-9262!")
+    else:
+        assert conta.situacao == {"suspender": "suspensa", "remover": "removida"}[acao]
+
+
+def test_png_regravado_remove_exif_gps():
+    with Image.open(BytesIO(imagens.jpeg_com_gps())) as origem:
+        buf = BytesIO()
+        origem.save(buf, format="PNG", exif=origem.getexif())
+    with Image.open(BytesIO(buf.getvalue())) as origem_png:
+        assert 0x8825 in origem_png.getexif()
+    resultado = processar_avatar(SimpleUploadedFile("gps.png", buf.getvalue()))
+    with Image.open(BytesIO(resultado.read())) as final:
+        assert len(final.getexif()) == 0, dict(final.getexif())
+
+
+@pytest.mark.django_db
+@pytest.mark.urls("tests.apoio.urls")
+def test_google_userinfo_verificado_conclui_cadastro(client):
+    token = "token-revisor-google"
+    ConviteFactory.create(email_normalizado="google@x.com", token_hash=Convite.hash_do_token(token))
+    assert client.post(f"/convite/{token}/google/").status_code == 302
+    dados = {
+        "id": "google-revisor",
+        "email": "google@x.com",
+        "verified_email": True,
+        "name": "Google",
+    }
+    retorno = client.post("/teste/retorno-google/", {"extra_data": json.dumps(dados)})
+    assert retorno.status_code == 302
+    assert retorno["Location"] == "/entrar/google/concluir/"
+    resposta = client.post("/entrar/google/concluir/", {"nome": "Google"})
+    assert resposta["Location"] == "/inicio/"
+    assert Conta.objects.filter(email_normalizado="google@x.com").exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_duas_remocoes_preservam_ultima_passkey(monkeypatch):
+    instalar(monkeypatch)
+    primeiro = Client()
+    conta, chave = administrador_com_passkey(primeiro)
+    entrar_com_passkey_direta(primeiro, chave, conta)
+    cadastrar_passkey(primeiro, nome="Segunda")
+    segundo = Client()
+    entrar_com_passkey_direta(segundo, chave, conta)
+    ids = list(Authenticator.objects.filter(user=conta).values_list("pk", flat=True))
+    assert len(ids) == 2
+    sincronizar = threading.Barrier(2)
+    original = AdaptadorMFA.can_delete_authenticator
+
+    def checar_e_esperar(self, autenticador):
+        permitido = original(self, autenticador)
+        sincronizar.wait(timeout=5)
+        return permitido
+
+    monkeypatch.setattr(AdaptadorMFA, "can_delete_authenticator", checar_e_esperar)
+
+    def apagar(cliente, pk):
+        return lambda b: cliente.post(f"/seguranca/webauthn/keys/{pk}/remove/").status_code
+
+    try:
+        resultados = executar_em_paralelo(apagar(primeiro, ids[0]), apagar(segundo, ids[1]))
+        assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+        assert Authenticator.objects.filter(user=conta).count() >= 1
+    finally:
+        sincronizar.abort()
+
+
+@pytest.mark.django_db
+def test_cadastro_recusa_senha_igual_ao_nome(client):
+    token = "token-revisor-similaridade"
+    convite = ConviteFactory.create(token_hash=Convite.hash_do_token(token))
+    senha = "NomeCompletoExclusivo9271"
+    resposta = client.post(
+        f"/convite/{token}/", {"nome": senha, "senha": senha, "confirmacao": senha}
+    )
+    assert resposta.status_code == 200
+    assert not Conta.objects.filter(email_normalizado=convite.email_normalizado).exists()
+```
+
+Foram alterados apenas os dez `docs/specs/E02-*/review.md`, na branch `revisao/e02-8f4dc36`, sem commit, push ou merge. Os achados detalhados estão nos relatórios E02-09 (R01), E02-03 (R02), E02-07 (R03) e E02-02 (R04).

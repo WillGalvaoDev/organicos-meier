@@ -52,7 +52,7 @@ O login com Google precisa respeitar a identidade de e-mail autorizada. O e-mail
 **Dados aceitos do Google:**
 
 - O e-mail vem dos dados devolvidos pelo provedor.
-- Se o e-mail estiver ausente ou não estiver marcado como verificado pelo Google (`email_verified` diferente de verdadeiro), o login é recusado.
+- Se o e-mail estiver ausente ou não estiver marcado como verificado pelo Google, o login é recusado. A marcação vem em `email_verified` (ID token) ou em `verified_email` (`/oauth2/v2/userinfo`), conforme a regra única de "Correção E02-R03", que vale no retorno e na conclusão do cadastro.
 - O e-mail do Google passa por `normalizar_email`, e o resultado é chamado `e` abaixo.
 
 **Decisão no retorno do Google** (`pre_social_login` e métodos de signup do adaptador), na ordem:
@@ -91,7 +91,7 @@ O login com Google precisa respeitar a identidade de e-mail autorizada. O e-mail
 
 **Testes sem rede:**
 
-- O retorno do Google é simulado montando o `SocialLogin` do allauth (`SocialAccount` com `provider="google"`, `uid` e `extra_data` com `email`, `email_verified` e `name`).
+- O retorno do Google é simulado montando o `SocialLogin` do allauth (`SocialAccount` com `provider="google"`, `uid` e `extra_data` com `email`, `email_verified` ou `verified_email`, e `name`). Os dois formatos são testados (ver "Correção E02-R03").
 - O `SocialLogin` é levado pelo fluxo do allauth por sua API de conclusão de login social. O implementador registra no `review.md` a função usada, válida para o allauth 65.19.7.
 - O teste não faz chamadas HTTP ao Google e não substitui o adaptador do projeto.
 
@@ -115,6 +115,59 @@ O login com Google precisa respeitar a identidade de e-mail autorizada. O e-mail
 - **Convite consumido por senha enquanto o usuário está no Google:** a conclusão é recusada, porque `consumir_convite` usa `select_for_update`, e a concorrência do consumo já está coberta na E02-05.
 - **Administrador:** recusado pelo Google em qualquer caso.
 - **Conta suspensa:** entra.
+- **Vínculo de conta existente ao mesmo tempo que a moderação:** o vínculo não pode desfazer uma suspensão nem uma remoção. Ver "Correção E02-R01 (vínculo Google)".
+
+## Correção E02-R03 — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+O revisor reprovou a E02 no commit `8f4dc36` (achado E02-R03, importante, em `review.md`). Confirmei a causa:
+
+- o adaptador aceita o e-mail como verificado com `email_verified is True` ou `verified_email is True` (`apps/contas/adaptadores.py:134`);
+- a conclusão do cadastro aceita só `email_verified is True` (`apps/contas/views.py:205`).
+
+O provedor Google do allauth 65.19.7 monta o `SocialLogin` a partir do ID token (`sub`, `email_verified`) ou do `/oauth2/v2/userinfo` (`id`, `verified_email`). No segundo formato, o retorno segue para a conclusão, mas a conclusão recusa e a conta não é criada.
+
+A spec citava só `email_verified`, e por isso também é corrigida: a falha estava na spec e não só na implementação.
+
+### Regra
+
+1. **Função única.** Uma única função, `email_verificado_do_google(extra_data) -> str | None`, devolve o e-mail normalizado ou `None`. Ela é usada pelo adaptador (retorno, `is_open_for_signup` e `pre_social_login`) e pela view de conclusão. Nenhum outro ponto interpreta a verificação.
+2. **Quando o e-mail conta como verificado.** Pelo menos uma das chaves `email_verified` e `verified_email` vale exatamente `True` (booleano), e nenhuma das duas, se presente, tem outro valor. `False`, `None`, strings como `"true"` e números são tratados como não verificados.
+3. **Quando o resultado é `None`.** O e-mail está ausente, não é texto ou é recusado por `normalizar_email`.
+4. **Recusas preservadas.** A conclusão continua recusando divergência com o convite, convite expirado, consumido ou banido, e cadastro sem convite pendente.
+
+### Testes obrigatórios
+
+- O teste do revisor `test_google_userinfo_verificado_conclui_cadastro`, em `docs/specs/E02-10/review.md`, entra literal na suíte.
+- Os critérios A-18 a A-20 do `acceptance.md`.
+- Red: com o código do commit `8f4dc36`, o teste do revisor e o A-18 falham pela asserção, e a evidência vai para o `review.md`.
+
+### O que não fazer
+
+- Não aceitar e-mail sem marcação de verificado para fazer o teste passar.
+- Não duplicar a interpretação na view de conclusão.
+
+## Correção E02-R01 (vínculo Google) — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+O achado E02-R01 (ver `docs/specs/E02-09/spec.md`) vem de gravar a conta inteira a partir de uma cópia antiga. No caso 2 da "Decisão no retorno do Google", o mesmo defeito existe e não foi testado pelo revisor:
+
+- o adaptador lê a conta por e-mail (`apps/contas/adaptadores.py:169`);
+- `sociallogin.connect(request, conta)` chama `SocialLogin.save`, que faz `user.save()` sem `update_fields` (`allauth/socialaccount/models.py:311`).
+
+Uma suspensão ou remoção feita entre a leitura e o vínculo é desfeita.
+
+### Regra
+
+- No caso 2, a leitura da conta, `verificar_acesso` e `sociallogin.connect` ficam no mesmo `transaction.atomic()`. A conta é lida com `Conta.objects.select_for_update().filter(email_normalizado=e).first()`.
+- A trava é a da linha da conta, a mesma da moderação (E02-08). A gravação feita pelo `connect` escreve então o estado atual, e uma remoção concluída antes faz `verificar_acesso` recusar.
+- O caso 1 (conta social já vinculada) não grava a conta. O implementador confirma no allauth 65.19.7 que esse caminho não chama `user.save()` sem `update_fields` e registra a conferência no `review.md`.
+
+### Testes obrigatórios
+
+- O critério A-21, com Red no código do commit `8f4dc36`.
 
 ## Dependências e decisões em aberto
 

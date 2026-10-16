@@ -24,6 +24,19 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-18 | Infra 5 | negativo | uma alteração de perfil com telefone | capturo os logs da requisição | nenhum log contém o telefone nem o e-mail |
 | A-19 | Spec da fatia | positivo | `pyproject.toml` e `uv.lock` | inspeciono | Pillow declarado e travado; `uv sync --locked` passa no CI |
 
+### Correção E02-R01
+
+Os critérios abaixo seguem a seção "Correção E02-R01" do `spec.md`. A intercalação determinística envolve `views.atualizar_perfil` por `monkeypatch`, como no teste do revisor: a alteração concorrente é feita depois da leitura da view e antes da chamada à função original, que é a função sob teste e nunca é substituída. Os testes com threads usam `executar_em_paralelo` (E01-05) e `django_db(transaction=True)`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-20 | E02-R01, Spec §2 | concorrência | um comprador ativo com sessão aberta | o administrador o suspende depois da leitura da view e antes da gravação; o `POST /perfil/` altera o nome | 302; nome novo gravado; situação `suspensa`; `pode_adicionar_interesse` falso; nenhuma auditoria `conta.reativar` |
+| A-21 | E02-R01, Spec §2, cenário 58 | concorrência | o mesmo comprador | o administrador o remove na mesma intercalação | 403; nome inalterado; situação `removida`; `EmailBanido` presente; nenhuma auditoria de perfil; nenhum arquivo de avatar novo no storage, mesmo quando o `POST` envia avatar |
+| A-22 | E02-R01, Spec §3.2 | concorrência | um comprador com a senha `S1` | a senha passa a `S2` (`set_password` e `save(update_fields=["password"])`) na mesma intercalação | 302; `check_password(S2)` verdadeiro e `check_password(S1)` falso |
+| A-23 | E02-R01 | estático-comportamental | um comprador | capturo as consultas de um `POST /perfil/` válido (`CaptureQueriesContext`) | exatamente um `UPDATE` em `contas_conta`, cujas colunas atribuídas são só `nome`, `telefone`, `whatsapp_consentido_em` e `avatar`; existe um `SELECT ... FOR UPDATE` da conta antes dele |
+| A-24 | E02-R01, Spec §3.2 | concorrência | um comprador com telefone e sem consentimento, lido em duas instâncias antes do paralelo | duas chamadas de `atualizar_perfil` em paralelo, uma com cada instância, as duas marcando o consentimento, repetidas 10 vezes com contas novas | em todas: consentimento preenchido e exatamente uma auditoria `perfil.whatsapp_consentir` |
+| A-25 | E02-R01, Spec §2 | concorrência | um comprador ativo, lido antes do paralelo | `atualizar_perfil` (com essa instância) e `suspender` em paralelo, repetidos 10 vezes com contas novas | em todas: situação final `suspensa`, nome novo gravado e uma auditoria `conta.suspender` |
+
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
@@ -33,3 +46,5 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-6 a A-9 | `tests/tecnicos/test_perfil_whatsapp.py` |
 | A-10 a A-15 | `tests/tecnicos/test_perfil_avatar.py` |
 | A-19 | evidência no `review.md` |
+| A-20 a A-23 | `tests/tecnicos/test_perfil_concorrencia.py`, com `test_perfil_preserva_alteracao_concorrente` do revisor (ajuste do parâmetro `remover` descrito no `spec.md`) |
+| A-24, A-25 | `tests/tecnicos/test_perfil_concorrencia.py` (marcador `concorrencia`) |

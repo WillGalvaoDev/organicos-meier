@@ -20,6 +20,15 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-14 | E02-02 (A-8 revogado) | positivo | o administrador com senha e sem passkey | entro por senha | a sessão existe, mas só com o acesso restrito do A-1. O critério A-8 da E02-02 fica substituído por este, e o teste dele é atualizado para a nova regra, com registro no `review.md` |
 | A-15 | Spec da fatia | negativo | um comprador autenticado | acessa as rotas de MFA do allauth para cadastrar passkey | 403 ou 404 (MFA restrito ao administrador) |
 
+### Correção E02-R02
+
+Os critérios abaixo seguem a seção "Correção E02-R02" do `spec.md`. Os dois clientes são sessões reais do administrador autenticadas por passkey (dublê da cerimônia). Os testes usam `executar_em_paralelo` (E01-05) e `django_db(transaction=True)`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-16 | E02-R02, Infra 2 | concorrência | o administrador com duas passkeys `P1` e `P2` e duas sessões com nova autenticação recente | uma sessão envia `POST` de remoção de `P1` e a outra de `P2`, em paralelo, repetido 10 vezes; antes de cada repetição o mesmo administrador volta a ter exatamente duas passkeys, cadastradas pelo dublê (o índice parcial da E02-01 impede um segundo administrador) | em todas: exatamente uma passkey restante; uma remoção bem-sucedida; a outra redirecionada para a lista com a mensagem da última passkey; nenhuma exceção nas operações |
+| A-17 | E02-R02 | concorrência | o administrador com três passkeys | três `POST` de remoção em paralelo, cada um de uma passkey diferente, por três sessões | exatamente uma passkey restante; duas remoções bem-sucedidas |
+
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
@@ -29,3 +38,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-9, A-10 | `tests/tecnicos/test_admin_reautenticacao.py` |
 | A-11, A-12, A-15 | `tests/tecnicos/test_admin_passkeys_gestao.py` |
 | A-13 | `tests/tecnicos/test_admin_redefinir_passkeys.py` |
+| A-16, A-17 | `tests/tecnicos/test_admin_passkeys_concorrencia.py` (marcador `concorrencia`), com `test_duas_remocoes_preservam_ultima_passkey` do revisor (nome original no comentário) |

@@ -106,6 +106,12 @@ As recusas levantam `ConviteInvalido` com um código interno (`inexistente`, `co
 - **Dois convites com o mesmo e-mail normalizado** (um de comprador e outro de fornecedor, com e-mails `Ana@x.com` e ` ana@x.com ` na emissão), consumidos em paralelo: uma conta e uma recusa. O convite recusado continua não consumido (T-34).
 - **Banimento entre a emissão e o uso:** recusado.
 
+## Correção E02-R04 (integração) — revisão da especificação em 2026-10-16
+
+O revisor reprovou esta fatia no aceite integrado por causa do achado E02-R04. O validador de semelhança não conhecia os atributos de `Conta`, e uma senha igual ao nome era aceita no cadastro. A causa e a regra estão em `docs/specs/E02-02/spec.md`, "Correção E02-R04". Esta fatia não muda o serviço `consumir_convite` nem o formulário, que já validam com a conta provisória preenchida.
+
+Esta fatia só acrescenta os critérios de cadastro A-19 e A-20, que provam a regra no fluxo real do convite. O teste do revisor `test_cadastro_recusa_senha_igual_ao_nome` (em `docs/specs/E02-10/review.md`) entra literal na suíte como parte do A-19.
+
 ## Dependências e decisões em aberto
 
 - Depende de E02-04 e de E02-02 (sessão e validadores de senha).

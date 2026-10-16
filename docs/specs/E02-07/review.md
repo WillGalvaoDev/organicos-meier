@@ -1,6 +1,8 @@
 # E02-07 — Revisão
 
-Estado: **aguardando revisão independente (agente 3)**. Abaixo, evidências do implementador.
+Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+
+Abaixo, evidências históricas do implementador, preservadas.
 
 ## Ciclo Red → Green → Refactor
 
@@ -66,3 +68,42 @@ A rota de teste (`/teste/retorno-google/`, em `tests/apoio/urls.py`, usada com `
 
 - Nenhuma revisão independente feita ainda.
 - O fluxo OAuth real com o Google (autorização, troca de código, `userinfo`) não é exercitado; é responsabilidade do allauth e fica para verificação na homologação, junto com a configuração do projeto no Google Cloud (fora do escopo).
+
+
+## Revisão independente — 8f4dc36 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: REPROVADO.**
+
+### Matriz da fatia
+
+A-1 a A-17: associação e recusas, convite, papel, consumo, recuperação e configuração cobertos para o payload email_verified. O payload verified_email do provedor real não conclui o cadastro (E02-R03), ampliando o cenário positivo A-9.
+
+### Verificação independente comum
+
+SHA auditado: `8f4dc36e91833ad11e327bcfb99e34fa81ba6eb8`, main/PR #32. Documentos de referência: especificação funcional v1.6 (§§2, 3 e 15), infraestrutura v1.7 (§§2, 4.11 e 5), spec e acceptance de cada fatia. Nenhuma mudança de regra de negócio foi presumida.
+
+- `uv run pytest -q`: **594 passed em 75,74 s**, banco Postgres real, incluindo E01 e todas as fatias E02.
+- `uv run ruff check .`: limpo; `uv run ruff format --check .`: 156 arquivos.
+- `uv run mypy .`: 120 arquivos, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: sem mudanças.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: lock resolvido (51 pacotes), ambiente conferido (50 pacotes).
+- CI do SHA exato: [run 38914653756](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38914653756), sucesso.
+
+A suíte verde não basta para aprovar E02: os probes adicionais do revisor terminaram em **6 failed, 1 passed em 2,65 s**, reproduzindo quatro achados distintos. Script, comando e matriz global estão em `../E02-10/review.md`, seção de revisão independente. O probe de PNG/EXIF passou e não gerou achado.
+
+### Evidência TDD e limites
+
+Conferidos os relatos de andaime, Red por asserção/comportamento, Green e refatoração de cada fatia, comparados com o diff e os testes. As alterações autorizadas de testes anteriores estão identificadas: fábrica de conta na auditoria E01; regra temporária de login administrativo substituída pela E02-03. Ajustes de instrumentação relatados pelo implementador não foram tratados como prova de defeito em produção. Limitação: a cronologia dos ciclos é documentada pelo implementador, sem logs brutos/commits intermediários para comprovar independentemente cada passo. A execução Green acima é independente; não foi apresentada como prova retrospectiva de toda a sequência TDD.
+
+WebAuthn usa o dublê criptográfico expressamente previsto, com views, sessão e Authenticator reais. Google usa o fluxo real do allauth com resposta simulada, sem chamada ao provedor. Cerimônia física de passkey, OAuth/credenciais reais, SES, R2 e efeitos futuros sobre pedidos/interesses não foram validados nesta etapa; permanecem nos gates previstos pelos documentos. D-1 da E02-08 (suspensão de fornecedor) não foi implementado nem reaberto.
+
+### E02-R03 — importante: cadastro Google recusa um retorno verificado aceito pelo próprio adaptador
+
+Referência: spec E02-07, Dados aceitos do Google e Conclusão do cadastro; A-9; especificação funcional §3.2. Local: `apps/contas/views.py:205`, em contraste com `apps/contas/adaptadores.py:134`.
+
+O allauth instalado admite dois formatos: ID token (`sub`, `email_verified`) e `/oauth2/v2/userinfo` (`id`, `verified_email`). O provedor e o adaptador do projeto aceitam ambos. A conclusão própria verifica somente `email_verified is True`, recusando o segundo formato mesmo com convite válido e e-mail verificado. Isso é observável sem rede: o retorno segue corretamente para `/entrar/google/concluir/`, mas seu POST redireciona para `/entrar/` e não cria a conta. Não se presume uma falha do Google; é divergência entre duas etapas do próprio projeto.
+
+Reprodução: `test_google_userinfo_verificado_conclui_cadastro` passa `{"id":"google-revisor","email":"google@x.com","verified_email":true,"name":"Google"}` pela mesma rota de teste que chama `provider.sociallogin_from_response` e `complete_social_login`. Falha: `/entrar/ != /inicio/`. O suporte aos dois formatos foi conferido no código local de `allauth/socialaccount/providers/google/provider.py` e `views.py`, sem inferência sobre um provedor não consultado.
+
+Devolução: usar a mesma interpretação segura de e-mail verificado no retorno e na conclusão, cobrindo ambos os formatos e conservando as recusas de e-mail ausente/não verificado, divergência com o convite, expiração e banimento. Não aceitar um e-mail não verificado para fazer o teste passar.
