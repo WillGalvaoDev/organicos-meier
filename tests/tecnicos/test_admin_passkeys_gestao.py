@@ -85,3 +85,16 @@ def test_rotas_de_mfa_sao_so_do_administrador(client: Client, fornecedor: bool) 
         assert client.get(caminho).status_code in (403, 404), caminho
     assert client.post(ROTA_CADASTRO, {"credential": "{}"}).status_code in (403, 404)
     assert not Authenticator.objects.exists()
+
+
+@pytest.mark.parametrize(
+    "rota",
+    ["/seguranca/", "/seguranca/webauthn/", "/seguranca/webauthn/add/"],
+    ids=["indice", "lista", "cadastro"],
+)
+def test_paginas_de_gestao_de_passkeys_renderizam(client: Client, webauthn: Any, rota: str) -> None:
+    # Regressão da E02-R02: a lista quebrava com "'humanize' is not a registered tag library".
+    conta, credencial_id = administrador_com_passkey(client)
+    entrar_com_passkey_direta(client, credencial_id, conta)
+    resposta = client.get(rota)
+    assert resposta.status_code == 200
