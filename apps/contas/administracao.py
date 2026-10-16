@@ -20,6 +20,7 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
 from apps.contas.models import Conta, Papel
+from apps.contas.permissoes import Politica
 from apps.nucleo.tempo import agora
 
 View = Callable[..., HttpResponse]
@@ -82,6 +83,7 @@ def somente_administrador(view: View) -> View:
         recusa = _barrar(request, recente=False)
         return recusa if recusa is not None else view(request, *args, **kwargs)
 
+    envolvida.politica_de_acesso = Politica.ADMINISTRADOR  # type: ignore[attr-defined]
     return envolvida
 
 
@@ -93,11 +95,18 @@ def exige_reautenticacao_por_passkey(view: View) -> View:
         recusa = _barrar(request, recente=True)
         return recusa if recusa is not None else view(request, *args, **kwargs)
 
+    envolvida.politica_de_acesso = Politica.ADMINISTRADOR  # type: ignore[attr-defined]
     return envolvida
 
 
 class SomenteAdministradorMixin:
     """Mixin para views baseadas em classe, com a mesma regra de `somente_administrador`."""
+
+    @classmethod
+    def as_view(cls, **initkwargs: Any) -> View:
+        view: View = super().as_view(**initkwargs)  # type: ignore[misc]
+        view.politica_de_acesso = Politica.ADMINISTRADOR  # type: ignore[attr-defined]
+        return view
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         recusa = _barrar(request, recente=False)

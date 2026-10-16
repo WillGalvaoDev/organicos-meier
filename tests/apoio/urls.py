@@ -4,13 +4,14 @@ import json
 
 from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.helpers import complete_social_login
-from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.urls import URLPattern, URLResolver, path
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.contas.administracao import exige_reautenticacao_por_passkey
+from apps.contas.permissoes import exige_login, publica
 from config.urls import urlpatterns as rotas_reais
+from tests.apoio import views
 
 
 @exige_reautenticacao_por_passkey
@@ -19,6 +20,7 @@ def acao_sensivel(request: HttpRequest) -> HttpResponse:
 
 
 @csrf_exempt
+@publica
 def retorno_google_simulado(request: HttpRequest) -> HttpResponse:
     """Simula o retorno do Google sem rede (E02-07).
 
@@ -37,7 +39,7 @@ def retorno_google_simulado(request: HttpRequest) -> HttpResponse:
 CHAMADAS_DA_ROTA_AUTENTICADA: list[str] = []
 
 
-@login_required
+@exige_login
 def rota_autenticada(request: HttpRequest) -> HttpResponse:
     """Conta quantas vezes a view executou (E02-08, A-6)."""
     CHAMADAS_DA_ROTA_AUTENTICADA.append(request.method or "")
@@ -48,5 +50,9 @@ urlpatterns: list[URLPattern | URLResolver] = [
     *rotas_reais,
     path("teste/acao-sensivel/", acao_sensivel, name="teste_acao_sensivel"),
     path("teste/rota-autenticada/", rota_autenticada, name="teste_rota_autenticada"),
+    path("teste/carrinho/", views.carrinho, name="teste_carrinho"),
+    path("teste/pagamento/", views.pagamento, name="teste_pagamento"),
+    path("teste/meus-pedidos/", views.meus_pedidos, name="teste_meus_pedidos"),
+    path("teste/fornecedor/painel/", views.painel_do_fornecedor, name="teste_painel_fornecedor"),
     path("teste/retorno-google/", retorno_google_simulado, name="teste_retorno_google"),
 ]
