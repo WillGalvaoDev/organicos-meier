@@ -16,3 +16,6 @@ INSTALLED_APPS = [*_APPS_BASE, "tests.apoio"]
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 DEFAULT_FROM_EMAIL = "contato@organicosmeier.test"
+
+# WebAuthn aceita origem sem HTTPS só fora de produção.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = True

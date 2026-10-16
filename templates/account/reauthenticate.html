@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block titulo %}Confirmar identidade · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Confirmar identidade</h1>
+  <form method="post" action="{% url 'account_reauthenticate' %}">
+    {% csrf_token %}
+    {{ redirect_field }}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.password.id_for_label }}">Senha</label>
+      {{ form.password }}
+      {{ form.password.errors }}
+    </p>
+    <button type="submit">Confirmar</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Segurança · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Segurança da conta</h1>
+  <p>Sua conta de administração usa passkeys. Passkey cadastrada nesta conta: confira a lista abaixo.</p>
+  <p><a href="{% url 'mfa_list_webauthn' %}">Ver e gerenciar passkeys</a></p>
+  <p>
+    Para acessar a área administrativa, entre novamente com uma passkey ou confirme sua identidade
+    com uma passkey: <a href="{% url 'painel_administracao' %}">abrir a administração</a>.
+  </p>
+  <form method="post" action="{% url 'account_logout' %}">
+    {% csrf_token %}
+    <button type="submit">Sair</button>
+  </form>
+{% endblock %}

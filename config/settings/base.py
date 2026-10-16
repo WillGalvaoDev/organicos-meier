@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "allauth",
     "allauth.account",
     "allauth.usersessions",
+    "allauth.mfa",
     "apps.nucleo",
     "apps.fornecedores",
     "apps.contas",
@@ -42,6 +43,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "allauth.usersessions.middleware.UserSessionsMiddleware",
+    "apps.contas.middleware.ProtegeRotasDeMfa",
+    "apps.contas.middleware.ExigePasskeyDoAdministrador",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -108,3 +111,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# --- MFA do administrador: só passkeys (E02-03) ---
+MFA_SUPPORTED_TYPES = ["webauthn"]
+MFA_PASSKEY_LOGIN_ENABLED = True
+MFA_ADAPTER = "apps.contas.adaptadores.AdaptadorMFA"
+ACCOUNT_REAUTHENTICATION_TIMEOUT = 300
