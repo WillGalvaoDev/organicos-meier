@@ -19,3 +19,5 @@ SESSION_COOKIE_SAMESITE = "Lax"
 # O envio real (SES) é configurado na E04 e na homologação.
 EMAIL_BACKEND = env("EMAIL_BACKEND")  # noqa: F405
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")  # noqa: F405
+# Origem pública dos links enviados por e-mail (convites); sem padrão em produção.
+ORIGEM_PUBLICA = env("ORIGEM_PUBLICA")  # noqa: F405

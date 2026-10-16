@@ -7,6 +7,10 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 
 from apps.contas.administracao import somente_administrador
+from apps.contas.convites import ConviteInvalido, EmailBanidoErro, emitir_convite
+from apps.contas.emails import EmailInvalido
+from apps.contas.formularios import FormularioConvite
+from apps.contas.models import Convite, EmailEmUso
 
 
 @login_required
@@ -35,3 +39,39 @@ def remover_passkey(request: HttpRequest, pk: int) -> HttpResponse:
             return redirect("mfa_list_webauthn")
     resposta: HttpResponse = remove_webauthn(request, pk=pk)
     return resposta
+
+
+@somente_administrador
+def convites_administracao(request: HttpRequest) -> HttpResponse:
+    """Emissão e consulta de convites (GET e POST)."""
+    form = FormularioConvite(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            convite = emitir_convite(
+                request.user,  # type: ignore[arg-type]
+                form.cleaned_data["email"],
+                form.cleaned_data["papel"],
+                form.cleaned_data["fornecedor"],
+                origem=request.build_absolute_uri("/"),
+            )
+        except EmailInvalido:
+            form.add_error("email", "Informe um e-mail válido.")
+        except EmailEmUso:
+            form.add_error("email", "Este e-mail já está em uso por uma conta.")
+        except EmailBanidoErro:
+            form.add_error("email", "Este e-mail está banido e não pode receber convite.")
+        except ConviteInvalido as erro:
+            form.add_error(None, str(erro))
+        else:
+            if convite.email_enviado is False:
+                messages.error(
+                    request,
+                    "Convite criado, mas o e-mail não pôde ser enviado. Emita um novo convite.",
+                )
+            else:
+                messages.success(request, "Convite emitido.")
+            return redirect("convites_administracao")
+    convites = Convite.objects.select_related("fornecedor", "conta_criada").order_by(
+        "-emitido_em", "-pk"
+    )
+    return render(request, "convites/administracao.html", {"form": form, "convites": convites})

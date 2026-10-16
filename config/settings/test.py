@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("EMAIL_BACKEND", "django.core.mail.backends.locmem.EmailBackend")
 os.environ.setdefault("DEFAULT_FROM_EMAIL", "contato@organicosmeier.test")
+os.environ.setdefault("ORIGEM_PUBLICA", "https://organicosmeier.test")
 os.environ.setdefault("SECRET_KEY", "chave-apenas-para-testes")
 os.environ.setdefault("DATABASE_URL", "postgres://organicos:organicos@localhost:5433/organicos")
 

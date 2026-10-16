@@ -6,6 +6,8 @@ from allauth.account.forms import ResetPasswordForm, ResetPasswordKeyForm
 from django import forms
 
 from apps.contas.acesso import AcessoRecusado, Metodo, verificar_acesso
+from apps.contas.models import Papel
+from apps.fornecedores.models import Fornecedor
 
 
 class FormularioRecuperacao(ResetPasswordForm):
@@ -41,3 +43,15 @@ class FormularioNovaSenha(ResetPasswordKeyForm):
                     "Não foi possível redefinir a senha com esse link."
                 ) from None
         return dados
+
+
+class FormularioConvite(forms.Form):
+    """Emissão de convite. O servidor valida tudo de novo (papel e fornecedor adulterados)."""
+
+    email = forms.CharField(max_length=254)
+    papel = forms.ChoiceField(
+        choices=[(Papel.COMPRADOR.value, "Comprador"), (Papel.FORNECEDOR.value, "Fornecedor")]
+    )
+    fornecedor = forms.ModelChoiceField(
+        queryset=Fornecedor.objects.order_by("nome"), required=False, empty_label="—"
+    )

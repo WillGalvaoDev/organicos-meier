@@ -13,6 +13,7 @@ _AMBIENTE_MINIMO = {
     "DATABASE_URL": "postgres://u:p@localhost:5433/d",
     "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
     "DEFAULT_FROM_EMAIL": "contato@exemplo.com.br",
+    "ORIGEM_PUBLICA": "https://organicosmeier.exemplo.com.br",
 }
 
 
