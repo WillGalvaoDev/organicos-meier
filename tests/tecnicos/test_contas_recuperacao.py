@@ -194,3 +194,30 @@ def test_redefinicao_aceita_senha_sem_relacao_com_a_conta(client: Client) -> Non
     assert resposta.status_code == 200
     conta.refresh_from_db()
     assert conta.check_password("cavalo-lanterna-7391!")
+
+
+def test_redefinicao_preserva_suspensao_feita_depois_da_leitura(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-25 (E02-R01, recuperação)
+    from apps.contas import formularios
+    from apps.contas.moderacao import suspender
+    from apps.nucleo.auditoria import EntradaAuditoria
+
+    admin = ContaFactory.create(administrador=True)
+    conta = _conta(email_normalizado="ana@x.com")
+    _pedir(client, "ana@x.com")
+    url_do_formulario = _formulario_da_chave(client, _link_do_ultimo_email())
+
+    original = formularios.verificar_acesso  # type: ignore[attr-defined]
+
+    def intercalado(alvo: Conta, email: str, metodo: Any) -> None:
+        original(alvo, email, metodo)  # a revalidação passa: a conta ainda está ativa
+        suspender(admin, Conta.objects.get(pk=alvo.pk))  # suspensa depois da leitura do link
+
+    monkeypatch.setattr(formularios, "verificar_acesso", intercalado)
+    client.post(url_do_formulario, {"password1": NOVA, "password2": NOVA}, follow=True)
+    conta.refresh_from_db()
+    assert conta.check_password(NOVA)
+    assert not conta.check_password(SENHA)
+    assert conta.situacao == Situacao.SUSPENSA
+    assert EntradaAuditoria.objects.filter(acao="conta.reativar").count() == 0

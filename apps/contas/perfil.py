@@ -5,11 +5,12 @@ import uuid
 from io import BytesIO
 from typing import Any
 
+from django.core.exceptions import PermissionDenied
 from django.core.files.base import ContentFile
 from django.db import transaction
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from apps.contas.models import Conta
+from apps.contas.models import Conta, Situacao
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora
 
@@ -85,6 +86,9 @@ def processar_avatar(arquivo: Any) -> "ContentFile[bytes]":
     return ContentFile(saida.getvalue(), name=f"{uuid.uuid4()}.{EXTENSAO_POR_FORMATO[formato]}")
 
 
+CAMPOS_DO_PERFIL = ["nome", "telefone", "whatsapp_consentido_em", "avatar"]
+
+
 def atualizar_perfil(
     conta: Conta,
     *,
@@ -96,36 +100,48 @@ def atualizar_perfil(
 ) -> None:
     """Grava o perfil da própria conta, com o consentimento de WhatsApp e a auditoria.
 
-    O consentimento vale para um número: remover ou trocar o telefone o revoga, e é preciso
-    aceitar de novo. Marcar sem telefone é recusado pelo formulário e pelo `CHECK` do banco.
+    A instância recebida só fornece o `pk`: a conta é relida com `select_for_update` e todas as
+    decisões (consentimento, telefone e avatar anteriores) saem da linha travada, nunca de uma
+    cópia lida antes. A gravação é restrita aos campos do perfil (`update_fields`), então
+    `password`, `situacao`, `papel`, `fornecedor`, `email_normalizado` e os demais não são
+    reescritos por uma cópia antiga. Conta removida durante a requisição: nada é gravado e a
+    função levanta `PermissionDenied` (403). O consentimento vale para um número: remover ou
+    trocar o telefone o revoga, e é preciso aceitar de novo.
     """
-    consentia = conta.whatsapp_consentido_em is not None
-    telefone_anterior = conta.telefone
-    novo_consentimento = whatsapp
-    if telefone is None or (consentia and telefone != telefone_anterior):
-        novo_consentimento = False
-    avatar_antigo = conta.avatar.name if conta.avatar else None
     avatar_gravado: str | None = None
+    armazenamento = conta._meta.get_field("avatar").storage
     try:
         with transaction.atomic():
-            conta.nome = nome
-            conta.telefone = telefone
+            atual = Conta.objects.select_for_update().get(pk=conta.pk)
+            if atual.situacao == Situacao.REMOVIDA:
+                raise PermissionDenied
+            consentia = atual.whatsapp_consentido_em is not None
+            novo_consentimento = whatsapp
+            if telefone is None or (consentia and telefone != atual.telefone):
+                novo_consentimento = False
+            avatar_antigo = atual.avatar.name if atual.avatar else None
+
+            atual.nome = nome
+            atual.telefone = telefone
             if novo_consentimento and not consentia:
-                conta.whatsapp_consentido_em = agora()
-                registrar_auditoria(conta, "perfil.whatsapp_consentir", conta, {"conta": conta.pk})
+                atual.whatsapp_consentido_em = agora()
+                registrar_auditoria(atual, "perfil.whatsapp_consentir", atual, {"conta": atual.pk})
             elif not novo_consentimento and consentia:
-                conta.whatsapp_consentido_em = None
-                registrar_auditoria(conta, "perfil.whatsapp_revogar", conta, {"conta": conta.pk})
+                atual.whatsapp_consentido_em = None
+                registrar_auditoria(atual, "perfil.whatsapp_revogar", atual, {"conta": atual.pk})
             if avatar_novo is not None:
-                conta.avatar.save(avatar_novo.name or "avatar", avatar_novo, save=False)
-                avatar_gravado = conta.avatar.name
+                atual.avatar.save(avatar_novo.name or "avatar", avatar_novo, save=False)
+                avatar_gravado = atual.avatar.name
             elif remover_avatar and avatar_antigo:
-                conta.avatar = None
-            conta.save()
-            if avatar_antigo and conta.avatar.name != avatar_antigo:
-                armazenamento = conta._meta.get_field("avatar").storage
+                atual.avatar = None
+            atual.save(update_fields=CAMPOS_DO_PERFIL)
+            if avatar_antigo and atual.avatar.name != avatar_antigo:
                 transaction.on_commit(lambda: armazenamento.delete(avatar_antigo))
     except Exception:
         if avatar_gravado:  # a gravação falhou: não deixa o arquivo novo órfão
-            conta._meta.get_field("avatar").storage.delete(avatar_gravado)
+            armazenamento.delete(avatar_gravado)
         raise
+    conta.nome = atual.nome
+    conta.telefone = atual.telefone
+    conta.whatsapp_consentido_em = atual.whatsapp_consentido_em
+    conta.avatar = atual.avatar

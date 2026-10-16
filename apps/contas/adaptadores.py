@@ -11,6 +11,7 @@ from allauth.mfa.models import Authenticator
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
 from django import forms
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
@@ -104,6 +105,12 @@ class AdaptadorConta(DefaultAccountAdapter):
             return [m for m in metodos if m["id"] != "reauthenticate"]
         return metodos
 
+    def set_password(self, user: Any, password: str) -> None:
+        """Grava só a senha. O padrão do allauth chama `user.save()` e reescreveria todas as
+        colunas (inclusive `situacao`) com os valores lidos no início da requisição."""
+        user.set_password(password)
+        user.save(update_fields=["password"])
+
     def respond_user_inactive(self, request: HttpRequest, user: Any) -> HttpResponse:
         return HttpResponseRedirect(reverse("account_login"))  # sem página de conta inativa
 
@@ -159,10 +166,18 @@ class AdaptadorContaSocial(DefaultSocialAccountAdapter):
             self._exigir_acesso(request, conta, email)
             request.session.pop(CHAVE_CONVITE_PENDENTE, None)
             return
-        conta = Conta.objects.filter(email_normalizado=email).first()
-        if conta is not None:  # mesmo e-mail normalizado: vincula, nunca cria outra conta
-            self._exigir_acesso(request, conta, email)
-            sociallogin.connect(request, conta)
+        # Leitura, `verificar_acesso` e vínculo na mesma transação, com a conta travada: o
+        # `connect` do allauth grava a conta inteira e, sem a trava, desfaria uma suspensão ou
+        # remoção feita entre a leitura e o vínculo. Uma recusa aqui desfaz a transação.
+        try:
+            with transaction.atomic():
+                conta = Conta.objects.select_for_update().filter(email_normalizado=email).first()
+                if conta is not None:  # mesmo e-mail normalizado: vincula, nunca cria outra conta
+                    verificar_acesso(conta, email, Metodo.GOOGLE)
+                    sociallogin.connect(request, conta)
+        except AcessoRecusado:
+            self._recusar(request)
+        if conta is not None:
             request.session.pop(CHAVE_CONVITE_PENDENTE, None)
             return
         if email_banido(email) or not self._convite_pendente_valido(request, email):
