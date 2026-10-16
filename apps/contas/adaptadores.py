@@ -24,6 +24,8 @@ def metodo_do_login(request: HttpRequest) -> Metodo:
     registros = get_authentication_records(request)
     if registros and registros[-1].get("method") == "mfa" and registros[-1].get("passwordless"):
         return Metodo.PASSKEY
+    if registros and registros[-1].get("method") == "link":
+        return Metodo.LINK
     return Metodo.SENHA
 
 

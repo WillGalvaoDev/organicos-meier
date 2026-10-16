@@ -1,0 +1,8 @@
+{% autoescape off %}Olá!
+
+Use o link abaixo para entrar no Orgânicos Méier (uso único):
+
+{{ link }}
+
+O link vale por {{ minutos }} minutos. Se não foi você quem pediu, ignore esta mensagem.
+{% endautoescape %}
