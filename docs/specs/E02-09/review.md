@@ -101,3 +101,57 @@ No caso de remoção, o registro EmailBanido permanece e continua protegendo a e
 Reprodução: `test_perfil_preserva_alteracao_concorrente`, parâmetros `suspender`, `remover` e `senha`, preservado em E02-10. O monkeypatch intercala a alteração depois de a view ler a conta e antes de chamar a função original de salvamento. Não altera a função auditada nem os resultados; representa deterministicamente a ordem possível de duas requisições. Falhas: `ativa != suspensa`, `ativa != removida` e senha nova não confere.
 
 Devolução: restringir a gravação aos campos efetivamente editáveis e proteger a leitura/gravação dos estados do próprio perfil que precisam de consistência (consentimento e avatar), sem sobrescrever credenciais, papel, vínculo ou moderação. Testar a intercalação com suspensão, remoção e recuperação de senha antes da correção, e demonstrar Red → Green. Não há decisão comercial em aberto.
+
+## Correção E02-R01 conforme "Correção E02-R01" do spec.md (implementador)
+
+**Causa confirmada.** A view `perfil` lia a conta no início da requisição e `atualizar_perfil` alterava essa instância e chamava `conta.save()` sem `update_fields`, reescrevendo todas as colunas (inclusive `situacao` e `password`) com os valores lidos antes. Uma suspensão, uma remoção ou uma troca de senha feita nesse intervalo era desfeita. A frase "sem concorrência crítica" do spec estava errada.
+
+**Red** (código do commit `8f4dc36`, `uv run pytest tests/tecnicos/test_perfil_concorrencia.py tests/tecnicos/test_contas_google_concorrencia.py tests/tecnicos/test_contas_recuperacao.py`):
+
+```
+12 failed, 13 passed
+FAILED test_perfil_preserva_alteracao_concorrente[suspender]       assert 'ativa' == 'suspensa'   (teste do revisor)
+FAILED test_perfil_preserva_alteracao_concorrente[remover]         assert 302 == 403              (parâmetro com a expectativa ajustada)
+FAILED test_perfil_preserva_alteracao_concorrente[senha]           check_password(senha nova) falso (revisor)
+FAILED test_suspensao_depois_da_leitura_e_preservada               (A-20)
+FAILED test_remocao_depois_da_leitura_recusa_o_perfil_e_nao_grava_avatar   (A-21)
+FAILED test_senha_trocada_depois_da_leitura_e_preservada           (A-22)
+FAILED test_gravacao_do_perfil_so_atribui_as_colunas_do_perfil     (A-23: o UPDATE atribuía todas as colunas)
+FAILED test_dois_consentimentos_simultaneos_geram_uma_auditoria    (A-24: AssertionError: 0, repetição 0)
+FAILED test_perfil_e_suspensao_simultaneos_terminam_suspensos_com_nome_novo   (A-25)
+```
+
+(Mais os 3 falhos do A-25 da E02-02 e os 2 do A-21 da E02-07, registrados nas respectivas fatias.) Todos os testes de intercalação por `monkeypatch` falham de forma determinística pela asserção. Os com threads (A-24 e A-25) falharam já na primeira execução do código antigo neste ambiente; como dependem da ordem real das threads, ficam como regressão. A expectativa do parâmetro `remover` do teste do revisor foi ajustada para 403, nome inalterado e situação `removida`, conforme o item 4 da regra; `suspender` e `senha` ficaram literais (302). O corpo literal do revisor recebeu apenas `type: ignore` nas funções sem anotação, `noqa: S106` nas senhas de exemplo e o formato de aspas do `ruff format`.
+
+**Green** (`apps/contas/perfil.py`, `atualizar_perfil`): a assinatura não mudou; da instância recebida usa-se só o `pk`. Dentro de `transaction.atomic()` a conta é relida com `Conta.objects.select_for_update().get(pk=...)`; conta `removida` na linha travada levanta `PermissionDenied` (403 pela view), sem gravar, sem auditoria e sem tocar o storage (o avatar novo só é gravado depois dessa checagem; se a gravação falhar depois, o arquivo novo é apagado). Consentimento, telefone e avatar anteriores, a revogação por troca ou remoção do telefone, a auditoria e o arquivo antigo a apagar (em `on_commit`) saem todos da linha travada. A gravação é `save(update_fields=["nome", "telefone", "whatsapp_consentido_em", "avatar"])`. Conta suspensa durante a requisição grava o perfil normalmente e continua `suspensa`. A trava é a mesma da moderação (E02-08), sem segunda trava. Ao final os campos do perfil são copiados para a instância recebida.
+
+**Verificação (após as três correções do E02-R01):**
+
+```
+test_perfil_concorrencia.py + test_contas_google_concorrencia.py (3 execuções seguidas) -> 11 passed em todas
+uv run pytest -q     -> 634 passed
+uv run ruff check .  -> All checks passed
+uv run mypy .        -> Success: no issues found in 123 source files
+```
+
+### Inventário das gravações de uma `Conta` já existente (exigido pelo spec)
+
+Levantamento feito em 2026-10-16 com `grep -rn "\.save(\|\.update(" apps` (migrações excluídas) e conferência dos caminhos do allauth em uso (`allauth/account/**`, `socialaccount/models.py`, `mfa`, `usersessions`):
+
+| Gravação | Arquivo | Proteção |
+|---|---|---|
+| perfil | `apps/contas/perfil.py:137` | `select_for_update` + `update_fields=["nome","telefone","whatsapp_consentido_em","avatar"]` (esta correção) |
+| moderação | `apps/contas/moderacao.py:44` | `select_for_update` + `update_fields=["situacao"]` (E02-08) |
+| redefinição de senha | `AdaptadorConta.set_password`, `apps/contas/adaptadores.py:112` | `update_fields=["password"]` (E02-02, esta correção) |
+| vínculo com o Google (caso 2) | `AdaptadorContaSocial.pre_social_login` (`sociallogin.connect` -> `SocialLogin.save` -> `user.save()`) | leitura com `select_for_update` + `verificar_acesso` + `connect` na mesma transação (E02-07, esta correção) |
+| criação da conta no consumo do convite | `apps/contas/convites.py:188` | conta nova (`INSERT`), na transação com o convite travado |
+| criação do administrador | `criar_administrador.py:42` | conta nova |
+| `Conta.save` (override) | `apps/contas/models.py:140,166` | repassa `*args, **kwargs` (inclui `update_fields`) e protege a unicidade do e-mail |
+| `update_last_login` do Django (sinal `user_logged_in`) | `django/contrib/auth/models.py` | `save(update_fields=["last_login"])` |
+| atualização de hash em `check_password` | `django/contrib/auth/base_user.py` | `save(update_fields=["password"])` |
+| `setup_user_email` do allauth (`user.save()`) | `allauth/account/utils.py:227` | só no vínculo social sem `connect=True` e no cadastro social novo, caminhos que o projeto não usa (cadastro por Google sem convite é recusado; o vínculo usa `connect`) |
+| `SocialLogin.save` com conta já vinculada (caso 1) | `allauth/socialaccount/models.py:_lookup_by_socialaccount` | grava só a `SocialAccount`; o teste `test_login_com_conta_social_ja_vinculada_nao_regrava_a_conta` confere que a única atualização de `contas_conta` é o `last_login` |
+
+Nenhum ponto novo sem proteção foi encontrado.
+
+**Não feito (conforme "O que não fazer"):** não se trocou a gravação por `refresh_from_db()` sem trava, não se reverteu a suspensão nem a senha depois da gravação, e não se usou `Conta.objects.filter(pk=...).update(...)` sem a releitura travada.

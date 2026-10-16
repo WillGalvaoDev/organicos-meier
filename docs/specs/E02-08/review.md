@@ -96,3 +96,16 @@ WebAuthn usa o dublê criptográfico expressamente previsto, com views, sessão 
 ### Pendência de integração: E02-R01
 
 A moderação usa trava e grava somente a situação, porém um POST de perfil já em andamento pode gravar depois uma cópia anterior da conta inteira e restaurar `ativa`. A reprodução está detalhada em E02-09/review.md. No caso de remoção, o EmailBanido continua existindo e ainda bloqueia login: não foi demonstrado contorno do banimento, mas a situação fica inconsistente. No caso de suspensão, não há banimento, e a conta volta a satisfazer `pode_adicionar_interesse` sem reativação administrativa. Os serviços isolados passaram; o aceite integrado da fatia está REPROVADO até a gravação do perfil preservar a moderação.
+
+## Correção E02-R01 (integração) conforme o spec.md (implementador)
+
+Os serviços de moderação não mudaram. A invariante explícita ("só a moderação altera `situacao`; toda outra gravação de uma conta existente usa `update_fields` restrito ou relê a conta com `select_for_update` na mesma transação") agora vale em todos os caminhos: perfil (E02-09, A-20 a A-25), redefinição de senha (E02-02, A-25) e vínculo com o Google (E02-07, A-21). O inventário das gravações de `Conta` com a proteção de cada uma está em `docs/specs/E02-09/review.md`. O aceite integrado desta fatia depende desses critérios, todos verdes.
+
+**Verificação (após as três correções do E02-R01):**
+
+```
+test_perfil_concorrencia.py + test_contas_google_concorrencia.py (3 execuções seguidas) -> 11 passed em todas
+uv run pytest -q     -> 634 passed
+uv run ruff check .  -> All checks passed
+uv run mypy .        -> Success: no issues found in 123 source files
+```

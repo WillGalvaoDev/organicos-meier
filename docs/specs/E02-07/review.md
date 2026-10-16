@@ -131,3 +131,24 @@ O teste do revisor falha em `assert resposta['Location'] == '/inicio/'` (a concl
 **Verificação:** `uv run pytest -q` -> 615 passed; ruff e mypy limpos.
 
 **Matriz:** A-18 (`test_google_userinfo_verificado_conclui_cadastro` literal, com `noqa: S105` no token e o formato de aspas do `ruff format`, e `test_formato_userinfo_tem_o_mesmo_resultado_do_cadastro_com_id_token`), A-19 (parametrizado nos quatro casos, para convite pendente e para conta existente), A-20 (`test_funcao_unica_interpreta_a_verificacao_do_google` com ID token, userinfo e dez negativos, e `test_adaptador_e_conclusao_usam_a_mesma_funcao`). Não foi aceito e-mail sem marcação de verificado, e a interpretação não foi duplicada.
+
+## Correção E02-R01 (vínculo Google) conforme o spec.md (implementador)
+
+**Causa confirmada.** No caso 2 da decisão no retorno do Google, o adaptador lia a conta por e-mail sem trava e `sociallogin.connect(request, conta)` chamava `SocialLogin.save` -> `user.save()` sem `update_fields` (`allauth/socialaccount/models.py`), de modo que uma suspensão ou remoção feita entre a leitura e o vínculo era desfeita.
+
+**Red** (código do commit `8f4dc36`): `test_vinculo_do_google_nao_desfaz_suspensao_nem_remocao[suspender]` e `[remover]` (A-21) falharam na asserção (`situacao` final `ativa`). O teste usa duas threads reais: uma trava a linha da conta e a suspende (ou remove) e só confirma depois de ver, em `pg_stat_activity` (`wait_event_type = 'Lock'`), a outra esperando por trava; a outra é o retorno do Google. No código antigo a espera acontece no `UPDATE` do `connect`, que então sobrescrevia a situação.
+
+**Green** (`AdaptadorContaSocial.pre_social_login`, caso 2): a leitura (`Conta.objects.select_for_update().filter(email_normalizado=e).first()`), `verificar_acesso` e `sociallogin.connect` ficam no mesmo `transaction.atomic()`. Depois de uma suspensão concluída antes, o retorno espera a trava, lê `suspensa`, `verificar_acesso` aceita (a suspensa entra), o `connect` grava o estado atual e o login acontece. Depois de uma remoção, `verificar_acesso` recusa (a transação é desfeita, sem `SocialAccount`) e o login é recusado.
+
+**Caso 1 (conta social já vinculada), conferido no allauth 65.19.7:** o caminho `_lookup_by_socialaccount` grava só a `SocialAccount` e o login só atualiza `last_login` (`update_fields`); não chama `user.save()` sem `update_fields`. O teste `test_login_com_conta_social_ja_vinculada_nao_regrava_a_conta` confere pelas consultas que a única atualização de `contas_conta` é a de `last_login`.
+
+Testes: A-21 em `tests/tecnicos/test_contas_google_concorrencia.py` (`concorrencia`, `django_db(transaction=True)`). O inventário das gravações está em `docs/specs/E02-09/review.md`.
+
+**Verificação (após as três correções do E02-R01):**
+
+```
+test_perfil_concorrencia.py + test_contas_google_concorrencia.py (3 execuções seguidas) -> 11 passed em todas
+uv run pytest -q     -> 634 passed
+uv run ruff check .  -> All checks passed
+uv run mypy .        -> Success: no issues found in 123 source files
+```

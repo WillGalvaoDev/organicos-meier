@@ -189,3 +189,24 @@ def test_inicio_do_login_com_google_redireciona_para_o_google(client: Client) ->
     resposta = client.post("/entrar/google/login/")
     assert resposta.status_code == 302
     assert resposta["Location"].startswith("https://accounts.google.com/")
+
+
+def test_login_com_conta_social_ja_vinculada_nao_regrava_a_conta(client: Client) -> None:
+    # E02-R01 (vínculo Google), caso 1: confere no allauth 65.19.7 que esse caminho não faz
+    # `user.save()` sem `update_fields`; a única atualização de `contas_conta` é o `last_login`.
+    import re
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    ContaFactory.create(email_normalizado="ana@x.com")
+    _retorno(client)  # cria o vínculo (caso 2)
+    outro = Client()
+    with CaptureQueriesContext(connection) as consultas:
+        _retorno(outro)  # caso 1: conta social já vinculada
+    assert _autenticado(outro)
+    atualizacoes = [
+        c["sql"] for c in consultas.captured_queries if c["sql"].startswith('UPDATE "contas_conta"')
+    ]
+    for sql in atualizacoes:
+        assert set(re.findall(r'"(\w+)" =', sql.split(" WHERE ")[0])) == {"last_login"}, sql

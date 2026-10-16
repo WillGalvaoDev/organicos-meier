@@ -126,3 +126,22 @@ uv run mypy .                 -> Success: no issues found in 120 source files
 ```
 
 **Matriz:** A-22 e A-23 em `test_contas_recuperacao.py` (os dois conferem o código `password_too_similar`, que a senha continua a antiga e a ausência da nova); A-24 em `test_configuracao_producao.py` (produção, em subprocesso, e `get_default_password_validators()` nas configurações de teste).
+
+## Correção E02-R01 (recuperação) conforme o spec.md (implementador)
+
+**Causa confirmada.** O `set_password` padrão do allauth (`allauth/account/adapter.py`) chama `user.save()` sem `update_fields`, e a conta do link é lida no início da requisição: uma suspensão feita entre a leitura e a gravação era revertida para `ativa` pela redefinição.
+
+**Red** (código do commit `8f4dc36`): `test_redefinicao_preserva_suspensao_feita_depois_da_leitura` (A-25) falhou na asserção (`situacao` voltou a `ativa`; a nova senha valia). A intercalação é feita por `monkeypatch` da revalidação do formulário (`formularios.verificar_acesso`: passa e, em seguida, o administrador suspende), um ponto anterior, sem substituir `set_password`.
+
+**Green:** `AdaptadorConta.set_password(user, password)` chama `user.set_password(password)` e `user.save(update_fields=["password"])`; nenhuma outra coluna é gravada. A revalidação da situação ao definir a nova senha continua como estava.
+
+Testes: A-25 em `tests/tecnicos/test_contas_recuperacao.py`. O inventário completo das gravações de `Conta` está em `docs/specs/E02-09/review.md`.
+
+**Verificação (após as três correções do E02-R01):**
+
+```
+test_perfil_concorrencia.py + test_contas_google_concorrencia.py (3 execuções seguidas) -> 11 passed em todas
+uv run pytest -q     -> 634 passed
+uv run ruff check .  -> All checks passed
+uv run mypy .        -> Success: no issues found in 123 source files
+```
