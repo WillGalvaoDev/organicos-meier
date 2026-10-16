@@ -56,20 +56,41 @@ def painel_administracao(request: HttpRequest) -> HttpResponse:
     return render(request, "administracao/painel.html", {"conta": request.user})
 
 
+def _ha_outra_passkey(conta_id: int, excluindo: int) -> bool:
+    """Decisão sobre o estado travado: a conta tem outra passkey além da que será removida?"""
+    outras = Authenticator.objects.filter(
+        user_id=conta_id, type=Authenticator.Type.WEBAUTHN
+    ).exclude(pk=excluindo)
+    return bool(outras.exists())
+
+
 @exige_login
 def remover_passkey(request: HttpRequest, pk: int) -> HttpResponse:
-    """Remoção de passkey do allauth, recusada quando seria a última (o allauth só consulta
-    `can_delete_authenticator` no TOTP, então a regra é aplicada aqui)."""
-    if request.method == "POST" and request.user.is_authenticated:
-        autenticador = Authenticator.objects.filter(
-            pk=pk, user=request.user, type=Authenticator.Type.WEBAUTHN
-        ).first()
-        if autenticador is not None and not get_adapter_mfa().can_delete_authenticator(
-            autenticador
-        ):
+    """Remoção de passkey do allauth, recusada quando seria a última.
+
+    O allauth só consulta `can_delete_authenticator` no TOTP, então a regra é aplicada aqui. A
+    verificação e a exclusão são serializadas por conta: a linha da conta da sessão é travada
+    (`select_for_update`) e a decisão que vale é tomada sob a trava, por `_ha_outra_passkey`.
+    Travar só a linha do `Authenticator` não bastaria: duas remoções de passkeys diferentes
+    travariam linhas diferentes.
+    """
+    if request.method != "POST" or not request.user.is_authenticated:
+        resposta: HttpResponse = remove_webauthn(request, pk=pk)
+        return resposta
+    autenticador = Authenticator.objects.filter(
+        pk=pk, user=request.user, type=Authenticator.Type.WEBAUTHN
+    ).first()
+    # Resposta rápida, sem trava; não é a decisão final.
+    if autenticador is not None and not get_adapter_mfa().can_delete_authenticator(autenticador):
+        messages.error(request, "A última passkey não pode ser removida.")
+        return redirect("mfa_list_webauthn")
+    with transaction.atomic():
+        conta_id = request.user.pk
+        Conta.objects.select_for_update().get(pk=conta_id)
+        if autenticador is not None and not _ha_outra_passkey(conta_id, pk):
             messages.error(request, "A última passkey não pode ser removida.")
             return redirect("mfa_list_webauthn")
-    resposta: HttpResponse = remove_webauthn(request, pk=pk)
+        resposta = remove_webauthn(request, pk=pk)  # dentro da mesma transação
     return resposta
 
 

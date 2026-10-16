@@ -106,3 +106,33 @@ A consulta que permite excluir porque existe outra passkey e a exclusão não s�
 Reprodução: `test_duas_remocoes_preservam_ultima_passkey`. O monkeypatch apenas acrescenta uma barreira depois do resultado real de `can_delete_authenticator`; não altera a decisão. Views, sessões, banco e exclusões são reais. `executar_em_paralelo` executa os dois POSTs. Falha: `assert 0 >= 1`.
 
 Devolução: tornar a verificação e a exclusão uma operação serializada por administrador, revalidando sob a mesma proteção; registrar Red → Green com duas exclusões concorrentes e conservar os testes de recência/permissão. A frase da spec sobre ausência de concorrência crítica não revoga a invariante explícita da última chave. Não é necessária decisão comercial.
+
+## Correção E02-R02 conforme "Correção E02-R02" do spec.md (implementador)
+
+**Causa confirmada.** `remover_passkey` consultava `can_delete_authenticator` (existe outra passkey?) e depois delegava a exclusão à view do allauth, sem serializar as duas etapas. Com duas passkeys e dois `POST` simultâneos de passkeys diferentes, cada requisição via a outra passkey, as duas apagavam e o administrador ficava com zero.
+
+**Red** (código do commit `8f4dc36`, `uv run pytest tests/tecnicos/test_admin_passkeys_concorrencia.py`, três execuções seguidas):
+
+```
+3 failed   (execução 1)
+3 failed   (execução 2)
+3 failed   (execução 3)
+E   assert 0 >= 1        test_duas_remocoes_preservam_ultima_passkey (teste do revisor, literal)
+```
+
+O teste do revisor falhou de forma determinística pela asserção (zero passkeys), porque a barreira dele força a intercalação logo depois de `can_delete_authenticator`. O A-16 (duas sessões, 10 repetições) e o A-17 (três sessões) também falharam nas três execuções do código antigo neste ambiente; como dependem da ordem real das threads, ficam como testes de regressão.
+
+**Green** (`apps/contas/views.py`, `remover_passkey`): no `POST`, a consulta prévia por `can_delete_authenticator` continua como resposta rápida (sem trava, e é a que o teste do revisor pausa). Em seguida abre-se `transaction.atomic()` e trava-se a linha da **conta** da sessão (`Conta.objects.select_for_update().get(pk=...)`); sob a trava, a função própria `_ha_outra_passkey` (consulta nova) decide, e `can_delete_authenticator` nunca é chamado com a trava obtida. Sem outra passkey, a remoção é recusada com "A última passkey não pode ser removida." e redirecionamento para a lista; havendo, `remove_webauthn` roda dentro do mesmo bloco atômico (se o allauth pedir nova autenticação, a exceção desfaz o bloco e nada é removido). `GET`, A-11, A-12 e a exigência de nova autenticação ficaram como estavam. O comando `redefinir_passkeys_administrador` não mudou e segue como a única exceção à invariante.
+
+**Verificação:**
+
+```
+test_admin_passkeys_concorrencia.py + test_admin_passkeys_gestao.py (5 execuções seguidas) -> 12 passed em todas
+uv run pytest -q   -> 621 passed
+```
+
+**Defeito adicional encontrado no Green (corrigido, com teste).** Ao contar as mensagens da lista de passkeys, a página `/seguranca/webauthn/` falhou com `TemplateSyntaxError: 'humanize' is not a registered tag library`: os templates de passkeys do allauth carregam `django.contrib.humanize`, que não estava em `INSTALLED_APPS`, e nenhum teste anterior renderizava a listagem. Red: `test_paginas_de_gestao_de_passkeys_renderizam[lista]` (1 failed). Green: `django.contrib.humanize` adicionado a `config/settings/base.py`; as três páginas (índice, lista e cadastro) respondem 200.
+
+**Matriz:** A-16 e A-17 em `tests/tecnicos/test_admin_passkeys_concorrencia.py`, com `test_duas_remocoes_preservam_ultima_passkey` do revisor (corpo literal, com `type: ignore` nas funções sem anotação e o formato de aspas do `ruff format`; nome original no comentário). Mais a regressão das páginas em `test_admin_passkeys_gestao.py`.
+
+**Não feito (conforme "O que não fazer"):** não se travou só a linha do `Authenticator`; não se usou `count()` sem trava nem recriação posterior.
