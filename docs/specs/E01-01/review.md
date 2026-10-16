@@ -1,6 +1,6 @@
 # E01-01 — Revisão
 
-Estado atual: **APROVADO** no commit `b709ce3` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `06e2faf` (revalidação independente de 2026-10-16 ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -222,3 +222,14 @@ Verificações: `uv run ruff check .` limpo; `uv run ruff format --check .`, 54 
 A E01 global continua **REPROVADA**, agora pela incompatibilidade técnica R06/A-17 documentada na E01-05; o vazamento R05 foi corrigido. Nenhum código de implementação ou teste versionado foi alterado pelo revisor.
 
 Proteção remota consultada novamente: PR obrigatório, zero aprovações humanas, `verificacoes` obrigatório e strict, enforce_admins=true, force pushes/deletions=false. Secret scanning e push protection ativos. R01 permanece encerrado. Os cenários negativos reais A-3 a A-6 e A-9/A-10 da revisão 6b7b9ab não foram repetidos: workflow e proteções permanecem iguais. A-1/A-2 confirmados pelos CIs acima; nenhuma configuração remota foi alterada.
+
+
+## Revalidação independente — 06e2faf — 2026-10-16
+
+Revisor: Codex, agente 3. SHA auditado: `06e2fafef33b1beb5ae346e2ff6fd590a0184689`. **APROVADO nesta fatia, decisão mantida. E01 global APROVADA.** Implementação e requisitos desta fatia permanecem inalterados. R06 da E01-05 foi encerrado pela compatibilização do contrato com timeout fixo e pela revalidação independente; R01 a R05 continuam encerrados.
+
+Evidências desta rodada: `uv run pytest -q`, **143 passed em 40,28 s**, Postgres 17.11; matriz A-1 a A-18 da E01-05 reexecutada, módulo com **27 passed nas cinco execuções consecutivas**. Ruff check limpo, format check 54 arquivos, mypy 40 arquivos sem erros, makemigrations --check --dry-run sem mudanças e manage.py check zero issues (settings test). CI do SHA exato [38897195100](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38897195100): sucesso. Mantidas as evidências anteriores e suas limitações documentais de TDD; não surgiu achado nesta fatia. Relatório detalhado da revalidação em `../E01-05/review.md`.
+
+Somente os relatórios foram alterados pelo revisor, na branch `revisao/e01-06e2faf`, sem commit/push/merge. Gate de revisão da E01 encerrado.
+
+Proteção e segurança remotas reconferidas: PR obrigatório, zero aprovações humanas, `verificacoes` obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection ativos. R01 permanece encerrado. Os cenários negativos remotos das revisões anteriores não foram recriados porque workflow e regras não mudaram; nenhuma configuração remota foi alterada.
