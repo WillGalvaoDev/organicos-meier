@@ -8,7 +8,6 @@ from allauth.mfa.webauthn.views import remove_webauthn
 from allauth.socialaccount.internal.flows.signup import get_pending_signup
 from allauth.socialaccount.providers.google.views import oauth2_login
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
@@ -41,9 +40,10 @@ from apps.contas.link_de_acesso import LinkInvalido, pedir_link, usar_link, vali
 from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
 from apps.contas.moderacao import ModeracaoInvalida, reativar, remover, suspender
 from apps.contas.perfil import atualizar_perfil
+from apps.contas.permissoes import exige_login, publica
 
 
-@login_required
+@exige_login
 def inicio(request: HttpRequest) -> HttpResponse:
     """Página inicial autenticada: nome e papel, até as telas de cada papel existirem."""
     return render(request, "inicio.html", {"conta": request.user})
@@ -55,6 +55,7 @@ def painel_administracao(request: HttpRequest) -> HttpResponse:
     return render(request, "administracao/painel.html", {"conta": request.user})
 
 
+@exige_login
 def remover_passkey(request: HttpRequest, pk: int) -> HttpResponse:
     """Remoção de passkey do allauth, recusada quando seria a última (o allauth só consulta
     `can_delete_authenticator` no TOTP, então a regra é aplicada aqui)."""
@@ -107,6 +108,7 @@ def convites_administracao(request: HttpRequest) -> HttpResponse:
     return render(request, "convites/administracao.html", {"form": form, "convites": convites})
 
 
+@publica
 def aceitar_convite(request: HttpRequest, token: str) -> HttpResponse:
     """Página (GET) e cadastro (POST) por convite. O GET nunca consome o convite."""
     if request.user.is_authenticated:  # contas independentes: não mistura sessões (§2)
@@ -142,6 +144,7 @@ def aceitar_convite(request: HttpRequest, token: str) -> HttpResponse:
     )
 
 
+@publica
 def pedir_link_de_acesso(request: HttpRequest) -> HttpResponse:
     """Pedido do link de acesso. A resposta é a mesma para qualquer e-mail válido."""
     form = FormularioPedidoDeLink(request.POST if request.method == "POST" else None)
@@ -151,6 +154,7 @@ def pedir_link_de_acesso(request: HttpRequest) -> HttpResponse:
     return render(request, "contas/link_pedido.html", {"form": form})
 
 
+@publica
 def usar_link_de_acesso(request: HttpRequest, token: str) -> HttpResponse:
     """GET confirma (não consome); POST consome o link e autentica a conta."""
     if request.method == "POST":
@@ -170,6 +174,7 @@ def usar_link_de_acesso(request: HttpRequest, token: str) -> HttpResponse:
     return render(request, "contas/link_confirmar.html")
 
 
+@publica
 @require_POST
 def cadastrar_com_google(request: HttpRequest, token: str) -> HttpResponse:
     """Guarda o convite na sessão e inicia o login do Google (sem consumir o convite)."""
@@ -184,6 +189,7 @@ def cadastrar_com_google(request: HttpRequest, token: str) -> HttpResponse:
     return resposta
 
 
+@publica
 def concluir_cadastro_google(request: HttpRequest) -> HttpResponse:
     """Último passo do cadastro com Google: confirma o nome e consome o convite."""
     pendente = get_pending_signup(request)
@@ -231,6 +237,7 @@ def concluir_cadastro_google(request: HttpRequest) -> HttpResponse:
     return render(request, "convites/google_concluir.html", {"form": form, "convite": convite})
 
 
+@publica
 def google_recusado(request: HttpRequest) -> HttpResponse:
     """Erro ou cancelamento no Google: a mesma recusa única."""
     return recusar_login_google(request)
@@ -298,7 +305,7 @@ def confirmar_remocao(request: HttpRequest, pk: int) -> HttpResponse:
     return render(request, "usuarios/confirmar_remocao.html", {"conta": conta})
 
 
-@login_required
+@exige_login
 def perfil(request: HttpRequest) -> HttpResponse:
     """Perfil da própria conta da sessão (não há parâmetro de identificação de conta)."""
     conta = Conta.objects.get(pk=request.user.pk)  # type: ignore[misc]
@@ -326,7 +333,7 @@ def perfil(request: HttpRequest) -> HttpResponse:
     return render(request, "contas/perfil.html", {"form": form, "conta": conta})
 
 
-@login_required
+@exige_login
 def avatar(request: HttpRequest, pk: int) -> HttpResponseBase:
     """Serve o avatar à própria conta e ao administrador (com passkey); os demais veem 404."""
     usuario = request.user
