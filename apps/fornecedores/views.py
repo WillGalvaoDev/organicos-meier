@@ -6,6 +6,7 @@ from django.forms import Form
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.catalogo.models import Produto
 from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta
 from apps.fornecedores.forms import (
@@ -60,7 +61,12 @@ def detalhe(request: HttpRequest, pk: int) -> HttpResponse:
     return render(
         request,
         "fornecedores/detalhe.html",
-        {"fornecedor": fornecedor, "contas": contas, "rodada": rodada},
+        {
+            "fornecedor": fornecedor,
+            "contas": contas,
+            "rodada": rodada,
+            "produtos": Produto.objects.filter(fornecedor=fornecedor).order_by("nome", "pk"),
+        },
     )
 
 

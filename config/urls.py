@@ -3,6 +3,7 @@ from allauth.socialaccount.providers.google.provider import GoogleProvider
 from allauth.socialaccount.providers.oauth2.urls import default_urlpatterns
 from django.urls import URLPattern, URLResolver, include, path, re_path
 
+from apps.catalogo import views as catalogo_views
 from apps.contas import views as contas_views
 from apps.fornecedores import views as fornecedores_views
 from apps.rodadas import views as rodadas_views
@@ -93,6 +94,17 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "administracao/fornecedores/<int:pk>/rodadas/abrir/",
         rodadas_views.abrir,
         name="rodadas_abrir",
+    ),
+    path(
+        "administracao/fornecedores/<int:pk>/produtos/novo/",
+        catalogo_views.novo,
+        name="produtos_novo",
+    ),
+    path("administracao/produtos/<int:pk>/", catalogo_views.detalhe, name="produtos_detalhe"),
+    path(
+        "administracao/produtos/<int:pk>/multiplo/",
+        catalogo_views.multiplo,
+        name="produtos_multiplo",
     ),
     path(
         "administracao/convites/",
