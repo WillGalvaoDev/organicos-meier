@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block titulo %}{{ fornecedor.nome }} · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>{{ fornecedor.nome }}</h1>
+  <dl>
+    <dt>E-mail para o pedido</dt><dd>{{ fornecedor.email_pedido }}</dd>
+    <dt>Mínimo (R$)</dt><dd>{{ fornecedor.minimo|floatformat:2 }}</dd>
+    <dt>Prazo de entrega (dias)</dt><dd>{{ fornecedor.prazo_entrega_dias }}</dd>
+    <dt>Informações de frete</dt><dd>{{ fornecedor.informacoes_frete|default:"—" }}</dd>
+    <dt>Cadastrado em</dt><dd>{{ fornecedor.criado_em|date:"d/m/Y H:i" }}</dd>
+  </dl>
+  <p><a href="{% url 'fornecedores_editar' pk=fornecedor.pk %}">Editar</a></p>
+
+  <h2>Contas de fornecedor vinculadas</h2>
+  {% if contas %}
+    <table>
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Situação</th></tr></thead>
+      <tbody>
+        {% for conta in contas %}
+          <tr><td>{{ conta.nome }}</td><td>{{ conta.email_normalizado }}</td><td>{{ conta.situacao }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhuma conta vinculada.</p>
+  {% endif %}
+  <p><a href="{% url 'fornecedores_lista' %}">Voltar à lista</a></p>
+{% endblock %}

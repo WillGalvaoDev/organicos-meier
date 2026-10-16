@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Fornecedores · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Fornecedores</h1>
+  <p><a href="{% url 'fornecedores_novo' %}">Cadastrar fornecedor</a></p>
+  {% if fornecedores %}
+    <table>
+      <thead><tr><th>Nome</th><th>Mínimo (R$)</th><th>Prazo de entrega (dias)</th></tr></thead>
+      <tbody>
+        {% for fornecedor in fornecedores %}
+          <tr>
+            <td><a href="{% url 'fornecedores_detalhe' pk=fornecedor.pk %}">{{ fornecedor.nome }}</a></td>
+            <td>{{ fornecedor.minimo|floatformat:2 }}</td>
+            <td>{{ fornecedor.prazo_entrega_dias }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhum fornecedor cadastrado.</p>
+  {% endif %}
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+{% endblock %}
