@@ -4,6 +4,7 @@ from allauth.socialaccount.providers.oauth2.urls import default_urlpatterns
 from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.contas import views as contas_views
+from apps.fornecedores import views as fornecedores_views
 
 # Cada rota entra com a fatia que a especifica e testa. Só as rotas do allauth usadas aqui
 # existem; cadastro e as demais ficam de fora. Os nomes são os que o allauth usa internamente.
@@ -69,6 +70,18 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "administracao/usuarios/<int:pk>/<str:acao>/",
         contas_views.acao_de_moderacao,
         name="acao_de_moderacao",
+    ),
+    path("administracao/fornecedores/", fornecedores_views.lista, name="fornecedores_lista"),
+    path("administracao/fornecedores/novo/", fornecedores_views.novo, name="fornecedores_novo"),
+    path(
+        "administracao/fornecedores/<int:pk>/",
+        fornecedores_views.detalhe,
+        name="fornecedores_detalhe",
+    ),
+    path(
+        "administracao/fornecedores/<int:pk>/editar/",
+        fornecedores_views.editar,
+        name="fornecedores_editar",
     ),
     path(
         "administracao/convites/",

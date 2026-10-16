@@ -16,6 +16,10 @@ uv run pytest                    # suíte de testes
 uv run ruff check . ; uv run ruff format --check . ; uv run mypy .
 ```
 
+> Desde a E03-01 o fornecedor tem campos obrigatórios novos. Bancos locais que já tenham
+> fornecedores de teste devem ser recriados (`docker compose down -v`, `docker compose up -d db`,
+> `uv run python manage.py migrate`), como na E02-01.
+
 ## Fluxo de contribuição
 
 Toda mudança entra por branch e pull request para `main`; push direto é bloqueado. O job `verificacoes` do GitHub Actions (ruff check, ruff format --check, mypy e pytest contra Postgres 17) precisa estar verde e a branch precisa estar atualizada com a `main` para o merge.
@@ -27,7 +31,7 @@ config/            configuração do Django (settings por ambiente, urls, wsgi)
 apps/              apps de domínio, criadas por fatia
 templates/ static/ telas no servidor (HTMX entra com a primeira tela)
 apps/contas/       contas, papéis, e-mail normalizado e e-mails banidos
-apps/fornecedores/ entidade de fornecedor (mínima na E02-01)
+apps/fornecedores/ fornecedores: dados, cadastro e gestão pelo administrador (E03)
 apps/nucleo/       núcleo técnico sem regra de negócio (valores, tempo, auditoria)
 tests/apoio/       app só de testes (modelos de apoio e utilitários), registrado apenas em settings/test.py
 tests/ambiente/    verificação do andaime técnico

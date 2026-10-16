@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}{% if fornecedor %}Editar fornecedor{% else %}Novo fornecedor{% endif %} · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>{% if fornecedor %}Editar {{ fornecedor.nome }}{% else %}Cadastrar fornecedor{% endif %}</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p><label for="{{ form.nome.id_for_label }}">Nome</label> {{ form.nome }} {{ form.nome.errors }}</p>
+    <p><label for="{{ form.email_pedido.id_for_label }}">E-mail para o pedido formal</label> {{ form.email_pedido }} {{ form.email_pedido.errors }}</p>
+    {% if form.minimo %}
+      <p><label for="{{ form.minimo.id_for_label }}">Mínimo em produtos (R$, ex.: 150,00)</label> {{ form.minimo }} {{ form.minimo.errors }}</p>
+    {% else %}
+      <p>Mínimo atual: R$ {{ fornecedor.minimo|floatformat:2 }} (a alteração do mínimo depende da fase da rodada).</p>
+    {% endif %}
+    <p><label for="{{ form.prazo_entrega_dias.id_for_label }}">Prazo padrão de entrega (dias)</label> {{ form.prazo_entrega_dias }} {{ form.prazo_entrega_dias.errors }}</p>
+    <p><label for="{{ form.informacoes_frete.id_for_label }}">Informações de frete (opcional)</label> {{ form.informacoes_frete }} {{ form.informacoes_frete.errors }}</p>
+    <button type="submit">Salvar</button>
+  </form>
+  <p><a href="{% url 'fornecedores_lista' %}">Cancelar</a></p>
+{% endblock %}

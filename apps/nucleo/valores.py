@@ -12,6 +12,7 @@ from django.db import models
 
 _CENTAVO = Decimal("0.01")
 _TEXTO_DECIMAL = re.compile(r"[+-]?\d+(\.\d+)?")
+_PARECE_MILHAR = re.compile(r"[+-]?\d{1,3}(\.\d{3})+")
 
 
 class ValorInvalido(Exception):
@@ -52,6 +53,26 @@ def dinheiro(entrada: str | Decimal) -> Decimal:
 def quantidade(entrada: str | Decimal) -> Decimal:
     """Converte texto decimal (ponto) ou `Decimal` em quantidade com até três casas."""
     return _converter(entrada, 3)
+
+
+def ler_decimal_digitado(texto: str, casas: int) -> Decimal:
+    """Lê um decimal digitado em formulário: vírgula ou ponto como separador decimal.
+
+    Sem separador de milhar (`1.000,00` é recusado) e só texto (nunca `float`). A vírgula é
+    trocada por ponto e o resultado passa pelas mesmas regras de `dinheiro()`/`quantidade()`
+    (`casas` = 2 ou 3).
+    """
+    if not isinstance(texto, str):
+        raise ValorInvalido(f"tipo não aceito: {type(texto).__name__}")
+    limpo = texto.strip()
+    if "," in limpo:
+        if "." in limpo:
+            raise ValorInvalido("separador de milhar não é aceito")
+        limpo = limpo.replace(",", ".")
+    # Em dinheiro, "1.000" (ou "1,000") tem cara de milhar: é ambíguo e por isso recusado.
+    if casas == 2 and _PARECE_MILHAR.fullmatch(limpo):
+        raise ValorInvalido("separador de milhar não é aceito")
+    return _converter(limpo, casas)
 
 
 def arredondar_centavos(valor: Decimal) -> Decimal:

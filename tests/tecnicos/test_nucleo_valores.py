@@ -159,3 +159,60 @@ def test_conversao_zeros_finais_continuam_equivalentes(
     funcao: Any, entrada: Any, esperado: Decimal
 ) -> None:  # R02
     assert funcao(entrada) == esperado
+
+
+@pytest.mark.parametrize(
+    ("texto", "casas", "esperado"),
+    [
+        ("150,00", 2, D("150.00")),
+        ("150.00", 2, D("150.00")),
+        ("150", 2, D("150.00")),
+        ("  0,01 ", 2, D("0.01")),
+        ("0,25", 3, D("0.250")),
+        ("2,5", 3, D("2.500")),
+        ("0.125", 3, D("0.125")),
+    ],
+)
+def test_leitura_digitada_aceita_virgula_ou_ponto(
+    texto: str, casas: int, esperado: Decimal
+) -> None:
+    # E03-01: entrada de formulário
+    from apps.nucleo.valores import ler_decimal_digitado
+
+    resultado = ler_decimal_digitado(texto, casas)
+    assert resultado == esperado
+    assert str(resultado) == str(esperado)
+
+
+@pytest.mark.parametrize(
+    ("texto", "casas"),
+    [
+        ("1.000,00", 2),  # separador de milhar
+        ("1,000.00", 2),
+        ("1.000", 2),  # três casas em campo de dinheiro
+        ("0,001", 2),
+        ("0,0001", 3),
+        ("1,2,3", 2),
+        ("1..2", 2),
+        ("abc", 2),
+        ("", 2),
+        ("   ", 2),
+        ("NaN", 2),
+        ("1e3", 2),
+        ("-", 2),
+        ("+,5", 2),
+    ],
+)
+def test_leitura_digitada_recusa_formatos_invalidos(texto: str, casas: int) -> None:
+    from apps.nucleo.valores import ler_decimal_digitado
+
+    with pytest.raises(ValorInvalido):
+        ler_decimal_digitado(texto, casas)
+
+
+@pytest.mark.parametrize("entrada", [7.5, 8, True, None])
+def test_leitura_digitada_recusa_tipos_que_nao_sao_texto(entrada: Any) -> None:
+    from apps.nucleo.valores import ler_decimal_digitado
+
+    with pytest.raises(ValorInvalido):
+        ler_decimal_digitado(entrada, 2)

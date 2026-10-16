@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import timedelta
+from decimal import Decimal
 
 from allauth.account.models import EmailAddress
 from factory.declarations import LazyAttribute, LazyFunction, Sequence, Trait
@@ -18,6 +19,9 @@ class FornecedorFactory(DjangoModelFactory[Fornecedor]):
         model = Fornecedor
 
     nome = Sequence(lambda n: f"Fornecedor {n}")
+    email_pedido = Sequence(lambda n: f"pedidos{n}@fornecedor.example")
+    minimo = Decimal("100.00")
+    prazo_entrega_dias = 7
 
 
 class ContaFactory(DjangoModelFactory[Conta]):
