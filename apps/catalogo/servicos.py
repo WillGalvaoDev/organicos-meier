@@ -2,7 +2,7 @@
 
 Só o administrador cria e edita, também em chamada direta. Preço muda em qualquer etapa; o
 múltiplo só na fase de interesse. Unidade, fornecedor e incremento não são editáveis aqui
-(o incremento é da E03-06).
+(o incremento muda por `alterar_incremento`, E03-06).
 """
 
 from decimal import Decimal
@@ -16,8 +16,9 @@ from apps.catalogo.quantidades import validar_incremento, validar_multiplo
 from apps.catalogo.sinais import preco_alterado
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
+from apps.interesses.consultas import quantidades_em_uso
 from apps.nucleo.auditoria import registrar_auditoria
-from apps.nucleo.valores import ValorInvalido, dinheiro, ler_decimal_digitado
+from apps.nucleo.valores import ValorInvalido, dinheiro, eh_multiplo, ler_decimal_digitado
 from apps.rodadas.condicoes import travar_condicoes
 
 PRECO_MINIMO = Decimal("0.01")
@@ -205,4 +206,55 @@ def alterar_multiplo(autor: Conta, produto: Produto, novo: Any) -> Produto:
                     "novo": None if multiplo is None else str(multiplo),
                 },
             )
+    return atual
+
+
+_MENSAGENS_INCOMPATIVEL = {
+    "quantidade": (
+        "O novo incremento não é compatível com quantidades já registradas deste produto."
+    ),
+    "multiplo": "O múltiplo do produto não é divisível pelo novo incremento.",
+}
+
+
+class IncrementoIncompativel(Exception):
+    """O novo incremento não combina com o que já está registrado.
+
+    `codigo`: `quantidade` (alguma reserva ou pendência deixaria de ser múltipla) ou `multiplo`.
+    A mensagem não identifica compradores.
+    """
+
+    def __init__(self, codigo: str) -> None:
+        super().__init__(_MENSAGENS_INCOMPATIVEL[codigo])
+        self.codigo = codigo
+
+
+def alterar_incremento(autor: Conta, produto: Produto, novo: Any) -> Produto:
+    """Altera o incremento, só na fase de interesse e se tudo continuar divisível por ele.
+
+    Ordem de travas: fornecedor e rodada (`travar_condicoes`), produto e parcelas (por
+    sequência). As recusas, nesta ordem: fase, valor inválido, quantidades em uso (reservadas e
+    pendentes, inclusive as da fila) e múltiplo. Qualquer recusa desfaz a transação inteira.
+    """
+    _exigir_administrador(autor)
+    with transaction.atomic():
+        travar_condicoes(produto.fornecedor)
+        atual = Produto.objects.select_for_update().get(pk=produto.pk)
+        incremento = validar_incremento(novo)
+        if atual.incremento == incremento:
+            return atual
+        em_uso = quantidades_em_uso(atual, travar=True)
+        if not all(eh_multiplo(quantidade, incremento) for quantidade in em_uso):
+            raise IncrementoIncompativel("quantidade")
+        if atual.multiplo is not None and not eh_multiplo(atual.multiplo, incremento):
+            raise IncrementoIncompativel("multiplo")
+        anterior = atual.incremento
+        atual.incremento = incremento
+        atual.save(update_fields=["incremento"])
+        registrar_auditoria(
+            autor,
+            "produto.alterar_incremento",
+            atual,
+            {"produto": atual.pk, "anterior": str(anterior), "novo": str(incremento)},
+        )
     return atual

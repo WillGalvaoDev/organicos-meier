@@ -118,6 +118,11 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="estoque_alterar",
     ),
     path(
+        "administracao/produtos/<int:pk>/incremento/",
+        catalogo_views.incremento,
+        name="produtos_incremento",
+    ),
+    path(
         "administracao/convites/",
         contas_views.convites_administracao,
         name="convites_administracao",
