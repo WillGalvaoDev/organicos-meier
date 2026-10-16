@@ -1,6 +1,6 @@
 # E02-10 — Revisão
 
-Estado atual: **APROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -285,3 +285,49 @@ def test_cadastro_recusa_senha_igual_ao_nome(client):
 ```
 
 Foram alterados apenas os dez `docs/specs/E02-*/review.md`, na branch `revisao/e02-8f4dc36`, sem commit, push ou merge. Os achados detalhados estão nos relatórios E02-09 (R01), E02-03 (R02), E02-07 (R03) e E02-02 (R04).
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+Aprovação anterior mantida; implementação e critérios desta fatia inalterados. Suíte completa confirma regressão das políticas e invariantes. Parecer consolidado abaixo.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.
+
+### Parecer consolidado
+
+**E02: APROVADO** sobre `0178d6214779504ef55abb183c4e8e5b5dfb1256`. E02-R01 a E02-R04 encerrados; nenhum achado impeditivo remanescente identificado nesta revalidação. Todas as dez fatias aprovadas. Nas E02-01, E02-04, E02-06 e E02-10, a aprovação anterior foi mantida com regressão completa; não se atribuem mudanças funcionais a essas fatias.
+
+Escopo: diff desde `8f4dc36`, especificações/aceitações corrigidas das fatias afetadas e integração. Referências de negócio e infraestrutura permanecem nas versões 1.6 e 1.7 utilizadas na revisão anterior. Os acréscimos detalham invariantes existentes, sem nova decisão comercial pendente.
+
+| Achado | Resultado independente | Critérios adicionais conferidos |
+|---|---|---|
+| R01 — bloqueador | Encerrado: perfil não restaura situação/senha; conta removida recebe 403 sem gravação; recuperação restringe UPDATE; vínculo Google serializa a leitura e gravação | E02-09 A-20 a A-25; E02-02 A-25; E02-07 A-21; integração E02-08 |
+| R02 — importante | Encerrado: remoções concorrentes conservam exatamente uma passkey; probe com barreira original passa | E02-03 A-16/A-17, regressão de gestão/recência e renderização |
+| R03 — importante | Encerrado: userinfo e ID token concluem cadastro; marcações ausentes, não booleanas ou contraditórias são recusadas | E02-07 A-18 a A-20 |
+| R04 — importante | Encerrado: similaridade compara os atributos reais, tanto no cadastro como na recuperação; configuração de produção coberta | E02-02 A-22 a A-24; E02-05 A-19/A-20 |
+
+### Execuções independentes neste SHA
+
+- `uv run pytest -q`: **634 passed em 70,20 s**, incluindo E01, todas as fatias E02 e os testes novos. Banco Postgres real; testes concorrentes usam conexões independentes. Os cenários de duas remoções, consentimento e perfil/suspensão executam dez repetições internas conforme os testes.
+- `uv run pytest -q -c pyproject.toml $env:TEMP/om_e02_0178d62_probes.py`: **7 passed em 2,20 s**. Script derivado do probe integral preservado acima: três intercalações de perfil, corrida de remoção de passkeys, Google userinfo, similaridade de senha e PNG/EXIF.
+- `uv run ruff check .`: All checks passed.
+- `uv run ruff format --check .`: 159 arquivos já formatados.
+- `uv run mypy .`: sem erros em 123 arquivos.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: No changes detected.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: 51 pacotes resolvidos, 50 conferidos.
+- CI do SHA exato: [run 38923022498](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38923022498), completed/success, consultado com `gh run list --commit 0178d6214779504ef55abb183c4e8e5b5dfb1256 --json databaseId,status,conclusion,url`.
+
+Para reproduzir os probes, usar o script histórico acima com **somente** este ajuste autorizado por E02-09, Correção R01, item 4: capturar `nome_anterior = conta.nome` antes do POST de perfil; substituir a asserção de status por `assert resposta.status_code == (403 if acao == 'remover' else 302)`; depois do refresh, no caso `remover`, exigir também `assert conta.nome == nome_anterior`. As demais asserções permanecem literais. Isso fortalece a recusa da conta removida, sem ocultar a verificação original da situação. O arquivo temporário antigo foi preservado. As reproduções também estão incorporadas nos testes versionados indicados nos relatórios das fatias.
+
+### TDD, escopo e limites
+
+Conferidos os registros Red/Green do implementador nos relatórios E02-02, E02-03, E02-07 e E02-09, com comandos, falhas por comportamento e nomes dos testes, comparados com os testes novos e o diff de produção. R01 relata falhas de preservação de estado/credenciais e SQL; R02 relata zero passkeys; R03 relata recusa de userinfo e aceitação indevida de marcas conflitantes; R04 relata aceitação de senhas semelhantes e configuração incorreta. A adição de `django.contrib.humanize` atende à renderização de templates allauth já no escopo, com Red documentado e regressão verde. Não houve afrouxamento identificado para acomodar as correções.
+
+A cronologia Red antes de produção continua apoiada nos registros do implementador: esta revalidação não observou retrospectivamente sua execução nem reproduziu os novos testes sobre o commit antigo. O Green e os probes acima foram executados pelo revisor. Mantém-se a distinção entre evidência documentada de TDD e execução independente.
+
+WebAuthn usa o dublê criptográfico previsto, com views, sessões e persistência reais. Google usa resposta simulada no fluxo do allauth; não houve OAuth externo. Cerimônia física de passkey, credenciais Google, SES e R2 reais continuam nos gates de homologação previstos; esta aprovação não declara esses testes realizados nem autoriza produção. D-1 de E02-08 permanece fora do escopo.
+
+Alterações do revisor: somente os dez `review.md`, com parecer atual e histórico preservado. Nenhuma alteração de produção ou teste versionado. Próximo gate: encerramento da E02 com este parecer e seleção/especificação da próxima entrega conforme o fluxo do projeto.

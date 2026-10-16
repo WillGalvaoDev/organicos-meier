@@ -1,6 +1,6 @@
 # E02-09 — Revisão
 
-Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -155,3 +155,12 @@ Levantamento feito em 2026-10-16 com `grep -rn "\.save(\|\.update(" apps` (migra
 Nenhum ponto novo sem proteção foi encontrado.
 
 **Não feito (conforme "O que não fazer"):** não se trocou a gravação por `refresh_from_db()` sem trava, não se reverteu a suspensão nem a senha depois da gravação, e não se usou `Conta.objects.filter(pk=...).update(...)` sem a releitura travada.
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R01 encerrado: releitura com select_for_update, decisões sobre estado atual e UPDATE restrito aos quatro campos do perfil. A-20 a A-25 verdes: suspensão, remoção com 403 sem efeitos, senha, SQL restrito e concorrência de consentimento/moderação. Inventário de gravações conferido com o código e a integração allauth.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.
