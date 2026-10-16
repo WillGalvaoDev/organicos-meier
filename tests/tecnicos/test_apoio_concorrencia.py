@@ -10,7 +10,8 @@ from django.db import OperationalError, connection, connections, transaction
 from django.db.backends.postgresql.base import DatabaseWrapper
 
 from tests.apoio.concorrencia import (
-    TEMPO_LIMITE_PADRAO,
+    CONNECT_TIMEOUT_DAS_THREADS,
+    TEMPO_LIMITE_LIMPEZA_PADRAO,
     LimpezaIncompleta,
     Resultado,
     TempoEsgotado,
@@ -19,7 +20,7 @@ from tests.apoio.concorrencia import (
     limpezas_pendentes,
 )
 from tests.apoio.models import ModeloContador
-from tests.conftest import guarda_entre_testes
+from tests.conftest import PRAZO_PADRAO_DA_GUARDA, guarda_entre_testes
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
 
@@ -629,19 +630,31 @@ def test_r05_limpeza_incompleta_quando_a_abertura_passa_do_prazo(
         aguardar_limpezas_pendentes(10)
 
 
-def test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout() -> None:  # A-17
+@pytest.mark.parametrize("limpeza", [0.5, 1, 10.5, None])
+def test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout_fixo(
+    limpeza: float | None,
+) -> None:  # A-17 (revisto em 2026-10-16, R06)
     def descrever(_barreira: threading.Barrier) -> tuple[str, Any]:
         with connection.cursor() as cursor:
             cursor.execute("SHOW application_name")
             (nome,) = cursor.fetchone()
-        return nome, connection.get_connection_params().get("connect_timeout")
+        return nome, connection.get_connection_params()["connect_timeout"]
 
-    r1, r2 = executar_em_paralelo(descrever, descrever)
+    argumentos = {} if limpeza is None else {"tempo_limite_limpeza": limpeza}
+    r1, r2 = executar_em_paralelo(descrever, descrever, **argumentos)
     assert r1.excecao is None
     assert r2.excecao is None
     nome1, timeout1 = r1.valor
     nome2, timeout2 = r2.valor
     assert nome1.startswith("concorrencia-")
     assert nome1 != nome2
-    assert timeout1 == timeout2
-    assert 0 < timeout1 < TEMPO_LIMITE_PADRAO
+    assert timeout1 == CONNECT_TIMEOUT_DAS_THREADS
+    assert timeout2 == CONNECT_TIMEOUT_DAS_THREADS
+
+
+def test_r05_connect_timeout_das_threads_e_uma_constante_fixa_coerente() -> None:  # A-17
+    assert isinstance(CONNECT_TIMEOUT_DAS_THREADS, int)
+    assert not isinstance(CONNECT_TIMEOUT_DAS_THREADS, bool)
+    assert CONNECT_TIMEOUT_DAS_THREADS > 0
+    assert CONNECT_TIMEOUT_DAS_THREADS < TEMPO_LIMITE_LIMPEZA_PADRAO
+    assert CONNECT_TIMEOUT_DAS_THREADS < PRAZO_PADRAO_DA_GUARDA
