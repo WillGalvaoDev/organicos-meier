@@ -70,3 +70,11 @@ def _guarda_de_conexoes(django_db_blocker: Any) -> None:
     if limpezas_pendentes():
         with django_db_blocker.unblock():
             guarda_entre_testes()
+
+
+@pytest.fixture(autouse=True)
+def _cache_limpo() -> None:
+    """Os limites de requisição do allauth usam o cache: cada teste começa do zero."""
+    from django.core.cache import cache
+
+    cache.clear()

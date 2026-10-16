@@ -12,3 +12,10 @@ SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+
+# Obrigatórios, sem valor padrão: se faltarem, o carregamento falha.
+# O envio real (SES) é configurado na E04 e na homologação.
+EMAIL_BACKEND = env("EMAIL_BACKEND")  # noqa: F405
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")  # noqa: F405
