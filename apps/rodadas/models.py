@@ -2,9 +2,11 @@
 
 from django.db import models
 
+from apps.catalogo.models import Produto
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.tempo import agora
+from apps.nucleo.valores import CampoQuantidade
 
 
 class Etapa(models.TextChoices):
@@ -43,3 +45,25 @@ class Rodada(models.Model):
 
     def __str__(self) -> str:
         return f"rodada {self.pk}"
+
+
+class EstoqueDaRodada(models.Model):
+    """Produto incluído na rodada, com o limite de estoque (nulo = sem limite)."""
+
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, related_name="estoques")
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="+")
+    limite = CampoQuantidade(null=True, blank=True)
+    incluido_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        db_table = "rodadas_estoque"
+        constraints = (
+            models.UniqueConstraint(fields=["rodada", "produto"], name="estoque_produto_unico"),
+            models.CheckConstraint(
+                condition=models.Q(limite__isnull=True) | models.Q(limite__gte=0),
+                name="estoque_limite_nao_negativo",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"estoque {self.pk}"

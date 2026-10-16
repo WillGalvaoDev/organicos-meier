@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Estoque da rodada · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Estoque da rodada de {{ rodada.fornecedor.nome }}</h1>
+  <p>Etapa: {{ rodada.get_etapa_display }}.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  {% if mensagem_somente_leitura %}<p>{{ mensagem_somente_leitura }}</p>{% endif %}
+
+  <h2>Produtos na rodada</h2>
+  {% if na_rodada %}
+    <table>
+      <thead><tr><th>Produto</th><th>Limite</th><th>Reservado</th><th>Livre</th>{% if editavel %}<th>Alterar</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for item in na_rodada %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{% if item.estoque.limite is None %}sem limite{% else %}{{ item.estoque.limite|quantidade_br }}{% endif %}</td>
+            <td>{{ item.reservado|quantidade_br }}</td>
+            <td>{% if item.livre is None %}sem limite{% else %}{{ item.livre|quantidade_br }}{% endif %}</td>
+            {% if editavel %}
+              <td>
+                <form method="post" action="{% url 'estoque_alterar' pk=item.estoque.pk %}">
+                  {% csrf_token %}
+                  <input type="text" name="limite" value="{{ item.estoque.limite|quantidade_br }}" aria-label="Limite de {{ item.produto.nome }}">
+                  <button type="submit">Salvar</button>
+                </form>
+              </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if editavel %}<p>Deixe o limite vazio para estoque sem limite.</p>{% endif %}
+  {% else %}
+    <p>Nenhum produto na rodada.</p>
+  {% endif %}
+
+  <h2>Produtos fora da rodada</h2>
+  {% if fora_da_rodada %}
+    <ul>
+      {% for produto in fora_da_rodada %}
+        <li>
+          {{ produto.nome }}{% if not produto.disponivel %} (indisponível){% endif %}
+          {% if editavel %}
+            <form method="post" action="{% url 'rodadas_estoque_incluir' pk=rodada.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="produto" value="{{ produto.pk }}">
+              <input type="text" name="limite" aria-label="Limite de {{ produto.nome }}">
+              <button type="submit">Incluir na rodada</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nenhum produto fora da rodada.</p>
+  {% endif %}
+  <p><a href="{% url 'fornecedores_detalhe' pk=rodada.fornecedor_id %}">Voltar ao fornecedor</a></p>
+{% endblock %}

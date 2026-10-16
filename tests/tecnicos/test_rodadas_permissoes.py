@@ -6,8 +6,14 @@ import pytest
 from django.test import Client
 
 from apps.nucleo.auditoria import EntradaAuditoria
-from apps.rodadas.models import Etapa, Rodada
-from tests.fabricas import ContaFactory, FornecedorFactory, RodadaFactory
+from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
+from tests.fabricas import (
+    ContaFactory,
+    EstoqueDaRodadaFactory,
+    FornecedorFactory,
+    ProdutoFactory,
+    RodadaFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -44,3 +50,36 @@ def test_visitante_anonimo_vai_para_o_login() -> None:
             assert resposta.status_code == 302, rota
             assert resposta["Location"].startswith("/entrar/"), rota
     assert Rodada.objects.count() == 0
+
+
+def _rotas_de_estoque(rodada_pk: int, estoque_pk: int) -> list[str]:
+    return [
+        f"/administracao/rodadas/{rodada_pk}/estoque/",
+        f"/administracao/rodadas/{rodada_pk}/estoque/incluir/",
+        f"/administracao/estoque/{estoque_pk}/alterar/",
+    ]
+
+
+@pytest.mark.parametrize("fornecedor", [False, True], ids=["comprador", "fornecedor"])
+def test_estoque_so_para_administrador(client: Client, fornecedor: bool) -> None:  # A-18
+    estoque = EstoqueDaRodadaFactory.create(limite=Decimal("10"))
+    outro = ProdutoFactory.create(fornecedor=estoque.rodada.fornecedor)
+    client.force_login(ContaFactory.create(fornecedor=fornecedor))
+    dados = {"produto": str(outro.pk), "limite": "1"}
+    for rota in _rotas_de_estoque(estoque.rodada_id, estoque.pk):
+        assert client.get(rota).status_code == 403, rota
+        assert client.post(rota, dados).status_code == 403, rota
+    estoque.refresh_from_db()
+    assert estoque.limite == Decimal("10.000")
+    assert EstoqueDaRodada.objects.count() == 1
+    assert EntradaAuditoria.objects.count() == 0
+
+
+def test_estoque_visitante_anonimo_vai_para_o_login() -> None:  # A-18
+    estoque = EstoqueDaRodadaFactory.create()
+    anonimo = Client()
+    for rota in _rotas_de_estoque(estoque.rodada_id, estoque.pk):
+        for resposta in (anonimo.get(rota), anonimo.post(rota, {"limite": "1"})):
+            assert resposta.status_code == 302, rota
+            assert resposta["Location"].startswith("/entrar/"), rota
+    assert EstoqueDaRodada.objects.count() == 1
