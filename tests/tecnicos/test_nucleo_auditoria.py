@@ -5,12 +5,12 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.db import DatabaseError, connection, transaction
 
 from apps.nucleo.auditoria import SISTEMA, EntradaAuditoria, registrar_auditoria
 from apps.nucleo.so_insercao import RegistroImutavel
 from tests.apoio.models import ModeloValores
+from tests.fabricas import ContaFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -19,7 +19,7 @@ T = datetime(2026, 10, 14, 15, 0, 0, tzinfo=UTC)
 
 @pytest.fixture
 def usuario() -> Any:
-    return get_user_model().objects.create_user(username="ana", password="x")  # noqa: S106
+    return ContaFactory()
 
 
 @pytest.fixture
@@ -164,7 +164,7 @@ def test_auditoria_recusa_acao_vazia(acao: str, objeto: ModeloValores) -> None: 
 
 def test_auditoria_recusa_usuario_nao_salvo(objeto: ModeloValores) -> None:
     with pytest.raises(ValueError, match="autor"):
-        registrar_auditoria(get_user_model()(username="novo"), "x.y", objeto, {})
+        registrar_auditoria(ContaFactory.build(), "x.y", objeto, {})
 
 
 @pytest.mark.parametrize("autor_id", ["", "   ", "\t"])
