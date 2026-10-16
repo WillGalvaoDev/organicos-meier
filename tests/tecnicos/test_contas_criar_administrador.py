@@ -82,3 +82,14 @@ def test_comando_termina_com_codigo_de_saida_diferente_de_zero_na_recusa() -> No
 def test_comando_nao_aceita_senha_por_argumento() -> None:
     with pytest.raises(CommandError):
         _rodar("--email", "n@x.com", "--nome", "A", "--senha", "x")
+
+
+def test_comando_cria_endereco_de_email_verificado_e_primario() -> None:  # E02-02 A-21
+    from allauth.account.models import EmailAddress
+
+    _rodar("--email", " Admin@x.com ", "--nome", "Adm")
+    conta = Conta.objects.get()
+    endereco = EmailAddress.objects.get(user=conta)
+    assert endereco.email == "admin@x.com"
+    assert endereco.verified is True
+    assert endereco.primary is True

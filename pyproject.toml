@@ -65,6 +65,11 @@ ignore_missing_imports = true
 module = ["tests.*"]
 disallow_untyped_calls = false
 
+[[tool.mypy.overrides]]
+# Subclasses de adaptador e formulários do allauth, que não tem tipos.
+module = ["apps.contas.adaptadores", "apps.contas.formularios"]
+disallow_subclassing_any = false
+
 [tool.django-stubs]
 django_settings_module = "config.settings.test"
 

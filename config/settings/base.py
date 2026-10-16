@@ -23,6 +23,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "allauth",
+    "allauth.account",
+    "allauth.usersessions",
     "apps.nucleo",
     "apps.fornecedores",
     "apps.contas",
@@ -37,6 +40,8 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
+    "allauth.usersessions.middleware.UserSessionsMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -72,3 +77,34 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# --- Autenticação (E02-02) ---
+AUTHENTICATION_BACKENDS = ["allauth.account.auth_backends.AuthenticationBackend"]
+LOGIN_URL = "/entrar/"
+LOGIN_REDIRECT_URL = "/inicio/"
+
+ACCOUNT_LOGIN_METHODS = {"email"}
+# `password1` precisa constar para o formulário de login manter o campo de senha.
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_USER_MODEL_EMAIL_FIELD = "email_normalizado"
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_LOGIN_BY_CODE_ENABLED = False  # o link de acesso é próprio (E02-06)
+ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False  # recuperação não envia e-mail a quem não tem conta
+ACCOUNT_LOGOUT_REDIRECT_URL = "/entrar/"
+ACCOUNT_ADAPTER = "apps.contas.adaptadores.AdaptadorConta"
+ACCOUNT_FORMS = {
+    "reset_password": "apps.contas.formularios.FormularioRecuperacao",
+    "reset_password_from_key": "apps.contas.formularios.FormularioNovaSenha",
+}
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]

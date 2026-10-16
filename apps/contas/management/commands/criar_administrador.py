@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from allauth.account.models import EmailAddress
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import IntegrityError, transaction
@@ -39,6 +40,7 @@ class Command(BaseCommand):
                 )
                 conta.full_clean()
                 conta.save()
+                EmailAddress.objects.create(user=conta, email=email, verified=True, primary=True)
                 registrar_auditoria(
                     SISTEMA, "conta.criar_administrador", conta, {"conta": conta.pk}
                 )

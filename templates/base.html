@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Orgânicos Méier{% endblock %}</title>
+</head>
+<body>
+  <main>
+    {% if messages %}
+      <ul>{% for mensagem in messages %}<li>{{ mensagem }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% block conteudo %}{% endblock %}
+  </main>
+</body>
+</html>
