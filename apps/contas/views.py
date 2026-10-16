@@ -15,6 +15,7 @@ from django.http.response import HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from apps.contas import google as apoio_google
 from apps.contas.administracao import somente_administrador, tem_prova_de_passkey
 from apps.contas.convites import (
     ConviteInvalido,
@@ -24,7 +25,7 @@ from apps.contas.convites import (
     emitir_convite,
     validar_convite,
 )
-from apps.contas.emails import EmailInvalido, normalizar_email
+from apps.contas.emails import EmailInvalido
 from apps.contas.forms import (
     FormularioCadastroPorConvite,
     FormularioConclusaoGoogle,
@@ -197,12 +198,14 @@ def concluir_cadastro_google(request: HttpRequest) -> HttpResponse:
     if pendente is None or not token:
         return recusar_login_google(request)
     dados = pendente.account.extra_data or {}
-    try:
-        email = normalizar_email(str(dados.get("email", "")))
-        convite = validar_convite(token)
-    except (EmailInvalido, ConviteInvalido):
+    email = apoio_google.email_verificado_do_google(dados)
+    if email is None:
         return recusar_login_google(request)
-    if convite.email_normalizado != email or dados.get("email_verified") is not True:
+    try:
+        convite = validar_convite(token)
+    except ConviteInvalido:
+        return recusar_login_google(request)
+    if convite.email_normalizado != email:
         return recusar_login_google(request)
     form = FormularioConclusaoGoogle(
         request.POST if request.method == "POST" else None,

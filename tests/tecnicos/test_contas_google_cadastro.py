@@ -259,3 +259,145 @@ def test_novo_login_com_google_limpa_o_convite_pendente_de_uma_conta_existente(
     ContaFactory.create(email_normalizado="ana@x.com")
     _retorno(client, email="ana@x.com", uid="g-ana")
     assert "convite_pendente" not in client.session
+
+
+# --- Correção E02-R03: e-mail verificado em qualquer formato do Google ---------------------
+
+USERINFO = {
+    "id": "google-revisor",
+    "email": "google@x.com",
+    "verified_email": True,
+    "name": "Google",
+}
+
+
+def _retorno_com(client: Client, dados: dict[str, Any]) -> Any:
+    return client.post("/teste/retorno-google/", {"extra_data": json.dumps(dados)})
+
+
+# Teste do revisor (E02-10/review.md, revalidação 8f4dc36), copiado sem alteração do corpo.
+# Nome original: test_google_userinfo_verificado_conclui_cadastro
+@pytest.mark.django_db
+@pytest.mark.urls("tests.apoio.urls")
+def test_google_userinfo_verificado_conclui_cadastro(client):  # type: ignore[no-untyped-def]
+    token = "token-revisor-google"  # noqa: S105
+    ConviteFactory.create(email_normalizado="google@x.com", token_hash=Convite.hash_do_token(token))
+    assert client.post(f"/convite/{token}/google/").status_code == 302
+    dados = {
+        "id": "google-revisor",
+        "email": "google@x.com",
+        "verified_email": True,
+        "name": "Google",
+    }
+    retorno = client.post("/teste/retorno-google/", {"extra_data": json.dumps(dados)})
+    assert retorno.status_code == 302
+    assert retorno["Location"] == "/entrar/google/concluir/"
+    resposta = client.post("/entrar/google/concluir/", {"nome": "Google"})
+    assert resposta["Location"] == "/inicio/"
+    assert Conta.objects.filter(email_normalizado="google@x.com").exists()
+
+
+def test_formato_userinfo_tem_o_mesmo_resultado_do_cadastro_com_id_token(client: Client) -> None:
+    # A-18
+    convite, token = _convite(email_normalizado="google@x.com")
+    _iniciar(client, token)
+    retorno = _retorno_com(client, USERINFO)
+    assert retorno["Location"] == CONCLUIR
+    conclusao = client.post(CONCLUIR, {"nome": "Google"})
+    assert conclusao["Location"] == "/inicio/"
+    conta = Conta.objects.get(email_normalizado="google@x.com")
+    assert SocialAccount.objects.get().user == conta
+    assert not conta.has_usable_password()
+    convite.refresh_from_db()
+    assert convite.conta_criada == conta
+    assert client.session["_auth_user_id"] == str(conta.pk)
+
+
+NAO_VERIFICADOS = {
+    "verified_email_falso": {"verified_email": False},
+    "texto_true": {"email_verified": "true"},
+    "conflito": {"email_verified": True, "verified_email": False},
+    "sem_chaves": {},
+}
+
+
+@pytest.mark.parametrize("campos", NAO_VERIFICADOS.values(), ids=NAO_VERIFICADOS.keys())
+def test_email_nao_verificado_nao_cadastra_pelo_convite(
+    client: Client, campos: dict[str, Any]
+) -> None:
+    # A-19 (convite pendente)
+    convite, token = _convite(email_normalizado="google@x.com")
+    _iniciar(client, token)
+    antes = _contagens()
+    retorno = _retorno_com(client, {"id": "g-nv", "email": "google@x.com", "name": "G", **campos})
+    if retorno["Location"] == CONCLUIR:  # se o retorno seguiu, a conclusão tem de recusar
+        retorno = client.post(CONCLUIR, {"nome": "G"})
+    assert retorno["Location"] == "/entrar/"
+    assert _contagens() == antes
+    convite.refresh_from_db()
+    assert convite.consumido_em is None
+    assert not _autenticado(client)
+
+
+@pytest.mark.parametrize("campos", NAO_VERIFICADOS.values(), ids=NAO_VERIFICADOS.keys())
+def test_email_nao_verificado_nao_entra_em_conta_existente(
+    client: Client, campos: dict[str, Any]
+) -> None:
+    # A-19 (conta existente)
+    ContaFactory.create(email_normalizado="google@x.com")
+    antes = _contagens()
+    retorno = _retorno_com(client, {"id": "g-nv", "email": "google@x.com", "name": "G", **campos})
+    assert retorno["Location"] == "/entrar/"
+    assert _contagens() == antes
+    assert not _autenticado(client)
+
+
+def test_funcao_unica_interpreta_a_verificacao_do_google() -> None:  # A-20
+    from apps.contas.google import email_verificado_do_google
+
+    positivos = [
+        {"sub": "1", "email": " Google@X.com ", "email_verified": True},  # ID token
+        {"id": "1", "email": "google@x.com", "verified_email": True},  # userinfo
+        {"email": "google@x.com", "email_verified": True, "verified_email": True},
+    ]
+    for dados in positivos:
+        assert email_verificado_do_google(dados) == "google@x.com", dados
+    negativos: list[dict[str, Any]] = [
+        {"email": "google@x.com", "verified_email": False},
+        {"email": "google@x.com", "email_verified": "true"},
+        {"email": "google@x.com", "email_verified": 1},
+        {"email": "google@x.com", "email_verified": True, "verified_email": False},
+        {"email": "google@x.com", "email_verified": None},
+        {"email": "google@x.com"},
+        {"email_verified": True},
+        {"email": 123, "email_verified": True},
+        {"email": "lixo", "email_verified": True},
+        {"email": "", "email_verified": True},
+    ]
+    for dados in negativos:
+        assert email_verificado_do_google(dados) is None, dados
+    assert email_verificado_do_google(None) is None
+
+
+def test_adaptador_e_conclusao_usam_a_mesma_funcao(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-20
+    # (1) adaptador: com a função devolvendo None, o retorno do Google é recusado
+    ContaFactory.create(email_normalizado="ana@x.com")
+    monkeypatch.setattr("apps.contas.google.email_verificado_do_google", lambda dados: None)
+    retorno = _retorno_com(client, {"sub": "g1", "email": "ana@x.com", "email_verified": True})
+    assert retorno["Location"] == "/entrar/"
+    assert not _autenticado(client)
+    monkeypatch.undo()
+
+    # (2) conclusão: o retorno passa com a função real; depois ela passa a devolver None
+    convite, token = _convite(email_normalizado="bia@x.com")
+    _iniciar(client, token)
+    retorno = _retorno_com(client, {"sub": "g2", "email": "bia@x.com", "email_verified": True})
+    assert retorno["Location"] == CONCLUIR
+    monkeypatch.setattr("apps.contas.google.email_verificado_do_google", lambda dados: None)
+    resposta = client.post(CONCLUIR, {"nome": "Bia"})
+    assert resposta["Location"] == "/entrar/"
+    convite.refresh_from_db()
+    assert convite.consumido_em is None
+    assert not Conta.objects.filter(email_normalizado="bia@x.com").exists()

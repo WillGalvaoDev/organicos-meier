@@ -107,3 +107,27 @@ O allauth instalado admite dois formatos: ID token (`sub`, `email_verified`) e `
 Reprodução: `test_google_userinfo_verificado_conclui_cadastro` passa `{"id":"google-revisor","email":"google@x.com","verified_email":true,"name":"Google"}` pela mesma rota de teste que chama `provider.sociallogin_from_response` e `complete_social_login`. Falha: `/entrar/ != /inicio/`. O suporte aos dois formatos foi conferido no código local de `allauth/socialaccount/providers/google/provider.py` e `views.py`, sem inferência sobre um provedor não consultado.
 
 Devolução: usar a mesma interpretação segura de e-mail verificado no retorno e na conclusão, cobrindo ambos os formatos e conservando as recusas de e-mail ausente/não verificado, divergência com o convite, expiração e banimento. Não aceitar um e-mail não verificado para fazer o teste passar.
+
+## Correção E02-R03 conforme "Correção E02-R03" do spec.md (implementador)
+
+**Causa confirmada.** O adaptador aceitava o e-mail como verificado com `email_verified is True` **ou** `verified_email is True` (`adaptadores.py`), enquanto a conclusão do cadastro (`views.py`) aceitava só `email_verified is True`. No formato userinfo (`id`, `verified_email`) o retorno seguia, a conclusão recusava e a conta não era criada.
+
+**Red** (código do commit `8f4dc36`, `uv run pytest tests/tecnicos/test_contas_google_cadastro.py`):
+
+```
+6 failed, 23 passed
+FAILED test_google_userinfo_verificado_conclui_cadastro                      (teste do revisor, literal; A-18)
+FAILED test_formato_userinfo_tem_o_mesmo_resultado_do_cadastro_com_id_token   (A-18)
+FAILED test_email_nao_verificado_nao_cadastra_pelo_convite[conflito]          (A-19 c)
+FAILED test_email_nao_verificado_nao_entra_em_conta_existente[conflito]       (A-19 c)
+FAILED test_funcao_unica_interpreta_a_verificacao_do_google                   (A-20: a função não existia)
+FAILED test_adaptador_e_conclusao_usam_a_mesma_funcao                         (A-20)
+```
+
+O teste do revisor falha em `assert resposta['Location'] == '/inicio/'` (a conclusão recusa e redireciona para `/entrar/`). O caso `email_verified: true` com `verified_email: false` (A-19 c) era aceito pelo `or` do adaptador. Os demais casos do A-19 (`false`, texto `"true"`, nenhuma chave) já eram recusados e ficam como cobertura.
+
+**Green:** `email_verificado_do_google(extra_data) -> str | None` em `apps/contas/google.py`, a única função que interpreta a verificação: pelo menos uma das chaves `email_verified` e `verified_email` vale exatamente `True` e nenhuma presente tem outro valor; e-mail ausente, não textual ou recusado por `normalizar_email` devolve `None`. O adaptador (`_email_verificado`, usado no retorno, em `pre_social_login` e em `is_open_for_signup`) e a view de conclusão a chamam por `apps.contas.google.email_verificado_do_google` (referência de módulo, para o `monkeypatch` do A-20 alcançar os dois pontos). A view não interpreta mais nenhuma chave. As recusas por divergência com o convite, convite expirado, consumido ou banido e a ausência de convite pendente continuam.
+
+**Verificação:** `uv run pytest -q` -> 615 passed; ruff e mypy limpos.
+
+**Matriz:** A-18 (`test_google_userinfo_verificado_conclui_cadastro` literal, com `noqa: S105` no token e o formato de aspas do `ruff format`, e `test_formato_userinfo_tem_o_mesmo_resultado_do_cadastro_com_id_token`), A-19 (parametrizado nos quatro casos, para convite pendente e para conta existente), A-20 (`test_funcao_unica_interpreta_a_verificacao_do_google` com ID token, userinfo e dez negativos, e `test_adaptador_e_conclusao_usam_a_mesma_funcao`). Não foi aceito e-mail sem marcação de verificado, e a interpretação não foi duplicada.
