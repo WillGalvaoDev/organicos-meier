@@ -11,6 +11,18 @@
   </dl>
   <p><a href="{% url 'fornecedores_editar' pk=fornecedor.pk %}">Editar</a></p>
 
+  <h2>Rodada</h2>
+  {% if rodada %}
+    <p>Rodada ativa: {{ rodada.get_etapa_display }}, aberta em {{ rodada.aberta_em|date:"d/m/Y H:i" }}.</p>
+    <p><a href="{% url 'fornecedores_minimo' pk=fornecedor.pk %}">Alterar o mínimo</a></p>
+  {% else %}
+    <p>Sem rodada ativa.</p>
+    <form method="post" action="{% url 'rodadas_abrir' pk=fornecedor.pk %}">
+      {% csrf_token %}
+      <button type="submit">Abrir rodada</button>
+    </form>
+  {% endif %}
+
   <h2>Contas de fornecedor vinculadas</h2>
   {% if contas %}
     <table>

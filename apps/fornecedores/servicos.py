@@ -1,8 +1,8 @@
 """Cadastro e edição de fornecedores (E03-01).
 
 Só o administrador cria e edita, também em chamada direta aos serviços. As mensagens de erro vêm
-por campo (`ValidationError` com dicionário). O mínimo monetário só é informado no cadastro; a
-alteração dele depois depende da fase da rodada e entra na E03-02.
+por campo (`ValidationError` com dicionário). O mínimo monetário é informado no cadastro; a
+alteração dele depois só vale na fase de interesse da rodada (`alterar_minimo`, E03-02).
 """
 
 from decimal import Decimal
@@ -16,6 +16,7 @@ from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.valores import ValorInvalido, dinheiro, ler_decimal_digitado
+from apps.rodadas.condicoes import travar_condicoes
 
 MINIMO_DO_MINIMO = Decimal("0.01")
 CAMPOS_EDITAVEIS = ("nome", "email_pedido", "prazo_entrega_dias", "informacoes_frete")
@@ -142,5 +143,30 @@ def editar_fornecedor(autor: Conta, fornecedor: Fornecedor, **campos: Any) -> Fo
                 "fornecedor.editar",
                 atual,
                 {"fornecedor": atual.pk, "campos": alterados},
+            )
+    return atual
+
+
+def alterar_minimo(autor: Conta, fornecedor: Fornecedor, novo: str | Decimal) -> Fornecedor:
+    """Altera o mínimo do fornecedor, só enquanto a rodada ativa está em `interesse`.
+
+    Valida o valor como no cadastro e, dentro da transação, trava fornecedor e rodada
+    (`travar_condicoes`) antes de reler e gravar, então uma mudança de etapa confirmada antes
+    é sempre vista. Valor igual ao atual não grava nem audita.
+    """
+    _exigir_administrador(autor)
+    minimo = _limpar({"minimo": novo})["minimo"]
+    with transaction.atomic():
+        travar_condicoes(fornecedor)
+        atual = Fornecedor.objects.select_for_update().get(pk=fornecedor.pk)
+        if atual.minimo != minimo:
+            anterior = atual.minimo
+            atual.minimo = minimo
+            atual.save(update_fields=["minimo"])
+            registrar_auditoria(
+                autor,
+                "fornecedor.alterar_minimo",
+                atual,
+                {"fornecedor": atual.pk, "anterior": str(anterior), "novo": str(minimo)},
             )
     return atual

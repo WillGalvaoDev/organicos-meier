@@ -10,7 +10,7 @@
     {% if form.minimo %}
       <p><label for="{{ form.minimo.id_for_label }}">Mínimo em produtos (R$, ex.: 150,00)</label> {{ form.minimo }} {{ form.minimo.errors }}</p>
     {% else %}
-      <p>Mínimo atual: R$ {{ fornecedor.minimo|floatformat:2 }} (a alteração do mínimo depende da fase da rodada).</p>
+      <p>Mínimo atual: R$ {{ fornecedor.minimo|floatformat:2 }} (a alteração é feita na página do fornecedor, na fase de interesse).</p>
     {% endif %}
     <p><label for="{{ form.prazo_entrega_dias.id_for_label }}">Prazo padrão de entrega (dias)</label> {{ form.prazo_entrega_dias }} {{ form.prazo_entrega_dias.errors }}</p>
     <p><label for="{{ form.informacoes_frete.id_for_label }}">Informações de frete (opcional)</label> {{ form.informacoes_frete }} {{ form.informacoes_frete.errors }}</p>

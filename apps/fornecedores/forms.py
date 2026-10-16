@@ -28,3 +28,9 @@ class FormularioFornecedor(FormularioEdicaoFornecedor):
         self.order_fields(
             ["nome", "email_pedido", "minimo", "prazo_entrega_dias", "informacoes_frete"]
         )
+
+
+class FormularioMinimo(forms.Form):
+    """Novo mínimo, digitado como texto (vírgula ou ponto); o serviço valida (E03-02)."""
+
+    minimo = forms.CharField(max_length=20, strip=True)
