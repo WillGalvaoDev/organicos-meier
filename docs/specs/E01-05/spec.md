@@ -132,7 +132,13 @@ A thread substitui o `connect` do seu wrapper (atributo de instância) por uma f
 5. Encerra no servidor qualquer sessão restante das operações pendentes e consulta `pg_stat_activity`, repetindo até zero sessões ou até o fim do prazo de limpeza restante. Como `pg_terminate_backend` e o fechamento pelo cliente são assíncronos no servidor, esta confirmação é obrigatória.
 6. Se tudo ficou limpo, levanta `TempoEsgotado` com os nomes das operações pendentes. Se o prazo de limpeza estourou com alguma operação em `ABRINDO` ou alguma sessão restante, registra a pendência na guarda entre testes e levanta `LimpezaIncompleta`, identificando as operações e a fase de cada uma.
 
-**5. Abertura com limite no driver.** As conexões das threads usam `connect_timeout` do libpq (inteiro, em segundos, menor que `tempo_limite_limpeza`). Assim, uma abertura real nunca dura mais que o prazo de limpeza, e a espera do passo 4.4 tem fim também fora dos testes instrumentados.
+**5. Abertura com limite no driver.** Texto revisto em 2026-10-16 para encerrar o R06. Ver "Correção R06".
+
+- **Valor:** as conexões das threads usam `connect_timeout` do libpq com um valor fixo, a constante `CONNECT_TIMEOUT_DAS_THREADS = 10`, inteiro em segundos. O valor não depende de `tempo_limite_limpeza`.
+- **Finalidade:** garantir que toda abertura real termine em tempo finito. Assim, a guarda entre testes sempre consegue resolver uma pendência.
+- **O que esse limite não garante:** que a abertura termine dentro de `tempo_limite_limpeza`.
+- **Prazo de limpeza maior que o limite do driver** (inclusive o padrão, 30 s > 10 s): uma abertura real lenta termina dentro do prazo de limpeza.
+- **Prazo de limpeza menor ou igual ao limite do driver** (por exemplo, 0,5 s ou 1 s): uma abertura real lenta pode passar do prazo. Isso resulta em `LimpezaIncompleta`, registro e guarda, que é o comportamento previsto no A-15, e não um defeito.
 
 **6. Guarda entre testes.**
 
@@ -151,7 +157,8 @@ A thread substitui o `connect` do seu wrapper (atributo de instância) por uma f
 |---|---|---|
 | `tempo_limite` | 30 s | Já existente. |
 | `tempo_limite_limpeza` | 30 s | Novo argumento de `executar_em_paralelo`. Precisa cobrir as aberturas instrumentadas dos testes do revisor, que chegam a cerca de 10 s. |
-| `connect_timeout` das threads | 10 s | Menor que o prazo de limpeza padrão. |
+| `connect_timeout` das threads | 10 s, fixo | Constante `CONNECT_TIMEOUT_DAS_THREADS`, igual para qualquer `tempo_limite_limpeza`. É menor que o prazo de limpeza padrão (30 s) e que o prazo padrão da guarda (30 s). |
+| prazo da guarda entre testes | 30 s | Maior que `CONNECT_TIMEOUT_DAS_THREADS`, para que uma abertura real pendente sempre termine dentro dele. |
 
 - **Duração máxima de uma chamada:** `tempo_limite + tempo_limite_limpeza`.
 - **Sem abertura em andamento:** quando nenhuma operação está em `ABRINDO`, a limpeza leva só o tempo de confirmar no servidor. Por isso o A-6 continua valendo, com cerca de 2 s.
@@ -168,6 +175,41 @@ A thread substitui o `connect` do seu wrapper (atributo de instância) por uma f
 - Não sobrescrever `get_new_connection` no wrapper da instância. Isso esconderia a instrumentação dos testes, que é feita na classe, e tornaria os testes inválidos.
 - Não fechar pelo chamador um wrapper que esteja em `ABRINDO`: quem fecha é a própria thread, no passo 2.4.
 - Não remover nem afrouxar os testes de R05 já versionados, nem os testes do revisor incorporados.
+
+## Correção R06 — revisão da especificação em 2026-10-16
+
+O revisor encerrou o R05 no commit `b709ce3` e apontou o R06. A falha é da especificação, e não da implementação: o projeto obrigatório (item 5) exigia `connect_timeout` inteiro e menor que `tempo_limite_limpeza`, enquanto o A-15 exige aceitar um prazo de limpeza de 0,5 s. Não existe inteiro positivo menor que 0,5, então as duas regras não podiam valer juntas. A implementação tentou conciliá-las com `min(10, max(1, ceil(tempo_limite_limpeza) - 1))`, que dá 1 s para 0,5 s e também não cumpre a desigualdade em 1 s.
+
+### Decisão técnica
+
+- **Desigualdade removida:** a exigência "`connect_timeout` menor que `tempo_limite_limpeza`" deixa de existir.
+- **Por que ela não era necessária:** a correção do R05 não depende dela. Quem garante a ausência de sessão residual é a espera pela saída de `ABRINDO`, a confirmação no servidor e, quando o prazo estoura, a exceção `LimpezaIncompleta` com a guarda.
+- **Novo papel do `connect_timeout`:** só garantir que uma abertura real termine em tempo finito, para que a guarda resolva a pendência. Para isso basta um valor fixo, menor que o prazo da guarda.
+- **A-15 mantido:** o comportamento continua igual.
+- **A-17 reescrito:** passa a verificar a constante fixa em vários prazos de limpeza, e não mais uma desigualdade.
+
+### O que o implementador faz
+
+1. **Red:** em `tests/tecnicos/test_apoio_concorrencia.py`, parametrizar o teste do A-17 com `tempo_limite_limpeza` em `0.5`, `1`, `10.5` e o padrão (sem o argumento). Em cada caso, o valor lido dentro da operação por `connection.get_connection_params()["connect_timeout"]` precisa ser igual a `CONNECT_TIMEOUT_DAS_THREADS`. Com a fórmula atual, os casos `0.5`, `1` e `10.5` falham, porque devolvem 1, 1 e 10 em vez do valor fixo; isso deve ser registrado no `review.md`.
+   - **Atenção:** em `10.5`, a fórmula atual devolve 10, que já é o valor da constante, então a asserção de igualdade passa antes da correção. O Red desse caso vem só dos valores `0.5` e `1`. O caso `10.5` fica como cobertura.
+2. **Constantes no mesmo teste:** afirmar também que a constante é `int`, maior que zero, menor que `TEMPO_LIMITE_LIMPEZA_PADRAO` e menor que o prazo padrão de `guarda_entre_testes`.
+3. **Green:** em `tests/apoio/concorrencia.py`:
+   - criar a constante `CONNECT_TIMEOUT_DAS_THREADS = 10`;
+   - criar `TEMPO_LIMITE_LIMPEZA_PADRAO = 30.0`, que ainda não existe, e usá-la como padrão de `tempo_limite_limpeza`. Essa extração é andaime do passo 1, feito antes do Red;
+   - substituir a fórmula da linha 183 pela constante;
+   - remover a importação de `math`, se ela ficar sem uso.
+4. **Comentários:** alinhar o comentário da linha 182 e qualquer docstring que prometa "uma abertura real nunca passa do prazo de limpeza" ao texto do item 5. O limite do driver garante término finito, e só garante término dentro do prazo quando esse prazo é maior que 10 s.
+5. **Prazo da guarda:** se o prazo padrão de `guarda_entre_testes` em `tests/conftest.py` não for uma constante nomeada, extraí-lo para uma, para que a asserção do passo 2 não repita o número.
+6. **Regressão:** rodar o módulo 5 vezes seguidas e a suíte completa, ruff, mypy e `makemigrations --check`, e registrar tudo no `review.md`.
+
+### Testes de verificação do revisor
+
+- **`test_connect_timeout_inferior_ao_prazo_curto`** (revalidação `b709ce3`): afirma `0 < connect_timeout < 0.5`, ou seja, a desigualdade que esta correção removeu. Ele fica **substituído pelo A-17 reescrito** e não deve ser incorporado nem usado como critério.
+- **`test_r05_retomada`** (revisões anteriores): exige que a thread retomada receba `TempoEsgotado`. O contrato (A-12) exige só que nenhum SQL execute com sucesso e que nenhuma conexão nova seja aberta, sem fixar a classe do erro, como o próprio revisor registrou. Quando a sessão já foi encerrada no servidor, um `OperationalError` do driver também cumpre o contrato.
+
+### Fora desta correção
+
+Nenhuma outra mudança no utilitário. R01 a R05 estão encerrados e não são reabertos.
 
 ## Dependências e decisões em aberto
 

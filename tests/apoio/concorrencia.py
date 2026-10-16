@@ -11,7 +11,6 @@ isso não pode ser cumprido, levanta `LimpezaIncompleta` e a guarda entre testes
 (`tests/conftest.py`) impede que a suíte siga com conexão herdada.
 """
 
-import math
 import threading
 import time
 import uuid
@@ -24,6 +23,12 @@ from django.db import connections
 from django.db.backends.base.base import BaseDatabaseWrapper
 
 TEMPO_LIMITE_PADRAO = 30.0
+TEMPO_LIMITE_LIMPEZA_PADRAO = 30.0
+# Limite fixo do driver: garante que uma abertura real termine em tempo finito, para que a
+# guarda resolva a pendência. Só garante término dentro do prazo de limpeza quando esse prazo
+# é maior que este valor; com prazo menor ou igual, uma abertura lenta resulta em
+# `LimpezaIncompleta` (A-15). A ausência de sessão residual não depende desta desigualdade.
+CONNECT_TIMEOUT_DAS_THREADS = 10
 _INTERVALO_DE_CONFIRMACAO = 0.02
 
 Operacao = Callable[[threading.Barrier], Any]
@@ -157,7 +162,7 @@ def aguardar_limpezas_pendentes(prazo: float) -> None:
 def executar_em_paralelo(
     *operacoes: Operacao,
     tempo_limite: float = TEMPO_LIMITE_PADRAO,
-    tempo_limite_limpeza: float = TEMPO_LIMITE_PADRAO,
+    tempo_limite_limpeza: float = TEMPO_LIMITE_LIMPEZA_PADRAO,
 ) -> list[Resultado]:
     """Executa as operações juntas, uma thread e uma conexão por operação.
 
@@ -179,8 +184,6 @@ def executar_em_paralelo(
     inicio = threading.Barrier(total)
     interna = threading.Barrier(total)
     resultados = [Resultado() for _ in operacoes]
-    # Menor que o prazo de limpeza: uma abertura real nunca passa dele.
-    connect_timeout = min(10, max(1, math.ceil(tempo_limite_limpeza) - 1))
 
     def mudar_fase(op: _Operacao, fase: Fase) -> None:
         with condicao:
@@ -219,7 +222,7 @@ def executar_em_paralelo(
             opcoes = {
                 **conexao.settings_dict.get("OPTIONS", {}),
                 "application_name": op.aplicacao,
-                "connect_timeout": connect_timeout,
+                "connect_timeout": CONNECT_TIMEOUT_DAS_THREADS,
             }
             conexao.settings_dict = {**conexao.settings_dict, "OPTIONS": opcoes}
             instalar_connect_controlado(op, conexao)

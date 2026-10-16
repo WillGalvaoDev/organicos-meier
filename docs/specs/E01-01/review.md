@@ -1,6 +1,6 @@
 # E01-01 — Revisão
 
-Estado atual: **APROVADO** no commit `523cd9c` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `b709ce3` (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -211,3 +211,14 @@ O diff desde e7eec3c altera somente utilitário/testes de concorrência e relat�
 CI de push do SHA exato: [run 38743418962](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38743418962), 131 passed em 8,40 s, Postgres 17.11. Ressalvas documentais de TDD já registradas permanecem; não surgiu achado nesta fatia. Nenhuma implementação foi alterada pelo revisor.
 
 Proteção e segurança remotas consultadas novamente: PR obrigatório com zero aprovações humanas, verificacoes obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection ativos. CI do PR #19 também verde (run 38743263411). Os cenários negativos reais da revalidação 6b7b9ab permanecem válidos para workflow/configuração inalterados; não foram recriados nesta rodada. R01 permanece encerrado.
+
+
+## Revalidação independente — b709ce3 — 2026-10-15
+
+Revisor: Codex, agente 3. SHA auditado: `b709ce3ac41aa9dee593f7975efc88c6030019d0` (main, merge do PR #20). **APROVADO nesta fatia, mantida a decisão.** Fontes de verdade e implementação desta fatia não mudaram; alterações funcionais desta rodada estão no apoio de concorrência da E01-05. Matrizes anteriores permanecem aplicáveis, com a cobertura automatizada reexecutada na suíte completa: `uv run pytest -q`, **139 passed em 40,51 s**, Postgres real. R02, R03 e R04 também permanecem verdes nos probes independentes anteriores. Não surgiu achado nesta fatia.
+
+Verificações: `uv run ruff check .` limpo; `uv run ruff format --check .`, 54 arquivos; `uv run mypy .`, 40 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`, sem mudanças; `uv run python manage.py check --settings=config.settings.test`, zero issues. CI do SHA exato: [run 38748612333](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38748612333), sucesso, 139 testes; PR #20: run 38748350219, sucesso. Mantida a limitação histórica das evidências TDD declaradas, já registrada nas revisões anteriores.
+
+A E01 global continua **REPROVADA**, agora pela incompatibilidade técnica R06/A-17 documentada na E01-05; o vazamento R05 foi corrigido. Nenhum código de implementação ou teste versionado foi alterado pelo revisor.
+
+Proteção remota consultada novamente: PR obrigatório, zero aprovações humanas, `verificacoes` obrigatório e strict, enforce_admins=true, force pushes/deletions=false. Secret scanning e push protection ativos. R01 permanece encerrado. Os cenários negativos reais A-3 a A-6 e A-9/A-10 da revisão 6b7b9ab não foram repetidos: workflow e proteções permanecem iguais. A-1/A-2 confirmados pelos CIs acima; nenhuma configuração remota foi alterada.

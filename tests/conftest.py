@@ -48,7 +48,10 @@ def relogio() -> Iterator[RelogioControlado]:
         controle.parar()
 
 
-def guarda_entre_testes(prazo: float = 30.0) -> None:
+PRAZO_PADRAO_DA_GUARDA = 30.0
+
+
+def guarda_entre_testes(prazo: float = PRAZO_PADRAO_DA_GUARDA) -> None:
     """Resolve limpezas de conexão pendentes de um teste anterior (E01-05, correção R05).
 
     Só age se `executar_em_paralelo` levantou `LimpezaIncompleta`. Se ainda restar sessão,

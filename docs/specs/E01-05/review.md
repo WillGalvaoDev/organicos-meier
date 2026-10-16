@@ -1,6 +1,6 @@
 # E01-05 — Revisão
 
-Estado atual: **REPROVADO** no commit `523cd9c` (revalidação independente ao final).
+Estado atual: **REPROVADO** no commit `b709ce3`: R05 corrigido; pendência R06 de compatibilidade entre A-15 e A-17 (revalidação independente ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -602,3 +602,108 @@ manage.py makemigrations --check --dry-run (test) -> No changes detected
 - Erro meu durante o ciclo: a primeira versão do teste A-14 instrumentava `get_new_connection` também para a thread do chamador (a conexão do chamador ainda não estava aberta), e a limpeza falhou por isso. Corrigido no teste (filtro por nome da thread e conexão do chamador aberta antes); não houve alteração da implementação.
 - Desvio de nomenclatura: o spec cita `aguardar_limpezas_pendentes` como a função da guarda e a fixture `autouse` a chama; a função auxiliar que converte `LimpezaIncompleta` em `pytest.fail` e que o A-16 testa diretamente foi nomeada `guarda_entre_testes` em `tests/conftest.py`.
 - Limitação: a guarda resolve apenas pendências registradas por `LimpezaIncompleta`. Uma thread pendente continua viva se bloqueada fora do banco, mas sem conexão e sem poder abrir outra.
+
+
+## Revalidação independente — b709ce3 — 2026-10-15
+
+Revisor: Codex, agente 3. SHA auditado: `b709ce3ac41aa9dee593f7975efc88c6030019d0`, main/PR #20; implementação `2057f70`. Lidos os documentos-base e a revisão da especificação antes da avaliação. A nova garantia admite `LimpezaIncompleta` com registro e guarda, em vez de prometer limpeza impossível dentro de qualquer prazo. Essa distinção foi aplicada nesta revisão.
+
+**Decisão: REPROVADO para o aceite integral da E01-05 e da E01. R05 encerrado; R01 a R04 continuam encerrados.** Resta R06, uma incompatibilidade técnica entre o domínio de configuração exigido por A-15 e a relação universal exigida por A-17. Não foi demonstrado novo vazamento nesse caso; não se está reabrindo o bloqueador anterior nem pedindo decisão comercial ao usuário.
+
+### R06 — importante: A-17 não vale para o prazo curto explicitamente aceito por A-15
+
+Referências: `spec.md:135` (projeto obrigatório, item 5), `acceptance.md:34` (A-15), `acceptance.md:36` (A-17), `tests/apoio/concorrencia.py:183` e `tests/tecnicos/test_apoio_concorrencia.py:632`.
+
+A especificação exige `connect_timeout` inteiro em segundos e menor que `tempo_limite_limpeza`. A-15 exige aceitar limpeza de 0,5 s. O código calcula `min(10, max(1, ceil(tempo_limite_limpeza) - 1))`, resultando em 1 s nesse caso. A relação também não é estrita para limpeza de 1 s. O teste versionado A-17 verifica apenas o padrão 30 s, no qual 10 < 30 passa. Logo, seu resultado verde não demonstra a exigência para todas as configurações aceitas.
+
+Não existe inteiro positivo menor que 0,5. Portanto, não é correto exigir que o implementador simplesmente ajuste a fórmula mantendo ambos os critérios universais. A correção recomendada ao especificador é explicitar o alcance do limite do driver e a exceção dos prazos curtos, preservando o comportamento de A-15 (`LimpezaIncompleta` e guarda). O implementador deve então cobrir os limites e alinhar os comentários que hoje prometem uma desigualdade universal. Alternativamente, restringir o domínio exige também compatibilizar A-15. Trata-se de ajuste técnico derivado dos requisitos; não requer alteração de regra de negócio nem autorização adicional do usuário. O revisor não altera silenciosamente a especificação para conceder aceite.
+
+Reprodução independente, arquivo temporário `om_e01_b709ce3_prazo_curto.py`:
+
+```python
+import pytest
+from django.db import connection
+from tests.apoio.concorrencia import executar_em_paralelo
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_connect_timeout_inferior_ao_prazo_curto():
+    def ler(_barreira):
+        return connection.get_connection_params()["connect_timeout"]
+
+    (resultado,) = executar_em_paralelo(ler, tempo_limite_limpeza=0.5)
+    assert resultado.excecao is None
+    assert 0 < resultado.valor < 0.5
+```
+
+Comando: `uv run pytest -c pyproject.toml "$env:TEMP/om_e01_b709ce3_prazo_curto.py" "$env:TEMP/om_e01_523cd9c_abertura_apos_varredura.py" "$env:TEMP/om_e01_e7eec3c_conexao_em_abertura.py" "$env:TEMP/om_e01_6b7b9ab_probes.py" -q`.
+
+Resultado bruto: **2 failed, 12 passed em 23,28 s**. Uma falha é a reprodução acima: `assert 1 < 0.5`. A outra é `test_r05_retomada`, que exige especificamente `TempoEsgotado` na thread retomada; o driver levantou `OperationalError` pela sessão terminada. A asserção anterior, de que o SQL não produziu resultado, passou. A nova garantia exige impedir SQL/reconexão e não determina essa classe de erro nessa thread. Essa segunda falha é uma expectativa mais restritiva do probe antigo, não um defeito contra o contrato revisado. O probe foi preservado, sem alterar asserções para ocultar o resultado.
+
+### Encerramento de R05 e matriz atual
+
+A mudança de fase para `ABRINDO` e a proibição de abrir após expiração compartilham a mesma trava. A limpeza aguarda a saída dessa fase e confirma as sessões no servidor antes de retornar `TempoEsgotado`. Abertura que excede o prazo produz `LimpezaIncompleta`, fica registrada e é tratada pela guarda. As três reproduções anteriores de abertura passaram sem alteração; os testes versionados também cobrem retomada e liberação de trava de linha.
+
+| Critérios | Evidência e resultado independente |
+|---|---|
+| A-1 a A-7 | Ordem, conexões distintas, perda de atualização, trava, erros, timeout e limpeza: verdes no módulo e na suíte. |
+| A-8 | Abertura ainda não iniciada é recusada após expiração: verde. |
+| A-9, A-10 | Abertura iniciada sem sessão, incluindo probe literal de 523cd9c e liberação por Timer: verdes. |
+| A-11 | Sessão criada e ainda não entregue ao wrapper, probe de e7eec3c: verde. |
+| A-12, A-13 | Conexão aberta/retomada sem SQL bem-sucedido e liberação da trava: verdes. A exigência extra de classe de erro do probe antigo não integra o novo contrato. |
+| A-14 | Falha na abertura, com e sem timeout: verde. |
+| A-15, A-16 | Prazo de limpeza excedido, exceção distinta, registro e guarda falhando/resolvendo: verdes. |
+| A-17 | Verde para o padrão; não atendido para prazo curto aceito, conforme R06. |
+| A-18 | Cinco repetições e suíte completa: resultados abaixo. |
+
+### Verificações, TDD e limites
+
+- A-18: `uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q`, cinco vezes consecutivas: **23 passed em todas**, com durações de **39,45 s; 39,79 s; 39,83 s; 39,88 s; 40,84 s**. Postgres 17.11 confirmado no servidor. Critério A-18 atendido.
+- `uv run pytest -q`: **139 passed em 40,51 s**, contra Postgres real.
+- `uv run ruff check .`: limpo; `uv run ruff format --check .`: 54 arquivos; `uv run mypy .`: 40 arquivos sem erros.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: sem mudanças.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- CI [38748612333](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38748612333), SHA exato: sucesso, 139 passed em 39,91 s; CI do PR #20, 38748350219: sucesso.
+
+A tentativa de probes após a retomada ficou sem resultado enquanto o Docker estava parado. O processo foi interrompido, Docker/Postgres restabelecidos e o comando reexecutado; somente o resultado concluído acima conta como evidência. Não houve alteração de dados de produção.
+
+A transcrição TDD do implementador registra andaime explícito, Red com cinco falhas e Green. A-9/A-10 documentam a regressão comportamental anterior; A-15/A-16 e A-17 documentam as novas interfaces/configuração. A falha inicial A-14 por instrumentação inadequada foi reconhecida e corrigida, não tratada como prova de defeito da implementação. Critérios já verdes são regressões. Mantida a limitação histórica: sequência Red/Green declarada, sem logs brutos ou commits intermediários que permitam comprovar independentemente cada instante; testes Green foram executados nesta revisão. Nenhuma asserção versionada foi removida pelo revisor.
+
+Próximo gate: especificador compatibilizar tecnicamente A-15/A-17 e implementador demonstrar os limites em TDD; revisor revalidar R06. Não é necessária nova mudança comercial. Apenas os cinco `review.md` foram alterados nesta revisão, na branch `revisao/e01-b709ce3`, sem commit, push ou merge.
+
+## Correção R06 conforme "Correção R06" do spec.md (implementador)
+
+Base: revalidação `b709ce3` (R05 encerrado; R06: A-15 aceita prazo de limpeza de 0,5 s e A-17 exigia `connect_timeout` menor que esse prazo, impossível para inteiro positivo) e seção "Correção R06" do `spec.md`, com o A-17 reescrito no `acceptance.md`. Segui os passos na ordem indicada.
+
+**Andaime antes do Red (passos 1, 3 e 5, sem mudar comportamento):** `TEMPO_LIMITE_LIMPEZA_PADRAO = 30.0` (padrão de `tempo_limite_limpeza`), `CONNECT_TIMEOUT_DAS_THREADS = 10` (definida, mas a fórmula antiga ainda em uso) e `PRAZO_PADRAO_DA_GUARDA = 30.0` em `tests/conftest.py`. O `CONNECT_TIMEOUT_DAS_THREADS` também entrou no andaime, e não só no Green, para que o Red do A-17 fosse por asserção e não por erro de importação. Suíte antes do Red: ruff e mypy limpos.
+
+**Red** (`uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q -k connect_timeout`):
+
+```
+E   assert 1 == 10        test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout_fixo[0.5]
+E   assert 1 == 10        test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout_fixo[1]
+2 failed, 3 passed, 22 deselected
+```
+
+Como o spec antecipou: `[0.5]` e `[1]` falham; `[10.5]` (a fórmula antiga já devolvia 10), o caso com o padrão e `test_r05_connect_timeout_das_threads_e_uma_constante_fixa_coerente` (int, > 0, < `TEMPO_LIMITE_LIMPEZA_PADRAO`, < `PRAZO_PADRAO_DA_GUARDA`) passam e ficam como cobertura.
+
+**Green** (`tests/apoio/concorrencia.py`): a fórmula `min(10, max(1, ceil(tempo_limite_limpeza) - 1))` foi substituída por `CONNECT_TIMEOUT_DAS_THREADS`; importação de `math` removida; o comentário que prometia "uma abertura real nunca passa do prazo de limpeza" foi trocado por um comentário na constante, conforme o item 5 do projeto: o limite do driver garante término finito e só garante término dentro do prazo quando este é maior que 10 s; com prazo menor ou igual, uma abertura lenta resulta em `LimpezaIncompleta` (A-15), e a ausência de sessão residual não depende dessa desigualdade. O comportamento do A-15 não mudou.
+
+**Substituição do teste do A-17:** `test_r05_conexao_do_utilitario_tem_nome_exclusivo_e_connect_timeout` (que afirmava `0 < connect_timeout < TEMPO_LIMITE_PADRAO`) foi reescrito como `..._connect_timeout_fixo`, parametrizado com `tempo_limite_limpeza` em 0,5, 1, 10,5 e o padrão. Não foi incorporado nenhum teste do revisor que afirme `connect_timeout < 0,5` (ver "Testes de verificação do revisor" no spec). Nenhum teste de R05 foi removido ou afrouxado.
+
+**Regressão (passo 6):**
+
+```
+uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q (5 execuções seguidas) -> 27 passed em todas
+   duração do módulo: 39,7 s; 51,0 s; 52,0 s; 50,9 s; 40,2 s
+uv run pytest -q                -> 143 passed em 48,3 s
+uv run ruff check .             -> All checks passed
+uv run ruff format --check .    -> ok
+uv run mypy .                   -> Success: no issues found in 40 source files
+manage.py makemigrations --check --dry-run (test) -> No changes detected
+```
+
+A variação de duração (40 a 52 s) coincide com outro container Postgres do computador ter sido iniciado junto; não há teste novo lento.
+
+Observação operacional: o Docker Desktop estava parado no início desta sessão e o primeiro `pytest` ficou sem resposta até o banco ser iniciado; não é defeito do utilitário nem da suíte.
