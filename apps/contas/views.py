@@ -1,4 +1,4 @@
-from allauth.account.internal.flows.login import perform_login
+from allauth.account.internal.flows.login import perform_login, record_authentication
 from allauth.account.models import Login
 from allauth.mfa.adapter import get_adapter as get_adapter_mfa
 from allauth.mfa.models import Authenticator
@@ -20,7 +20,8 @@ from apps.contas.convites import (
 )
 from apps.contas.emails import EmailInvalido
 from apps.contas.forms import FormularioCadastroPorConvite
-from apps.contas.formularios import FormularioConvite
+from apps.contas.formularios import FormularioConvite, FormularioPedidoDeLink
+from apps.contas.link_de_acesso import LinkInvalido, pedir_link, usar_link, validar_link
 from apps.contas.models import Convite, EmailEmUso
 
 
@@ -119,3 +120,31 @@ def aceitar_convite(request: HttpRequest, token: str) -> HttpResponse:
             )
             return resposta
     return render(request, "convites/cadastro.html", {"form": form, "convite": convite})
+
+
+def pedir_link_de_acesso(request: HttpRequest) -> HttpResponse:
+    """Pedido do link de acesso. A resposta é a mesma para qualquer e-mail válido."""
+    form = FormularioPedidoDeLink(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        pedir_link(form.cleaned_data["email"], origem=request.build_absolute_uri("/"))
+        return render(request, "contas/link_pedido_enviado.html")
+    return render(request, "contas/link_pedido.html", {"form": form})
+
+
+def usar_link_de_acesso(request: HttpRequest, token: str) -> HttpResponse:
+    """GET confirma (não consome); POST consome o link e autentica a conta."""
+    if request.method == "POST":
+        try:
+            conta = usar_link(token)
+        except LinkInvalido:
+            return render(request, "contas/link_invalido.html", status=410)
+        record_authentication(request, conta, "link")
+        resposta: HttpResponse = perform_login(
+            request, Login(user=conta, email=conta.email_normalizado)
+        )
+        return resposta
+    try:
+        validar_link(token)
+    except LinkInvalido:
+        return render(request, "contas/link_invalido.html", status=410)
+    return render(request, "contas/link_confirmar.html")

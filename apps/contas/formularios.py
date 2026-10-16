@@ -6,6 +6,7 @@ from allauth.account.forms import ResetPasswordForm, ResetPasswordKeyForm
 from django import forms
 
 from apps.contas.acesso import AcessoRecusado, Metodo, verificar_acesso
+from apps.contas.emails import EmailInvalido, normalizar_email
 from apps.contas.models import Papel
 from apps.fornecedores.models import Fornecedor
 
@@ -55,3 +56,17 @@ class FormularioConvite(forms.Form):
     fornecedor = forms.ModelChoiceField(
         queryset=Fornecedor.objects.order_by("nome"), required=False, empty_label="—"
     )
+
+
+class FormularioPedidoDeLink(forms.Form):
+    """Pedido de link de acesso. E-mail mal formado é o único erro visível."""
+
+    email = forms.CharField(max_length=254)
+
+    def clean_email(self) -> str:
+        email = str(self.cleaned_data["email"])
+        try:
+            normalizar_email(email)
+        except EmailInvalido:
+            raise forms.ValidationError("Informe um e-mail válido.") from None
+        return email

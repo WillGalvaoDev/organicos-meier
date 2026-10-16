@@ -7,6 +7,12 @@ from apps.contas import views as contas_views
 # existem; cadastro e as demais ficam de fora. Os nomes são os que o allauth usa internamente.
 urlpatterns: list[URLPattern | URLResolver] = [
     path("entrar/", allauth_views.login, name="account_login"),
+    path("entrar/link/", contas_views.pedir_link_de_acesso, name="pedir_link_de_acesso"),
+    path(
+        "entrar/link/<str:token>/",
+        contas_views.usar_link_de_acesso,
+        name="usar_link_de_acesso",
+    ),
     path("sair/", allauth_views.logout, name="account_logout"),
     path("reautenticar/", allauth_views.reauthenticate, name="account_reauthenticate"),
     path("recuperar-acesso/", allauth_views.password_reset, name="account_reset_password"),

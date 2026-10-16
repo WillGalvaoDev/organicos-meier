@@ -215,3 +215,30 @@ class Convite(models.Model):
         if prazo_encerrado(agora(), self.expira_em):
             return "expirado"
         return "pendente"
+
+
+class LinkDeAcesso(models.Model):
+    """Link de acesso por e-mail (E02-06): uso único, 15 minutos. Só o hash do token é gravado."""
+
+    conta = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="links_de_acesso")
+    token_hash = models.CharField(max_length=64)
+    criado_em = models.DateTimeField(default=agora)
+    expira_em = models.DateTimeField()
+    usado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["token_hash"], name="link_token_unico"),
+            models.CheckConstraint(
+                condition=models.Q(expira_em=models.F("criado_em") + timedelta(minutes=15)),
+                name="link_validade_15min",
+            ),
+        )
+        indexes = (models.Index(fields=["conta", "criado_em"], name="link_conta_criado_idx"),)
+
+    def __str__(self) -> str:
+        return f"link {self.pk}"
+
+    @classmethod
+    def hash_do_token(cls, token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
