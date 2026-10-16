@@ -104,6 +104,19 @@ A regra comum está na seção de mesmo título da E03-01.
 
 - Critério A-15, com Red observado antes do código.
 
+## Correção E03-R03 — revisão da especificação em 2026-10-16
+
+A regra geral está na seção de mesmo título da E03-02.
+
+### Regra
+
+- O serviço `alterar_incremento` já trava e verifica a fase antes de validar o incremento (passos 2 a 4) e não muda.
+- A view `POST /administracao/produtos/<id>/incremento/` passa a verificar a fase com `condicoes_editaveis(produto.fornecedor)` antes de validar o formulário. Fora de interesse, responde 409 com a mensagem única e sem campo editável, para qualquer valor enviado. Isso inclui `abc`, `0` e `1000000000,000`, que hoje são recusados pelo formulário com 200.
+
+### Testes obrigatórios
+
+- Cobertos pelo critério A-12 da E03-07, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-02, E03-03 e E03-04.

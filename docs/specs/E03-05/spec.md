@@ -109,7 +109,7 @@ Esta fatia entrega:
 - Lista os produtos do fornecedor, separados em "na rodada" e "fora da rodada". Para cada produto na rodada, mostra limite (ou "sem limite"), reservado e livre.
 - **Fase de interesse:** oferece incluir e alterar, com `POST` em `/administracao/rodadas/<id>/estoque/incluir/` e `/administracao/estoque/<id>/alterar/`.
 - **Fora da fase de interesse e em rodada não ativa:** a tela é só de leitura, e os `POST` respondem 409 com a mensagem única de `CondicoesCongeladas`.
-- **Recusa de redução:** `EstoqueAbaixoDoReservado` mostra a mensagem no formulário, com status 200.
+- **Recusa de redução:** `EstoqueAbaixoDoReservado` mostra a mensagem no formulário, com status 200. O formulário mantém o valor digitado (correção E03-R04).
 - **Detalhe do fornecedor (E03-01):** passa a ter link para o estoque da rodada ativa.
 
 ## Interfaces
@@ -158,6 +158,77 @@ A regra comum está na seção de mesmo título da E03-01.
 ### Testes obrigatórios
 
 - Critérios A-20 e A-21, com Red observado antes do código.
+
+## Correção E03-R03 — revisão da especificação em 2026-10-16
+
+A regra geral está na seção de mesmo título da E03-02.
+
+### Regra
+
+**Serviços:**
+
+- `incluir_produto_na_rodada` passa a validar o `limite` só depois de:
+  1. exigir o administrador;
+  2. conferir que o produto é do fornecedor da rodada (`ValidationError`, como hoje: é identidade, não valor);
+  3. `travar_condicoes` e conferir que a rodada travada é a rodada recebida;
+  4. travar o produto.
+
+  Os passos 4 a 6 da seção Regras já previam essa ordem; o código a inverteu.
+- `alterar_estoque` passa a validar `novo_limite` só depois de `travar_condicoes`, da conferência da rodada e de `travar_estoque`. Em seguida vêm a comparação com o valor atual (o no-op) e a comparação com o reservado.
+- Assim, um limite mal formado, negativo ou acima da capacidade numa fase congelada, ou numa rodada antiga, levanta `CondicoesCongeladas`, nunca `ValidationError`.
+
+**Views:**
+
+- `estoque_incluir` e `estoque_alterar` verificam `rodada.etapa == Etapa.INTERESSE` antes de validar o formulário.
+- Fora de interesse, inclusive numa rodada que não é mais a ativa, respondem 409 pela página só de leitura, com a mensagem única. Isso vale para qualquer valor enviado.
+
+### Testes obrigatórios
+
+- Cobertos pelo critério A-12 da E03-07 (rotas) e pelo A-22 desta fatia (serviços), com Red observado antes do código.
+
+## Correção E03-R04 — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+- `_pagina_do_estoque` (`apps/rodadas/views.py`) recebe só a mensagem de erro, e o template `rodadas/estoque.html` monta cada campo a partir do estado gravado:
+  - na inclusão recusada, o campo de limite do produto volta vazio;
+  - na alteração recusada, volta com o limite gravado, por exemplo 10.
+- A mensagem aparece, mas o administrador perde o que digitou. Isso contraria a regra comum da E03-01 ("o valor digitado de volta no formulário").
+- Minha falha na especificação: a E03-05 dizia só "mostra a mensagem no formulário" e não fixava a preservação do valor. Os critérios A-20 e A-21 não a verificavam.
+
+### Regra
+
+**O formulário submetido volta como foi enviado, na linha correspondente:**
+
+- `_pagina_do_estoque` recebe, além da mensagem, o formulário submetido: a ação (`incluir` ou `alterar`), o id do produto (na inclusão) ou do estoque (na alteração) e o texto bruto do limite, exatamente como veio no `POST`.
+- **A linha do formulário submetido** mostra:
+  - no campo `limite`, o texto bruto enviado (por exemplo, `1000000000,000`), sem conversão nem formatação, com o escape automático do template;
+  - a mensagem de erro dentro do próprio `<form>`, com `role="alert"`.
+- **As demais linhas** continuam com os valores gravados, sem mensagem. As colunas de limite, reservado e livre mostram sempre o estado gravado, inclusive na linha com erro.
+- **Recusas cobertas,** todas com status 200 na fase de interesse:
+  - formato inválido (formulário inválido);
+  - limite negativo;
+  - capacidade excedida;
+  - `EstoqueAbaixoDoReservado`.
+- **Erros sem linha correspondente** continuam no aviso do topo da página, sem valor preservado:
+  - produto inexistente ("Produto inválido.");
+  - produto de outro fornecedor;
+  - produto que já está na rodada (ele já aparece entre os "na rodada", com o valor gravado);
+  - `CondicoesCongeladas`, com 409 e a página só de leitura.
+- **Sem efeitos:** a recusa não grava nada, não registra auditoria nem envia `estoque_alterado`. Isso já valia e continua valendo.
+- **Esquema:** não muda o banco, os serviços nem as mensagens.
+
+### Testes obrigatórios
+
+- O probe `test_estoque_preserva_entrada_rejeitada` do revisor entra literal em `tests/tecnicos/test_rodadas_estoque.py`.
+- Critérios A-23 e A-24, com Red observado antes do código. A verificação é feita dentro do `<form>` cuja `action` é a da linha, e não só na página inteira. Para isso, o teste pode usar o `html.parser` da biblioteca padrão ou `assertContains`/`assertInHTML`, sem dependência nova.
+
+### O que não fazer
+
+- Não preservar o valor reescrevendo o estado gravado nem gravando um rascunho.
+- Não formatar o texto rejeitado: ele volta como foi digitado.
+- Não desligar o escape automático para mostrar o valor.
+- Não mover para o topo da página a mensagem das recusas que têm linha correspondente.
 
 ## Dependências e decisões em aberto
 

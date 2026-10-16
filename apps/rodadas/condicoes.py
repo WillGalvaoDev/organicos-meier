@@ -41,3 +41,12 @@ def travar_condicoes(fornecedor: Fornecedor) -> Rodada:
     if rodada.etapa != Etapa.INTERESSE:
         raise CondicoesCongeladas("fora_de_interesse")
     return rodada
+
+
+def condicoes_editaveis(fornecedor: Fornecedor) -> bool:
+    """Leitura sem trava: o fornecedor tem rodada em `interesse`?
+
+    Só serve para escolher a resposta de uma rota quando nada será gravado. Quem grava trava e
+    verifica de novo (`travar_condicoes`).
+    """
+    return Rodada.objects.filter(fornecedor_id=fornecedor.pk, etapa=Etapa.INTERESSE).exists()

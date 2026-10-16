@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from decimal import Decimal
+from html.parser import HTMLParser
 from typing import Any
 
 import pytest
@@ -554,3 +555,183 @@ def test_travar_estoque_fora_de_transacao_falha() -> None:
     estoque = _estoque()
     with pytest.raises(TransactionManagementError):
         travar_estoque(estoque.rodada, estoque.produto)
+
+
+# --- E03-R03 / E03-R04 -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("valor", [D("1000000000.000"), D("-1"), "abc"])
+@pytest.mark.parametrize("caso", ["fechamento", "rodada_antiga"])
+def test_a_fase_prevalece_sobre_o_limite_nos_servicos(
+    admin: Conta, receptor: list[Any], caso: str, valor: Any
+) -> None:  # A-22, E03-R03
+    fornecedor = FornecedorFactory.create()
+    if caso == "fechamento":
+        rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.FECHAMENTO)
+    else:
+        rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.DISPONIVEL_PARA_RETIRADA)
+        RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.INTERESSE)
+    produto = ProdutoFactory.create(fornecedor=fornecedor)
+    fora = ProdutoFactory.create(fornecedor=fornecedor)
+    estoque = EstoqueDaRodadaFactory.create(rodada=rodada, produto=produto, limite=D("10"))
+    with pytest.raises(CondicoesCongeladas):
+        incluir_produto_na_rodada(admin, rodada, fora, valor)
+    with pytest.raises(CondicoesCongeladas):
+        alterar_estoque(admin, estoque, valor)
+    assert EstoqueDaRodada.objects.filter(rodada=rodada).count() == 1
+    estoque.refresh_from_db()
+    assert estoque.limite == D("10.000")
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+class _Formulario:
+    def __init__(self, action: str) -> None:
+        self.action = action
+        self.campos: dict[str, str | None] = {}
+        self.texto = ""
+        self.alertas = 0
+
+
+class _Leitor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.formularios: list[_Formulario] = []
+        self._atual: _Formulario | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        dados = dict(attrs)
+        if tag == "form":
+            self._atual = _Formulario(dados.get("action") or "")
+            self.formularios.append(self._atual)
+        elif self._atual is not None:
+            if tag == "input" and dados.get("name"):
+                self._atual.campos[dados["name"] or ""] = dados.get("value")
+            if dados.get("role") == "alert":
+                self._atual.alertas += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form":
+            self._atual = None
+
+    def handle_data(self, data: str) -> None:
+        if self._atual is not None:
+            self._atual.texto += data
+
+
+def _formulario(html: str, action: str, produto: int | None = None) -> _Formulario:
+    leitor = _Leitor()
+    leitor.feed(html)
+    achados = [
+        f
+        for f in leitor.formularios
+        if f.action == action and (produto is None or f.campos.get("produto") == str(produto))
+    ]
+    assert len(achados) == 1, (action, produto, [f.action for f in leitor.formularios])
+    return achados[0]
+
+
+RECUSAS = [
+    ("1000000000,000", "O valor máximo aceito é 999999999,999."),
+    ("-1", "O limite do estoque não pode ser negativo."),
+    ("abc", "Informe um número válido."),
+]
+
+
+@pytest.mark.parametrize(("texto", "mensagem"), RECUSAS)
+def test_inclusao_recusada_devolve_o_valor_na_linha(
+    admin_client: Client, receptor: list[Any], texto: str, mensagem: str
+) -> None:  # A-23, E03-R04
+    rodada = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=rodada.fornecedor, nome="Alface")
+    q = ProdutoFactory.create(fornecedor=rodada.fornecedor, nome="Rúcula")
+    url = f"/administracao/rodadas/{rodada.pk}/estoque/incluir/"
+    resposta = admin_client.post(url, {"produto": str(p.pk), "limite": texto})
+    assert resposta.status_code == 200
+    html = resposta.content.decode()
+    da_linha = _formulario(html, url, p.pk)
+    assert da_linha.campos["limite"] == texto
+    assert mensagem in da_linha.texto
+    assert da_linha.alertas == 1
+    outra = _formulario(html, url, q.pk)
+    assert not outra.campos["limite"]
+    assert mensagem not in outra.texto
+    assert outra.alertas == 0
+    assert not EstoqueDaRodada.objects.filter(rodada=rodada).exists()
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+@pytest.mark.parametrize(
+    ("texto", "mensagem"),
+    [
+        *RECUSAS,
+        ("5", "O estoque não pode ficar abaixo da quantidade já reservada (6)."),
+    ],
+)
+def test_alteracao_recusada_devolve_o_valor_na_linha(
+    admin_client: Client, receptor: list[Any], texto: str, mensagem: str
+) -> None:  # A-24, E03-R04
+    rodada = RodadaFactory.create()
+    e1 = _estoque(rodada, "10")
+    _com_reserva(e1, "6")
+    e2 = EstoqueDaRodadaFactory.create(
+        rodada=rodada, produto=ProdutoFactory.create(fornecedor=rodada.fornecedor), limite=D("7")
+    )
+    url1 = f"/administracao/estoque/{e1.pk}/alterar/"
+    url2 = f"/administracao/estoque/{e2.pk}/alterar/"
+    resposta = admin_client.post(url1, {"limite": texto})
+    assert resposta.status_code == 200
+    html = resposta.content.decode()
+    da_linha = _formulario(html, url1)
+    assert da_linha.campos["limite"] == texto
+    assert mensagem in da_linha.texto
+    assert da_linha.alertas == 1
+    outra = _formulario(html, url2)
+    assert outra.campos["limite"] == "7"
+    assert outra.alertas == 0
+    e1.refresh_from_db()
+    assert e1.limite == D("10.000")
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+def test_valor_devolvido_e_escapado(admin_client: Client) -> None:  # A-24, E03-R04
+    estoque = _estoque(limite="10")
+    resposta = admin_client.post(
+        f"/administracao/estoque/{estoque.pk}/alterar/", {"limite": '"><b>x</b>'}
+    )
+    html = resposta.content.decode()
+    assert resposta.status_code == 200
+    assert "&quot;&gt;&lt;b&gt;" in html
+    assert "<b>x</b>" not in html
+
+
+def test_erro_sem_linha_fica_no_aviso_do_topo(admin_client: Client) -> None:  # E03-R04
+    estoque = _estoque(limite="10")
+    resposta = admin_client.post(
+        f"/administracao/rodadas/{estoque.rodada_id}/estoque/incluir/",
+        {"produto": str(estoque.produto_id), "limite": "3"},
+    )
+    html = resposta.content.decode()
+    assert resposta.status_code == 200
+    assert "Este produto já está na rodada." in html
+    leitor = _Leitor()
+    leitor.feed(html)
+    assert all(f.alertas == 0 for f in leitor.formularios)
+
+
+@pytest.mark.parametrize("incluir", [True, False])
+def test_estoque_preserva_entrada_rejeitada(admin_client: Client, incluir: bool) -> None:
+    admin = admin_client  # probe do revisor (E03-08/review.md, revalidação de 2e7bbcc)
+    r = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=r.fornecedor)
+    if incluir:
+        url = f"/administracao/rodadas/{r.pk}/estoque/incluir/"
+    else:
+        e = EstoqueDaRodadaFactory.create(rodada=r, produto=p, limite=Decimal("10"))
+        url = f"/administracao/estoque/{e.pk}/alterar/"
+    resposta = admin.post(url, {"produto": str(p.pk), "limite": "1000000000,000"})
+    assert resposta.status_code == 200
+    assert "O valor máximo aceito é 999999999,999." in resposta.content.decode()
+    assert 'value="1000000000,000"' in resposta.content.decode()

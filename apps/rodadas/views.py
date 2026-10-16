@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.forms import Form
@@ -6,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.catalogo.models import Produto
+from apps.catalogo.templatetags.catalogo import quantidade_br
 from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
@@ -36,25 +39,61 @@ def abrir(request: HttpRequest, pk: int) -> HttpResponse:
     return redirect("fornecedores_detalhe", pk=fornecedor.pk)
 
 
+@dataclass(frozen=True)
+class Submetido:
+    """O formulário recusado: a ação, o id do produto (inclusão) ou do estoque (alteração) e o
+    texto do limite, como veio no POST."""
+
+    acao: str
+    alvo: int | None
+    texto: str
+
+
+def _id(request: HttpRequest) -> int | None:
+    bruto = request.POST.get("produto", "")
+    return int(bruto) if bruto.isdigit() else None
+
+
 def _pagina_do_estoque(
-    request: HttpRequest, rodada: Rodada, erro: str | None = None, status: int = 200
+    request: HttpRequest,
+    rodada: Rodada,
+    erro: str | None = None,
+    status: int = 200,
+    submetido: Submetido | None = None,
 ) -> HttpResponse:
+    """Um erro que tem linha correspondente aparece no formulário dela, com o valor digitado;
+    os demais ficam no aviso do topo."""
     produtos = Produto.objects.filter(fornecedor_id=rodada.fornecedor_id).order_by("nome", "pk")
     estoques = {e.produto_id: e for e in EstoqueDaRodada.objects.filter(rodada=rodada)}
     na_rodada = []
     fora_da_rodada = []
+    erro_da_linha = False
     for produto in produtos:
         estoque = estoques.get(produto.pk)
         if estoque is None:
-            fora_da_rodada.append(produto)
+            devolvido = submetido and submetido.acao == "incluir" and submetido.alvo == produto.pk
+            erro_da_linha = erro_da_linha or bool(devolvido)
+            fora_da_rodada.append(
+                {
+                    "produto": produto,
+                    "valor": submetido.texto if devolvido and submetido else "",
+                    "erro": erro if devolvido else None,
+                }
+            )
             continue
         estoque.produto = produto
+        devolvido = submetido and submetido.acao == "alterar" and submetido.alvo == estoque.pk
+        erro_da_linha = erro_da_linha or bool(devolvido)
         na_rodada.append(
             {
                 "estoque": estoque,
                 "produto": produto,
                 "reservado": total_reservado(produto),
                 "livre": estoque_livre(estoque),
+                "valor": (
+                    submetido.texto if devolvido and submetido else quantidade_br(estoque.limite)
+                ),
+                "erro": erro if devolvido else None,
             }
         )
     editavel = rodada.etapa == Etapa.INTERESSE
@@ -64,7 +103,7 @@ def _pagina_do_estoque(
         "fora_da_rodada": fora_da_rodada,
         "editavel": editavel,
         "mensagem_somente_leitura": None if editavel else MENSAGEM,
-        "erro": erro,
+        "erro": None if erro_da_linha else erro,
     }
     return render(request, "rodadas/estoque.html", contexto, status=status)
 
@@ -81,12 +120,17 @@ def estoque(request: HttpRequest, pk: int) -> HttpResponse:
 @require_POST
 def estoque_incluir(request: HttpRequest, pk: int) -> HttpResponse:
     rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    if rodada.etapa != Etapa.INTERESSE:
+        return _pagina_do_estoque(request, rodada, MENSAGEM, status=409)
+    texto = request.POST.get("limite", "")
     form = FormularioInclusao(request.POST)
     if not form.is_valid():
-        return _pagina_do_estoque(request, rodada, _erros(form))
-    produto = (
-        Produto.objects.select_related("fornecedor").filter(pk=form.cleaned_data["produto"]).first()
-    )
+        return _pagina_do_estoque(
+            request, rodada, _erros(form), submetido=Submetido("incluir", _id(request), texto)
+        )
+    alvo = form.cleaned_data["produto"]
+    submetido = Submetido("incluir", alvo, texto)
+    produto = Produto.objects.select_related("fornecedor").filter(pk=alvo).first()
     if produto is None:
         return _pagina_do_estoque(request, rodada, "Produto inválido.")
     try:
@@ -94,7 +138,7 @@ def estoque_incluir(request: HttpRequest, pk: int) -> HttpResponse:
     except CondicoesCongeladas as erro:
         return _pagina_do_estoque(request, rodada, str(erro), status=409)
     except ValidationError as erro:
-        return _pagina_do_estoque(request, rodada, " ".join(erro.messages))
+        return _pagina_do_estoque(request, rodada, " ".join(erro.messages), submetido=submetido)
     messages.success(request, "Produto incluído na rodada.")
     return redirect("rodadas_estoque", pk=rodada.pk)
 
@@ -106,16 +150,19 @@ def estoque_alterar(request: HttpRequest, pk: int) -> HttpResponse:
         EstoqueDaRodada.objects.select_related("rodada__fornecedor", "produto__fornecedor"), pk=pk
     )
     rodada = estoque.rodada
+    if rodada.etapa != Etapa.INTERESSE:
+        return _pagina_do_estoque(request, rodada, MENSAGEM, status=409)
+    submetido = Submetido("alterar", estoque.pk, request.POST.get("limite", ""))
     form = FormularioLimite(request.POST)
     if not form.is_valid():
-        return _pagina_do_estoque(request, rodada, _erros(form))
+        return _pagina_do_estoque(request, rodada, _erros(form), submetido=submetido)
     try:
         alterar_estoque(request.user, estoque, form.cleaned_data["limite"])  # type: ignore[arg-type]
     except CondicoesCongeladas as erro:
         return _pagina_do_estoque(request, rodada, str(erro), status=409)
     except (EstoqueAbaixoDoReservado, ValidationError) as erro:
         mensagem = " ".join(erro.messages) if isinstance(erro, ValidationError) else str(erro)
-        return _pagina_do_estoque(request, rodada, mensagem)
+        return _pagina_do_estoque(request, rodada, mensagem, submetido=submetido)
     messages.success(request, "Estoque atualizado.")
     return redirect("rodadas_estoque", pk=rodada.pk)
 

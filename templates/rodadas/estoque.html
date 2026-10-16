@@ -22,8 +22,9 @@
               <td>
                 <form method="post" action="{% url 'estoque_alterar' pk=item.estoque.pk %}">
                   {% csrf_token %}
-                  <input type="text" name="limite" value="{{ item.estoque.limite|quantidade_br }}" aria-label="Limite de {{ item.produto.nome }}">
+                  <input type="text" name="limite" value="{{ item.valor }}" aria-label="Limite de {{ item.produto.nome }}">
                   <button type="submit">Salvar</button>
+                  {% if item.erro %}<p role="alert">{{ item.erro }}</p>{% endif %}
                 </form>
               </td>
             {% endif %}
@@ -39,15 +40,16 @@
   <h2>Produtos fora da rodada</h2>
   {% if fora_da_rodada %}
     <ul>
-      {% for produto in fora_da_rodada %}
+      {% for linha in fora_da_rodada %}
         <li>
-          {{ produto.nome }}{% if not produto.disponivel %} (indisponível){% endif %}
+          {{ linha.produto.nome }}{% if not linha.produto.disponivel %} (indisponível){% endif %}
           {% if editavel %}
             <form method="post" action="{% url 'rodadas_estoque_incluir' pk=rodada.pk %}">
               {% csrf_token %}
-              <input type="hidden" name="produto" value="{{ produto.pk }}">
-              <input type="text" name="limite" aria-label="Limite de {{ produto.nome }}">
+              <input type="hidden" name="produto" value="{{ linha.produto.pk }}">
+              <input type="text" name="limite" value="{{ linha.valor }}" aria-label="Limite de {{ linha.produto.nome }}">
               <button type="submit">Incluir na rodada</button>
+              {% if linha.erro %}<p role="alert">{{ linha.erro }}</p>{% endif %}
             </form>
           {% endif %}
         </li>

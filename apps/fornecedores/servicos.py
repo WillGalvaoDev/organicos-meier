@@ -158,14 +158,14 @@ def editar_fornecedor(autor: Conta, fornecedor: Fornecedor, **campos: Any) -> Fo
 def alterar_minimo(autor: Conta, fornecedor: Fornecedor, novo: str | Decimal) -> Fornecedor:
     """Altera o mínimo do fornecedor, só enquanto a rodada ativa está em `interesse`.
 
-    Valida o valor como no cadastro e, dentro da transação, trava fornecedor e rodada
-    (`travar_condicoes`) antes de reler e gravar, então uma mudança de etapa confirmada antes
-    é sempre vista. Valor igual ao atual não grava nem audita.
+    Dentro da transação, trava fornecedor e rodada (`travar_condicoes`) e só então valida o valor
+    como no cadastro: a fase prevalece sobre o valor (E03-R03), e uma mudança de etapa confirmada
+    antes é sempre vista. Valor igual ao atual não grava nem audita.
     """
     _exigir_administrador(autor)
-    minimo = _limpar({"minimo": novo})["minimo"]
     with transaction.atomic():
         travar_condicoes(fornecedor)
+        minimo = _limpar({"minimo": novo})["minimo"]
         atual = Fornecedor.objects.select_for_update().get(pk=fornecedor.pk)
         if atual.minimo != minimo:
             anterior = atual.minimo

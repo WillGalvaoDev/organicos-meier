@@ -126,6 +126,30 @@ Em todos os casos, o resultado é 409 ou `CondicoesCongeladas`, sem escrita nem 
 - **Rodada sem produtos:** o ciclo é registrado sem condições de produto. Se isso pode ocorrer ou não é regra do início do fechamento (E06), que exige o mínimo atendido.
 - **Alteração de condição concorrendo com o início do fechamento:** coberta pelos testes de travas da E03-02, da E03-05 e da E03-06. Aqui, um teste confirma que, com o fechamento iniciado primeiro, o ciclo registra os valores anteriores à alteração recusada.
 
+## Correção E03-R03 — revisão da especificação em 2026-10-16
+
+A regra geral está na seção de mesmo título da E03-02.
+
+### Regra
+
+A matriz consolidada do T-23 ganha uma dimensão: o **valor enviado**. Para cada condição (mínimo, múltiplo, incremento, inclusão e alteração de estoque) e cada situação congelada da matriz atual, o resultado é o mesmo para qualquer valor:
+
+| Valor | Mínimo | Múltiplo, incremento e estoque |
+|---|---|---|
+| válido | `200,00` (mínimo atual 150) | um valor que seria aceito em interesse |
+| mal formado | `abc` | `abc` |
+| sinal | `-1` e `0` | `-1` (e `0` no incremento) |
+| capacidade | `10000000000,00` | `1000000000,000` |
+| vazio | campo vazio | campo vazio (no estoque, "sem limite") |
+
+Em todas as combinações: 409, com a mensagem única e sem campo editável na resposta, com e sem `HX-Request: true`. Nenhum valor é alterado, e não há auditoria nem sinal.
+
+O teste de completude da matriz (`test_a_matriz_cobre_as_cinco_condicoes_e_as_seis_situacoes`) passa a conferir também as cinco classes de valor.
+
+### Testes obrigatórios
+
+- Critérios A-12 e A-13, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-02, E03-03, E03-05 e E03-06.

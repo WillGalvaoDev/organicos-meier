@@ -15,6 +15,8 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-9 | T-23, cenário 72 | negativo | a matriz da spec: cada condição (mínimo, múltiplo, incremento, inclusão e alteração de estoque) × cada situação (`fechamento`, `fechamento_encerrado`, `pagamento`, `aguardando_fornecedor`, sem rodada ativa depois de `disponivel_para_retirada` e depois de `cancelada`) | chamo a rota (com e sem `HX-Request: true`) e o serviço, com o administrador | 409 e `CondicoesCongeladas` em todos; nenhum valor alterado; nenhuma auditoria |
 | A-10 | T-23, cenário 72, §5.1 | positivo | cada uma das quatro etapas ativas fora de `interesse` | altero o preço | aceito em todas |
 | A-11 | Spec da fatia | concorrência | rodada em `interesse` e mínimo 150 | `simular_inicio_do_fechamento` trava primeiro e confirma ao ver `alterar_minimo(200)` esperando por trava (`pg_stat_activity`) | o ciclo registra 150; `alterar_minimo` recusado; mínimo 150 |
+| A-12 | E03-R03, T-23, cenário 72 | negativo | a matriz da spec (cinco condições × seis situações congeladas) estendida pelas cinco classes de valor da correção E03-R03 | `POST` em cada rota, com e sem `HX-Request: true` | 409 em todos, com "As condições da rodada só podem ser alteradas na fase de interesse."; a resposta não tem o campo do valor (`name="minimo"`, `name="multiplo"`, `name="incremento"` ou `name="limite"`); nenhum valor alterado; nenhuma auditoria; nenhum `estoque_alterado` |
+| A-13 | E03-R03 | negativo | a mesma matriz | chamo cada serviço com os valores mal formado, de sinal e de capacidade | `CondicoesCongeladas` em todos; nunca `ValidationError`, `IncrementoInvalido` nem `MultiploInvalido` |
 
 ## Mapeamento para testes
 
@@ -24,3 +26,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-9, A-10 | `tests/tecnicos/test_condicoes_congeladas_matriz.py` (marcador `tecnico`, com o comentário `T-23`) |
 | A-11 | `tests/tecnicos/test_rodadas_ciclos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
 | A-2, A-3 (cenário 73); A-9, A-10 (cenário 72) | também marcados `acceptance`, com os números no comentário |
+| A-12, A-13 | `tests/tecnicos/test_condicoes_congeladas_matriz.py` (marcador `tecnico`, com o comentário `T-23`) |

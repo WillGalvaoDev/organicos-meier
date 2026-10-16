@@ -172,16 +172,83 @@ A regra comum está na seção de mesmo título da E03-01.
 
 ### Regra
 
-- `alterar_minimo` aplica a regra de capacidade de dinheiro ao novo mínimo, antes de abrir a transação ou, no máximo, antes de qualquer escrita.
+- `alterar_minimo` aplica a regra de capacidade de dinheiro ao novo mínimo, depois da verificação da fase e antes de qualquer escrita (ordem fixada pela correção E03-R03 abaixo).
 - Na recusa:
   - o mínimo anterior é mantido;
   - não há auditoria `fornecedor.alterar_minimo`;
   - a rota responde 200 com o erro no campo `minimo`.
-- A ordem em relação ao congelamento não muda o resultado observável: em qualquer etapa fora de interesse, a resposta continua sendo 409 com `CondicoesCongeladas`, e o valor não é gravado. O teste da capacidade usa uma rodada em `interesse`.
+- Em qualquer etapa fora de interesse, a resposta continua sendo 409 com `CondicoesCongeladas`, e o valor não é gravado. O teste da capacidade usa uma rodada em `interesse`.
+- Ajuste E03-R03 (2026-10-16): a versão anterior deste item permitia validar o valor "antes de abrir a transação" e dizia que a ordem não mudava o resultado observável. Isso estava errado, porque a validação antes da fase faz um valor inválido responder 200 numa fase congelada. A ordem obrigatória está na correção E03-R03.
 
 ### Testes obrigatórios
 
 - Critério A-19, com Red observado antes do código.
+
+## Correção E03-R03 — revisão da especificação em 2026-10-16
+
+Esta seção define a regra geral de precedência da fase. As seções de mesmo título nas E03-03, E03-05, E03-06 e E03-07 aplicam a regra às rotas de cada fatia.
+
+### Diagnóstico
+
+- `alterar_minimo` limpa o valor antes de `travar_condicoes`. Com a rodada em `fechamento`, `fechamento_encerrado`, `pagamento` ou `aguardando_fornecedor`, um mínimo acima da capacidade levanta `ValidationError`. A view trata isso como erro de validação comum e responde 200 com o formulário editável, quando o exigido é 409. O mínimo não é gravado, então o defeito é de contrato, não de integridade.
+- O mesmo defeito existe, sem ter sido reproduzido pelo revisor, em mais quatro pontos:
+  - `incluir_produto_na_rodada` e `alterar_estoque` (`apps/rodadas/estoque.py`) validam o limite antes de `travar_condicoes`;
+  - as views de mínimo, múltiplo, incremento e estoque validam o formulário (`is_valid()`) antes de qualquer verificação da fase, então um texto mal formado (`abc`) numa fase congelada também responde 200.
+- Minha falha na especificação: a correção E03-R01 desta fatia permitia validar "antes de abrir a transação" e dizia que a ordem não mudava o resultado observável.
+
+### Regra
+
+**A fase prevalece sobre o valor.** Numa rota ou serviço que altera condição da rodada, a ordem das recusas é:
+
+1. permissão (`PermissionDenied`; a política da rota já cobre a view);
+2. identidade dos objetos, sem relação com o valor digitado: id inexistente (404) e, na inclusão de estoque, produto de outro fornecedor (`ValidationError`, como hoje);
+3. **fase:** fora da fase de interesse da rodada ativa, `CondicoesCongeladas`, com 409 na rota;
+4. **valor:** formato, casas, sinal, mínimo, capacidade e, por último, compatibilidade (múltiplo, incremento, reservado).
+
+Fora da fase de interesse, o valor enviado nunca é avaliado. A resposta é a mesma para um valor válido, mal formado, negativo, zero, acima da capacidade ou vazio.
+
+**Rotas e serviços alcançados:**
+
+| Condição | Serviço | Rota `POST` |
+|---|---|---|
+| mínimo | `alterar_minimo` | `/administracao/fornecedores/<id>/minimo/` |
+| múltiplo | `alterar_multiplo` | `/administracao/produtos/<id>/multiplo/` |
+| incremento | `alterar_incremento` | `/administracao/produtos/<id>/incremento/` |
+| inclusão no estoque | `incluir_produto_na_rodada` | `/administracao/rodadas/<id>/estoque/incluir/` |
+| alteração do estoque | `alterar_estoque` | `/administracao/estoque/<id>/alterar/` |
+
+**Nos serviços:**
+
+- A validação do valor acontece dentro de `transaction.atomic()`, depois de `travar_condicoes` e da conferência da rodada (inclusão e alteração de estoque). `alterar_multiplo` e `alterar_incremento` já seguem essa ordem e não mudam.
+- Os helpers de limpeza (`_minimo`, `_limite`, `validar_*`) e as mensagens não mudam. Só muda o ponto em que são chamados.
+- A trava continua sendo a autoridade: a fase é verificada com as linhas travadas, então uma mudança de etapa confirmada antes é sempre vista (contrato da E03-02).
+
+**Nas views:**
+
+- No `POST`, antes de validar o formulário, a view verifica a fase sem trava. Se não estiver em interesse, responde 409 com a mensagem única `MENSAGEM` e sem formulário editável, pelo mesmo template e caminho que já usa para `CondicoesCongeladas`.
+- Uma função de leitura nova em `apps/rodadas/condicoes.py`, sem trava, faz essa verificação:
+  - `condicoes_editaveis(fornecedor) -> bool`: `True` se e somente se o fornecedor tem rodada em `interesse`. Serve para mínimo, múltiplo e incremento.
+  - para o estoque, a verificação é sobre a rodada da rota: `rodada.etapa == Etapa.INTERESSE`. Uma rodada em interesse é sempre a ativa do fornecedor, pelo índice único da E03-02.
+- Essa leitura sem trava só serve para escolher a resposta quando nada será gravado. Se ela disser "editável", o serviço ainda trava e verifica de novo. Uma mudança de etapa que confirme entre as duas leituras é recusada pelo serviço, com 409.
+- O `GET` não muda.
+- O 409 vale também com o cabeçalho `HX-Request: true`, como na matriz da E03-07.
+
+**Na fase de interesse,** tudo continua como antes: erro de valor responde 200, com a mensagem no campo e o valor digitado de volta (E03-01, correção E03-R01).
+
+### Testes obrigatórios
+
+- Os probes complementares do revisor (`docs/specs/E03-08/review.md`, seção "Probes complementares reproduzíveis", revalidação de `2e7bbcc`) entram literais na suíte:
+  - `test_minimo_excedente_fora_de_interesse_responde_409` em `tests/tecnicos/test_condicoes_congeladas_matriz.py`;
+  - `test_estoque_preserva_entrada_rejeitada` em `tests/tecnicos/test_rodadas_estoque.py` (correção E03-R04 da E03-05).
+- Critérios A-20 e A-21 desta fatia e A-12 e A-13 da E03-07, com Red observado antes do código.
+
+### O que não fazer
+
+- Não remover nem afrouxar a validação de capacidade ou de formato para fazer os testes passarem.
+- Não decidir a fase só pela leitura sem trava: o serviço continua travando e verificando.
+- Não avaliar o valor antes da fase em nenhum dos cinco serviços.
+- Não criar uma mensagem nova para a fase congelada: é `MENSAGEM`, a mesma de `CondicoesCongeladas`.
+- Não mudar o tratamento dos campos não congelados (nome, e-mail, prazo, frete e preço), que não dependem de fase.
 
 ## Dependências e decisões em aberto
 
