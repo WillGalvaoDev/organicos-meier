@@ -1,6 +1,6 @@
 # E01-04 — Revisão
 
-Estado atual: **APROVADO** no commit `b709ce3` (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `06e2faf` (revalidação independente de 2026-10-16 ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -219,3 +219,12 @@ Revisor: Codex, agente 3. SHA auditado: `b709ce3ac41aa9dee593f7975efc88c6030019d
 Verificações: `uv run ruff check .` limpo; `uv run ruff format --check .`, 54 arquivos; `uv run mypy .`, 40 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`, sem mudanças; `uv run python manage.py check --settings=config.settings.test`, zero issues. CI do SHA exato: [run 38748612333](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38748612333), sucesso, 139 testes; PR #20: run 38748350219, sucesso. Mantida a limitação histórica das evidências TDD declaradas, já registrada nas revisões anteriores.
 
 A E01 global continua **REPROVADA**, agora pela incompatibilidade técnica R06/A-17 documentada na E01-05; o vazamento R05 foi corrigido. Nenhum código de implementação ou teste versionado foi alterado pelo revisor.
+
+
+## Revalidação independente — 06e2faf — 2026-10-16
+
+Revisor: Codex, agente 3. SHA auditado: `06e2fafef33b1beb5ae346e2ff6fd590a0184689`. **APROVADO nesta fatia, decisão mantida. E01 global APROVADA.** Implementação e requisitos desta fatia permanecem inalterados. R06 da E01-05 foi encerrado pela compatibilização do contrato com timeout fixo e pela revalidação independente; R01 a R05 continuam encerrados.
+
+Evidências desta rodada: `uv run pytest -q`, **143 passed em 40,28 s**, Postgres 17.11; matriz A-1 a A-18 da E01-05 reexecutada, módulo com **27 passed nas cinco execuções consecutivas**. Ruff check limpo, format check 54 arquivos, mypy 40 arquivos sem erros, makemigrations --check --dry-run sem mudanças e manage.py check zero issues (settings test). CI do SHA exato [38897195100](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38897195100): sucesso. Mantidas as evidências anteriores e suas limitações documentais de TDD; não surgiu achado nesta fatia. Relatório detalhado da revalidação em `../E01-05/review.md`.
+
+Somente os relatórios foram alterados pelo revisor, na branch `revisao/e01-06e2faf`, sem commit/push/merge. Gate de revisão da E01 encerrado.
