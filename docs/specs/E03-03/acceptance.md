@@ -27,6 +27,11 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-21 | Spec da fatia | concorrência | um produto com preço 10,00 | duas edições de preço em paralelo (11,00 e 12,00), repetidas 10 vezes | em todas: duas auditorias `produto.alterar_preco`, e o `anterior` da segunda é o `novo` da primeira |
 | A-22 | Spec §2, §15 | negativo | um comprador e uma conta de fornecedor autenticados; um visitante anônimo | `GET` e `POST` em cada rota desta fatia | 403 para os autenticados; anônimo redirecionado para `/entrar/`; nada criado nem alterado |
 | A-23 | Spec da fatia | positivo | produtos com quantidades `0.250`, `1.000` e `1.500` | exibo na tela | `0,25`, `1` e `1,5` |
+| A-24 | E03-R01 | negativo e limite | o administrador e um fornecedor | `criar_produto` com preço `9999999999.99`; depois, com `10000000000.00` pelo serviço e pela rota | o primeiro é criado; o segundo levanta `ValidationError` no campo `preco` com "O valor máximo aceito é R$ 9.999.999.999,99."; a rota responde 200 com o erro no campo; nenhum produto novo; nenhuma auditoria |
+| A-25 | E03-R01 | negativo | um produto com preço 7,99 e um receptor de teste conectado a `preco_alterado` | `editar_produto` com preço `10000000000.00` e um nome novo, pelo serviço e pela rota | erro no campo `preco` com a mensagem de capacidade; preço 7,99 e nome anterior mantidos; nenhuma auditoria; o receptor não é chamado |
+| A-26 | E03-R01 | unitário | — | chamo `validar_incremento` e `validar_multiplo` (incremento 1) com `999999999.999`/`999999999` e com `1000000000.000` | o limite é aceito; acima dele, `IncrementoInvalido` e `MultiploInvalido` com "O valor máximo aceito é 999999999,999." |
+| A-27 | E03-R01 | negativo | o administrador e um produto com incremento 1, múltiplo 12 e rodada em `interesse` | `criar_produto` com incremento `1000000000,000` pela rota; `alterar_multiplo` com `1000000000` pelo serviço e pela rota | 200 com o erro no campo, nas duas rotas; nenhum produto novo; múltiplo 12 mantido; nenhuma auditoria |
+| A-28 | E03-R01 | unitário | um produto com incremento 1 | `validar_quantidade` com `999999999` e com `1000000000` | o primeiro é aceito; o segundo levanta `QuantidadeInvalida` com a mensagem de capacidade |
 
 ## Mapeamento para testes
 
@@ -38,3 +43,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-21 | `tests/tecnicos/test_catalogo_concorrencia.py` (marcador `concorrencia`) |
 | A-22 | `tests/tecnicos/test_catalogo_permissoes.py` |
 | A-6, A-7 (cenários 63, 85, 109); A-3 (86, 110); A-4, A-5 (66, 87, 111); A-13 (72); A-18 (72, 87) | também marcados `acceptance`, com os números no comentário |
+| A-24 a A-28 | `tests/tecnicos/test_capacidade_decimal.py` (marcador `tecnico`) |

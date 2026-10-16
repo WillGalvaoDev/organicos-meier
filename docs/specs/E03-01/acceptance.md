@@ -21,6 +21,9 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-15 | Spec da fatia | positivo | fornecedores `"Zeta"`, `"Alfa"` e `"Meio"` | abro a lista | ordem `Alfa`, `Meio`, `Zeta`, com mínimo e prazo de cada um |
 | A-16 | Spec da fatia | negativo | o detalhe e a edição | acesso com um id inexistente | 404 |
 | A-17 | E02-10 | positivo | as rotas desta fatia | rodo o teste de varredura de políticas da E02-10 | todas têm política declarada |
+| A-18 | E03-R01, Infra 4.12 | unitário | as primitivas novas de `apps/nucleo/valores.py` | comparo as constantes com as colunas e chamo `cabe_em_dinheiro` e `cabe_em_quantidade` | `MAIOR_DINHEIRO == Decimal("9999999999.99")` e `MAIOR_QUANTIDADE == Decimal("999999999.999")`, as duas derivadas de `CampoDinheiro` e `CampoQuantidade`; `True` no limite exato; `False` em `10000000000.00` e `1000000000.000`; `ValorInvalido` com `float`, `int` e `Decimal("NaN")`; o valor recebido não muda |
+| A-19 | E03-R01 | negativo e limite | o administrador | `criar_fornecedor` com `minimo=Decimal("9999999999.99")` e, noutro caso, `Decimal("10000000000.00")` | o primeiro é criado com esse mínimo; o segundo levanta `ValidationError` no campo `minimo` com "O valor máximo aceito é R$ 9.999.999.999,99.", sem fornecedor criado e sem auditoria |
+| A-20 | E03-R01 | negativo | o administrador autenticado com passkey | envio o cadastro com mínimo `10000000000,00`, `10000000000.00` e um número de 30 dígitos | 200 nos três, com erro no campo `minimo` e o valor digitado de volta; nenhum fornecedor criado. Nos dois primeiros, a mensagem é a de capacidade |
 
 ## Mapeamento para testes
 
@@ -30,3 +33,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-8 a A-10, A-14 a A-16 | `tests/tecnicos/test_fornecedores_tela.py` |
 | A-12 | `tests/tecnicos/test_fornecedores_permissoes.py` |
 | A-17 | coberto pelo teste existente `tests/tecnicos/test_permissoes_politica_rotas.py` |
+| A-18 a A-20 | `tests/tecnicos/test_capacidade_decimal.py` (marcador `tecnico`), que também inclui literalmente o script de probes do revisor |

@@ -17,7 +17,12 @@ from apps.catalogo.quantidades import formatar_quantidade
 from apps.contas.models import Conta, Papel
 from apps.interesses.consultas import total_reservado
 from apps.nucleo.auditoria import registrar_auditoria
-from apps.nucleo.valores import ValorInvalido, quantidade
+from apps.nucleo.valores import (
+    MENSAGEM_CAPACIDADE_QUANTIDADE,
+    ValorInvalido,
+    cabe_em_quantidade,
+    quantidade,
+)
 from apps.rodadas.condicoes import CondicoesCongeladas, travar_condicoes
 from apps.rodadas.models import EstoqueDaRodada, Rodada
 from apps.rodadas.sinais import estoque_alterado
@@ -46,6 +51,8 @@ def _limite(valor: Any) -> Decimal | None:
         ) from None
     if limite < 0:
         raise ValidationError("O limite do estoque não pode ser negativo.")
+    if not cabe_em_quantidade(limite):
+        raise ValidationError(MENSAGEM_CAPACIDADE_QUANTIDADE)
     return limite
 
 

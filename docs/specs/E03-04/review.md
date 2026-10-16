@@ -1,5 +1,7 @@
 # E03-04 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **APROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 ## Ciclos TDD
@@ -65,3 +67,13 @@ usar `DB_DEFAULT` falhou (não existe nesta versão do Django); trocada pela rel
 - O teste A-9 prova sequências distintas em 20 inserções simultâneas, não a ordem de commit.
 - A sequência do banco tem lacunas após rollback (comportamento normal do Postgres); a FIFO
   depende da ordem, não de valores contíguos.
+
+## Revisão independente — 0ceb171 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+A-1 a A-11: sequência atribuída pelo banco, imutabilidade, não exclusão, CHECKs, leituras e travas cobertos e verdes, inclusive vinte inserções concorrentes. Sem achado impeditivo nesta fatia; vínculo da parcela com rodada continua no escopo futuro documentado.
+
+Verificação comum: `uv run pytest -q` — **1058 passed em 147,85 s**; ruff check limpo; ruff format — 238 arquivos; mypy — 193 arquivos sem erros; checks Django e migrações sem pendências. Os probes adicionais de fronteira terminaram em **8 failed, 8 passed em 4,36 s**, reproduzindo E03-R01. Não houve correção de produção ou testes pelo revisor.
+
+Comandos completos, achados, reprodução, limites e parecer global estão em [E03-08/review.md](../E03-08/review.md), na seção de revisão independente deste SHA. Os relatos Red/Green anteriores foram conferidos com o diff e a cobertura; a execução Green é independente, a cronologia Red é evidência documentada pelo implementador.

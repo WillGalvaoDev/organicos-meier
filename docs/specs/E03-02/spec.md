@@ -166,6 +166,23 @@ Uma operação trava só o que usa, sempre nessa ordem. Isso evita impasse entre
 - **Alteração do mínimo concorrendo com uma mudança de etapa** que respeita o contrato acima: se a mudança confirmar primeiro, a alteração é recusada. O teste reproduz a mudança com uma thread que trava fornecedor e rodada, grava `fechamento` e só confirma depois de ver a outra conexão esperando por trava (`pg_stat_activity.wait_event_type = 'Lock'`).
 - **Duas alterações do mínimo simultâneas:** as duas são gravadas em sequência, e o valor final é o da última a obter a trava. Há duas auditorias, cada uma com o `anterior` correto, o que prova a leitura sob trava.
 
+## Correção E03-R01 — revisão da especificação em 2026-10-16
+
+A regra comum está na seção de mesmo título da E03-01.
+
+### Regra
+
+- `alterar_minimo` aplica a regra de capacidade de dinheiro ao novo mínimo, antes de abrir a transação ou, no máximo, antes de qualquer escrita.
+- Na recusa:
+  - o mínimo anterior é mantido;
+  - não há auditoria `fornecedor.alterar_minimo`;
+  - a rota responde 200 com o erro no campo `minimo`.
+- A ordem em relação ao congelamento não muda o resultado observável: em qualquer etapa fora de interesse, a resposta continua sendo 409 com `CondicoesCongeladas`, e o valor não é gravado. O teste da capacidade usa uma rodada em `interesse`.
+
+### Testes obrigatórios
+
+- Critério A-19, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-01.

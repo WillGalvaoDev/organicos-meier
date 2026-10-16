@@ -1,5 +1,7 @@
 # E03-03 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **REPROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 ## Ciclos TDD
@@ -77,3 +79,40 @@ no campo, nada gravado, sem auditoria). Dois erros de lint/tipos (RUF002, atribu
   na E03-05.
 - Notificação e recálculo após `preco_alterado` são da E05; aqui só o sinal é provado.
 - Telas verificadas pelo cliente de teste do Django, não por navegador.
+
+## Revisão independente — 0ceb171 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: REPROVADO.**
+
+A-1 a A-23: quantidades, divisibilidade, subtotal, imutabilidade, preço e sinal, múltiplo, disponibilidade e permissões cobertos e verdes. Duas edições de preço são serializadas com auditoria encadeada em dez repetições. Falha adicional nas faixas de preço/incremento/múltiplo: E03-R01.
+
+Verificação comum: `uv run pytest -q` — **1058 passed em 147,85 s**; ruff check limpo; ruff format — 238 arquivos; mypy — 193 arquivos sem erros; checks Django e migrações sem pendências. Os probes adicionais de fronteira terminaram em **8 failed, 8 passed em 4,36 s**, reproduzindo E03-R01. Não houve correção de produção ou testes pelo revisor.
+
+Comandos completos, achados, reprodução, limites e parecer global estão em [E03-08/review.md](../E03-08/review.md), na seção de revisão independente deste SHA. Os relatos Red/Green anteriores foram conferidos com o diff e a cobertura; a execução Green é independente, a cronologia Red é evidência documentada pelo implementador.
+
+
+## Correção E03-R01 — implementador (aguardando nova revisão independente)
+
+Achado do revisor: entrada acima da capacidade das colunas `NUMERIC(12,2)`/`NUMERIC(12,3)` virava
+HTTP 500 (`numeric field overflow`). Corrigido conforme a seção "Correção E03-R01" da spec.
+
+- **Red:** com as primitivas só em andaime (constantes `0`, `cabe_*` sempre verdadeiro) e os
+  testes de `tests/tecnicos/test_capacidade_decimal.py` e `test_rodadas_minimo.py` escritos:
+  **37 falhas, 27 passando**. Os 8 casos do script de probes do revisor que excedem a
+  capacidade falharam com `500` e `DataError('numeric field overflow')`, reproduzindo o achado;
+  os demais falharam por `DID NOT RAISE` e por asserções de valores.
+- **Green:** `apps/nucleo/valores.py` ganhou `MAIOR_DINHEIRO`, `MAIOR_QUANTIDADE` (derivadas de
+  `CampoDinheiro` e `CampoQuantidade`), as mensagens de capacidade, `cabe_em_dinheiro` e
+  `cabe_em_quantidade`; a regra entrou nos serviços depois das regras de sinal/mínimo e antes da
+  compatibilidade: `_minimo` (E03-01/02), `_preco` (E03-03), `validar_incremento`,
+  `validar_multiplo`, `validar_quantidade` (E03-03/06) e `_limite` do estoque (E03-05). Nenhuma
+  função numérica existente mudou e nenhum `DataError` é capturado. Resultado: suíte completa
+  **1104 passando**; `ruff check`, `ruff format --check`, `mypy --strict` e
+  `makemigrations --check` limpos.
+- **Testes:** `tests/tecnicos/test_capacidade_decimal.py` (A-18 a A-20 da E03-01, A-24 a A-28 da
+  E03-03, A-20 e A-21 da E03-05, A-15 da E03-06 e o script de probes do revisor, literal: 16 casos,
+  8 no limite com 302 e 8 acima com 200); A-19 da E03-02 em `test_rodadas_minimo.py`.
+- **E03-R02:** os testes já cobrem a pré-condição corrigida (A-3: só a pendente de 2,0 →
+  `multiplo`; A-14: produto completo → `quantidade`); nenhuma mudança de código.
+- **Limite:** um texto com 30 dígitos é recusado pela conversão/formulário com a mensagem de
+  formato (permitido pela spec); a exigência é erro de campo, nunca 500.
