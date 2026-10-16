@@ -34,3 +34,9 @@ class FormularioCadastroPorConvite(forms.Form):
             except ValidationError as erro:
                 self.add_error("senha", erro)
         return dados
+
+
+class FormularioConclusaoGoogle(forms.Form):
+    """Conclusão do cadastro com Google: só o nome, já preenchido com o do Google."""
+
+    nome = forms.CharField(max_length=150, strip=True)

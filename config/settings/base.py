@@ -25,10 +25,13 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
     "allauth",
     "allauth.account",
     "allauth.usersessions",
     "allauth.mfa",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
     "apps.nucleo",
     "apps.fornecedores",
     "apps.contas",
@@ -62,6 +65,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.contas.contexto.google_habilitado",
             ],
         },
     },
@@ -119,3 +123,25 @@ MFA_SUPPORTED_TYPES = ["webauthn"]
 MFA_PASSKEY_LOGIN_ENABLED = True
 MFA_ADAPTER = "apps.contas.adaptadores.AdaptadorMFA"
 ACCOUNT_REAUTHENTICATION_TIMEOUT = 300
+
+# --- Login com Google (E02-07) ---
+SITE_ID = 1  # exigido pelo modelo SocialApp do allauth; não é usado para montar links
+SOCIALACCOUNT_ADAPTER = "apps.contas.adaptadores.AdaptadorContaSocial"
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # o e-mail verificado do Google é exigido no adaptador
+SOCIALACCOUNT_AUTO_SIGNUP = False
+SOCIALACCOUNT_LOGIN_ON_GET = False
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = False  # a associação por e-mail é feita pelo adaptador
+SOCIALACCOUNT_STORE_TOKENS = False
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="")
+GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET", default="")
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "APPS": (
+            [{"client_id": GOOGLE_CLIENT_ID, "secret": GOOGLE_CLIENT_SECRET, "key": ""}]
+            if GOOGLE_CLIENT_ID
+            else []
+        ),
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {"access_type": "online"},
+    }
+}

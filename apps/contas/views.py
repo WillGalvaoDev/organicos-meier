@@ -3,11 +3,15 @@ from allauth.account.models import Login
 from allauth.mfa.adapter import get_adapter as get_adapter_mfa
 from allauth.mfa.models import Authenticator
 from allauth.mfa.webauthn.views import remove_webauthn
+from allauth.socialaccount.internal.flows.signup import get_pending_signup
+from allauth.socialaccount.providers.google.views import oauth2_login
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.contas.administracao import somente_administrador
 from apps.contas.convites import (
@@ -18,9 +22,14 @@ from apps.contas.convites import (
     emitir_convite,
     validar_convite,
 )
-from apps.contas.emails import EmailInvalido
-from apps.contas.forms import FormularioCadastroPorConvite
+from apps.contas.emails import EmailInvalido, normalizar_email
+from apps.contas.forms import FormularioCadastroPorConvite, FormularioConclusaoGoogle
 from apps.contas.formularios import FormularioConvite, FormularioPedidoDeLink
+from apps.contas.google import (
+    CHAVE_CONVITE_PENDENTE,
+    encerrar_cadastro_pendente,
+    recusar_login_google,
+)
 from apps.contas.link_de_acesso import LinkInvalido, pedir_link, usar_link, validar_link
 from apps.contas.models import Convite, EmailEmUso
 
@@ -119,7 +128,9 @@ def aceitar_convite(request: HttpRequest, token: str) -> HttpResponse:
                 request, Login(user=conta, email=conta.email_normalizado)
             )
             return resposta
-    return render(request, "convites/cadastro.html", {"form": form, "convite": convite})
+    return render(
+        request, "convites/cadastro.html", {"form": form, "convite": convite, "token": token}
+    )
 
 
 def pedir_link_de_acesso(request: HttpRequest) -> HttpResponse:
@@ -148,3 +159,69 @@ def usar_link_de_acesso(request: HttpRequest, token: str) -> HttpResponse:
     except LinkInvalido:
         return render(request, "contas/link_invalido.html", status=410)
     return render(request, "contas/link_confirmar.html")
+
+
+@require_POST
+def cadastrar_com_google(request: HttpRequest, token: str) -> HttpResponse:
+    """Guarda o convite na sessão e inicia o login do Google (sem consumir o convite)."""
+    if request.user.is_authenticated:
+        return render(request, "convites/sair_antes.html")
+    try:
+        validar_convite(token)
+    except ConviteInvalido:
+        return render(request, "convites/invalido.html", status=410)
+    request.session[CHAVE_CONVITE_PENDENTE] = token
+    resposta: HttpResponse = oauth2_login(request)
+    return resposta
+
+
+def concluir_cadastro_google(request: HttpRequest) -> HttpResponse:
+    """Último passo do cadastro com Google: confirma o nome e consome o convite."""
+    pendente = get_pending_signup(request)
+    token = request.session.get(CHAVE_CONVITE_PENDENTE)
+    if pendente is None or not token:
+        return recusar_login_google(request)
+    dados = pendente.account.extra_data or {}
+    try:
+        email = normalizar_email(str(dados.get("email", "")))
+        convite = validar_convite(token)
+    except (EmailInvalido, ConviteInvalido):
+        return recusar_login_google(request)
+    if convite.email_normalizado != email or dados.get("email_verified") is not True:
+        return recusar_login_google(request)
+    form = FormularioConclusaoGoogle(
+        request.POST if request.method == "POST" else None,
+        initial={"nome": str(dados.get("name", ""))[:150]},
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            with transaction.atomic():
+                conta = consumir_convite(
+                    token, form.cleaned_data["nome"], metodo=MetodoCadastro.GOOGLE
+                )
+                pendente.connect(request, conta)
+        except ConviteInvalido:
+            return recusar_login_google(request)
+        except ValidationError as erro:
+            for mensagens in erro.message_dict.values():
+                for mensagem in mensagens:
+                    form.add_error("nome", mensagem)
+        else:
+            encerrar_cadastro_pendente(request)
+            record_authentication(
+                request,
+                conta,
+                "socialaccount",
+                provider=pendente.account.provider,
+                uid=pendente.account.uid,
+            )
+            resultado: HttpResponse = perform_login(
+                request, Login(user=conta, email=conta.email_normalizado)
+            )
+            return resultado
+    return render(request, "convites/google_concluir.html", {"form": form, "convite": convite})
+
+
+def google_recusado(request: HttpRequest) -> HttpResponse:
+    """Erro ou cancelamento no Google: a mesma recusa única."""
+    return recusar_login_google(request)

@@ -1,4 +1,6 @@
 from allauth.account import views as allauth_views
+from allauth.socialaccount.providers.google.provider import GoogleProvider
+from allauth.socialaccount.providers.oauth2.urls import default_urlpatterns
 from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.contas import views as contas_views
@@ -32,6 +34,23 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="account_reset_password_from_key_done",
     ),
     path("convite/<str:token>/", contas_views.aceitar_convite, name="aceitar_convite"),
+    path(
+        "convite/<str:token>/google/",
+        contas_views.cadastrar_com_google,
+        name="cadastrar_com_google",
+    ),
+    path(
+        "entrar/google/concluir/",
+        contas_views.concluir_cadastro_google,
+        name="socialaccount_signup",
+    ),
+    path("entrar/google/recusado/", contas_views.google_recusado, name="socialaccount_login_error"),
+    path(
+        "entrar/google/cancelado/",
+        contas_views.google_recusado,
+        name="socialaccount_login_cancelled",
+    ),
+    path("entrar/", include(default_urlpatterns(GoogleProvider))),
     path("inicio/", contas_views.inicio, name="inicio"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
     path(

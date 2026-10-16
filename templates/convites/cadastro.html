@@ -27,4 +27,10 @@
     </p>
     <button type="submit">Criar conta</button>
   </form>
+  {% if GOOGLE_HABILITADO %}
+  <form method="post" action="{% url 'cadastrar_com_google' token=token %}">
+    {% csrf_token %}
+    <button type="submit">Cadastrar com Google</button>
+  </form>
+  {% endif %}
 {% endblock %}

@@ -14,6 +14,8 @@ _AMBIENTE_MINIMO = {
     "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
     "DEFAULT_FROM_EMAIL": "contato@exemplo.com.br",
     "ORIGEM_PUBLICA": "https://organicosmeier.exemplo.com.br",
+    "GOOGLE_CLIENT_ID": "id-de-cliente-de-teste",
+    "GOOGLE_CLIENT_SECRET": "segredo-de-teste",
 }
 
 
@@ -60,3 +62,11 @@ def test_producao_sem_remetente_falha_ao_carregar() -> None:
     resultado = _carregar_producao(ambiente)
     assert resultado.returncode != 0
     assert "DEFAULT_FROM_EMAIL" in resultado.stderr
+
+
+def test_producao_sem_credenciais_do_google_falha_ao_carregar() -> None:  # A-17
+    for variavel in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"):
+        ambiente = {k: v for k, v in _AMBIENTE_MINIMO.items() if k != variavel}
+        resultado = _carregar_producao(ambiente)
+        assert resultado.returncode != 0, variavel
+        assert variavel in resultado.stderr
