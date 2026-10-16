@@ -162,3 +162,23 @@ def test_comprador_nao_pode_ser_autor() -> None:  # A-18
     assert fornecedor.minimo == Decimal("150.00")
     assert not Rodada.objects.filter(fornecedor=outro).exists()
     assert EntradaAuditoria.objects.count() == 0
+
+
+def test_minimo_no_limite_da_coluna_e_acima(admin_client: Client) -> None:  # A-19, E03-R01
+    fornecedor = _fornecedor_com_rodada(Etapa.INTERESSE)
+    admin = Conta.objects.get(papel=Papel.ADMINISTRADOR)
+    alterar_minimo(admin, fornecedor, Decimal("9999999999.99"))
+    fornecedor.refresh_from_db()
+    assert fornecedor.minimo == Decimal("9999999999.99")
+    auditorias = EntradaAuditoria.objects.filter(acao="fornecedor.alterar_minimo").count()
+    assert auditorias == 1
+    mensagem = "O valor máximo aceito é R$ 9.999.999.999,99."
+    with pytest.raises(ValidationError) as erro:
+        alterar_minimo(admin, fornecedor, Decimal("10000000000.00"))
+    assert erro.value.message_dict == {"minimo": [mensagem]}
+    resposta = admin_client.post(_url(fornecedor), {"minimo": "10000000000,00"})
+    assert resposta.status_code == 200
+    assert mensagem in resposta.context["form"].errors["minimo"]
+    fornecedor.refresh_from_db()
+    assert fornecedor.minimo == Decimal("9999999999.99")
+    assert EntradaAuditoria.objects.filter(acao="fornecedor.alterar_minimo").count() == auditorias

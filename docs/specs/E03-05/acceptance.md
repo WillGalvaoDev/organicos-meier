@@ -23,6 +23,8 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-17 | Spec da fatia | concorrência | um produto fora da rodada | duas inclusões em paralelo, repetidas 10 vezes | em todas: um único `EstoqueDaRodada`; uma inclusão com sucesso e a outra recusada |
 | A-18 | Spec §2, §15 | negativo | um comprador e uma conta de fornecedor autenticados; um visitante anônimo | `GET` da tela e `POST` de incluir e de alterar | 403 para os autenticados; anônimo redirecionado para `/entrar/`; nada gravado |
 | A-19 | Spec da fatia | positivo | rodada em `fechamento` | abro a tela de estoque | 200, só leitura, sem formulários |
+| A-20 | E03-R01 | negativo e limite | rodada em `interesse`, dois produtos do fornecedor fora da rodada e um receptor de teste em `estoque_alterado` | `incluir_produto_na_rodada` com limite `999999999.999` para o primeiro; com `1000000000.000` para o segundo, pelo serviço e pela rota | o primeiro é incluído; o segundo levanta `ValidationError` com "O valor máximo aceito é 999999999,999."; a rota responde 200 com a mensagem; o segundo continua fora da rodada; nenhuma auditoria nem sinal da recusa |
+| A-21 | E03-R01 | negativo e limite | um estoque com limite 10 e o receptor do A-20 | `alterar_estoque` com `999999999.999`; depois, com `1000000000.000` pelo serviço e pela rota | o primeiro é aceito, auditado e sinalizado; o segundo é recusado com a mensagem de capacidade; a rota responde 200; o limite continua `999999999.999`; nenhuma auditoria nem sinal da recusa |
 
 ## Mapeamento para testes
 
@@ -32,3 +34,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-15 a A-17 | `tests/tecnicos/test_rodadas_estoque_concorrencia.py` (marcador `concorrencia`) |
 | A-18 | `tests/tecnicos/test_rodadas_permissoes.py` |
 | A-5 a A-7 (cenário 71); A-9 (cenário 72, T-23) | também marcados `acceptance` e `tecnico`, com os números no comentário |
+| A-20, A-21 | `tests/tecnicos/test_capacidade_decimal.py` (marcador `tecnico`) |

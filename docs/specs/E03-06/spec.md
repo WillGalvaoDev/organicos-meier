@@ -80,11 +80,29 @@ A mensagem não identifica compradores.
 ## Casos-limite e concorrência
 
 - **Cenário 105:** incremento 0,5, reservadas 1,0 e 1,5, pendente 2,0 e múltiplo 3. A mudança para 0,25 é aceita, e nenhuma parcela muda.
-- **Cenário 106:** no mesmo produto, a mudança para 1 é recusada (código `quantidade`, porque 1,5 deixa de ser múltiplo) e para 2 também (código `multiplo`, porque 3 não é divisível por 2; 1,5 também falharia, mas vale a ordem dos passos).
+- **Cenário 106:**
+  - No mesmo produto, a mudança para 1 é recusada com o código `quantidade`, porque 1,5 deixa de ser múltiplo.
+  - A mudança para 2 também é recusada. Pela ordem dos passos (infraestrutura 4.12), o código é `quantidade`, porque 1,0 e 1,5 não são múltiplos de 2. O cenário 106 só exige a recusa sem nenhuma alteração, e isso se cumpre.
+  - O código `multiplo` é provado à parte: com só a pendente de 2,0, a mudança para 2 passa pelas quantidades e é recusada porque 3 não é divisível por 2.
+  - Ajuste E03-R02 (2026-10-16): a versão anterior desta linha dava o código `multiplo` para o cenário completo, o que contrariava a ordem dos passos. A ordem não muda.
 - **Parcelas removidas não contam:** uma parcela `removida` com quantidades zero não impede a mudança.
 - **Mudança de etapa concorrente:** recusada se a mudança confirmar primeiro. Teste com `pg_stat_activity`, como na E03-02.
 - **Duas alterações simultâneas:** são serializadas. Cada auditoria registra o `anterior` correto.
 - **Parcela criada por outra conexão antes da trava:** a thread de teste trava produto e parcelas e insere uma parcela de 1,5. A mudança para 1, que espera a trava, é recusada depois.
+
+## Correção E03-R01 — revisão da especificação em 2026-10-16
+
+A regra comum está na seção de mesmo título da E03-01.
+
+### Regra
+
+- `alterar_incremento` usa `validar_incremento` no passo 4, então recebe a regra de capacidade de quantidade da E03-03.
+- A recusa levanta `IncrementoInvalido` com "O valor máximo aceito é 999999999,999.", antes da leitura das parcelas e da comparação com o múltiplo. Um valor acima da capacidade nunca gera `IncrementoIncompativel`.
+- Na recusa, o incremento anterior é mantido e não há auditoria. A tela responde 200 com o erro no formulário.
+
+### Testes obrigatórios
+
+- Critério A-15, com Red observado antes do código.
 
 ## Dependências e decisões em aberto
 

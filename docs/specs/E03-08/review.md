@@ -1,5 +1,7 @@
 # E03-08 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **APROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 ## Ciclos TDD
@@ -67,3 +69,176 @@ Extras: ordenação por nome, etapas fora de interesse, formato `R$ 1.234,56`, l
 - O catálogo mostra o estoque livre calculado por `total_reservado` sem filtro por rodada (a parcela
   ainda não tem vínculo com a rodada; a E05 ajusta sem mudar a assinatura).
 - Telas verificadas pelo cliente de teste do Django, não por navegador.
+
+## Revisão independente — 0ceb171 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+A-1 a A-13: catálogo por rodada ativa, indisponibilidade informativa, valores, estoque livre, ordenação, privacidade, permissões e teto de oito consultas com 1/20 produtos cobertos e verdes. Sem achado impeditivo próprio desta fatia. O parecer global abaixo considera as demais fatias.
+
+Verificação comum: `uv run pytest -q` — **1058 passed em 147,85 s**; ruff check limpo; ruff format — 238 arquivos; mypy — 193 arquivos sem erros; checks Django e migrações sem pendências. Os probes adicionais de fronteira terminaram em **8 failed, 8 passed em 4,36 s**, reproduzindo E03-R01. Não houve correção de produção ou testes pelo revisor.
+
+Comandos completos, achados, reprodução, limites e parecer global estão em [E03-08/review.md](../E03-08/review.md), na seção de revisão independente deste SHA. Os relatos Red/Green anteriores foram conferidos com o diff e a cobertura; a execução Green é independente, a cronologia Red é evidência documentada pelo implementador.
+
+### Parecer global e escopo
+
+**E03: REPROVADO** sobre `0ceb1715e94af26a7af79e3881117a3b7a133263` (main, PR #45). O achado importante E03-R01 precisa ser corrigido e revalidado antes do encerramento. E03-R02 é melhoria documental, sem decisão comercial pendente. Não foi identificado bloqueador de integridade nas corridas e invariantes verificadas; a reprovação decorre do tratamento incompleto de entradas inválidas nas operações administrativas.
+
+Fontes lidas antes da análise do código: especificação funcional v1.6 (§§2, 4, 5.1, 9, 13, 14 e cenários citados nas fatias), infraestrutura v1.7 (4.10, 4.12, 5 e testes técnicos), e os oito pares spec/acceptance. A decisão D-1 sobre disponibilidade foi respeitada: sinalização informativa, sem excluir o produto do catálogo. Não houve alteração dos documentos-base neste diff.
+
+| Fatia | Matriz | Decisão |
+|---|---|---|
+| E03-01 | A-1 a A-17 verdes; fronteira superior adicional falha | REPROVADO — R01 |
+| E03-02 | A-1 a A-18 verdes; fronteira superior adicional falha | REPROVADO — R01 |
+| E03-03 | A-1 a A-23 verdes; fronteira superior adicional falha | REPROVADO — R01 |
+| E03-04 | A-1 a A-11 verdes | APROVADO |
+| E03-05 | A-1 a A-19 verdes; fronteira superior adicional falha | REPROVADO — R01 |
+| E03-06 | A-1 a A-13 verdes com ajuste de pré-condição do A-3; fronteira superior adicional falha | REPROVADO — R01; R02 documental |
+| E03-07 | A-1 a A-11 verdes, incluindo matriz consolidada | APROVADO |
+| E03-08 | A-1 a A-13 verdes | APROVADO |
+
+### E03-R01 — importante: entrada acima da capacidade decimal provoca HTTP 500
+
+**Referências:** infraestrutura 4.12 (`NUMERIC(12,2)` e `NUMERIC(12,3)`); E03-01, entrada de valores e contrato de `ValidationError` por campo; E03-03, validações e erros de formulário; E03-05, validação do limite; E03-06, `IncrementoInvalido` exibido no formulário; AGENTS §§3 e 8, negativos e casos-limite. É uma consequência técnica das faixas de persistência já aprovadas, sem necessidade de definir um novo teto comercial.
+
+**Locais:** `apps/fornecedores/servicos.py:43` (`_minimo`), `apps/catalogo/servicos.py:53` (`_preco`), `apps/catalogo/quantidades.py:35` e `:45` (incremento/múltiplo), `apps/rodadas/estoque.py:37` (`_limite`), e `apps/catalogo/forms.py:22`. As conversões verificam formato, casas e sinal, mas não a quantidade máxima de dígitos da coluna. `objects.create()`/`save()` não executam os validadores de campo automaticamente. A entrada alcança o Postgres e a `DataError` não é convertida em erro de validação.
+
+**Reprodução independente:** administrador autenticado por passkey pelo fluxo real, criptografia simulada conforme E02; POST real, PostgreSQL real, sem substituir serviço ou resultado. `10000000000.00` em mínimo/preço e `1000000000.000` em quantidade geraram `numeric field overflow` e HTTP **500** em oito caminhos:
+
+1. cadastro de fornecedor;
+2. alteração de mínimo;
+3. edição de preço;
+4. cadastro de produto com incremento;
+5. alteração de incremento;
+6. alteração de múltiplo;
+7. inclusão no estoque;
+8. alteração de estoque.
+
+Controles dentro da faixa responderam 302 nos oito caminhos: `9999999999.99` para dinheiro, `999999999.999` para quantidade e `999999999.000` para o múltiplo do produto com incremento 1. Resultado: **8 failed, 8 passed em 4,36 s**. As oito falhas são manifestações de um único defeito. O banco recusa o excesso; não se afirma corrupção de dados nem bypass de autorização.
+
+**Devolução ao implementador:** validar a capacidade do campo antes da escrita, também em chamadas diretas aos serviços, e apresentar o erro no campo correspondente (ou no formulário de estoque), conservando o valor anterior, sem auditoria/sinal de sucesso. Não arredondar, truncar ou limitar silenciosamente a entrada. Cobrir limite exato e primeiro valor que não cabe para dinheiro e quantidade, cadastro e edição, com Red → Green. A solução pode compartilhar validação, mas deve respeitar o contrato das funções numéricas existentes e não alterar o arredondamento de subtotais.
+
+### E03-R02 — melhoria documental: pré-condição de A-3 não isola a incompatibilidade do múltiplo
+
+`docs/specs/E03-06/acceptance.md`, A-3, manda retirar apenas a parcela de 1,5 do cenário A-1 e espera código `multiplo` para incremento 2. Ainda resta reserva de 1,0, que não é múltipla de 2. A infraestrutura 4.12 exige testar quantidades antes do múltiplo; portanto, o resultado correto nesse cenário é `quantidade`.
+
+O implementador registrou isso e testou o cenário completo como `quantidade`, além de um cenário isolado com somente a pendência de 2,0 para obter `multiplo`. Essa interpretação é derivável da fonte de maior precedência e está correta. Devolução ao especificador: corrigir a pré-condição de A-3 e a frase correspondente em Casos-limite da spec; não inverter a ordem de validação. Não é bloqueio por decisão nem defeito de produção.
+
+### Comandos e resultados independentes
+
+- `uv run pytest -q`: **1058 passed em 147,85 s**, E01/E02/E03, banco Postgres real. Nenhum outro pytest foi executado simultaneamente no mesmo banco.
+- `uv run pytest -q -c pyproject.toml $env:TEMP/om_e03_0ceb171_probes.py --tb=short --show-capture=no`: **8 failed, 8 passed em 4,36 s**, descritos em R01; script integral abaixo.
+- `uv run ruff check .`: All checks passed.
+- `uv run ruff format --check .`: 238 arquivos já formatados.
+- `uv run mypy .`: sem erros em 193 arquivos.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: No changes detected.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: 51 pacotes resolvidos, 50 conferidos.
+- CI do SHA exato: [run 38948417927](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38948417927), completed/success, consultado por `gh run list --commit 0ceb1715e94af26a7af79e3881117a3b7a133263 --json databaseId,status,conclusion,url`.
+
+### Evidência TDD e limites
+
+Conferidos os registros Red, Green e Refactor das oito fatias, incluindo comandos, contagens, exemplos de falhas, andaimes justificados e ajustes de testes. As restrições, gatilhos, serviços e testes correspondem aos comportamentos descritos. O diff dos testes anteriores adiciona cobertura; não foi identificada remoção para esconder defeito. O ajuste de E03-06 A-3 está explicado em R02.
+
+A sequência temporal Red antes de produção é documentada pelo implementador, não foi presenciada nem reconstruída pelo revisor em commits intermediários. O Green e os probes deste parecer foram executados independentemente. Falhas de andaime por objeto não persistido/ausência de sequência não foram apresentadas como asserções finais de negócio; a matriz consolidada é regressão de comportamentos implementados nas fatias anteriores.
+
+As telas foram verificadas pelo cliente HTTP Django e inspeção dos templates, sem navegador. WebAuthn usa o dublê autorizado. A adição/reserva/alocação real de interesses e o recálculo por preço são E05; fechamento/retorno reais são E06; congelamento de pedidos é E08. Os auxiliares transacionais testam os contratos atuais, sem afirmar entrega dessas etapas futuras. O vínculo de parcelas com rodada é uma dependência futura expressa; não foi tratado como omissão nova.
+
+As esperas de concorrência observam `pg_stat_activity` no banco de teste inteiro. A suíte foi executada isoladamente; para execução paralela futura, restringir a observação à conexão da operação tornaria a instrumentação mais robusta. Isso não gerou falha observada nesta revisão.
+
+Alterações do revisor: somente os oito `review.md`, preservando os registros anteriores. Próximo gate: correção de R01 pelo implementador, com evidência TDD, seguida de revisão independente; ajuste documental R02 pelo especificador.
+
+### Script reproduzível dos probes adicionais
+
+Salvar como `$env:TEMP/om_e03_0ceb171_probes.py` e executar o comando acima a partir da raiz do projeto. `raise_request_exception=False` permite observar a resposta 500 real e a exceção capturada; não altera a aplicação.
+
+```python
+from decimal import Decimal as D
+import pytest
+from django.core.cache import cache
+from tests.apoio.admin_fluxos import administrador_logado
+from tests.apoio.webauthn_falso import instalar
+from tests.fabricas import FornecedorFactory, ProdutoFactory, RodadaFactory, EstoqueDaRodadaFactory
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("excede", [False, True])
+@pytest.mark.parametrize(
+    "caso",
+    [
+        "fornecedor",
+        "minimo",
+        "preco",
+        "cadastro_incremento",
+        "incremento",
+        "multiplo",
+        "incluir_estoque",
+        "alterar_estoque",
+    ],
+)
+def test_entrada_acima_da_capacidade_vira_erro_de_campo(client, monkeypatch, caso, excede):
+    cache.clear()
+    instalar(monkeypatch)
+    administrador_logado(client)
+    f = FornecedorFactory.create()
+    p = ProdutoFactory.create(fornecedor=f, incremento=D("1"), multiplo=None)
+    r = RodadaFactory.create(fornecedor=f)
+    e = EstoqueDaRodadaFactory.create(rodada=r, produto=p, limite=D("10"))
+    q = ProdutoFactory.create(fornecedor=f)
+    casos = {
+        "fornecedor": (
+            "/administracao/fornecedores/novo/",
+            {
+                "nome": "Teste",
+                "email_pedido": "teste@example.com",
+                "prazo_entrega_dias": "7",
+                "minimo": "10000000000.00",
+            },
+        ),
+        "minimo": (f"/administracao/fornecedores/{f.pk}/minimo/", {"minimo": "10000000000.00"}),
+        "preco": (
+            f"/administracao/produtos/{p.pk}/",
+            {"nome": p.nome, "preco": "10000000000.00", "disponivel": "on"},
+        ),
+        "cadastro_incremento": (
+            f"/administracao/fornecedores/{f.pk}/produtos/novo/",
+            {
+                "nome": "Teste",
+                "unidade": "kg",
+                "preco": "1.00",
+                "incremento": "1000000000.000",
+                "disponivel": "on",
+            },
+        ),
+        "incremento": (
+            f"/administracao/produtos/{p.pk}/incremento/",
+            {"incremento": "1000000000.000"},
+        ),
+        "multiplo": (f"/administracao/produtos/{p.pk}/multiplo/", {"multiplo": "1000000000.000"}),
+        "incluir_estoque": (
+            f"/administracao/rodadas/{r.pk}/estoque/incluir/",
+            {"produto": str(q.pk), "limite": "1000000000.000"},
+        ),
+        "alterar_estoque": (
+            f"/administracao/estoque/{e.pk}/alterar/",
+            {"limite": "1000000000.000"},
+        ),
+    }
+    url, dados = casos[caso]
+    if not excede:
+        dados = {
+            k: v.replace("10000000000.00", "9999999999.99").replace(
+                "1000000000.000", "999999999.999"
+            )
+            for k, v in dados.items()
+        }
+        if caso == "multiplo":
+            dados["multiplo"] = "999999999.000"
+    client.raise_request_exception = False
+    resposta = client.post(url, dados)
+    assert resposta.status_code == (200 if excede else 302), (
+        caso,
+        resposta.status_code,
+        resposta.exc_info[1] if resposta.exc_info else None,
+    )
+```

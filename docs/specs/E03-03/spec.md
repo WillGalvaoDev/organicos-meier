@@ -206,6 +206,27 @@ A alteração do incremento tem validações próprias sobre as parcelas e fica 
 - **Múltiplo alterado em `fechamento`:** recusado (cenário 87, T-23).
 - **Duas edições de preço simultâneas:** serializadas pela trava do produto. Cada auditoria registra o `anterior` correto.
 
+## Correção E03-R01 — revisão da especificação em 2026-10-16
+
+A regra comum está na seção de mesmo título da E03-01.
+
+### Regra
+
+- **Preço** (`criar_produto` e `editar_produto`): regra de capacidade de dinheiro, depois do preço mínimo de R$ 0,01. Na edição recusada:
+  - o preço anterior é mantido;
+  - os outros campos enviados também não são gravados, porque a edição é uma única operação;
+  - não há auditoria e o sinal `preco_alterado` não é enviado.
+- **Incremento** (`validar_incremento`): regra de capacidade de quantidade, depois de "maior que zero". A recusa levanta `IncrementoInvalido` com a mensagem de capacidade.
+- **Múltiplo** (`validar_multiplo`): regra de capacidade de quantidade, depois de "maior que zero" e antes da divisibilidade pelo incremento. A recusa levanta `MultiploInvalido` com a mensagem de capacidade.
+- **Quantidade** (`validar_quantidade`): regra de capacidade de quantidade, depois de "maior que zero" e antes da divisibilidade. A recusa levanta `QuantidadeInvalida` com a mensagem de capacidade. Isso protege a adição de interesse da E05, que grava a quantidade em `CampoQuantidade`.
+- As exceções continuam as mesmas, então as views que já mostram `IncrementoInvalido` e `MultiploInvalido` no formulário mostram a nova mensagem sem mudança de fluxo.
+- `alterar_multiplo` usa `validar_multiplo`, então recebe a regra. Na recusa, o múltiplo anterior é mantido, sem auditoria.
+- `CampoDecimalDigitado` (`apps/catalogo/forms.py`) pode continuar só convertendo o texto. Se ele também verificar a capacidade, deve usar as primitivas e a mensagem da E03-01, nunca outra.
+
+### Testes obrigatórios
+
+- Critérios A-24 a A-28, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-01 e E03-02.

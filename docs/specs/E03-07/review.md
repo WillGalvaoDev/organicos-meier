@@ -1,5 +1,7 @@
 # E03-07 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **APROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 ## Ciclos TDD
@@ -70,3 +72,13 @@ transição é do sistema); passou de imediato porque o código já usa `SISTEMA
 - A-11 detecta a espera com `pg_stat_activity.wait_event_type = 'Lock'` no banco inteiro.
 - A "margem" e a "aptidão para apuração" estão cobertas pela linha `pagamento`, como na
   especificação.
+
+## Revisão independente — 0ceb171 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+A-1 a A-11: registro de condições atuais, ciclos anteriores preservados, proteção ORM/SQL, numeração e concorrência cobertos e verdes. A matriz T-23 cobre cinco operações × seis situações, pelas rotas normal/HTMX e pelos serviços; preço permanece editável nas quatro etapas ativas. Transições reais continuam na E06.
+
+Verificação comum: `uv run pytest -q` — **1058 passed em 147,85 s**; ruff check limpo; ruff format — 238 arquivos; mypy — 193 arquivos sem erros; checks Django e migrações sem pendências. Os probes adicionais de fronteira terminaram em **8 failed, 8 passed em 4,36 s**, reproduzindo E03-R01. Não houve correção de produção ou testes pelo revisor.
+
+Comandos completos, achados, reprodução, limites e parecer global estão em [E03-08/review.md](../E03-08/review.md), na seção de revisão independente deste SHA. Os relatos Red/Green anteriores foram conferidos com o diff e a cobertura; a execução Green é independente, a cronologia Red é evidência documentada pelo implementador.

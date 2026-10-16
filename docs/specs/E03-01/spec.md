@@ -111,6 +111,70 @@ O mínimo monetário é informado no cadastro. A alteração dele depois do cada
 - **E-mail:** `  Pedidos@Fornecedor.COM ` é gravado `pedidos@fornecedor.com`.
 - **Sem concorrência crítica:** a edição dos campos desta fatia não interage com estoque, rodada ou dinheiro. O mínimo, que interage, fica na E03-02, com as travas.
 
+## Correção E03-R01 — revisão da especificação em 2026-10-16
+
+Esta seção define a regra comum de capacidade decimal. As seções de mesmo título nas E03-02, E03-03, E03-05 e E03-06 aplicam a regra aos seus campos.
+
+### Diagnóstico
+
+- As conversões (`ler_decimal_digitado`, `dinheiro()`, `quantidade()`) verificam formato, casas e sinal, mas não o número de dígitos que a coluna comporta.
+- `objects.create()` e `save()` não executam os validadores de campo do Django. Um valor com dígitos inteiros demais chega ao Postgres, que recusa com `numeric field overflow` (`DataError`), e a requisição termina em HTTP 500.
+- O revisor reproduziu isso em oito caminhos: cadastro de fornecedor, alteração do mínimo, edição de preço, cadastro de produto, alteração de incremento, alteração de múltiplo, inclusão no estoque e alteração do estoque.
+- Minha falha na especificação: as faixas `NUMERIC(12,2)` e `NUMERIC(12,3)` (infraestrutura 4.12, E01-02) estavam citadas, mas nenhuma fatia tratou o maior valor gravável como caso-limite.
+
+### Regra
+
+**Capacidade das colunas** (consequência técnica das faixas aprovadas, não um teto comercial):
+
+| Tipo | Coluna | Maior valor gravável |
+|---|---|---|
+| Dinheiro | `CampoDinheiro`, `NUMERIC(12,2)` | `9999999999.99` (dez dígitos inteiros) |
+| Quantidade | `CampoQuantidade`, `NUMERIC(12,3)` | `999999999.999` (nove dígitos inteiros) |
+
+**Primitivas novas em `apps/nucleo/valores.py`** (as existentes não mudam):
+
+- Constantes `MAIOR_DINHEIRO` e `MAIOR_QUANTIDADE`, calculadas a partir de `max_digits` e `decimal_places` de `CampoDinheiro` e `CampoQuantidade`, para que as constantes e as colunas não possam divergir.
+- `cabe_em_dinheiro(valor) -> bool` e `cabe_em_quantidade(valor) -> bool`:
+  - aceitam só `Decimal` finito; qualquer outro tipo levanta `ValorInvalido`;
+  - devolvem `True` quando `valor <= MAIOR_*`;
+  - não arredondam, não truncam e não alteram o valor.
+
+**Mensagens de capacidade** (no campo do formulário, ou no formulário de estoque):
+
+- Dinheiro: "O valor máximo aceito é R$ 9.999.999.999,99."
+- Quantidade: "O valor máximo aceito é 999999999,999."
+
+**Onde a regra vale:** no serviço, no mesmo ponto em que o valor já é validado, para que a chamada direta ao serviço também seja protegida. A ordem é:
+
+1. formato e casas (regra existente);
+2. sinal e valor mínimo (regra existente);
+3. capacidade (esta regra);
+4. compatibilidade com outros dados, como múltiplo, incremento ou reservado (regras existentes).
+
+**Efeito da recusa:**
+
+- nada é gravado e o valor anterior é mantido;
+- nenhuma auditoria é registrada e nenhum sinal é enviado;
+- a rota responde 200, com o erro no campo e o valor digitado de volta no formulário.
+
+**Valores muito grandes:** um texto com mais dígitos do que a precisão do contexto decimal (por exemplo, 30 dígitos) já é recusado pela conversão com a mensagem de formato. Isso é aceito: a exigência é ter um erro de campo, nunca um 500.
+
+**Nesta fatia:** o `minimo` de `criar_fornecedor` passa pela regra de dinheiro. A alteração do mínimo usa a mesma limpeza e está na correção da E03-02.
+
+### Testes obrigatórios
+
+- O script de probes do revisor (`docs/specs/E03-08/review.md`, seção "Script reproduzível dos probes adicionais") entra literal na suíte, em `tests/tecnicos/test_capacidade_decimal.py`, com o marcador `tecnico`. Os 16 casos devem passar: os 8 que excedem a capacidade respondem 200, e os 8 controles no limite respondem 302.
+- Testes unitários das primitivas e testes de serviço com `Decimal`, conforme os critérios A-18 a A-20.
+- Todos com Red observado antes do código.
+
+### O que não fazer
+
+- Não capturar `DataError` (nem `DatabaseError`) para transformá-lo em erro de validação. A recusa precisa acontecer antes da escrita.
+- Não arredondar, truncar nem limitar silenciosamente o valor digitado.
+- Não alterar `dinheiro()`, `quantidade()`, `ler_decimal_digitado()`, `arredondar_centavos()`, `eh_multiplo()` nem `calcular_subtotal()`. Essas funções também são usadas em cálculos intermediários que não são gravados nessas colunas.
+- Não validar só no formulário: o serviço é a autoridade (AGENTS.md §6).
+- Não criar um teto comercial diferente da capacidade da coluna.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01-02 (valores), E01-04 (auditoria), E02-01 (`normalizar_email`, `Fornecedor`) e E02-03 (área administrativa).

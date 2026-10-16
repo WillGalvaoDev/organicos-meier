@@ -18,7 +18,14 @@ from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import quantidades_em_uso
 from apps.nucleo.auditoria import registrar_auditoria
-from apps.nucleo.valores import ValorInvalido, dinheiro, eh_multiplo, ler_decimal_digitado
+from apps.nucleo.valores import (
+    MENSAGEM_CAPACIDADE_DINHEIRO,
+    ValorInvalido,
+    cabe_em_dinheiro,
+    dinheiro,
+    eh_multiplo,
+    ler_decimal_digitado,
+)
 from apps.rodadas.condicoes import travar_condicoes
 
 PRECO_MINIMO = Decimal("0.01")
@@ -57,6 +64,8 @@ def _preco(valor: Any) -> Decimal:
         raise ValidationError("Informe um preço em reais, como 7,99.") from None
     if preco < PRECO_MINIMO:
         raise ValidationError("O preço deve ser de pelo menos R$ 0,01.")
+    if not cabe_em_dinheiro(preco):
+        raise ValidationError(MENSAGEM_CAPACIDADE_DINHEIRO)
     return preco
 
 

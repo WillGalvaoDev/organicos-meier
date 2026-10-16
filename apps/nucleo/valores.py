@@ -142,3 +142,36 @@ class CampoQuantidade(_CampoDecimalExato):
 
     _max_digits = 12
     _decimal_places = 3
+
+
+def _maior_valor(campo: "_CampoDecimalExato") -> Decimal:
+    """Maior valor que a coluna comporta: todos os dígitos 9 (`max_digits` e `decimal_places`)."""
+    return Decimal(10) ** (campo.max_digits - campo.decimal_places) - Decimal(10) ** -(
+        campo.decimal_places
+    )
+
+
+# Capacidade das colunas (E03-R01): derivada dos campos, para não divergir deles. Não é um teto
+# comercial; é o maior valor que o Postgres grava em `NUMERIC(12,2)` e `NUMERIC(12,3)`.
+MAIOR_DINHEIRO = _maior_valor(CampoDinheiro())
+MAIOR_QUANTIDADE = _maior_valor(CampoQuantidade())
+MENSAGEM_CAPACIDADE_DINHEIRO = "O valor máximo aceito é R$ 9.999.999.999,99."
+MENSAGEM_CAPACIDADE_QUANTIDADE = "O valor máximo aceito é 999999999,999."
+
+
+def _cabe(valor: Decimal, maior: Decimal) -> bool:
+    if isinstance(valor, bool) or not isinstance(valor, Decimal):
+        raise ValorInvalido(f"tipo não aceito: {type(valor).__name__}")
+    if not valor.is_finite():
+        raise ValorInvalido("valor não finito")
+    return valor <= maior
+
+
+def cabe_em_dinheiro(valor: Decimal) -> bool:
+    """Verdadeiro se o valor cabe em `CampoDinheiro`. Só `Decimal` finito; não o altera."""
+    return _cabe(valor, MAIOR_DINHEIRO)
+
+
+def cabe_em_quantidade(valor: Decimal) -> bool:
+    """Verdadeiro se o valor cabe em `CampoQuantidade`. Só `Decimal` finito; não o altera."""
+    return _cabe(valor, MAIOR_QUANTIDADE)

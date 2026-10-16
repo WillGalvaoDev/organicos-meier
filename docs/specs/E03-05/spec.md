@@ -141,6 +141,24 @@ Esta fatia entrega:
 - **Alteração concorrendo com uma reserva:** a reserva é da E05, que trava a mesma linha do estoque. Nesta fatia, o teste simula a reserva com uma thread que trava fornecedor, rodada, produto e estoque, nessa ordem, e aumenta a quantidade reservada de uma parcela. Com reserva concluída antes, a redução abaixo do novo total é recusada. Com a redução antes, a reserva vê o novo limite.
 - **Duas inclusões simultâneas do mesmo produto:** uma inclusão; a outra é recusada. A trava do produto e o `UNIQUE` garantem isso.
 
+## Correção E03-R01 — revisão da especificação em 2026-10-16
+
+A regra comum está na seção de mesmo título da E03-01.
+
+### Regra
+
+- **Inclusão e alteração** (`incluir_produto_na_rodada` e `alterar_estoque`): o `limite` passa pela regra de capacidade de quantidade, depois de "não negativo". Vazio continua significando "sem limite".
+- Na recusa, nada é gravado:
+  - na inclusão, nenhum `EstoqueDaRodada` é criado;
+  - na alteração, o limite anterior é mantido;
+  - não há auditoria `estoque.incluir` nem `estoque.alterar`, e o sinal `estoque_alterado` não é enviado.
+- A tela de estoque responde 200 e mostra a mensagem de capacidade no formulário correspondente.
+- A recusa por capacidade vem antes da comparação com o total reservado. Um valor acima da capacidade nunca chega a `EstoqueAbaixoDoReservado`.
+
+### Testes obrigatórios
+
+- Critérios A-20 e A-21, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-02, E03-03 e E03-04.

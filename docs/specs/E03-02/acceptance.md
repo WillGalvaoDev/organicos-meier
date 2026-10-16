@@ -22,6 +22,7 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-16 | Spec da fatia | negativo | uma chamada de `travar_condicoes` fora de `transaction.atomic()` | executo | `TransactionManagementError` |
 | A-17 | Spec §2, §15 | negativo | um comprador e uma conta de fornecedor autenticados; um visitante anônimo | `POST` de abertura de rodada e `GET`/`POST` do mínimo | 403 para os autenticados; anônimo redirecionado para `/entrar/`; nada criado nem alterado |
 | A-18 | Spec da fatia | negativo | um comprador como `autor` | chamo `abrir_rodada` e `alterar_minimo` | `PermissionDenied`; nada gravado |
+| A-19 | E03-R01 | negativo e limite | rodada em `interesse` e mínimo 150 | `alterar_minimo` com `Decimal("9999999999.99")`; depois, com `Decimal("10000000000.00")` pelo serviço e `10000000000,00` pela rota | o primeiro é aceito e auditado; o segundo levanta `ValidationError` com "O valor máximo aceito é R$ 9.999.999.999,99."; a rota responde 200 com o erro no campo; o mínimo continua `9999999999.99`; nenhuma auditoria nova |
 
 ## Mapeamento para testes
 
@@ -32,3 +33,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-5, A-14, A-15 | `tests/tecnicos/test_rodadas_concorrencia.py` (marcador `concorrencia`) |
 | A-17 | `tests/tecnicos/test_rodadas_permissoes.py` |
 | A-8 (cenário 71); A-9 (cenário 72, T-23) | também marcados `acceptance` e `tecnico`, com os números no comentário |
+| A-19 | `tests/tecnicos/test_rodadas_minimo.py` |

@@ -8,7 +8,14 @@ from decimal import Decimal
 from typing import Any
 
 from apps.catalogo.models import Produto
-from apps.nucleo.valores import ValorInvalido, arredondar_centavos, eh_multiplo, quantidade
+from apps.nucleo.valores import (
+    MENSAGEM_CAPACIDADE_QUANTIDADE,
+    ValorInvalido,
+    arredondar_centavos,
+    cabe_em_quantidade,
+    eh_multiplo,
+    quantidade,
+)
 
 
 class QuantidadeRecusada(Exception):
@@ -39,6 +46,8 @@ def validar_incremento(entrada: Any) -> Decimal:
         raise IncrementoInvalido(_MSG_INCREMENTO) from None
     if valor <= 0:
         raise IncrementoInvalido(_MSG_INCREMENTO)
+    if not cabe_em_quantidade(valor):
+        raise IncrementoInvalido(MENSAGEM_CAPACIDADE_QUANTIDADE)
     return valor
 
 
@@ -48,7 +57,11 @@ def validar_multiplo(entrada: Any, incremento: Decimal) -> Decimal | None:
         return None
     try:
         valor = quantidade(entrada)
-        if valor <= 0 or not eh_multiplo(valor, incremento):
+        if valor <= 0:
+            raise MultiploInvalido(_MSG_MULTIPLO)
+        if not cabe_em_quantidade(valor):
+            raise MultiploInvalido(MENSAGEM_CAPACIDADE_QUANTIDADE)
+        if not eh_multiplo(valor, incremento):
             raise MultiploInvalido(_MSG_MULTIPLO)
     except ValorInvalido:
         raise MultiploInvalido(_MSG_MULTIPLO) from None
@@ -58,7 +71,11 @@ def validar_multiplo(entrada: Any, incremento: Decimal) -> Decimal | None:
 def validar_quantidade(produto: Produto, entrada: Any) -> Decimal:
     try:
         valor = quantidade(entrada)
-        if valor <= 0 or not eh_multiplo(valor, produto.incremento):
+        if valor <= 0:
+            raise QuantidadeInvalida(_MSG_QUANTIDADE)
+        if not cabe_em_quantidade(valor):
+            raise QuantidadeInvalida(MENSAGEM_CAPACIDADE_QUANTIDADE)
+        if not eh_multiplo(valor, produto.incremento):
             raise QuantidadeInvalida(_MSG_QUANTIDADE)
     except ValorInvalido:
         raise QuantidadeInvalida(_MSG_QUANTIDADE) from None
