@@ -6,7 +6,12 @@ from django.forms import Form
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.catalogo.forms import FormularioEdicaoProduto, FormularioMultiplo, FormularioProduto
+from apps.catalogo.forms import (
+    FormularioEdicaoProduto,
+    FormularioIncremento,
+    FormularioMultiplo,
+    FormularioProduto,
+)
 from apps.catalogo.models import Produto
 from apps.catalogo.quantidades import (
     IncrementoInvalido,
@@ -14,7 +19,13 @@ from apps.catalogo.quantidades import (
     QuantidadeRecusada,
     formatar_quantidade,
 )
-from apps.catalogo.servicos import alterar_multiplo, criar_produto, editar_produto
+from apps.catalogo.servicos import (
+    IncrementoIncompativel,
+    alterar_incremento,
+    alterar_multiplo,
+    criar_produto,
+    editar_produto,
+)
 from apps.contas.administracao import somente_administrador
 from apps.fornecedores.models import Fornecedor
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
@@ -132,3 +143,35 @@ def multiplo(request: HttpRequest, pk: int) -> HttpResponse:
             contexto["mensagem_congelada"] = MENSAGEM
     contexto["form"] = form
     return render(request, "catalogo/multiplo.html", contexto)
+
+
+@somente_administrador
+def incremento(request: HttpRequest, pk: int) -> HttpResponse:
+    produto = get_object_or_404(Produto.objects.select_related("fornecedor"), pk=pk)
+    contexto: dict[str, object] = {"produto": produto, "mensagem_congelada": None}
+    if request.method == "POST":
+        form = FormularioIncremento(request.POST)
+        if form.is_valid():
+            try:
+                alterar_incremento(
+                    request.user,  # type: ignore[arg-type]
+                    produto,
+                    form.cleaned_data["incremento"],
+                )
+            except (IncrementoInvalido, IncrementoIncompativel) as erro:
+                form.add_error("incremento", str(erro))
+            except CondicoesCongeladas as erro:
+                contexto["mensagem_congelada"] = str(erro)
+                return render(request, "catalogo/incremento.html", contexto, status=409)
+            else:
+                messages.success(request, "Incremento atualizado.")
+                return redirect("fornecedores_detalhe", pk=produto.fornecedor_id)
+    else:
+        form = FormularioIncremento(initial={"incremento": formatar_quantidade(produto.incremento)})
+        em_interesse = Rodada.objects.filter(
+            fornecedor_id=produto.fornecedor_id, etapa=Etapa.INTERESSE
+        ).exists()
+        if not em_interesse:
+            contexto["mensagem_congelada"] = MENSAGEM
+    contexto["form"] = form
+    return render(request, "catalogo/incremento.html", contexto)

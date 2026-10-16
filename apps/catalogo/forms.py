@@ -54,3 +54,7 @@ class FormularioProduto(FormularioEdicaoProduto):
 
 class FormularioMultiplo(forms.Form):
     multiplo = CampoDecimalDigitado(casas=3, required=False)
+
+
+class FormularioIncremento(forms.Form):
+    incremento = CampoDecimalDigitado(casas=3)

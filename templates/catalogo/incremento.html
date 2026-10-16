@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block titulo %}Incremento de {{ produto.nome }} · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Incremento de {{ produto.nome }}</h1>
+  {% if mensagem_congelada %}
+    <p role="alert">{{ mensagem_congelada }}</p>
+  {% else %}
+    <p>Só é possível se todas as quantidades reservadas e pendentes do produto, e o múltiplo, continuarem divisíveis pelo novo valor.</p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <p><label for="{{ form.incremento.id_for_label }}">Novo incremento (ex.: 1, 0,5, 0,25)</label> {{ form.incremento }} {{ form.incremento.errors }}</p>
+      <button type="submit">Salvar</button>
+    </form>
+  {% endif %}
+  <p><a href="{% url 'produtos_detalhe' pk=produto.pk %}">Voltar ao produto</a></p>
+{% endblock %}

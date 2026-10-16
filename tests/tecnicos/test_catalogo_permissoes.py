@@ -26,6 +26,7 @@ def _rotas(produto: Produto) -> list[str]:
         f"/administracao/fornecedores/{produto.fornecedor_id}/produtos/novo/",
         f"/administracao/produtos/{produto.pk}/",
         f"/administracao/produtos/{produto.pk}/multiplo/",
+        f"/administracao/produtos/{produto.pk}/incremento/",
     ]
 
 
@@ -40,6 +41,7 @@ def test_autenticados_que_nao_sao_administrador_recebem_403(
         assert client.post(rota, DADOS).status_code == 403, rota
     produto.refresh_from_db()
     assert (produto.nome, produto.preco, produto.multiplo) == ("Intacto", Decimal("10.00"), None)
+    assert produto.incremento == Decimal("1.000")
     assert Produto.objects.count() == 1
     assert EntradaAuditoria.objects.count() == 0
 
