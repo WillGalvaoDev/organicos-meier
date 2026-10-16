@@ -12,6 +12,7 @@ from factory.helpers import post_generation
 from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
+from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.tempo import agora
 from apps.rodadas.models import Etapa, Rodada
 
@@ -116,3 +117,17 @@ class ProdutoFactory(DjangoModelFactory[Produto]):
     preco = Decimal("10.00")
     multiplo = None
     disponivel = True
+
+
+class ParcelaFactory(DjangoModelFactory[ParcelaDeInteresse]):
+    """Parcela ativa de 1 unidade, toda reservada; informe situação e quantidades para variar."""
+
+    class Meta:
+        model = ParcelaDeInteresse
+
+    comprador = SubFactory(ContaFactory)
+    produto = SubFactory(ProdutoFactory)
+    quantidade_original = Decimal("1.000")
+    quantidade_reservada = Decimal("1.000")
+    quantidade_pendente = Decimal("0.000")
+    situacao = SituacaoParcela.ATIVA
