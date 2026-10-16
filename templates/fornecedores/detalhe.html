@@ -16,6 +16,7 @@
   {% if rodada %}
     <p>Rodada ativa: {{ rodada.get_etapa_display }}, aberta em {{ rodada.aberta_em|date:"d/m/Y H:i" }}.</p>
     <p><a href="{% url 'fornecedores_minimo' pk=fornecedor.pk %}">Alterar o mínimo</a></p>
+    <p><a href="{% url 'rodadas_estoque' pk=rodada.pk %}">Estoque da rodada</a></p>
   {% else %}
     <p>Sem rodada ativa.</p>
     <form method="post" action="{% url 'rodadas_abrir' pk=fornecedor.pk %}">

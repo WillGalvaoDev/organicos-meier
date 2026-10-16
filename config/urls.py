@@ -106,6 +106,17 @@ urlpatterns: list[URLPattern | URLResolver] = [
         catalogo_views.multiplo,
         name="produtos_multiplo",
     ),
+    path("administracao/rodadas/<int:pk>/estoque/", rodadas_views.estoque, name="rodadas_estoque"),
+    path(
+        "administracao/rodadas/<int:pk>/estoque/incluir/",
+        rodadas_views.estoque_incluir,
+        name="rodadas_estoque_incluir",
+    ),
+    path(
+        "administracao/estoque/<int:pk>/alterar/",
+        rodadas_views.estoque_alterar,
+        name="estoque_alterar",
+    ),
     path(
         "administracao/convites/",
         contas_views.convites_administracao,

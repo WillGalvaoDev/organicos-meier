@@ -5,7 +5,14 @@ from datetime import timedelta
 from decimal import Decimal
 
 from allauth.account.models import EmailAddress
-from factory.declarations import LazyAttribute, LazyFunction, Sequence, SubFactory, Trait
+from factory.declarations import (
+    LazyAttribute,
+    LazyFunction,
+    SelfAttribute,
+    Sequence,
+    SubFactory,
+    Trait,
+)
 from factory.django import DjangoModelFactory
 from factory.helpers import post_generation
 
@@ -14,7 +21,7 @@ from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.tempo import agora
-from apps.rodadas.models import Etapa, Rodada
+from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 
 
 class FornecedorFactory(DjangoModelFactory[Fornecedor]):
@@ -131,3 +138,14 @@ class ParcelaFactory(DjangoModelFactory[ParcelaDeInteresse]):
     quantidade_reservada = Decimal("1.000")
     quantidade_pendente = Decimal("0.000")
     situacao = SituacaoParcela.ATIVA
+
+
+class EstoqueDaRodadaFactory(DjangoModelFactory[EstoqueDaRodada]):
+    """Produto na rodada com limite 10; o produto vem do mesmo fornecedor da rodada."""
+
+    class Meta:
+        model = EstoqueDaRodada
+
+    rodada = SubFactory(RodadaFactory)
+    produto = SubFactory(ProdutoFactory, fornecedor=SelfAttribute("..rodada.fornecedor"))
+    limite = Decimal("10.000")
