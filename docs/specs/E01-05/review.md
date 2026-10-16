@@ -1,6 +1,6 @@
 # E01-05 — Revisão
 
-Estado atual: **REPROVADO** no commit `b709ce3`: R05 corrigido; pendência R06 de compatibilidade entre A-15 e A-17 (revalidação independente ao final).
+Estado atual: **APROVADO** no commit `06e2faf` (revalidação independente de 2026-10-16 ao final).
 
 Abaixo, relato histórico do implementador, preservado como evidência declarada.
 
@@ -707,3 +707,62 @@ manage.py makemigrations --check --dry-run (test) -> No changes detected
 A variação de duração (40 a 52 s) coincide com outro container Postgres do computador ter sido iniciado junto; não há teste novo lento.
 
 Observação operacional: o Docker Desktop estava parado no início desta sessão e o primeiro `pytest` ficou sem resposta até o banco ser iniciado; não é defeito do utilitário nem da suíte.
+
+
+## Revalidação independente — 06e2faf — 2026-10-16
+
+Revisor: Codex, agente 3. SHA auditado: `06e2fafef33b1beb5ae346e2ff6fd590a0184689` (merge do PR #21, implementação `6a1329d`). Revisão do contrato R06 e dos critérios antes da leitura do diff da implementação. Documentos-base e demais fatias não mudaram. Esta seção substitui a decisão anterior após a conclusão das verificações abaixo.
+
+### R06: contrato e implementação compatíveis
+
+O A-17 revisado exige `CONNECT_TIMEOUT_DAS_THREADS = 10`, inteiro positivo fixo, menor que os prazos padrão de limpeza e da guarda (ambos 30 s). Não exige mais que seja menor que todo prazo configurado. A-15 permanece intacto: com limpeza de 0,5 s e abertura pausada, deve ocorrer `LimpezaIncompleta`, registro e tratamento pela guarda. A mudança é técnica e preserva a garantia de R05; não altera regra de negócio.
+
+O diff substitui a fórmula pela constante, extrai os padrões nomeados e amplia A-17 para 0,5 s, 1 s, 10,5 s e argumento omitido. Não remove nem modifica os cenários anteriores de R05. A-12 agora explicita a interpretação já adotada na revisão anterior: erro do driver na thread retomada é aceitável quando não há SQL bem-sucedido nem reconexão.
+
+O probe histórico `test_connect_timeout_inferior_ao_prazo_curto` foi expressamente substituído pelo novo A-17 e não foi reexecutado como critério de aceite: testa uma desigualdade que deixou de fazer parte do contrato. Os probes de abertura de R05 permanecem incorporados e foram reexecutados no módulo completo.
+
+### Matriz independente A-1 a A-18
+
+| Critério | Cobertura conferida | Resultado |
+|---|---|---|
+| A-1 | Resultados na ordem das operações | Passou |
+| A-2 | PIDs distintos entre operações e chamador | Passou |
+| A-3 | Atualização perdida sem trava reproduzida | Passou |
+| A-4 | Incremento transacional com `select_for_update`, 20 repetições por execução | Passou |
+| A-5 | Exceção de uma operação e valor da outra preservados | Passou |
+| A-6 | Timeout identifica operação pendente e respeita tolerância temporal | Passou |
+| A-7 | Sem sessões residuais após sucesso, erro e timeout; conexão do chamador utilizável | Passou |
+| A-8 | Operação em ANTES não abre conexão nem executa após expiração | Passou |
+| A-9 | Probe literal de abertura iniciada que criaria sessão após a varredura | Passou |
+| A-10 | Abertura liberada por Timer; espera e zero sessões no retorno | Passou |
+| A-11 | Sessão criada antes de ser entregue ao wrapper | Passou |
+| A-12 | Pausa após abertura e retomada sem SQL bem-sucedido/reconexão | Passou |
+| A-13 | Trava de linha liberada, conferida com `nowait=True` | Passou |
+| A-14 | Erro de abertura com e sem timeout, sem sessão residual | Passou |
+| A-15 | Limpeza de 0,5 s excedida: `LimpezaIncompleta`, fase ABRINDO e operação identificadas | Passou |
+| A-16 | Registro, guarda falhando enquanto pendente, resolução com zero sessões e registro vazio | Passou |
+| A-17 | Nome exclusivo e timeout fixo em 0,5/1/10,5/padrão; tipo e limites das constantes | Passou |
+| A-18 | Cinco execuções consecutivas do módulo e suíte completa | Resultado final registrado abaixo |
+
+### Evidências executadas pelo revisor
+
+- Seleção A-15/A-16/A-17: `uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q -k 'limpeza_incompleta or connect_timeout'`: **6 passed, 21 deselected em 2,09 s**.
+- `uv run ruff check .`: limpo; `uv run ruff format --check .`: 54 arquivos; `uv run mypy .`: 40 arquivos, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: sem mudanças.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- Postgres real **17.11**, confirmado por `SELECT version()`; execuções de pytest sequenciais, sem concorrência entre suítes no mesmo banco.
+- CI do SHA exato: [run 38897195100](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38897195100), push, sucesso.
+
+### TDD e alcance
+
+A evidência do implementador registra andaime das três constantes antes do Red; `2 failed, 3 passed, 22 deselected`, com `assert 1 == 10` nos casos 0,5 e 1; Green após trocar a fórmula pela constante. O caso 10,5 e o padrão já passavam e estão corretamente identificados como cobertura de regressão. O diff é coerente com essa sequência e não mostra afrouxamento não autorizado: a reescrita do A-17 foi explicitamente determinada pelo especificador. Mantida a ressalva histórica das revisões anteriores: a cronologia Red/Green é documentada pelo implementador, sem logs brutos ou commits intermediários; o Green desta revisão foi executado independentemente.
+
+R01 a R04 mantêm as aprovações anteriores: código de produção, dependências e workflow não mudaram. Proteções remotas reconferidas: PR obrigatório, `verificacoes` obrigatório/strict, enforce_admins=true, force pushes/deletions=false; secret scanning e push protection ativos. Os testes negativos remotos já documentados não foram repetidos, pois workflow e proteção estão inalterados. Nenhuma regra remota foi modificada.
+
+### Resultado final e decisão
+
+A-18 executado independentemente: `uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q`, cinco vezes consecutivas, **27 passed em todas**, durações **39,39 s; 39,24 s; 39,29 s; 39,26 s; 40,21 s**. Em seguida, `uv run pytest -q`: **143 passed em 40,28 s**. A matriz A-1 a A-18 está atendida.
+
+**E01-05 APROVADA. E01 APROVADA no commit `06e2fafef33b1beb5ae346e2ff6fd590a0184689`.** R06 encerrado; R01 a R05 continuam encerrados. Nenhum achado bloqueador ou importante permanece aberto para esta entrega. As limitações documentais de verificação histórica do TDD permanecem explicitadas acima, sem novo impedimento.
+
+Os cinco `review.md` foram atualizados na branch `revisao/e01-06e2faf`, preservando o histórico. Nenhum código, teste ou regra de negócio foi alterado pelo revisor. Sem commit, push ou merge. Gate de revisão independente da E01 encerrado; a próxima entrega deve seguir seu próprio gate de especificação e TDD.
