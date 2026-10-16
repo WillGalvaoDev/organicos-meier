@@ -5,8 +5,9 @@ from django.db import models
 from apps.catalogo.models import Produto
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
+from apps.nucleo.so_insercao import RegistroSoInsercao
 from apps.nucleo.tempo import agora
-from apps.nucleo.valores import CampoQuantidade
+from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 
 
 class Etapa(models.TextChoices):
@@ -67,3 +68,39 @@ class EstoqueDaRodada(models.Model):
 
     def __str__(self) -> str:
         return f"estoque {self.pk}"
+
+
+class Ciclo(RegistroSoInsercao):
+    """Ciclo de uma rodada: quando ela saiu de `interesse` e o mínimo vigente nesse instante."""
+
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, related_name="ciclos")
+    numero = models.PositiveIntegerField()
+    iniciado_em = models.DateTimeField(default=agora)
+    minimo = CampoDinheiro()
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["rodada", "numero"], name="ciclo_numero_unico"),
+            models.CheckConstraint(condition=models.Q(numero__gte=1), name="ciclo_numero_positivo"),
+        )
+
+    def __str__(self) -> str:
+        return f"ciclo {self.numero}"
+
+
+class CondicaoDoProdutoNoCiclo(RegistroSoInsercao):
+    """Incremento, múltiplo e limite de estoque do produto no início do fechamento."""
+
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, related_name="condicoes")
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="+")
+    incremento = CampoQuantidade()
+    multiplo = CampoQuantidade(null=True, blank=True)
+    limite_estoque = CampoQuantidade(null=True, blank=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["ciclo", "produto"], name="condicao_produto_unica"),
+        )
+
+    def __str__(self) -> str:
+        return f"condição {self.pk}"
