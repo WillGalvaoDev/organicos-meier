@@ -14,6 +14,7 @@ from django import forms
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
+from apps.contas import google as apoio_google
 from apps.contas.acesso import AcessoRecusado, Metodo, verificar_acesso
 from apps.contas.administracao import tem_passkey
 from apps.contas.convites import ConviteInvalido, validar_convite
@@ -129,15 +130,7 @@ class AdaptadorContaSocial(DefaultSocialAccountAdapter):
 
     @staticmethod
     def _email_verificado(sociallogin: SocialLogin) -> str | None:
-        dados = sociallogin.account.extra_data or {}
-        email = dados.get("email")
-        verificado = dados.get("email_verified") is True or dados.get("verified_email") is True
-        if not email or not verificado:
-            return None
-        try:
-            return normalizar_email(email)
-        except EmailInvalido:
-            return None
+        return apoio_google.email_verificado_do_google(sociallogin.account.extra_data)
 
     @staticmethod
     def _convite_pendente_valido(request: HttpRequest, email: str) -> bool:
