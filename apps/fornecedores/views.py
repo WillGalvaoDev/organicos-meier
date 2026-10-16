@@ -8,9 +8,15 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta
-from apps.fornecedores.forms import FormularioEdicaoFornecedor, FormularioFornecedor
+from apps.fornecedores.forms import (
+    FormularioEdicaoFornecedor,
+    FormularioFornecedor,
+    FormularioMinimo,
+)
 from apps.fornecedores.models import Fornecedor
-from apps.fornecedores.servicos import criar_fornecedor, editar_fornecedor
+from apps.fornecedores.servicos import alterar_minimo, criar_fornecedor, editar_fornecedor
+from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
+from apps.rodadas.models import ETAPAS_ATIVAS, Etapa, Rodada
 
 
 def _erros_do_servico(form: Form, erro: ValidationError) -> None:
@@ -50,8 +56,11 @@ def novo(request: HttpRequest) -> HttpResponse:
 def detalhe(request: HttpRequest, pk: int) -> HttpResponse:
     fornecedor = get_object_or_404(Fornecedor, pk=pk)
     contas = Conta.objects.filter(fornecedor=fornecedor).order_by("nome", "pk")
+    rodada = Rodada.objects.filter(fornecedor=fornecedor, etapa__in=ETAPAS_ATIVAS).first()
     return render(
-        request, "fornecedores/detalhe.html", {"fornecedor": fornecedor, "contas": contas}
+        request,
+        "fornecedores/detalhe.html",
+        {"fornecedor": fornecedor, "contas": contas, "rodada": rodada},
     )
 
 
@@ -76,3 +85,28 @@ def editar(request: HttpRequest, pk: int) -> HttpResponse:
             messages.success(request, "Fornecedor atualizado.")
             return redirect("fornecedores_detalhe", pk=fornecedor.pk)
     return render(request, "fornecedores/formulario.html", {"form": form, "fornecedor": fornecedor})
+
+
+@somente_administrador
+def minimo(request: HttpRequest, pk: int) -> HttpResponse:
+    fornecedor = get_object_or_404(Fornecedor, pk=pk)
+    contexto: dict[str, object] = {"fornecedor": fornecedor, "mensagem_congelada": None}
+    if request.method == "POST":
+        form = FormularioMinimo(request.POST)
+        if form.is_valid():
+            try:
+                alterar_minimo(request.user, fornecedor, form.cleaned_data["minimo"])  # type: ignore[arg-type]
+            except ValidationError as erro:
+                _erros_do_servico(form, erro)
+            except CondicoesCongeladas as erro:
+                contexto["mensagem_congelada"] = str(erro)
+                return render(request, "fornecedores/minimo.html", contexto, status=409)
+            else:
+                messages.success(request, "Mínimo atualizado.")
+                return redirect("fornecedores_detalhe", pk=fornecedor.pk)
+    else:
+        form = FormularioMinimo(initial={"minimo": str(fornecedor.minimo).replace(".", ",")})
+        if not Rodada.objects.filter(fornecedor=fornecedor, etapa=Etapa.INTERESSE).exists():
+            contexto["mensagem_congelada"] = MENSAGEM
+    contexto["form"] = form
+    return render(request, "fornecedores/minimo.html", contexto)

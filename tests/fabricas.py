@@ -5,13 +5,14 @@ from datetime import timedelta
 from decimal import Decimal
 
 from allauth.account.models import EmailAddress
-from factory.declarations import LazyAttribute, LazyFunction, Sequence, Trait
+from factory.declarations import LazyAttribute, LazyFunction, Sequence, SubFactory, Trait
 from factory.django import DjangoModelFactory
 from factory.helpers import post_generation
 
 from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.tempo import agora
+from apps.rodadas.models import Etapa, Rodada
 
 
 class FornecedorFactory(DjangoModelFactory[Fornecedor]):
@@ -87,3 +88,14 @@ class ConviteFactory(DjangoModelFactory[Convite]):
                 lambda o: ContaFactory.create(email_normalizado=o.email_normalizado)
             ),
         )
+
+
+class RodadaFactory(DjangoModelFactory[Rodada]):
+    """Rodada em `interesse` por padrão; `etapa=` cria já em outra etapa (sem transições ainda)."""
+
+    class Meta:
+        model = Rodada
+
+    fornecedor = SubFactory(FornecedorFactory)
+    etapa = Etapa.INTERESSE
+    aberta_por = LazyFunction(_administrador_existente)

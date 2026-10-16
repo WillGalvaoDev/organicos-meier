@@ -5,6 +5,7 @@ from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.contas import views as contas_views
 from apps.fornecedores import views as fornecedores_views
+from apps.rodadas import views as rodadas_views
 
 # Cada rota entra com a fatia que a especifica e testa. Só as rotas do allauth usadas aqui
 # existem; cadastro e as demais ficam de fora. Os nomes são os que o allauth usa internamente.
@@ -82,6 +83,16 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "administracao/fornecedores/<int:pk>/editar/",
         fornecedores_views.editar,
         name="fornecedores_editar",
+    ),
+    path(
+        "administracao/fornecedores/<int:pk>/minimo/",
+        fornecedores_views.minimo,
+        name="fornecedores_minimo",
+    ),
+    path(
+        "administracao/fornecedores/<int:pk>/rodadas/abrir/",
+        rodadas_views.abrir,
+        name="rodadas_abrir",
     ),
     path(
         "administracao/convites/",
