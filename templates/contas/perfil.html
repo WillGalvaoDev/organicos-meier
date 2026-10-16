@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titulo %}Meu perfil · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Meu perfil</h1>
+  <p>E-mail da conta (não pode ser alterado): <strong>{{ conta.email_normalizado }}</strong></p>
+  {% if conta.avatar %}
+    <p><img src="{% url 'avatar' pk=conta.pk %}" alt="Seu avatar" width="96" height="96"></p>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'perfil' %}">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.nome.id_for_label }}">Nome</label>
+      {{ form.nome }}
+      {{ form.nome.errors }}
+    </p>
+    <p>
+      <label for="{{ form.telefone.id_for_label }}">Telefone com DDD (opcional)</label>
+      {{ form.telefone }}
+      {{ form.telefone.errors }}
+    </p>
+    <p>
+      <label for="{{ form.avatar.id_for_label }}">Avatar (JPEG, PNG ou WebP, até 2 MB)</label>
+      {{ form.avatar }}
+      {{ form.avatar.errors }}
+    </p>
+    {% if conta.avatar %}
+    <p>
+      <label for="{{ form.remover_avatar.id_for_label }}">{{ form.remover_avatar }} Remover o avatar atual</label>
+    </p>
+    {% endif %}
+    <p>
+      <label for="{{ form.whatsapp.id_for_label }}">{{ form.whatsapp }} Aceito receber mensagens por WhatsApp neste número</label>
+      {{ form.whatsapp.errors }}
+    </p>
+    <button type="submit">Salvar</button>
+  </form>
+  <p><a href="{% url 'inicio' %}">Voltar ao início</a></p>
+{% endblock %}

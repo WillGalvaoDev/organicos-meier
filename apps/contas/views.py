@@ -1,3 +1,5 @@
+import mimetypes
+
 from allauth.account.internal.flows.login import perform_login, record_authentication
 from allauth.account.models import Login
 from allauth.mfa.adapter import get_adapter as get_adapter_mfa
@@ -9,11 +11,12 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.http.response import HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from apps.contas.administracao import somente_administrador
+from apps.contas.administracao import somente_administrador, tem_prova_de_passkey
 from apps.contas.convites import (
     ConviteInvalido,
     EmailBanidoErro,
@@ -23,7 +26,11 @@ from apps.contas.convites import (
     validar_convite,
 )
 from apps.contas.emails import EmailInvalido, normalizar_email
-from apps.contas.forms import FormularioCadastroPorConvite, FormularioConclusaoGoogle
+from apps.contas.forms import (
+    FormularioCadastroPorConvite,
+    FormularioConclusaoGoogle,
+    FormularioPerfil,
+)
 from apps.contas.formularios import FormularioConvite, FormularioPedidoDeLink
 from apps.contas.google import (
     CHAVE_CONVITE_PENDENTE,
@@ -33,6 +40,7 @@ from apps.contas.google import (
 from apps.contas.link_de_acesso import LinkInvalido, pedir_link, usar_link, validar_link
 from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
 from apps.contas.moderacao import ModeracaoInvalida, reativar, remover, suspender
+from apps.contas.perfil import atualizar_perfil
 
 
 @login_required
@@ -288,3 +296,51 @@ def confirmar_remocao(request: HttpRequest, pk: int) -> HttpResponse:
         messages.error(request, "Esta ação não é permitida para esta conta.")
         return redirect("usuarios_administracao")
     return render(request, "usuarios/confirmar_remocao.html", {"conta": conta})
+
+
+@login_required
+def perfil(request: HttpRequest) -> HttpResponse:
+    """Perfil da própria conta da sessão (não há parâmetro de identificação de conta)."""
+    conta = Conta.objects.get(pk=request.user.pk)  # type: ignore[misc]
+    form = FormularioPerfil(
+        request.POST if request.method == "POST" else None,
+        request.FILES if request.method == "POST" else None,
+        conta=conta,
+        initial={
+            "nome": conta.nome,
+            "telefone": conta.telefone or "",
+            "whatsapp": conta.whatsapp_consentido_em is not None,
+        },
+    )
+    if request.method == "POST" and form.is_valid():
+        atualizar_perfil(
+            conta,
+            nome=form.cleaned_data["nome"],
+            telefone=form.telefone_normalizado,
+            whatsapp=form.cleaned_data["whatsapp"],
+            avatar_novo=form.avatar_processado,
+            remover_avatar=form.cleaned_data["remover_avatar"],
+        )
+        messages.success(request, "Perfil atualizado.")
+        return redirect("perfil")
+    return render(request, "contas/perfil.html", {"form": form, "conta": conta})
+
+
+@login_required
+def avatar(request: HttpRequest, pk: int) -> HttpResponseBase:
+    """Serve o avatar à própria conta e ao administrador (com passkey); os demais veem 404."""
+    usuario = request.user
+    permitido = usuario.pk == pk or (
+        getattr(usuario, "papel", None) == Papel.ADMINISTRADOR and tem_prova_de_passkey(request)
+    )
+    conta = Conta.objects.filter(pk=pk).first()
+    if not permitido or conta is None or not conta.avatar:
+        raise Http404
+    try:
+        arquivo = conta.avatar.open("rb")
+    except FileNotFoundError:
+        raise Http404 from None
+    tipo = mimetypes.guess_type(conta.avatar.name)[0] or "application/octet-stream"
+    resposta = FileResponse(arquivo, content_type=tipo)
+    resposta["Cache-Control"] = "private, no-store"
+    return resposta
