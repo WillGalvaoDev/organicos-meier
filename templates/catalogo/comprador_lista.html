@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Catálogo · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Catálogo</h1>
+  {% if rodadas %}
+    <ul>
+      {% for rodada in rodadas %}
+        <li><a href="{% url 'catalogo_fornecedor' pk=rodada.fornecedor_id %}">{{ rodada.fornecedor.nome }}</a> · {{ rodada.get_etapa_display }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nenhum fornecedor com produtos neste momento.</p>
+  {% endif %}
+  <p><a href="{% url 'inicio' %}">Voltar ao início</a></p>
+{% endblock %}

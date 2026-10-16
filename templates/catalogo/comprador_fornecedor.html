@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}{{ rodada.fornecedor.nome }} · Catálogo · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>{{ rodada.fornecedor.nome }}</h1>
+  <p>Etapa: {{ rodada.get_etapa_display }}</p>
+  {% if itens %}
+    <ul>
+      {% for item in itens %}
+        <li>
+          <h2>{{ item.produto.nome }}</h2>
+          {% if not item.produto.disponivel %}<p><strong>Produto indisponível</strong></p>{% endif %}
+          {% if item.produto.descricao %}<p>{{ item.produto.descricao }}</p>{% endif %}
+          <p>{{ item.produto.preco|reais }} / {{ item.produto.get_unidade_display }}</p>
+          <p>vendido em múltiplos de {{ item.produto.incremento|quantidade_br }} {{ item.produto.get_unidade_display }}</p>
+          {% if item.produto.multiplo %}<p>múltiplo de compra: {{ item.produto.multiplo|quantidade_br }}</p>{% endif %}
+          <p>
+            {% if item.livre is None %}Sem limite{% elif item.livre == 0 %}Esgotado{% else %}{{ item.livre|quantidade_br }} {{ item.produto.get_unidade_display }} disponível{% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nenhum produto nesta rodada.</p>
+  {% endif %}
+  <p><a href="{% url 'catalogo_lista' %}">Voltar ao catálogo</a></p>
+{% endblock %}

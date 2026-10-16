@@ -66,12 +66,17 @@ def travar_estoque(rodada: Rodada, produto: Produto) -> EstoqueDaRodada:
     )
 
 
+def calcular_livre(limite: Decimal | None, reservado: Decimal) -> Decimal | None:
+    """Limite menos o reservado, com piso 0; `None` quando não há limite."""
+    if limite is None:
+        return None
+    livre: Decimal = limite - reservado
+    return max(livre, _ZERO)
+
+
 def estoque_livre(estoque: EstoqueDaRodada) -> Decimal | None:
     """Limite menos o total reservado, com piso 0; `None` quando não há limite."""
-    if estoque.limite is None:
-        return None
-    livre: Decimal = estoque.limite - total_reservado(estoque.produto)
-    return max(livre, _ZERO)
+    return calcular_livre(estoque.limite, total_reservado(estoque.produto))
 
 
 def incluir_produto_na_rodada(

@@ -1,13 +1,15 @@
 """E03-03: só o administrador acessa as rotas do catálogo (acceptance A-22)."""
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from django.test import Client
 
 from apps.catalogo.models import Produto
 from apps.nucleo.auditoria import EntradaAuditoria
-from tests.fabricas import ContaFactory, ProdutoFactory
+from tests.apoio.admin_fluxos import administrador_logado
+from tests.fabricas import ContaFactory, ProdutoFactory, RodadaFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -54,3 +56,37 @@ def test_visitante_anonimo_vai_para_o_login() -> None:
             assert resposta.status_code == 302, rota
             assert resposta["Location"].startswith("/entrar/"), rota
     assert Produto.objects.count() == 1
+
+
+def _rotas_do_catalogo() -> list[str]:
+    rodada = RodadaFactory.create()
+    return ["/catalogo/", f"/catalogo/{rodada.fornecedor_id}/"]
+
+
+def test_comprador_suspenso_consulta_o_catalogo(client: Client) -> None:  # A-7
+    rotas = _rotas_do_catalogo()
+    client.force_login(ContaFactory.create(suspensa=True))
+    for rota in rotas:
+        assert client.get(rota).status_code == 200, rota
+
+
+def test_fornecedor_e_administrador_nao_consultam_o_catalogo(
+    client: Client, webauthn: Any
+) -> None:  # A-8
+    outro = Client()
+    administrador_logado(outro)
+    rotas = _rotas_do_catalogo()
+    client.force_login(ContaFactory.create(fornecedor=True))
+    for rota in rotas:
+        assert client.get(rota).status_code == 403, rota
+    for rota in rotas:
+        assert outro.get(rota).status_code == 403, rota
+
+
+def test_visitante_anonimo_vai_para_o_login_no_catalogo() -> None:  # A-8
+    rotas = _rotas_do_catalogo()
+    anonimo = Client()
+    for rota in rotas:
+        resposta = anonimo.get(rota)
+        assert resposta.status_code == 302, rota
+        assert resposta["Location"].startswith("/entrar/"), rota
