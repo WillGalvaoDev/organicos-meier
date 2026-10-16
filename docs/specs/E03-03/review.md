@@ -1,6 +1,6 @@
 # E03-03 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+Parecer atual do revisor: **APROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -116,3 +116,29 @@ HTTP 500 (`numeric field overflow`). Corrigido conforme a seção "Correção E0
   `multiplo`; A-14: produto completo → `quantidade`); nenhuma mudança de código.
 - **Limite:** um texto com 30 dígitos é recusado pela conversão/formulário com a mensagem de
   formato (permitido pela spec); a exigência é erro de campo, nunca 500.
+
+
+## Revalidação independente — 2e7bbcc — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R01 encerrado: preço, incremento, múltiplo e quantidade têm capacidade validada antes da escrita. A-24 a A-28 verdes; recusa mantém dados e não emite auditoria/sinal de sucesso.
+
+Evidência comum: suíte completa **1104 passed em 137,20 s**; script original independente **16 passed em 7,70 s**; probes complementares **6 failed em 2,23 s** (R03/R04); lint, formatação, tipos, migrações e checks Django sem erros. Detalhes, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.
+
+
+## Correção E03-R03 — implementador (aguardando nova revisão independente)
+
+Critérios: A-12 da E03-07 (rota do múltiplo). Nada aqui é aprovação.
+
+**Red.** Testes escritos antes do código (andaime: `condicoes_editaveis` devolvendo `True`, sem comportamento). `uv run pytest tests/tecnicos/test_rodadas_estoque.py tests/tecnicos/test_condicoes_congeladas_matriz.py -q` sobre `2e7bbcc` + testes: **69 failed, 99 passed**, todas por asserção (`200 != 409` na fase congelada; `ValidationError` no lugar de `CondicoesCongeladas`; `value` do limite ausente ou igual ao gravado). Os serviços `alterar_multiplo` e `alterar_incremento` já passavam, como a spec previa.
+
+**Green.** Mudanças mínimas:
+- `apps/rodadas/condicoes.py`: `condicoes_editaveis(fornecedor)`, leitura sem trava.
+- `apps/fornecedores/servicos.py`, `apps/rodadas/estoque.py`: a validação do valor passou para dentro de `transaction.atomic()`, depois de `travar_condicoes`, da conferência da rodada e (no estoque) da trava do produto/estoque. Helpers e mensagens não mudaram.
+- `apps/fornecedores/views.py`, `apps/catalogo/views.py`, `apps/rodadas/views.py`: no `POST`, a fase é conferida antes do formulário; fora de interesse, 409 com a mensagem única e sem campo editável.
+- `apps/rodadas/views.py`, `templates/rodadas/estoque.html`: o formulário recusado volta na própria linha, com o texto bruto (escapado pelo template) e a mensagem em `role="alert"`; erros sem linha ficam no aviso do topo.
+
+**Testes (Green).** `tests/tecnicos/test_condicoes_congeladas_matriz.py`: A-12 (rota, 5 condições × 6 situações × 5 classes de valor, com e sem `HX-Request`), A-13 (serviços), A-20 e A-21 da E03-02, completude da matriz com as classes de valor, `condicoes_editaveis` e o probe `test_minimo_excedente_fora_de_interesse_responde_409` do revisor. `tests/tecnicos/test_rodadas_estoque.py`: A-22, A-23, A-24 (verificação dentro do `<form>` com `html.parser`, inclusive escape) e o probe `test_estoque_preserva_entrada_rejeitada`. Nos dois probes literais, só mudaram a fixture (`admin` → `admin_client`/fixture local, porque `admin` já é outra fixture no arquivo de estoque) e as anotações de tipo exigidas pelo `mypy --strict`; o corpo das asserções é o do revisor.
+
+**Resultado.** Mesmos dois arquivos: **168 passed**. Suíte completa: **1187 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros. Nenhum teste existente foi alterado ou afrouxado.

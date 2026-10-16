@@ -1,6 +1,6 @@
 # E03-01 — Revisão
 
-Parecer atual do revisor: **REPROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+Parecer atual do revisor: **APROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Estado: **aguardando revisão independente (agente 3)**. Abaixo, evidências do implementador.
 
@@ -95,3 +95,12 @@ HTTP 500 (`numeric field overflow`). Corrigido conforme a seção "Correção E0
   `multiplo`; A-14: produto completo → `quantidade`); nenhuma mudança de código.
 - **Limite:** um texto com 30 dígitos é recusado pela conversão/formulário com a mensagem de
   formato (permitido pela spec); a exigência é erro de campo, nunca 500.
+
+
+## Revalidação independente — 2e7bbcc — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R01 encerrado: validação da capacidade no serviço, primitivas e A-18 a A-20 verdes; provas originais de cadastro passam.
+
+Evidência comum: suíte completa **1104 passed em 137,20 s**; script original independente **16 passed em 7,70 s**; probes complementares **6 failed em 2,23 s** (R03/R04); lint, formatação, tipos, migrações e checks Django sem erros. Detalhes, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.

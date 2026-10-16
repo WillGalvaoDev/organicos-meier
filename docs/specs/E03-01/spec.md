@@ -155,7 +155,7 @@ Esta seção define a regra comum de capacidade decimal. As seções de mesmo t�
 
 - nada é gravado e o valor anterior é mantido;
 - nenhuma auditoria é registrada e nenhum sinal é enviado;
-- a rota responde 200, com o erro no campo e o valor digitado de volta no formulário.
+- a rota responde 200, com o erro no campo e o valor digitado de volta no formulário. Nas rotas de condição da rodada (mínimo, múltiplo, incremento e estoque), isso vale só quando a rodada está em `interesse`. Fora dela, a fase prevalece e a resposta é 409 (correção E03-R03 da E03-02).
 
 **Valores muito grandes:** um texto com mais dígitos do que a precisão do contexto decimal (por exemplo, 30 dígitos) já é recusado pela conversão com a mensagem de formato. Isso é aceito: a exigência é ter um erro de campo, nunca um 500.
 

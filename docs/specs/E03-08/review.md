@@ -1,6 +1,6 @@
 # E03-08 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `0ceb171` (2026-10-16). E03 global: **REPROVADO**. Evidências históricas do implementador abaixo; revisão independente ao final.
+Parecer atual do revisor: **APROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -241,4 +241,113 @@ def test_entrada_acima_da_capacidade_vira_erro_de_campo(client, monkeypatch, cas
         resposta.status_code,
         resposta.exc_info[1] if resposta.exc_info else None,
     )
+```
+
+
+## Revalidação independente — 2e7bbcc — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+Aprovação própria mantida; catálogo inalterado e regressão verde. Parecer global abaixo considera as pendências das E03-02 e E03-05.
+
+Evidência comum: suíte completa **1104 passed em 137,20 s**; script original independente **16 passed em 7,70 s**; probes complementares **6 failed em 2,23 s** (R03/R04); lint, formatação, tipos, migrações e checks Django sem erros. Detalhes, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.
+
+### Parecer global
+
+**E03: REPROVADO** sobre `2e7bbcc8f37f8cbbdd8432844e3d47dfd7060b9e` (main, PR #46). **R01 encerrado**: os oito caminhos que geravam HTTP 500 agora recusam a capacidade excedida antes de persistir. **R02 encerrado**: os documentos agora distinguem corretamente incompatibilidade de quantidade e de múltiplo. Permanecem duas divergências reproduzíveis com as exigências da especificação revisada, R03 e R04 abaixo. Não foi observado bypass de congelamento nem corrupção dos dados persistidos.
+
+A revisão comparou o diff desde `0ceb171`, leu as seções de correção e os critérios adicionais antes de verificar código/testes. As fontes-base permanecem funcional v1.6 e infraestrutura v1.7. As validações novas ficam nos serviços; não capturam `DataError`, não truncam nem modificam as primitivas aritméticas anteriores. Conferidos A-18 a A-20 de E03-01, A-19 de E03-02, A-24 a A-28 de E03-03, A-20/A-21 de E03-05 e A-3/A-14/A-15 de E03-06. Os critérios versionados passam, mas não cobrem as combinações a seguir.
+
+### E03-R03 — importante: mínimo excedente em fase congelada retorna 200 e formulário editável
+
+Referência exata: `docs/specs/E03-02/spec.md:180`, seção Correção E03-R01: “em qualquer etapa fora de interesse, a resposta continua sendo 409 com `CondicoesCongeladas`”. Isso é uma exigência expressa do documento corrigido; não se trata de novo limite comercial.
+
+Local: `apps/fornecedores/servicos.py:167`, limpeza de `novo` antes de `travar_condicoes`; `apps/fornecedores/views.py:102`, tratamento do erro como validação comum. O excesso é recusado antes de verificar a fase, e o template volta a oferecer o formulário.
+
+Reprodução: fornecedor com mínimo 150 e rodada em cada uma de `fechamento`, `fechamento_encerrado`, `pagamento`, `aguardando_fornecedor`; POST `/administracao/fornecedores/<id>/minimo/` com `minimo=10000000000.00`. **Nos quatro casos: 200, esperado 409.** O mínimo permanece 150, portanto não há escrita indevida; a falha é o contrato de fase/resposta e a apresentação de edição de condição congelada.
+
+Devolução: garantir a precedência de fase prevista no documento, preservando a checagem transacional antes de qualquer escrita; testar fase congelada com entrada acima da capacidade, pela rota e pelo serviço, além do caso em interesse. Não remover a validação de capacidade para fazer esses testes passarem. Registrar Red → Green.
+
+### E03-R04 — importante: estoque descarta o valor digitado após recusa
+
+Referências: regra comum em `docs/specs/E03-01/spec.md:158`, Correção R01 (“o valor digitado de volta no formulário”), expressamente aplicada às demais fatias; E03-05, Correção R01, remete à regra comum e exige mensagem no formulário correspondente.
+
+Locais: `apps/rodadas/views.py:39` (`_pagina_do_estoque`) e `templates/rodadas/estoque.html`. Na inclusão, o input de limite volta vazio; na alteração, volta ao limite persistido. O valor enviado não é transportado para o contexto/template. A mensagem de capacidade é mostrada, mas o usuário perde a entrada que deveria corrigir.
+
+Reprodução: em interesse, POST de inclusão e de alteração com `limite=1000000000,000`. **200 e mensagem corretos nos dois; o input não contém o valor rejeitado** (inclusão sem value, alteração com valor anterior 10). Os testes novos A-20/A-21 verificam mensagem e persistência, mas não a preservação do formulário.
+
+Devolução: renderizar o formulário submetido com seu valor e erro na linha do produto/estoque correspondente; conservar os valores das demais linhas e o estado persistido. Cobrir inclusão e alteração com entrada rejeitada, sem gravação/auditoria/sinal. Registrar Red → Green. Não é necessário alterar a regra comercial nem o esquema do banco.
+
+### Execuções independentes
+
+- `uv run pytest -q`: **1104 passed em 137,20 s**. E01/E02/E03, Postgres real, execução isolada.
+- `uv run pytest -q -c pyproject.toml $env:TEMP/om_e03_0ceb171_probes.py --tb=short --show-capture=no`: **16 passed em 7,70 s**. Arquivo original do revisor, sem alterações: oito excessos com 200 e oito controles com 302.
+- `uv run pytest -q -c pyproject.toml $env:TEMP/om_e03_2e7bbcc_complementares.py --tb=short --show-capture=no`: **6 failed em 2,23 s**. Quatro falhas por `200 != 409` em R03 e duas por perda da entrada em R04; não foram erros de infraestrutura.
+- `uv run ruff check .`: All checks passed.
+- `uv run ruff format --check .`: 239 arquivos já formatados.
+- `uv run mypy .`: sem erros em 194 arquivos.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: No changes detected.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: 51 pacotes resolvidos, 50 conferidos.
+- CI do SHA exato: [run 38952625937](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38952625937), completed/success, consultado com `gh run list --commit 2e7bbcc8f37f8cbbdd8432844e3d47dfd7060b9e --json databaseId,status,conclusion,url`.
+
+### TDD e limites
+
+Conferido o relato de Red (37 falhas/27 passando com andaimes), incluindo os oito overflows originais, e o Green do implementador, comparando os testes novos com o diff. A cronologia anterior ao código é documentada pelo implementador; não foi reconstruída pelo revisor. A suíte e os probes acima são execuções independentes. Não houve afrouxamento identificado das asserções originais.
+
+Mantêm-se os limites da revisão anterior: cliente HTTP Django sem navegador; WebAuthn com dublê criptográfico autorizado; transições/reservas reais das etapas futuras não entregues aqui. Os novos probes usam rotas, templates, autenticação e banco reais, sem substituir os serviços auditados.
+
+Alterações do revisor: somente oito `review.md`. Próximo gate: correção de R03/R04 e revalidação; as aprovações próprias de E03-01, 03, 04, 06, 07 e 08 ficam mantidas/atualizadas neste SHA. E03-02 e E03-05 permanecem reprovadas.
+
+### Probes complementares reproduzíveis
+
+Salvar como `$env:TEMP/om_e03_2e7bbcc_complementares.py` e executar o comando acima:
+
+```python
+from decimal import Decimal
+import pytest
+from django.core.cache import cache
+from django.test import Client
+from tests.apoio.admin_fluxos import administrador_logado
+from tests.apoio.webauthn_falso import instalar
+from tests.fabricas import FornecedorFactory, RodadaFactory, ProdutoFactory, EstoqueDaRodadaFactory
+
+
+@pytest.fixture
+def admin(client, monkeypatch):
+    cache.clear()
+    instalar(monkeypatch)
+    administrador_logado(client)
+    return client
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "etapa", ["fechamento", "fechamento_encerrado", "pagamento", "aguardando_fornecedor"]
+)
+def test_minimo_excedente_fora_de_interesse_responde_409(admin, etapa):
+    f = FornecedorFactory.create(minimo=Decimal("150"))
+    RodadaFactory.create(fornecedor=f, etapa=etapa)
+    resposta = admin.post(
+        f"/administracao/fornecedores/{f.pk}/minimo/", {"minimo": "10000000000.00"}
+    )
+    f.refresh_from_db()
+    assert f.minimo == Decimal("150")
+    assert resposta.status_code == 409
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("incluir", [True, False])
+def test_estoque_preserva_entrada_rejeitada(admin, incluir):
+    r = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=r.fornecedor)
+    if incluir:
+        url = f"/administracao/rodadas/{r.pk}/estoque/incluir/"
+    else:
+        e = EstoqueDaRodadaFactory.create(rodada=r, produto=p, limite=Decimal("10"))
+        url = f"/administracao/estoque/{e.pk}/alterar/"
+    resposta = admin.post(url, {"produto": str(p.pk), "limite": "1000000000,000"})
+    assert resposta.status_code == 200
+    assert "O valor máximo aceito é 999999999,999." in resposta.content.decode()
+    assert 'value="1000000000,000"' in resposta.content.decode()
 ```

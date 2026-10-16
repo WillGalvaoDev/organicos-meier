@@ -23,6 +23,8 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-17 | Spec §2, §15 | negativo | um comprador e uma conta de fornecedor autenticados; um visitante anônimo | `POST` de abertura de rodada e `GET`/`POST` do mínimo | 403 para os autenticados; anônimo redirecionado para `/entrar/`; nada criado nem alterado |
 | A-18 | Spec da fatia | negativo | um comprador como `autor` | chamo `abrir_rodada` e `alterar_minimo` | `PermissionDenied`; nada gravado |
 | A-19 | E03-R01 | negativo e limite | rodada em `interesse` e mínimo 150 | `alterar_minimo` com `Decimal("9999999999.99")`; depois, com `Decimal("10000000000.00")` pelo serviço e `10000000000,00` pela rota | o primeiro é aceito e auditado; o segundo levanta `ValidationError` com "O valor máximo aceito é R$ 9.999.999.999,99."; a rota responde 200 com o erro no campo; o mínimo continua `9999999999.99`; nenhuma auditoria nova |
+| A-20 | E03-R03 | negativo | fornecedor com mínimo 150 e rodada em cada uma de `fechamento`, `fechamento_encerrado`, `pagamento` e `aguardando_fornecedor`; noutro caso, sem rodada ativa | `POST` em `/administracao/fornecedores/<id>/minimo/` com `10000000000.00`, `abc`, `-1`, `0` e vazio, com e sem `HX-Request: true` | 409 em todos, com "As condições da rodada só podem ser alteradas na fase de interesse." e sem campo `name="minimo"` na resposta; mínimo 150; nenhuma auditoria |
+| A-21 | E03-R03 | negativo | as mesmas situações do A-20 | `alterar_minimo` com `Decimal("10000000000.00")`, `"abc"` e `Decimal("0")` | `CondicoesCongeladas` em todos, nunca `ValidationError`; mínimo 150; nenhuma auditoria |
 
 ## Mapeamento para testes
 
@@ -34,3 +36,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-17 | `tests/tecnicos/test_rodadas_permissoes.py` |
 | A-8 (cenário 71); A-9 (cenário 72, T-23) | também marcados `acceptance` e `tecnico`, com os números no comentário |
 | A-19 | `tests/tecnicos/test_rodadas_minimo.py` |
+| A-20, A-21 | `tests/tecnicos/test_condicoes_congeladas_matriz.py` (marcador `tecnico`), com o probe `test_minimo_excedente_fora_de_interesse_responde_409` do revisor incluído literalmente |

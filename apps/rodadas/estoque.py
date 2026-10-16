@@ -91,7 +91,6 @@ def incluir_produto_na_rodada(
 ) -> EstoqueDaRodada:
     """Inclui o produto na rodada ativa, em interesse, com o limite (vazio = sem limite)."""
     _exigir_administrador(autor)
-    valor = _limite(limite)
     if produto.fornecedor_id != rodada.fornecedor_id:
         raise ValidationError("O produto é de outro fornecedor.")
     with transaction.atomic():
@@ -99,6 +98,7 @@ def incluir_produto_na_rodada(
         if travada.pk != rodada.pk:
             raise CondicoesCongeladas("fora_de_interesse")
         Produto.objects.select_for_update().get(pk=produto.pk)
+        valor = _limite(limite)
         if EstoqueDaRodada.objects.filter(rodada_id=rodada.pk, produto_id=produto.pk).exists():
             raise ValidationError("Este produto já está na rodada.")
         estoque = EstoqueDaRodada.objects.create(
@@ -123,13 +123,13 @@ def alterar_estoque(autor: Conta, estoque: EstoqueDaRodada, novo_limite: Any) ->
     grava, não audita e não envia o sinal.
     """
     _exigir_administrador(autor)
-    novo = _limite(novo_limite)
     with transaction.atomic():
         produto = estoque.produto
         travada = travar_condicoes(produto.fornecedor)
         if travada.pk != estoque.rodada_id:
             raise CondicoesCongeladas("fora_de_interesse")
         atual = travar_estoque(travada, produto)
+        novo = _limite(novo_limite)
         if atual.limite == novo:
             return atual
         reservado = total_reservado(produto, travar=True)

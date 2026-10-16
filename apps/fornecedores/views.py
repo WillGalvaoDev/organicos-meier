@@ -16,8 +16,8 @@ from apps.fornecedores.forms import (
 )
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo, criar_fornecedor, editar_fornecedor
-from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
-from apps.rodadas.models import ETAPAS_ATIVAS, Etapa, Rodada
+from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas, condicoes_editaveis
+from apps.rodadas.models import ETAPAS_ATIVAS, Rodada
 
 
 def _erros_do_servico(form: Form, erro: ValidationError) -> None:
@@ -98,6 +98,9 @@ def minimo(request: HttpRequest, pk: int) -> HttpResponse:
     fornecedor = get_object_or_404(Fornecedor, pk=pk)
     contexto: dict[str, object] = {"fornecedor": fornecedor, "mensagem_congelada": None}
     if request.method == "POST":
+        if not condicoes_editaveis(fornecedor):
+            contexto["mensagem_congelada"] = MENSAGEM
+            return render(request, "fornecedores/minimo.html", contexto, status=409)
         form = FormularioMinimo(request.POST)
         if form.is_valid():
             try:
@@ -112,7 +115,7 @@ def minimo(request: HttpRequest, pk: int) -> HttpResponse:
                 return redirect("fornecedores_detalhe", pk=fornecedor.pk)
     else:
         form = FormularioMinimo(initial={"minimo": str(fornecedor.minimo).replace(".", ",")})
-        if not Rodada.objects.filter(fornecedor=fornecedor, etapa=Etapa.INTERESSE).exists():
+        if not condicoes_editaveis(fornecedor):
             contexto["mensagem_congelada"] = MENSAGEM
     contexto["form"] = form
     return render(request, "fornecedores/minimo.html", contexto)

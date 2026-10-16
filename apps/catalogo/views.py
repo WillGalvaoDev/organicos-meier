@@ -34,8 +34,7 @@ from apps.catalogo.servicos import (
 from apps.contas.administracao import somente_administrador
 from apps.contas.permissoes import exige_comprador
 from apps.fornecedores.models import Fornecedor
-from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
-from apps.rodadas.models import Etapa, Rodada
+from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas, condicoes_editaveis
 
 
 def _erros_do_servico(form: Form, erro: ValidationError) -> None:
@@ -123,6 +122,9 @@ def multiplo(request: HttpRequest, pk: int) -> HttpResponse:
     produto = get_object_or_404(Produto.objects.select_related("fornecedor"), pk=pk)
     contexto: dict[str, object] = {"produto": produto, "mensagem_congelada": None}
     if request.method == "POST":
+        if not condicoes_editaveis(produto.fornecedor):
+            contexto["mensagem_congelada"] = MENSAGEM
+            return render(request, "catalogo/multiplo.html", contexto, status=409)
         form = FormularioMultiplo(request.POST)
         if form.is_valid():
             try:
@@ -142,10 +144,7 @@ def multiplo(request: HttpRequest, pk: int) -> HttpResponse:
     else:
         inicial = "" if produto.multiplo is None else formatar_quantidade(produto.multiplo)
         form = FormularioMultiplo(initial={"multiplo": inicial})
-        em_interesse = Rodada.objects.filter(
-            fornecedor_id=produto.fornecedor_id, etapa=Etapa.INTERESSE
-        ).exists()
-        if not em_interesse:
+        if not condicoes_editaveis(produto.fornecedor):
             contexto["mensagem_congelada"] = MENSAGEM
     contexto["form"] = form
     return render(request, "catalogo/multiplo.html", contexto)
@@ -156,6 +155,9 @@ def incremento(request: HttpRequest, pk: int) -> HttpResponse:
     produto = get_object_or_404(Produto.objects.select_related("fornecedor"), pk=pk)
     contexto: dict[str, object] = {"produto": produto, "mensagem_congelada": None}
     if request.method == "POST":
+        if not condicoes_editaveis(produto.fornecedor):
+            contexto["mensagem_congelada"] = MENSAGEM
+            return render(request, "catalogo/incremento.html", contexto, status=409)
         form = FormularioIncremento(request.POST)
         if form.is_valid():
             try:
@@ -174,10 +176,7 @@ def incremento(request: HttpRequest, pk: int) -> HttpResponse:
                 return redirect("fornecedores_detalhe", pk=produto.fornecedor_id)
     else:
         form = FormularioIncremento(initial={"incremento": formatar_quantidade(produto.incremento)})
-        em_interesse = Rodada.objects.filter(
-            fornecedor_id=produto.fornecedor_id, etapa=Etapa.INTERESSE
-        ).exists()
-        if not em_interesse:
+        if not condicoes_editaveis(produto.fornecedor):
             contexto["mensagem_congelada"] = MENSAGEM
     contexto["form"] = form
     return render(request, "catalogo/incremento.html", contexto)
