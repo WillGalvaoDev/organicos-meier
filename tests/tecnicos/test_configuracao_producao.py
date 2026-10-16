@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 RAIZ = Path(__file__).resolve().parents[2]
 
@@ -25,7 +26,8 @@ def _carregar_producao(ambiente: dict[str, str]) -> subprocess.CompletedProcess[
         "m = importlib.import_module('config.settings.prod');"
         "print(json.dumps({k: getattr(m, k) for k in ["
         "'SESSION_COOKIE_SECURE','CSRF_COOKIE_SECURE','SESSION_COOKIE_HTTPONLY',"
-        "'SESSION_COOKIE_SAMESITE','EMAIL_BACKEND','DEFAULT_FROM_EMAIL']}))"
+        "'SESSION_COOKIE_SAMESITE','EMAIL_BACKEND','DEFAULT_FROM_EMAIL',"
+        "'AUTH_PASSWORD_VALIDATORS']}))"
     )
     base = {k: v for k, v in os.environ.items() if k not in _AMBIENTE_MINIMO}
     return subprocess.run(  # noqa: S603
@@ -70,3 +72,39 @@ def test_producao_sem_credenciais_do_google_falha_ao_carregar() -> None:  # A-17
         resultado = _carregar_producao(ambiente)
         assert resultado.returncode != 0, variavel
         assert variavel in resultado.stderr
+
+
+def _nome_curto(validador: dict[str, object]) -> str:
+    return str(validador["NAME"]).rsplit(".", 1)[-1]
+
+
+def test_validador_de_semelhanca_conhece_os_atributos_da_conta_em_producao() -> None:  # A-24
+    resultado = _carregar_producao(_AMBIENTE_MINIMO)
+    assert resultado.returncode == 0, resultado.stderr
+    validadores = json.loads(resultado.stdout.strip().splitlines()[-1])["AUTH_PASSWORD_VALIDATORS"]
+    por_nome = {_nome_curto(v): v for v in validadores}
+    assert set(por_nome) == {
+        "UserAttributeSimilarityValidator",
+        "MinimumLengthValidator",
+        "CommonPasswordValidator",
+        "NumericPasswordValidator",
+    }
+    assert por_nome["UserAttributeSimilarityValidator"]["OPTIONS"] == {
+        "user_attributes": ["nome", "email_normalizado"]
+    }
+    assert por_nome["MinimumLengthValidator"]["OPTIONS"] == {"min_length": 10}
+
+
+def test_validador_de_semelhanca_conhece_os_atributos_da_conta_em_teste(settings: Any) -> None:
+    from django.contrib.auth.password_validation import (
+        MinimumLengthValidator,
+        UserAttributeSimilarityValidator,
+        get_default_password_validators,
+    )
+
+    instancias = get_default_password_validators()
+    semelhanca = next(v for v in instancias if isinstance(v, UserAttributeSimilarityValidator))
+    assert semelhanca.user_attributes == ("nome", "email_normalizado")
+    assert semelhanca.max_similarity == 0.7  # o padrão do Django não foi afrouxado
+    assert next(v for v in instancias if isinstance(v, MinimumLengthValidator)).min_length == 10
+    assert len(instancias) == 4

@@ -154,3 +154,43 @@ def test_redefinicao_de_conta_suspensa_funciona(client: Client) -> None:
     client.post(url_do_formulario, {"password1": NOVA, "password2": NOVA}, follow=True)
     conta.refresh_from_db()
     assert conta.check_password(NOVA)
+
+
+def _tentar_redefinir(client: Client, conta: Conta, senha: str) -> Any:
+    _pedir(client, conta.email_normalizado)
+    url_do_formulario = _formulario_da_chave(client, _link_do_ultimo_email())
+    return client.post(url_do_formulario, {"password1": senha, "password2": senha}, follow=True)
+
+
+def _codigos_de_erro(resposta: Any, campo: str = "password1") -> list[str]:
+    erros = resposta.context["form"].errors.as_data().get(campo, [])
+    return [str(erro.code) for erro in erros]
+
+
+def test_redefinicao_recusa_senha_semelhante_ao_nome(client: Client) -> None:  # A-22, E02-R04
+    conta = _conta(email_normalizado="ana@x.com", nome="Marina Quintela Abreu")
+    resposta = _tentar_redefinir(client, conta, "MarinaQuintelaAbreu")
+    assert resposta.status_code == 200
+    assert "password_too_similar" in _codigos_de_erro(resposta)
+    assert "parecida" in resposta.content.decode() or "semelhante" in resposta.content.decode()
+    conta.refresh_from_db()
+    assert conta.check_password(SENHA)
+    assert not conta.check_password("MarinaQuintelaAbreu")
+
+
+def test_redefinicao_recusa_senha_semelhante_ao_email(client: Client) -> None:  # A-23, E02-R04
+    conta = _conta(email_normalizado="quintelaabreu2026@exemplo.com", nome="Beatriz")
+    resposta = _tentar_redefinir(client, conta, "quintelaabreu2026")
+    assert resposta.status_code == 200
+    assert "password_too_similar" in _codigos_de_erro(resposta)
+    conta.refresh_from_db()
+    assert conta.check_password(SENHA)
+    assert not conta.check_password("quintelaabreu2026")
+
+
+def test_redefinicao_aceita_senha_sem_relacao_com_a_conta(client: Client) -> None:
+    conta = _conta(email_normalizado="ana@x.com", nome="Marina Quintela Abreu")
+    resposta = _tentar_redefinir(client, conta, "cavalo-lanterna-7391!")
+    assert resposta.status_code == 200
+    conta.refresh_from_db()
+    assert conta.check_password("cavalo-lanterna-7391!")

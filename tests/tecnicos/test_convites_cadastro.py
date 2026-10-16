@@ -361,3 +361,62 @@ def test_servico_valida_nome_e_senha_alem_do_formulario() -> None:
         with pytest.raises(ValidationError):
             consumir_convite(token, nome, senha, metodo=MetodoCadastro.SENHA)
     assert Convite.objects.filter(consumido_em__isnull=False).count() == 0
+
+
+# Teste do revisor (E02-10/review.md, revalidação 8f4dc36), copiado sem alteração do corpo.
+# Nome original: test_cadastro_recusa_senha_igual_ao_nome
+@pytest.mark.django_db
+def test_cadastro_recusa_senha_igual_ao_nome(client):  # type: ignore[no-untyped-def]
+    token = "token-revisor-similaridade"  # noqa: S105
+    convite = ConviteFactory.create(token_hash=Convite.hash_do_token(token))
+    senha = "NomeCompletoExclusivo9271"
+    resposta = client.post(
+        f"/convite/{token}/", {"nome": senha, "senha": senha, "confirmacao": senha}
+    )
+    assert resposta.status_code == 200
+    assert not Conta.objects.filter(email_normalizado=convite.email_normalizado).exists()
+
+
+def _codigos_do_campo_senha(resposta: Any) -> list[str]:
+    return [str(e.code) for e in resposta.context["form"].errors.as_data().get("senha", [])]
+
+
+def test_cadastro_recusa_senha_semelhante_ao_nome_com_mensagem(client: Client) -> None:
+    # A-19 (a) e (b)
+    convite, token = _convite(email_normalizado="bia@x.com")
+    casos = [
+        ("NomeCompletoExclusivo9271", "NomeCompletoExclusivo9271"),
+        ("Marina Quintela Abreu", "MarinaQuintelaAbreu"),
+    ]
+    for nome, senha in casos:
+        resposta = client.post(_rota(token), {"nome": nome, "senha": senha, "confirmacao": senha})
+        assert resposta.status_code == 200
+        assert "password_too_similar" in _codigos_do_campo_senha(resposta)
+    convite.refresh_from_db()
+    assert convite.consumido_em is None
+    assert not Conta.objects.filter(email_normalizado="bia@x.com").exists()
+
+
+def test_cadastro_recusa_senha_semelhante_ao_email(client: Client) -> None:  # A-20
+    convite, token = _convite(email_normalizado="quintelaabreu2026@exemplo.com")
+    resposta = client.post(
+        _rota(token),
+        {"nome": "Beatriz", "senha": "quintelaabreu2026", "confirmacao": "quintelaabreu2026"},
+    )
+    assert resposta.status_code == 200
+    assert "password_too_similar" in _codigos_do_campo_senha(resposta)
+    convite.refresh_from_db()
+    assert convite.consumido_em is None
+    assert not Conta.objects.filter(email_normalizado="quintelaabreu2026@exemplo.com").exists()
+
+
+def test_servico_tambem_recusa_senha_semelhante_ao_nome() -> None:
+    from django.core.exceptions import ValidationError
+
+    convite, token = _convite(email_normalizado="bia@x.com")
+    with pytest.raises(ValidationError):
+        consumir_convite(
+            token, "Marina Quintela Abreu", "MarinaQuintelaAbreu", metodo=MetodoCadastro.SENHA
+        )
+    convite.refresh_from_db()
+    assert convite.consumido_em is None

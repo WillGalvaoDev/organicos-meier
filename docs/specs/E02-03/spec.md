@@ -121,7 +121,38 @@ Respostas:
 - **Login por senha com passkey cadastrada e etapa de passkey abandonada:** nenhuma sessão autenticada é criada, e `/administracao/` redireciona para `/entrar/`.
 - **Nova autenticação na fronteira:** exatamente 300 s depois da última autenticação ainda vale, e 300 s mais 1 s exige outra. Segue o limite inclusivo do allauth, e o implementador confirma e registra o comportamento real.
 - **Comando de recuperação com o administrador logado em dois navegadores:** as duas sessões são encerradas.
-- **Sem concorrência crítica nesta fatia.**
+- **Concorrência:** duas remoções de passkey simultâneas, em sessões diferentes do administrador, não podem apagar a última. As regras obrigatórias estão em "Correção E02-R02", que prevalece sobre a versão anterior desta seção ("sem concorrência crítica").
+
+## Correção E02-R02 — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+O revisor reprovou a E02 no commit `8f4dc36` (achado E02-R02, importante, em `review.md`). Confirmei a causa:
+
+- `remover_passkey` (`apps/contas/views.py:59`) consulta `can_delete_authenticator` (`apps/contas/adaptadores.py:111`), que verifica se existe outra passkey;
+- depois disso, delega a exclusão à view do allauth;
+- a verificação e a exclusão não estão serializadas.
+
+Com duas passkeys e dois `POST` simultâneos, cada requisição vê a outra passkey, as duas apagam e o administrador fica com zero, fora do comando de recuperação. Isso viola a invariante "o administrador sempre tem ao menos uma passkey". A frase "sem concorrência crítica" desta spec estava errada.
+
+### Regra
+
+1. **Serialização por conta.** No `POST`, `remover_passkey` abre `transaction.atomic()` e trava a linha da conta da sessão com `Conta.objects.select_for_update().get(pk=request.user.pk)`. Toda remoção de passkey da mesma conta passa por essa trava.
+2. **Decisão sob a trava.** Com a trava obtida, uma consulta nova conta as passkeys WebAuthn da conta diferentes da que vai ser removida. Se não houver outra, a remoção é recusada com a mensagem "A última passkey não pode ser removida." e o redirecionamento para a lista, como hoje. Se houver, a view do allauth (`remove_webauthn`) é chamada dentro do mesmo bloco atômico.
+3. **Checagem prévia.** A consulta prévia por `can_delete_authenticator` antes da trava pode continuar, como resposta rápida. A decisão que vale é sempre a do item 2, feita por uma função própria sobre o estado travado. `can_delete_authenticator` nunca é chamado com a trava obtida. Isso mantém o teste do revisor válido: ele pausa as duas requisições logo depois de `can_delete_authenticator`, e a trava só é pedida depois.
+4. **Sem mudança de comportamento sequencial.** A-11, A-12 e a exigência de nova autenticação do allauth continuam como estão. Se o allauth pedir nova autenticação, nada é removido.
+5. **Comando de recuperação.** `redefinir_passkeys_administrador` continua removendo todas as passkeys. Ele é a única exceção à invariante.
+
+### Testes obrigatórios
+
+- O teste do revisor `test_duas_remocoes_preservam_ultima_passkey`, em `docs/specs/E02-10/review.md`, entra literal na suíte.
+- Os critérios A-16 e A-17 do `acceptance.md`.
+- Red: com o código do commit `8f4dc36`, o teste do revisor falha pela asserção (zero passkeys) de forma determinística, porque a barreira dele força a intercalação. A-16 e A-17 dependem da ordem real das threads e podem passar em alguma execução do código antigo. Eles ficam como testes de regressão, e o implementador registra no `review.md` o resultado observado no Red.
+
+### O que não fazer
+
+- Não travar só a linha do `Authenticator` a remover: as duas requisições travam linhas diferentes e a corrida continua.
+- Não resolver com `count()` antes da exclusão sem trava, nem com uma nova verificação depois da exclusão seguida de recriação.
 
 ## Dependências e decisões em aberto
 

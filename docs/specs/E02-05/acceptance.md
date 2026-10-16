@@ -23,6 +23,15 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-17 | Cenário 81 | positivo | uma conta comprador `ana@exemplo.com` | um convite de fornecedor para `ana.fornecedor@exemplo.com` é usado | duas contas independentes; cada login (senha) mostra em `/inicio/` só o próprio nome e papel |
 | A-18 | Spec da fatia | negativo | um convite inválido de cada tipo (inexistente, consumido, expirado, banido, em uso) | abro o link | o corpo da resposta é idêntico nos cinco; o `codigo` interno de `ConviteInvalido` corresponde a cada causa (teste de serviço) |
 
+### Correção E02-R04 (integração)
+
+As senhas abaixo têm pelo menos 10 caracteres, não são só numéricas e não estão na lista de senhas comuns, para que a recusa venha só da semelhança.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-19 | E02-R04, Spec §3.2 | negativo | um convite válido | (a) envio nome e senha iguais a `NomeCompletoExclusivo9271` (teste do revisor); (b) envio o nome `"Marina Quintela Abreu"` com a senha `MarinaQuintelaAbreu` | 200 com a mensagem de semelhança no campo da senha; nenhuma conta criada; convite pendente |
+| A-20 | E02-R04, Spec §3.2 | negativo | um convite válido para `quintelaabreu2026@exemplo.com` | envio a senha `quintelaabreu2026` com um nome sem relação | 200 com a mensagem de semelhança; nenhuma conta criada; convite pendente |
+
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
@@ -31,3 +40,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-13, A-14 | `tests/tecnicos/test_convites_cadastro_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
 | A-3, A-4, A-6, A-7 (cenário 1); A-6 (cenário 62); A-9 (cenário 80); A-17 (cenário 81) | também marcados `acceptance`, com o número do cenário no comentário |
 | A-14 (T-34) | também marcado `tecnico`, com o comentário `T-34` |
+| A-19, A-20 | `tests/tecnicos/test_convites_cadastro.py`, com `test_cadastro_recusa_senha_igual_ao_nome` do revisor (nome original no comentário) |

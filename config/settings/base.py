@@ -112,7 +112,12 @@ ACCOUNT_FORMS = {
 }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        # `Conta` não tem username, first_name, last_name nem email (os atributos padrão do
+        # Django, ignorados em silêncio): a semelhança é conferida com os campos reais.
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("nome", "email_normalizado")},
+    },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {"min_length": 10},

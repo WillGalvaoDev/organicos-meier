@@ -22,6 +22,17 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-16 | Cenário 59 | positivo | `EmailBanido` com `ana@x.com` e uma conta `ana+1@x.com` | retorno do Google com `ana+1@x.com` | sessão autenticada |
 | A-17 | Spec da fatia | positivo | `config/settings/prod.py` sem `GOOGLE_CLIENT_ID` no ambiente | carrego as configurações em subprocesso | falha de configuração |
 
+### Correções E02-R03 e E02-R01 (vínculo Google)
+
+Os critérios abaixo seguem as seções de correção do `spec.md`. O retorno do Google é simulado como nos critérios anteriores, sem rede.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-18 | E02-R03, Spec §3.1, §3.2 | positivo | o convite pendente do A-9 | o retorno do Google vem no formato userinfo (`id`, `email`, `verified_email: true`, `name`, sem `email_verified`) e envio o formulário de conclusão | o mesmo resultado do A-9: conta criada, `SocialAccount` vinculada, convite consumido e redirecionamento para `/inicio/` |
+| A-19 | E02-R03 | negativo | um convite pendente e uma conta existente, em casos separados | o retorno traz: (a) `verified_email: false`; (b) `email_verified: "true"` (texto); (c) `email_verified: true` e `verified_email: false`; (d) nenhuma das duas chaves | recusa em todos, no retorno ou na conclusão; nada criado; nenhum vínculo |
+| A-20 | E02-R03 | unitário | os payloads do A-18 e do A-19, mais um ID token com `email_verified: true` | chamo `email_verificado_do_google` | e-mail normalizado nos dois positivos; `None` em cada negativo. Um teste confirma que a view de conclusão e o adaptador chamam essa função (por `monkeypatch` que a substitui por uma que devolve `None` e faz os dois recusarem) |
+| A-21 | E02-R01 (vínculo Google), Spec §2 | concorrência | uma conta comprador ativa sem conta social e um retorno do Google com o mesmo e-mail | uma thread de teste trava a linha da conta, suspende e espera; o retorno do Google corre em outra thread; a primeira só confirma depois de ver a outra esperando por trava (`pg_stat_activity.wait_event_type = 'Lock'` da conexão dela) | situação final `suspensa`; o login acontece, porque a suspensa entra; `SocialAccount` vinculada. Com a remoção no lugar da suspensão: situação final `removida`, recusa e nenhum `SocialAccount` |
+
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
@@ -29,4 +40,6 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-1 a A-8, A-16 | `tests/tecnicos/test_contas_google_login.py` |
 | A-9 a A-15 | `tests/tecnicos/test_contas_google_cadastro.py` |
 | A-17 | `tests/tecnicos/test_configuracao_producao.py` |
+| A-18 a A-20 | `tests/tecnicos/test_contas_google_cadastro.py`, com `test_google_userinfo_verificado_conclui_cadastro` do revisor (nome original no comentário) |
+| A-21 | `tests/tecnicos/test_contas_google_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
 | A-1, A-2, A-4 (cenário 82, T-35); A-6 (cenários 2 e 58, T-24); A-10 (cenário 1) | também marcados `acceptance` e `tecnico`, com os números no comentário |

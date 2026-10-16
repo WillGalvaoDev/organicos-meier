@@ -98,7 +98,7 @@ Esta fatia ativa o django-allauth para login com e-mail e senha, saída e recupe
 
 **Senhas:** `AUTH_PASSWORD_VALIDATORS` com os quatro validadores do Django:
 
-- semelhança com atributos da conta;
+- semelhança com atributos da conta, configurada com `"OPTIONS": {"user_attributes": ("nome", "email_normalizado")}` (ver "Correção E02-R04");
 - tamanho mínimo de 10 caracteres;
 - senhas comuns;
 - senha só numérica.
@@ -140,7 +140,55 @@ As demais rotas do allauth que esta fatia não usa ficam de fora do `urls.py`, o
 - **Conta suspensa:** entra.
 - **Conta removida com senha correta:** é recusada.
 - **Banimento entre o envio do link de recuperação e o uso:** a redefinição é recusada.
-- **Sem concorrência crítica nesta fatia:** o login não altera dados de negócio.
+- **Concorrência:** o login não altera dados de negócio. A redefinição de senha grava a conta e corre ao mesmo tempo que a moderação. A regra obrigatória está em "Correção E02-R01 (recuperação)".
+
+## Correção E02-R04 — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+O revisor reprovou a E02 no commit `8f4dc36` (achado E02-R04, importante, em `review.md`). Confirmei a causa:
+
+- `config/settings/base.py:115` declara o `UserAttributeSimilarityValidator` sem opções;
+- o padrão do Django compara a senha com `username`, `first_name`, `last_name` e `email`;
+- `Conta` não tem nenhum desses atributos, que são ignorados em silêncio;
+- por isso a regra "semelhança com atributos da conta" desta spec nunca foi aplicada, e uma senha igual ao nome é aceita.
+
+A mesma configuração vale para o cadastro por convite (E02-05) e para a redefinição de senha (esta fatia).
+
+### Regra
+
+- O validador recebe `"OPTIONS": {"user_attributes": ("nome", "email_normalizado")}`. O `max_similarity` continua o padrão do Django (0,7), e os outros três validadores não mudam.
+- Toda validação de senha passa um objeto de conta com `nome` e `email_normalizado` preenchidos:
+  - no cadastro por convite, a conta provisória em memória, que já existe em `apps/contas/forms.py` e `apps/contas/convites.py`;
+  - na redefinição, a conta do link.
+- Não mudar a política de senha nem o limite de semelhança para acomodar testes.
+
+### Testes obrigatórios
+
+- Os critérios A-22 a A-24 desta fatia e A-19 e A-20 da E02-05.
+- O teste do revisor `test_cadastro_recusa_senha_igual_ao_nome`, em `docs/specs/E02-10/review.md`, entra literal na suíte da E02-05.
+- Red: com o código do commit `8f4dc36`, cada um falha pela asserção, e a evidência vai para o `review.md`.
+
+## Correção E02-R01 (recuperação) — revisão da especificação em 2026-10-16
+
+### Diagnóstico
+
+O achado E02-R01 (ver `docs/specs/E02-09/spec.md`) vem de gravar a conta inteira a partir de uma cópia antiga. Na redefinição de senha, o mesmo defeito existe e não foi testado pelo revisor:
+
+- o `set_password` padrão do allauth (`allauth/account/adapter.py:619-624`) chama `user.save()` sem `update_fields`;
+- a conta do link é lida no início da requisição.
+
+Se o administrador suspender a conta entre a leitura e a gravação, a redefinição restaura `situacao = ativa`.
+
+### Regra
+
+- `AdaptadorConta.set_password(user, password)` passa a chamar `user.set_password(password)` e `user.save(update_fields=["password"])`. Nenhuma outra coluna é gravada.
+- A revalidação da situação ao definir a nova senha continua como está.
+
+### Testes obrigatórios
+
+- O critério A-25.
+- Red: com o código do commit `8f4dc36`, o A-25 falha pela asserção.
 
 ## Dependências e decisões em aberto
 

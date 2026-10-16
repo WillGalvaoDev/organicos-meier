@@ -26,6 +26,17 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-20 | Spec da fatia | positivo | um login bem-sucedido | consulto o `usersessions` | existe um registro de sessão para a conta |
 | A-21 | E02-01 (comando) | positivo | nenhum administrador | rodo `criar_administrador` | existe `EmailAddress` verificado e primário com o e-mail normalizado do administrador |
 
+### Correções E02-R04 e E02-R01 (recuperação)
+
+Os critérios abaixo seguem as seções de correção do `spec.md`. As senhas dos casos negativos têm pelo menos 10 caracteres, não são só numéricas e não estão na lista de senhas comuns, para que a recusa venha só da semelhança.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-22 | E02-R04, Spec §3.2 | negativo | um comprador com nome `"Marina Quintela Abreu"` e o link de redefinição dele | defino a senha `MarinaQuintelaAbreu` | recusa com a mensagem de semelhança do Django; a senha não muda |
+| A-23 | E02-R04, Spec §3.2 | negativo | um comprador com e-mail `quintelaabreu2026@exemplo.com` e o link de redefinição dele | defino a senha `quintelaabreu2026` | recusa com a mensagem de semelhança; a senha não muda |
+| A-24 | E02-R04 | positivo | as configurações de teste e de produção | inspeciono `AUTH_PASSWORD_VALIDATORS` e chamo `get_default_password_validators()` | o validador de semelhança tem `user_attributes == ("nome", "email_normalizado")`; os quatro validadores continuam presentes, com o mínimo de 10 |
+| A-25 | E02-R01 (recuperação), Spec §2 | concorrência | um comprador ativo com o link de redefinição | o administrador o suspende depois de a view carregar a conta do link e antes de `AdaptadorConta.set_password` (intercalação por `monkeypatch` num ponto anterior, como a validação do formulário, sem substituir `set_password`); defino a nova senha | a nova senha funciona; situação `suspensa`; nenhuma auditoria `conta.reativar` |
+
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
@@ -36,4 +47,6 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-12 | `tests/tecnicos/test_contas_login_senha.py::test_cadastro_aberto_inexistente` |
 | A-18, A-19 | `tests/tecnicos/test_configuracao_producao.py` |
 | A-21 | `tests/tecnicos/test_contas_criar_administrador.py` |
+| A-22, A-23, A-25 | `tests/tecnicos/test_contas_recuperacao.py` |
+| A-24 | `tests/tecnicos/test_configuracao_producao.py` |
 | A-4 e A-7 (T-24, senha) | também marcados com `tecnico` e o comentário `T-24` |
