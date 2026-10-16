@@ -87,6 +87,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Avatares (E02-09). Em produção o storage do R2 entra com a homologação (E16).
+MEDIA_ROOT = BASE_DIR / "media"
 
 # --- Autenticação (E02-02) ---
 AUTHENTICATION_BACKENDS = ["allauth.account.auth_backends.AuthenticationBackend"]

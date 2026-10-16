@@ -49,6 +49,9 @@ class Conta(AbstractBaseUser):
     situacao = models.CharField(max_length=10, choices=Situacao.choices, default=Situacao.ATIVA)
     fornecedor = models.ForeignKey(Fornecedor, null=True, blank=True, on_delete=models.PROTECT)
     criada_em = models.DateTimeField(default=agora)
+    telefone = models.CharField(max_length=20, null=True, blank=True)  # noqa: DJ001
+    avatar = models.ImageField(upload_to="avatares/", null=True, blank=True)
+    whatsapp_consentido_em = models.DateTimeField(null=True, blank=True)
 
     objects = ContaManager()
 
@@ -83,6 +86,16 @@ class Conta(AbstractBaseUser):
             models.CheckConstraint(
                 condition=~models.Q(papel="administrador") | models.Q(situacao="ativa"),
                 name="conta_administrador_ativo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(whatsapp_consentido_em__isnull=True)
+                | models.Q(telefone__isnull=False),
+                name="conta_whatsapp_exige_telefone",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(telefone__isnull=True)
+                | models.Q(telefone__regex=r"^\+55[1-9][0-9][0-9]{8,9}$"),
+                name="conta_telefone_e164",
             ),
         )
 

@@ -8,6 +8,7 @@ dependencies = [
     "django>=5.2,<6",
     "django-allauth[mfa,socialaccount]>=65",
     "django-environ>=0.12",
+    "pillow>=12.3.0",
     "procrastinate[django]>=3",
     "psycopg[binary]>=3.2",
 ]

@@ -52,6 +52,8 @@ urlpatterns: list[URLPattern | URLResolver] = [
     ),
     path("entrar/", include(default_urlpatterns(GoogleProvider))),
     path("inicio/", contas_views.inicio, name="inicio"),
+    path("perfil/", contas_views.perfil, name="perfil"),
+    path("perfil/avatar/<int:pk>/", contas_views.avatar, name="avatar"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
     path(
         "administracao/usuarios/",
