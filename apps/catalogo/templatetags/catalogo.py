@@ -14,3 +14,12 @@ def quantidade_br(valor: Any) -> str:
     if valor is None or valor == "":
         return ""
     return formatar_quantidade(valor if isinstance(valor, Decimal) else Decimal(str(valor)))
+
+
+@register.filter
+def reais(valor: Any) -> str:
+    """Dinheiro no formato `R$ 1.234,56`."""
+    if valor is None or valor == "":
+        return ""
+    texto = f"{Decimal(str(valor)):,.2f}"
+    return "R$ " + texto.translate(str.maketrans(",.", ".,"))

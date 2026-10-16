@@ -3,9 +3,14 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.forms import Form
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.catalogo.consultas import (
+    fornecedores_no_catalogo,
+    produtos_da_rodada,
+    rodada_ativa_do_catalogo,
+)
 from apps.catalogo.forms import (
     FormularioEdicaoProduto,
     FormularioIncremento,
@@ -27,6 +32,7 @@ from apps.catalogo.servicos import (
     editar_produto,
 )
 from apps.contas.administracao import somente_administrador
+from apps.contas.permissoes import exige_comprador
 from apps.fornecedores.models import Fornecedor
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.models import Etapa, Rodada
@@ -175,3 +181,17 @@ def incremento(request: HttpRequest, pk: int) -> HttpResponse:
             contexto["mensagem_congelada"] = MENSAGEM
     contexto["form"] = form
     return render(request, "catalogo/incremento.html", contexto)
+
+
+@exige_comprador
+def catalogo(request: HttpRequest) -> HttpResponse:
+    return render(request, "catalogo/comprador_lista.html", {"rodadas": fornecedores_no_catalogo()})
+
+
+@exige_comprador
+def catalogo_do_fornecedor(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = rodada_ativa_do_catalogo(pk)
+    if rodada is None:
+        raise Http404
+    contexto = {"rodada": rodada, "itens": produtos_da_rodada(rodada)}
+    return render(request, "catalogo/comprador_fornecedor.html", contexto)

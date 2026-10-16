@@ -13,7 +13,7 @@ from apps.catalogo.models import Produto
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 
 _ZERO = Decimal("0.000")
-_RESERVAM = (SituacaoParcela.ATIVA, SituacaoParcela.EM_PEDIDO)
+SITUACOES_QUE_RESERVAM = (SituacaoParcela.ATIVA, SituacaoParcela.EM_PEDIDO)
 
 
 def _parcelas(produto: Produto, travar: bool) -> QuerySet[ParcelaDeInteresse]:
@@ -23,7 +23,7 @@ def _parcelas(produto: Produto, travar: bool) -> QuerySet[ParcelaDeInteresse]:
 
 def total_reservado(produto: Produto, *, travar: bool = False) -> Decimal:
     """Soma da reserva das parcelas `ativa` ou `em_pedido` do produto (a que o estoque cobre)."""
-    parcelas = _parcelas(produto, travar).filter(situacao__in=_RESERVAM)
+    parcelas = _parcelas(produto, travar).filter(situacao__in=SITUACOES_QUE_RESERVAM)
     if travar:
         total = sum(parcelas.values_list("quantidade_reservada", flat=True), _ZERO)
     else:
