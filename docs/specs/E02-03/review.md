@@ -1,6 +1,6 @@
 # E02-03 — Revisão
 
-Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -136,3 +136,12 @@ uv run pytest -q   -> 621 passed
 **Matriz:** A-16 e A-17 em `tests/tecnicos/test_admin_passkeys_concorrencia.py`, com `test_duas_remocoes_preservam_ultima_passkey` do revisor (corpo literal, com `type: ignore` nas funções sem anotação e o formato de aspas do `ruff format`; nome original no comentário). Mais a regressão das páginas em `test_admin_passkeys_gestao.py`.
 
 **Não feito (conforme "O que não fazer"):** não se travou só a linha do `Authenticator`; não se usou `count()` sem trava nem recriação posterior.
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R02 encerrado: verificação final e exclusão na mesma transação, com trava na Conta. Probe original e A-16/A-17 verdes (duas sessões, dez repetições; três sessões). Recência, permissões e recuperação permanecem cobertas. Inclusão de humanize justificada pelo Red de renderização da lista de passkeys.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.

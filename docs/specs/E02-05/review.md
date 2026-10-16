@@ -1,6 +1,6 @@
 # E02-05 — Revisão
 
-Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -105,3 +105,12 @@ O probe de cadastro envia nome e senha idênticos, com tamanho suficiente e sem 
 Conforme a seção "Correção E02-R04 (integração)" do `spec.md`, esta fatia não muda código: a causa e a correção estão em `docs/specs/E02-02/review.md` (validador de semelhança com `user_attributes` correto). O serviço `consumir_convite` e o `FormularioCadastroPorConvite` já validavam a senha com uma `Conta` provisória preenchida (nome e e-mail); o que faltava era o validador conhecer esses atributos.
 
 **Red** (código do commit `8f4dc36`): o teste do revisor `test_cadastro_recusa_senha_igual_ao_nome` (A-19, literal), as variações do A-19 e o A-20 falham: `assert 302 == 200` (a conta era criada com a senha igual ao nome) e `DID NOT RAISE ValidationError` no serviço. **Green:** passam depois da correção do validador. Testes em `tests/tecnicos/test_convites_cadastro.py`: `test_cadastro_recusa_senha_igual_ao_nome` (revisor), `test_cadastro_recusa_senha_semelhante_ao_nome_com_mensagem` (A-19 a e b, confere `password_too_similar` e que o convite continua pendente), `test_cadastro_recusa_senha_semelhante_ao_email` (A-20) e `test_servico_tambem_recusa_senha_semelhante_ao_nome`.
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R04 encerrado na integração do cadastro: senha igual/semelhante ao nome e semelhante ao e-mail recusadas (A-19/A-20); probe original verde. Validadores restantes preservados.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.

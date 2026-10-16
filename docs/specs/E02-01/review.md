@@ -1,6 +1,6 @@
 # E02-01 — Revisão
 
-Estado atual: **APROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -107,3 +107,12 @@ Conferidos os relatos de andaime, Red por asserção/comportamento, Green e refa
 WebAuthn usa o dublê criptográfico expressamente previsto, com views, sessão e Authenticator reais. Google usa o fluxo real do allauth com resposta simulada, sem chamada ao provedor. Cerimônia física de passkey, OAuth/credenciais reais, SES, R2 e efeitos futuros sobre pedidos/interesses não foram validados nesta etapa; permanecem nos gates previstos pelos documentos. D-1 da E02-08 (suspensão de fornecedor) não foi implementado nem reaberto.
 
 Nenhum achado próprio impede o aceite desta fatia no escopo entregue. A aprovação da E02 completa depende da correção dos achados E02-R01 a E02-R04.
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+Aprovação anterior mantida; sem alteração de implementação ou critérios desta fatia. Regressão coberta pela suíte completa.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.

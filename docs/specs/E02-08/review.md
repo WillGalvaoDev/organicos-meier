@@ -1,6 +1,6 @@
 # E02-08 — Revisão
 
-Estado atual: **REPROVADO** no commit `8f4dc36` (revisão independente ao final). A E02 global está **REPROVADA**.
+Estado atual: **APROVADO** no commit `0178d62` (revalidação independente ao final). A E02 global está **APROVADA**.
 
 Abaixo, evidências históricas do implementador, preservadas.
 
@@ -109,3 +109,12 @@ uv run pytest -q     -> 634 passed
 uv run ruff check .  -> All checks passed
 uv run mypy .        -> Success: no issues found in 123 source files
 ```
+
+
+## Revalidação independente — 0178d62 — 2026-10-16
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R01 encerrado na integração da moderação: perfil, recuperação e vínculo Google não restauram situação antiga. Serviços desta fatia preservados; regressão de moderação verde. D-1 permanece fora do escopo.
+
+Evidências comuns: `uv run pytest -q` — **634 passed em 70,20 s**; probes independentes — **7 passed em 2,20 s**; lint, formatação, tipos e checks Django sem erros. Comandos, encerramento dos quatro achados, evidência TDD e limites em [E02-10/review.md](../E02-10/review.md), seção de revalidação do commit `0178d62`. Os pareceres anteriores acima são históricos.
