@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}Concluir cadastro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Concluir cadastro com Google</h1>
+  <p>
+    Você foi convidado como
+    {% if convite.papel == "fornecedor" %}fornecedor{% if convite.fornecedor %} ({{ convite.fornecedor.nome }}){% endif %}{% else %}comprador{% endif %}.
+  </p>
+  <p>E-mail da conta: <strong>{{ convite.email_normalizado }}</strong></p>
+  <form method="post" action="{% url 'socialaccount_signup' %}">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.nome.id_for_label }}">Nome</label>
+      {{ form.nome }}
+      {{ form.nome.errors }}
+    </p>
+    <button type="submit">Concluir cadastro</button>
+  </form>
+{% endblock %}

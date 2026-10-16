@@ -5,15 +5,20 @@ from typing import Any, ClassVar
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.account.authentication import get_authentication_records
 from allauth.account.models import EmailAddress
+from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.mfa.adapter import DefaultMFAAdapter
 from allauth.mfa.models import Authenticator
+from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from allauth.socialaccount.models import SocialLogin
 from django import forms
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
 from apps.contas.acesso import AcessoRecusado, Metodo, verificar_acesso
 from apps.contas.administracao import tem_passkey
-from apps.contas.emails import EmailInvalido, normalizar_email
+from apps.contas.convites import ConviteInvalido, validar_convite
+from apps.contas.emails import EmailInvalido, email_banido, normalizar_email
+from apps.contas.google import CHAVE_CONVITE_PENDENTE, recusar_login_google
 from apps.contas.models import Conta
 
 MENSAGEM_GENERICA = "Não foi possível entrar com esses dados."
@@ -26,6 +31,8 @@ def metodo_do_login(request: HttpRequest) -> Metodo:
         return Metodo.PASSKEY
     if registros and registros[-1].get("method") == "link":
         return Metodo.LINK
+    if registros and registros[-1].get("method") == "socialaccount":
+        return Metodo.GOOGLE
     return Metodo.SENHA
 
 
@@ -109,3 +116,84 @@ class AdaptadorMFA(DefaultMFAAdapter):
             user_id=authenticator.user_id, type=Authenticator.Type.WEBAUTHN
         ).exclude(pk=authenticator.pk)
         return bool(outras.exists())
+
+
+class AdaptadorContaSocial(DefaultSocialAccountAdapter):
+    """Associa o Google à conta pelo e-mail normalizado; só cria conta com convite válido.
+
+    Decisão no retorno do Google (spec E02-07), nesta ordem: conta social já vinculada (o e-mail
+    do Google precisa continuar igual ao da conta), conta com o mesmo e-mail normalizado (vincula
+    e entra) ou convite pendente na sessão para o mesmo e-mail (segue para a conclusão do cadastro).
+    Qualquer outra situação é recusa única, sem criar nada.
+    """
+
+    @staticmethod
+    def _email_verificado(sociallogin: SocialLogin) -> str | None:
+        dados = sociallogin.account.extra_data or {}
+        email = dados.get("email")
+        verificado = dados.get("email_verified") is True or dados.get("verified_email") is True
+        if not email or not verificado:
+            return None
+        try:
+            return normalizar_email(email)
+        except EmailInvalido:
+            return None
+
+    @staticmethod
+    def _convite_pendente_valido(request: HttpRequest, email: str) -> bool:
+        token = request.session.get(CHAVE_CONVITE_PENDENTE)
+        if not token:
+            return False
+        try:
+            convite = validar_convite(token)
+        except ConviteInvalido:
+            return False
+        return bool(convite.email_normalizado == email)
+
+    @staticmethod
+    def _recusar(request: HttpRequest) -> None:
+        raise ImmediateHttpResponse(recusar_login_google(request))
+
+    def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin) -> None:
+        email = self._email_verificado(sociallogin)
+        if email is None:
+            self._recusar(request)
+            return
+        if sociallogin.is_existing:  # conta social já vinculada
+            conta = sociallogin.user
+            if conta.email_normalizado != email:
+                self._recusar(request)
+            self._exigir_acesso(request, conta, email)
+            request.session.pop(CHAVE_CONVITE_PENDENTE, None)
+            return
+        conta = Conta.objects.filter(email_normalizado=email).first()
+        if conta is not None:  # mesmo e-mail normalizado: vincula, nunca cria outra conta
+            self._exigir_acesso(request, conta, email)
+            sociallogin.connect(request, conta)
+            request.session.pop(CHAVE_CONVITE_PENDENTE, None)
+            return
+        if email_banido(email) or not self._convite_pendente_valido(request, email):
+            self._recusar(request)
+
+    def _exigir_acesso(self, request: HttpRequest, conta: Conta, email: str) -> None:
+        try:
+            verificar_acesso(conta, email, Metodo.GOOGLE)
+        except AcessoRecusado:
+            self._recusar(request)
+
+    def is_open_for_signup(self, request: HttpRequest, sociallogin: SocialLogin) -> bool:
+        email = self._email_verificado(sociallogin)
+        return email is not None and self._convite_pendente_valido(request, email)
+
+    def is_auto_signup_allowed(self, request: HttpRequest, sociallogin: SocialLogin) -> bool:
+        return False  # a conta nasce no formulário de conclusão, que consome o convite
+
+    def on_authentication_error(
+        self,
+        request: HttpRequest,
+        provider: Any,
+        error: Any = None,
+        exception: Any = None,
+        extra_context: Any = None,
+    ) -> None:
+        self._recusar(request)

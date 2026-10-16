@@ -42,6 +42,7 @@ class ConviteInvalido(Exception):
 
 class MetodoCadastro(StrEnum):
     SENHA = "senha"
+    GOOGLE = "google"
 
 
 class EmailBanidoErro(Exception):
