@@ -21,7 +21,7 @@ from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.notificacoes.eventos import Evento
-from apps.notificacoes.models import Notificacao
+from apps.notificacoes.models import Envio, Notificacao
 from apps.nucleo.tempo import agora
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 
@@ -165,3 +165,19 @@ class NotificacaoFactory(DjangoModelFactory[Notificacao]):
     corpo = Sequence(lambda n: f"Corpo do aviso {n}")
     link = None
     chave = Sequence(lambda n: f"fabrica:{n}")
+
+
+class EnvioFactory(DjangoModelFactory[Envio]):
+    """Envio de e-mail pendente, elegível agora, com notificação própria."""
+
+    class Meta:
+        model = Envio
+
+    notificacao = SubFactory(NotificacaoFactory)
+    conta = SelfAttribute("notificacao.conta")
+    canal = "email"
+    tipo = LazyAttribute(lambda o: o.notificacao.evento)
+    destino = LazyAttribute(lambda o: o.conta.email_normalizado)
+    assunto = LazyAttribute(lambda o: f"Orgânicos Méier: {o.notificacao.titulo}")
+    corpo = LazyAttribute(lambda o: o.notificacao.corpo)
+    chave = LazyAttribute(lambda o: f"{o.notificacao.chave}:{o.canal}")
