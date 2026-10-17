@@ -17,9 +17,16 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env.bool("DEBUG", default=False)
 ALLOWED_HOSTS: list[str] = env.list("ALLOWED_HOSTS", default=[])
 # Origem pública (esquema + domínio) para links em e-mails enviados fora de uma requisição.
+# O servidor de e-mail parado não pode segurar a trava de um envio indefinidamente (E04-03).
+EMAIL_TIMEOUT = 10
+
+# As tarefas do Procrastinate ficam em `tarefas.py` de cada app (E04-03).
+PROCRASTINATE_AUTODISCOVER_MODULE_NAME = "tarefas"
+
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA", default="http://localhost:8000")
 
 INSTALLED_APPS = [
+    "procrastinate.contrib.django",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

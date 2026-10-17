@@ -8,7 +8,7 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from apps.contas.models import Conta
 from apps.notificacoes.eventos import Evento
-from apps.notificacoes.models import Envio, Notificacao
+from apps.notificacoes.models import Envio, Notificacao, TentativaDeEnvio
 from apps.notificacoes.servicos import NotificacaoInvalida, criar_notificacao
 from apps.nucleo.so_insercao import RegistroImutavel
 from apps.nucleo.tempo import agora
@@ -269,3 +269,55 @@ def test_banco_recusa_chave_repetida_de_envio() -> None:
     primeiro = EnvioFactory.create()
     with pytest.raises(IntegrityError), transaction.atomic():
         EnvioFactory.create(chave=primeiro.chave)
+
+
+# --- E04-03: TentativaDeEnvio (acceptance A-9) -------------------------------------------------
+
+
+def _tentativa() -> TentativaDeEnvio:
+    return TentativaDeEnvio.objects.create(
+        envio=EnvioFactory.create(),
+        numero=1,
+        iniciada_em=INSTANTE,
+        concluida_em=INSTANTE,
+        resultado="falha",
+        erro="ConnectionError",
+    )
+
+
+def test_tentativa_so_aceita_insercao_na_aplicacao() -> None:  # A-9
+    tentativa = _tentativa()
+    tentativa.erro = "outro"
+    with pytest.raises(RegistroImutavel):
+        tentativa.save()
+    with pytest.raises(RegistroImutavel):
+        tentativa.delete()
+    with pytest.raises(RegistroImutavel):
+        TentativaDeEnvio.objects.all().update(erro="x")
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [
+        "UPDATE notificacoes_tentativadeenvio SET erro = 'x' WHERE id = %s",
+        "DELETE FROM notificacoes_tentativadeenvio WHERE id = %s",
+    ],
+)
+def test_banco_recusa_alterar_e_apagar_tentativa(comando: str) -> None:  # A-9
+    tentativa = _tentativa()
+    with pytest.raises(DatabaseError):
+        _sql(comando, [tentativa.pk])
+    assert TentativaDeEnvio.objects.get().erro == "ConnectionError"
+
+
+def test_banco_recusa_numero_repetido_na_tentativa() -> None:  # A-9
+    tentativa = _tentativa()
+    with pytest.raises(IntegrityError), transaction.atomic():
+        TentativaDeEnvio.objects.create(
+            envio=tentativa.envio,
+            numero=1,
+            iniciada_em=INSTANTE,
+            concluida_em=INSTANTE,
+            resultado="falha",
+        )
+    assert TentativaDeEnvio.objects.count() == 1
