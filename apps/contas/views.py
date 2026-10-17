@@ -42,6 +42,7 @@ from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
 from apps.contas.moderacao import ModeracaoInvalida, reativar, remover, suspender
 from apps.contas.perfil import atualizar_perfil
 from apps.contas.permissoes import exige_login, publica
+from apps.notificacoes.consultas import contar_falhas
 
 
 @exige_login
@@ -53,7 +54,11 @@ def inicio(request: HttpRequest) -> HttpResponse:
 @somente_administrador
 def painel_administracao(request: HttpRequest) -> HttpResponse:
     """Início da área administrativa, sem conteúdo de negócio (E02-03)."""
-    return render(request, "administracao/painel.html", {"conta": request.user})
+    return render(
+        request,
+        "administracao/painel.html",
+        {"conta": request.user, "envios_com_falha": contar_falhas()},
+    )
 
 
 def _ha_outra_passkey(conta_id: int, excluindo: int) -> bool:

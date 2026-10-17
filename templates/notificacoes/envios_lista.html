@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load notificacoes %}
+{% block titulo %}Envios · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Envios</h1>
+  <p>Envios com falha: {{ falhas }}{% if falhas %} · <a href="?situacao=falhou">ver</a>{% endif %}</p>
+  <form method="get">
+    <label>Situação
+      <select name="situacao">
+        <option value=""{% if not filtros.situacao %} selected{% endif %}>todas</option>
+        {% for valor, rotulo in situacoes.items %}<option value="{{ valor }}"{% if filtros.situacao == valor %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Canal
+      <select name="canal">
+        <option value=""{% if not filtros.canal %} selected{% endif %}>todos</option>
+        {% for valor, rotulo in canais.items %}<option value="{{ valor }}"{% if filtros.canal == valor %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Tipo
+      <select name="tipo">
+        <option value=""{% if not filtros.tipo %} selected{% endif %}>todos</option>
+        {% for valor, rotulo in tipos.items %}<option value="{{ valor }}"{% if filtros.tipo == valor %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filtrar</button>
+  </form>
+  {% if pagina.object_list %}
+    <table>
+      <thead><tr><th>Criado em</th><th>Tipo</th><th>Canal</th><th>Destinatário</th><th>Situação</th><th>Tentativas</th><th>Último erro</th></tr></thead>
+      <tbody>
+        {% for envio in pagina.object_list %}
+          <tr>
+            <td><a href="{% url 'envio_detalhe' pk=envio.pk %}">{{ envio.criado_em|data_hora }}</a></td>
+            <td>{{ envio.tipo|valor_do_mapa:rotulo_tipo }}</td>
+            <td>{{ envio.canal|valor_do_mapa:rotulo_canal }}</td>
+            <td>{% if envio.conta %}{{ envio.conta.nome }}{% else %}{{ envio.destino }}{% endif %}</td>
+            <td>{{ envio.situacao|valor_do_mapa:rotulo_situacao }}{% if envio.situacao == "pendente" %} · Próxima tentativa: {{ envio.proxima_tentativa_em|data_hora }}{% endif %}</td>
+            <td>{{ envio.tentativas }}</td>
+            <td>{{ envio.ultimo_erro|default:"" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if pagina.has_other_pages %}
+      <p>
+        {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}{% for campo, valor in filtros.items %}&amp;{{ campo }}={{ valor|urlencode }}{% endfor %}">Anteriores</a>{% endif %}
+        Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+        {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}{% for campo, valor in filtros.items %}&amp;{{ campo }}={{ valor|urlencode }}{% endfor %}">Mais antigos</a>{% endif %}
+      </p>
+    {% endif %}
+  {% elif tem_filtro %}
+    <p>Nenhum envio com estes filtros.</p>
+  {% else %}
+    <p>Nenhum envio registrado.</p>
+  {% endif %}
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+{% endblock %}
