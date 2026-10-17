@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load notificacoes %}
+{% block titulo %}Comunicados · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Comunicados</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.token }}
+    {{ form.non_field_errors }}
+    <p><label for="{{ form.titulo.id_for_label }}">Título</label> {{ form.titulo }} {{ form.titulo.errors }}</p>
+    <p><label for="{{ form.mensagem.id_for_label }}">Mensagem</label> {{ form.mensagem }} {{ form.mensagem.errors }}</p>
+    {{ form.token.errors }}
+    <p>Será enviado para {{ compradores }}.</p>
+    <button type="submit">Publicar comunicado</button>
+  </form>
+
+  <h2>Histórico</h2>
+  {% if historico %}
+    <table>
+      <thead><tr><th>Publicado em</th><th>Título</th><th>Autor</th><th>Destinatários</th><th>Envios</th></tr></thead>
+      <tbody>
+        {% for comunicado, resumo in historico %}
+          <tr>
+            <td>{{ comunicado.publicado_em|data_hora }}</td>
+            <td>{{ comunicado.titulo }}</td>
+            <td>{{ comunicado.autor.nome }}</td>
+            <td>{{ comunicado.destinatarios }}</td>
+            <td><ul>{% for linha in resumo %}<li>{{ linha }}</li>{% endfor %}</ul></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if pagina.has_other_pages %}
+      <p>
+        {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}">Anteriores</a>{% endif %}
+        Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+        {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}">Mais antigos</a>{% endif %}
+      </p>
+    {% endif %}
+  {% else %}
+    <p>Nenhum comunicado publicado.</p>
+  {% endif %}
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+{% endblock %}

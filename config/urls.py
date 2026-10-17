@@ -69,6 +69,12 @@ urlpatterns: list[URLPattern | URLResolver] = [
         notificacoes_views.marcar_lida,
         name="notificacoes_marcar_lida",
     ),
+    path("comunicados/", notificacoes_views.comunicados, name="comunicados"),
+    path(
+        "administracao/comunicados/",
+        notificacoes_views.comunicados_administracao,
+        name="comunicados_administracao",
+    ),
     path("perfil/", contas_views.perfil, name="perfil"),
     path("perfil/avatar/<int:pk>/", contas_views.avatar, name="avatar"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),

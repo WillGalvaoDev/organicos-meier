@@ -1,6 +1,7 @@
 """Fábricas de teste (factory-boy)."""
 
 import hashlib
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
@@ -21,7 +22,7 @@ from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.notificacoes.eventos import Evento
-from apps.notificacoes.models import Envio, Notificacao
+from apps.notificacoes.models import Comunicado, Envio, Notificacao
 from apps.nucleo.tempo import agora
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 
@@ -181,3 +182,16 @@ class EnvioFactory(DjangoModelFactory[Envio]):
     assunto = LazyAttribute(lambda o: f"Orgânicos Méier: {o.notificacao.titulo}")
     corpo = LazyAttribute(lambda o: o.notificacao.corpo)
     chave = LazyAttribute(lambda o: f"{o.notificacao.chave}:{o.canal}")
+
+
+class ComunicadoFactory(DjangoModelFactory[Comunicado]):
+    """Comunicado já publicado, sem distribuição (use o serviço quando precisar dela)."""
+
+    class Meta:
+        model = Comunicado
+
+    titulo = Sequence(lambda n: f"Comunicado {n}")
+    mensagem = Sequence(lambda n: f"Mensagem {n}")
+    autor = LazyFunction(_administrador_existente)
+    token = LazyFunction(uuid.uuid4)
+    destinatarios = 0
