@@ -1,6 +1,6 @@
 # E03-04 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8257f66` (2026-10-17). E03 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -95,3 +95,12 @@ Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
 Aprovação mantida; implementação inalterada e regressão verde.
 
 Suíte completa: **1187 passed em 129,30 s**. Probes independentes: **22 passed, 4 failed em 14,69 s**; os 22 anteriores passam, quatro adicionais reproduzem as pendências R03/R05. Verificações estáticas e CI verdes. Evidências, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.
+
+
+## Revalidação independente — 8257f66 — 2026-10-17
+
+**Parecer: APROVADO. E03 global: APROVADO.**
+
+Aprovação da fatia mantida. Conferidos o escopo do diff, os critérios aplicáveis e as regressões na suíte completa; as correções restantes da E03-05 não introduzem mudanças de regra de negócio nesta fatia.
+
+Suíte completa: **1209 passed em 101,35 s**. Reexecução dos três scripts independentes preservados no histórico: **26 passed em 4,01 s**, incluindo as quatro falhas anteriores. Verificações estáticas, Django e CI verdes. Comandos, fechamento dos achados e limitações no [parecer consolidado](../E03-08/review.md), seção deste SHA.

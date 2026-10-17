@@ -1,6 +1,6 @@
 # E03-08 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8257f66` (2026-10-17). E03 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -469,3 +469,49 @@ def test_fechamento_entre_leitura_e_servico_devolve_estoque_somente_leitura(
     assert resposta.status_code == 409
     assert 'name="limite"' not in resposta.content.decode()
 ```
+
+
+## Revalidação independente — 8257f66 — 2026-10-17
+
+**Parecer: APROVADO. E03 global: APROVADO.**
+
+Aprovação da fatia mantida. Conferidos o escopo do diff, os critérios aplicáveis e as regressões na suíte completa; as correções restantes da E03-05 não introduzem mudanças de regra de negócio nesta fatia.
+
+Suíte completa: **1209 passed em 101,35 s**. Reexecução dos três scripts independentes preservados no histórico: **26 passed em 4,01 s**, incluindo as quatro falhas anteriores. Verificações estáticas, Django e CI verdes. Comandos, fechamento dos achados e limitações no [parecer consolidado](../E03-08/review.md), seção deste SHA.
+
+### Escopo e fechamento dos achados
+
+Código auditado: `8257f663ee813f1bcd5f07220b1fe93b33abbe9a`, main, com correção `fe65d1b`. Comparação com `8064a14`: formulários e views de estoque, testes e documentação correspondente. Requisitos e critérios corrigidos de E03-02/E03-05 confrontados com o diff antes da conclusão. As oito fatias E03-01 a E03-08 estão aprovadas; nenhum achado impeditivo permanece.
+
+| Achado | Resultado desta revalidação |
+|---|---|
+| R01 — capacidade decimal | Encerramento mantido: 16 probes de fronteira passam. |
+| R02 — pré-condição do critério de múltiplo | Correção documental mantida; sem pendência. |
+| R03 — congelamento e precedência | Encerrado integralmente: precedência anterior permanece correta; inclusão/alteração relêem a rodada após recusa e toda resposta 409 é somente leitura, mesmo se a etapa mudar novamente. A-25/A-26 e os dois probes de corrida passam. |
+| R04 — preservação da entrada rejeitada | Encerramento mantido: probes de inclusão/alteração preservam valor e erro. |
+| R05 — identificador inválido causa HTTP 500 | Encerrado: removida conversão manual; somente `cleaned_data` válido identifica linha, com limite de bigint. Os probes Unicode e ID de 4301 dígitos passam, assim como A-27. |
+
+A revisão não identificou novos achados no diff. Os testes adicionais verificam ausência de efeitos persistidos e preservam as asserções existentes. Os serviços transacionais e suas travas não foram alterados nesta correção.
+
+### Verificação independente executada
+
+| Comando | Resultado |
+|---|---|
+| `uv run pytest -q` | **1209 passed, 101,35 s** |
+| `uv run pytest -q -c pyproject.toml $env:TEMP/om_e03_0ceb171_probes.py $env:TEMP/om_e03_2e7bbcc_complementares.py $env:TEMP/om_e03_8064a14_probes.py --tb=short --show-capture=no` | **26 passed, 4,01 s** |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 239 arquivos formatados |
+| `uv run mypy .` | Sem problemas em 194 arquivos |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | Nenhum problema |
+| `uv sync --locked` | 51 pacotes resolvidos, 50 verificados |
+
+[CI do commit auditado](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/39030682860): completed/success, consultado independentemente. Logs locais da execução em `$env:TEMP/om_e03_8257f66_suite.log` e `$env:TEMP/om_e03_8257f66_probes.log`. Scripts reproduzíveis preservados nas seções históricas deste arquivo.
+
+### TDD, limites e encerramento
+
+Conferido o registro Red → Green do implementador em E03-05: dois arquivos de testes sobre a base anterior, **10 failed, 180 passed**, antes da correção; Green relatado de 1209 testes. O diff acrescenta cobertura A-25 a A-27 sem remover ou afrouxar testes existentes. A-26 e parte dos identificadores já passavam e são guardas de regressão, como registrado. A cronologia Red é evidência documental do implementador, não execução presenciada pelo revisor; o Green e as reproduções anteriores foram executados independentemente. A extração do helper de resposta congelada mantém a suíte verde.
+
+Mantidos os limites: testes HTTP Django sem navegador real, WebAuthn com dublê autorizado; operações das etapas futuras continuam fora do escopo da E03. A corrida adicional controla deterministicamente a transição entre leitura e serviço; a suíte também mantém os testes transacionais de concorrência já existentes.
+
+Alterações desta revisão: somente os oito `review.md`, branch `revisao/e03-8257f66`, sem commit/push. Gate de revisão independente da E03 concluído: **APROVADO**, sem pendências impeditivas conhecidas no escopo auditado.
