@@ -213,7 +213,9 @@ def test_nome_invalido_na_conclusao_devolve_o_formulario(client: Client, nome: s
     assert client.post(CONCLUIR, {"nome": "Bia"}).status_code == 302
 
 
-def test_conta_criada_pelo_google_define_senha_pela_recuperacao(client: Client) -> None:  # A-15
+def test_conta_criada_pelo_google_define_senha_pela_recuperacao(
+    client: Client, django_capture_on_commit_callbacks: Any
+) -> None:  # A-15
     _, token = _convite(email_normalizado="bia@x.com")
     _iniciar(client, token)
     _retorno(client)
@@ -221,7 +223,8 @@ def test_conta_criada_pelo_google_define_senha_pela_recuperacao(client: Client) 
     client.post("/sair/")
     mail.outbox.clear()
     novo = Client()
-    novo.post("/recuperar-acesso/", {"email": "bia@x.com"})
+    with django_capture_on_commit_callbacks(execute=True):
+        novo.post("/recuperar-acesso/", {"email": "bia@x.com"})
     assert len(mail.outbox) == 1
     link = re.findall(r"https?://[^\s]+/recuperar-acesso/chave/[^\s]+", str(mail.outbox[0].body))[0]
     caminho = "/" + link.split("/", 3)[3]

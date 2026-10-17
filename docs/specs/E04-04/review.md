@@ -51,3 +51,14 @@ A-1 a A-8 e A-10 a A-13 conferidos e verdes: consentimento, número atual, desli
 Verificação independente: **1385 passed em 160,23 s** na suíte completa. Probes adicionais: **10 failed, 4 passed em 4,39 s**, mais **1 passed em 2,52 s** no caso de isolamento acrescentado. Dez falhas correspondem a R01 (oito) e R02 (duas). Lint, formatação, tipos, Django e CI passaram.
 
 Comandos, matriz, reproduções, TDD, critérios de correção e limites no [parecer consolidado E04-07](../E04-07/review.md). Nenhum código ou teste versionado foi alterado pelo revisor.
+
+
+## Correção E04-R03 — implementador (aguardando nova revisão)
+
+**Sem Red esperado**, como a spec da correção determina: o defeito estava na redação e no teste, e não no mecanismo. O A-9 corrigido e o probe do revisor passaram assim que foram escritos, contra o código inalterado.
+
+**Alterações.** `test_falha_no_whatsapp_nao_desfaz_o_fato_nem_a_notificacao` foi reescrito conforme o A-9 corrigido: uma única `transaction.atomic()` com o fato de teste e uma só emissão de `pagamento_aberto` (saíram a emissão de `pagamento_confirmado` e a segunda transação). Continuam exigidos: o fato inalterado, três tentativas de WhatsApp, e-mail `enviado`, notificação idêntica à emitida e o conteúdo na central. As duas asserções de texto da central que dependiam de `pagamento_confirmado` ("Pagamento confirmado", "Recebemos seu pagamento.") foram substituídas pelo texto da notificação de `pagamento_aberto` ("Pague em 24 horas."). Motivo: o teste antigo seguia uma redação contraditória da especificação. A matriz não mudou.
+
+O probe `test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao` do revisor entrou com o corpo original em `tests/tecnicos/test_notificacoes_falha_isolada.py`. Resultado: o arquivo tem **3 passed**.
+
+Verificação final da correção: suíte completa **1461 passed**; `ruff check`, `ruff format --check`, `mypy .`, `makemigrations --check --dry-run` e `manage.py check` sem erros. Nenhuma asserção existente foi afrouxada ou removida.

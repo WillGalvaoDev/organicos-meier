@@ -10,7 +10,7 @@ from django.test import Client
 from apps.contas.models import Conta, EmailBanido, Situacao
 from tests.fabricas import ContaFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = pytest.mark.django_db(transaction=True)
 
 SENHA = "senha-forte-9271!"
 NOVA = "outra-senha-forte-5530!"

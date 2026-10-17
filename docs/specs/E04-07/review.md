@@ -257,3 +257,12 @@ def test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao():
         SIMULADOR.reiniciar()
 
 ```
+
+
+---
+
+## Correções do implementador após o parecer de `0b52010`
+
+R01 (E04-01 e E04-02), R02 (E04-05) e R03 (E04-04) foram corrigidas na branch `e04-correcoes-r01-r03`, com Red e Green registrados nos `review.md` de cada fatia. Suíte completa: **1461 passed**. Aguardando a revalidação do agente 3. Nenhum parecer foi alterado por mim.
+
+Ajuste de configuração: `pyproject.toml` ganhou `docs/**/*.md` em `extend-exclude` do `ruff`. O `ruff format --check .` passou a tentar reformatar o bloco Python do "Script reproduzível" deste parecer (os probes literais do revisor) e falharia no CI; a exclusão evita reescrever o parecer.

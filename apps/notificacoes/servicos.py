@@ -5,11 +5,12 @@ validações vivem em `validar_notificacao`, que a gravação em lote também us
 notificação seja gravada sem as mesmas regras. Violação é erro de programação de quem emite.
 """
 
+import re
 from typing import Any
 
 from apps.contas.models import Conta
 from apps.notificacoes.eventos import DESTINATARIO_POR_EVENTO, Evento
-from apps.notificacoes.models import Notificacao
+from apps.notificacoes.models import PADRAO_LINK_INTERNO, Notificacao
 from apps.nucleo.tempo import agora
 
 MAIOR_TITULO = 150
@@ -43,7 +44,7 @@ def validar_notificacao(
     _texto("corpo", corpo, MAIOR_CORPO)
     if link is not None:
         _texto("link", link, MAIOR_LINK)
-        if not link.startswith("/") or link.startswith("//"):
+        if link.startswith("//") or not re.fullmatch(PADRAO_LINK_INTERNO, link):
             raise NotificacaoInvalida("link", "deve ser um caminho relativo do site")
     _texto("chave", chave, MAIOR_CHAVE)
 

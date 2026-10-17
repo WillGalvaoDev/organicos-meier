@@ -37,15 +37,6 @@ def test_falha_no_whatsapp_nao_desfaz_o_fato_nem_a_notificacao(
     with transaction.atomic():
         fato = ModeloContador.objects.create(valor=7)  # o "pagamento" do teste
         emitir_evento(
-            Evento.PAGAMENTO_CONFIRMADO,
-            conta,
-            titulo="Pagamento confirmado",
-            corpo="Recebemos seu pagamento.",
-            chave="pagamento:1",
-        )
-    # só e-mail em pagamento_confirmado; o WhatsApp é de abertura de pagamento
-    with transaction.atomic():
-        emitir_evento(
             Evento.PAGAMENTO_ABERTO,
             conta,
             titulo="Pagamento aberto",
@@ -66,9 +57,8 @@ def test_falha_no_whatsapp_nao_desfaz_o_fato_nem_a_notificacao(
     cliente = Client()
     cliente.force_login(conta)
     pagina = cliente.get("/notificacoes/").content.decode()
-    assert "Pagamento confirmado" in pagina
     assert "Pagamento aberto" in pagina
-    assert "Recebemos seu pagamento." in pagina
+    assert "Pague em 24 horas." in pagina
 
 
 @pytest.mark.acceptance
@@ -100,3 +90,37 @@ def test_nada_e_tentado_antes_da_confirmacao_da_transacao(
     assert TentativaDeEnvio.objects.count() == 0
     assert processar_envios() == 2  # e-mail e WhatsApp, agora confirmados
     assert Envio.objects.get(canal="whatsapp").tentativas == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao() -> None:
+    # probe do revisor de 0b52010 (corpo original)
+    from datetime import UTC, datetime, timedelta
+
+    import time_machine
+
+    from apps.notificacoes.whatsapp import SIMULADOR
+    from apps.nucleo.tempo import agora
+    from tests.apoio.models import ModeloContador
+
+    SIMULADOR.reiniciar()
+    SIMULADOR.falhar_sempre()
+    try:
+        with time_machine.travel(datetime(2026, 10, 17, 15, tzinfo=UTC), tick=False) as relogio:
+            conta = ContaFactory.create(telefone="+5521999990000", whatsapp_consentido_em=agora())
+            with transaction.atomic():
+                fato = ModeloContador.objects.create(valor=7)
+                n = emitir_evento(
+                    Evento.PAGAMENTO_ABERTO, conta, titulo="Aberto", corpo="c", chave="fato:1"
+                )
+            for minutos in (0, 1, 10):
+                relogio.shift(timedelta(minutes=minutos))
+                processar_envios()
+            fato.refresh_from_db()
+            assert fato.valor == 7
+            assert Notificacao.objects.get(pk=n.pk).corpo == "c"
+            e = Envio.objects.get(canal="whatsapp")
+            assert (e.situacao, e.tentativas) == ("falhou", 3)
+            assert Envio.objects.get(canal="email").situacao == "enviado"
+    finally:
+        SIMULADOR.reiniciar()
