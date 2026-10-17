@@ -1,6 +1,6 @@
 # E03-08 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -350,4 +350,122 @@ def test_estoque_preserva_entrada_rejeitada(admin, incluir):
     assert resposta.status_code == 200
     assert "O valor máximo aceito é 999999999,999." in resposta.content.decode()
     assert 'value="1000000000,000"' in resposta.content.decode()
+```
+
+
+## Revalidação independente — 8064a14 — 2026-10-17
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+Aprovação própria mantida; catálogo inalterado e regressão verde. Parecer global abaixo considera a pendência de E03-05.
+
+Suíte completa: **1187 passed em 129,30 s**. Probes independentes: **22 passed, 4 failed em 14,69 s**; os 22 anteriores passam, quatro adicionais reproduzem as pendências R03/R05. Verificações estáticas e CI verdes. Evidências, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.
+
+### Parecer global
+
+**E03: REPROVADO** sobre `8064a14b5d8aa3bc776cee065333fb21ec2011e1` (PR #47). R01/R02 continuam encerrados; **R04 encerrado**. Os casos originais de R03 passaram, inclusive o mínimo nas quatro fases congeladas, mas resta uma falha na resposta de estoque quando a fase muda entre a leitura da view e o serviço. Há também uma regressão nova, R05, na interpretação de identificadores do formulário recusado. Ambas estão na E03-05, única fatia reprovada neste parecer.
+
+Escopo: diff desde `2e7bbcc`, seções de correção R03/R04 e critérios adicionais lidos antes do código, matriz consolidada, testes de fronteira anteriores e suíte completa. Documentos-base permanecem funcional v1.6 e infraestrutura v1.7. Não há decisão comercial em aberto nem necessidade de alterar limites ou regras de negócio.
+
+### E03-R03 — importante, parcialmente corrigido: estoque usa etapa antiga para renderizar o 409
+
+**Referências:** E03-02/spec.md, Correção R03, Nas views (leitura inicial sem trava, revalidação no serviço e resposta sem formulário editável); E03-05/spec.md, Correção R04, Erros sem linha correspondente: `CondicoesCongeladas`, “com 409 e a página só de leitura”.
+
+**Locais:** `apps/rodadas/views.py:99`, `:138` e `:161`. As views leem `rodada` em interesse; o serviço relê sob trava e pode detectar fechamento confirmado depois. Ao capturar `CondicoesCongeladas`, as views passam a instância antiga para `_pagina_do_estoque`, que calcula `editavel` a partir dela. Resultado: status e mensagem de recusa corretos, mas campos `name="limite"` e botões Incluir/Salvar ainda presentes, com etapa antiga exibida.
+
+**Reprodução independente:** em inclusão e alteração, o probe intercala uma mudança persistida para `fechamento` depois da leitura da view e imediatamente antes da chamada ao serviço original. O serviço não é substituído: o wrapper altera apenas o instante da transição e o chama normalmente. Nos dois casos, a asserção de 409 passa e a de ausência de campo editável falha. Trata-se de intercalação determinística da ordem de duas requisições, não de prova de threads simultâneas. O backend recusa a operação; não se afirma bypass de congelamento nem gravação indevida.
+
+**Devolução:** ao tratar `CondicoesCongeladas`, renderizar a página efetivamente só de leitura, com etapa coerente, sem usar o estado desatualizado para oferecer edição. Manter a revalidação transacional. Cobrir inclusão e alteração com a mudança entre as duas leituras e verificar status, mensagem, ausência de campos e ausência de efeitos. Os testes atuais da matriz criam a fase congelada antes da requisição e não exercitam essa janela.
+
+### E03-R05 — importante: tratamento de formulário inválido introduz HTTP 500
+
+**Referências:** E03-05, Correção R04, recusas de formulário e erros sem linha correspondente; AGENTS §§3, 6 e 8, negativos, validação no servidor e ausência de regressões.
+
+**Local:** `apps/rodadas/views.py:52-54`, `_id`, chamado na linha 129 após `form.is_valid()` retornar falso. O novo código executa `int(bruto)` se `bruto.isdigit()`, sem tratar falha. `isdigit()` não garante que `int()` aceite o texto: `²` (U+00B2) é um exemplo. Uma sequência de 4301 algarismos também falha no limite de conversão do Python. O formulário já recusou a entrada, mas o caminho destinado a exibir o erro lança `ValueError` e transforma a resposta em 500.
+
+**Reprodução:** administrador autenticado, rodada em interesse; POST `/administracao/rodadas/<id>/estoque/incluir/` com `limite=abc` e `produto=²`; repetir com `produto` igual a `"9" * 4301`. **HTTP 500 nos dois**, por `ValueError`, onde deveria haver resposta controlada de formulário inválido. O problema foi introduzido pelo helper da correção R04; não depende de fornecedor alheio, nem demonstra acesso indevido.
+
+**Devolução:** extrair a identidade da linha apenas de valor validado ou converter de forma defensiva, tratando identificador inválido como erro sem linha correspondente. Não ampliar o limite global de conversão do Python para acomodar a entrada. Preservar os casos válidos e a autorização; testar os dois negativos com Red → Green.
+
+### Resultados independentes
+
+- `uv run pytest -q`: **1187 passed em 129,30 s**, E01/E02/E03, Postgres real. Saída também salva em `$env:TEMP/om_e03_8064a14_suite.log`.
+- `uv run pytest -q -c pyproject.toml $env:TEMP/om_e03_0ceb171_probes.py $env:TEMP/om_e03_2e7bbcc_complementares.py $env:TEMP/om_e03_8064a14_probes.py --tb=short --show-capture=no`: **4 failed, 22 passed em 14,69 s**. Os 16 probes de capacidade e os seis da revisão de `2e7bbcc` passam; as quatro falhas são as duas intercalações de R03 e os dois identificadores de R05. Log em `$env:TEMP/om_e03_8064a14_probes.log`.
+- `uv run ruff check .`: All checks passed.
+- `uv run ruff format --check .`: 239 arquivos já formatados.
+- `uv run mypy .`: sem erros em 194 arquivos.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: No changes detected.
+- `uv run python manage.py check --settings=config.settings.test`: zero issues.
+- `uv sync --locked`: 51 pacotes resolvidos, 50 conferidos.
+- CI do SHA exato: [run 38963064129](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/38963064129), completed/success.
+
+O Docker estava desligado na tentativa inicial; o PostgreSQL local foi iniciado com `docker compose up -d --wait`. A execução anterior interrompida não foi contabilizada como sucesso. A suíte acima foi repetida até conclusão, com saída preservada. Os processos pytest foram sequenciais, sem concorrência entre suítes no banco.
+
+### TDD, matriz e limites
+
+Conferidos os relatos Red (69 falhas/99 passando), Green (168 testes das duas áreas) e o diff de testes. Os probes anteriores foram incorporados sem afrouxamento de asserções, com adaptação de fixture/tipos documentada. A matriz cobre fases e classes de valor; os testes HTML verificam valor/erro na linha certa, outras linhas preservadas e escape. O Red anterior ao código é evidência documentada pelo implementador; esta revisão não reconstruiu sua cronologia. O Green e os probes acima são execuções independentes.
+
+Aprovações de E03-01, E03-03, E03-04, E03-06, E03-07 e E03-08 mantidas; E03-02 aprovada após corrigir a precedência do mínimo. E03-05 reprovada por R03/R05. Os critérios versionados passam; as falhas adicionais impedem declarar encerramento global.
+
+Mantêm-se os limites anteriores: testes HTTP Django sem navegador, WebAuthn com dublê autorizado e transições/reservas reais das etapas futuras fora do escopo. Alterações do revisor: somente oito `review.md`, na branch `revisao/e03-8064a14`, sem commit/push. Próximo gate: correção dos dois pontos da E03-05, Red → Green e revalidação independente.
+
+### Script dos probes adicionais
+
+Salvar como `$env:TEMP/om_e03_8064a14_probes.py`. Os dois scripts anteriores estão preservados nas seções históricas deste relatório. O parâmetro `raise_request_exception=False` observa a resposta 500 real sem alterar o serviço.
+
+```python
+import pytest
+from django.core.cache import cache
+from apps.rodadas import views
+from apps.rodadas.models import Rodada
+from tests.apoio.admin_fluxos import administrador_logado
+from tests.apoio.webauthn_falso import instalar
+from tests.fabricas import RodadaFactory, ProdutoFactory, EstoqueDaRodadaFactory
+
+
+@pytest.fixture
+def admin(client, monkeypatch):
+    cache.clear()
+    instalar(monkeypatch)
+    administrador_logado(client)
+    return client
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("produto", ["²", "9" * 4301], ids=["digito_unicode", "id_longo"])
+def test_id_invalido_no_formulario_nao_provoca_500(admin, produto):
+    r = RodadaFactory.create()
+    admin.raise_request_exception = False
+    resposta = admin.post(
+        f"/administracao/rodadas/{r.pk}/estoque/incluir/", {"produto": produto, "limite": "abc"}
+    )
+    assert resposta.status_code == 200, (
+        resposta.exc_info[1] if resposta.exc_info else resposta.status_code
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("incluir", [True, False])
+def test_fechamento_entre_leitura_e_servico_devolve_estoque_somente_leitura(
+    admin, monkeypatch, incluir
+):
+    r = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=r.fornecedor)
+    if incluir:
+        nome = "incluir_produto_na_rodada"
+        url = f"/administracao/rodadas/{r.pk}/estoque/incluir/"
+    else:
+        e = EstoqueDaRodadaFactory.create(rodada=r, produto=p)
+        nome = "alterar_estoque"
+        url = f"/administracao/estoque/{e.pk}/alterar/"
+    original = getattr(views, nome)
+
+    def fechar_antes(*args, **kwargs):
+        Rodada.objects.filter(pk=r.pk).update(etapa="fechamento")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(views, nome, fechar_antes)
+    resposta = admin.post(url, {"produto": str(p.pk), "limite": "7"})
+    assert resposta.status_code == 409
+    assert 'name="limite"' not in resposta.content.decode()
 ```

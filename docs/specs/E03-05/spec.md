@@ -230,6 +230,64 @@ A regra geral está na seção de mesmo título da E03-02.
 - Não desligar o escape automático para mostrar o valor.
 - Não mover para o topo da página a mensagem das recusas que têm linha correspondente.
 
+## Correção E03-R03 (complemento) — revisão da especificação em 2026-10-17
+
+### Diagnóstico
+
+- `estoque_incluir` e `estoque_alterar` (`apps/rodadas/views.py`) leem a rodada em `interesse` e chamam o serviço. Se uma mudança para `fechamento` confirmar entre essa leitura e a trava do serviço, o serviço levanta `CondicoesCongeladas` corretamente, e a view responde 409.
+- Mas a view passa para `_pagina_do_estoque` a instância lida antes. A página calcula `editavel` a partir dela e mostra a etapa antiga, os campos `name="limite"` e os botões "Incluir na rodada" e "Salvar".
+- O backend recusa a operação e nada é gravado. O defeito é a página oferecer edição de uma condição congelada.
+- As rotas de mínimo, múltiplo e incremento não têm o defeito, porque o 409 delas mostra só a mensagem, sem formulário. Os testes desta correção as cobrem como guarda de regressão.
+- Minha falha na especificação: a correção R03 tratou a leitura sem trava, mas não disse com que estado a página do 409 vindo do serviço é montada.
+
+### Regra
+
+**Resposta 409 é sempre só de leitura:**
+
+- `_pagina_do_estoque` passa a decidir `editavel` assim: `editavel = status != 409 and <rodada relida>.etapa == Etapa.INTERESSE`. Um 409 nunca oferece edição, qualquer que seja o estado da rodada.
+- Ao capturar `CondicoesCongeladas` do serviço, a view relê a rodada do banco (consulta nova, sem trava), depois de a transação do serviço ter terminado, e monta a página com ela. A etapa exibida é a gravada.
+- O 409 direto, decidido pela leitura sem trava antes do formulário, segue a mesma regra.
+- **A página do 409:**
+  - status 409;
+  - a mensagem única `MENSAGEM` no aviso do topo;
+  - nenhum `<form>` de inclusão ou alteração e nenhum campo `name="limite"`;
+  - a etapa relida;
+  - as listas de produtos com os valores gravados.
+- **O que não muda:** a revalidação transacional no serviço (`travar_condicoes`) continua sendo a autoridade. A leitura sem trava continua servindo só para escolher a resposta.
+
+### Testes obrigatórios
+
+- O probe `test_fechamento_entre_leitura_e_servico_devolve_estoque_somente_leitura` do revisor (`docs/specs/E03-08/review.md`, seção "Script dos probes adicionais", revalidação de `8064a14`) entra literal em `tests/tecnicos/test_rodadas_estoque.py`.
+- O probe muda a etapa com `update()` dentro de um envoltório do serviço, que em seguida chama o serviço original. Isso é uma intercalação determinística da ordem entre a leitura da view e a trava do serviço. Não é substituição do serviço, e esse é o formato aceito para esta janela.
+- Critérios A-25 e A-26, com Red observado antes do código. O A-26 é uma guarda de regressão das outras três rotas: se ele passar já no Red, registre isso no `review.md` com a justificativa (o comportamento já existia), sem tratar como violação do TDD.
+
+## Correção E03-R05 — revisão da especificação em 2026-10-17
+
+### Diagnóstico
+
+- A correção R04 criou `_id(request)`, que, com o formulário de inclusão inválido, faz `int(bruto)` quando `bruto.isdigit()`.
+- `str.isdigit()` aceita caracteres que `int()` recusa, como `²` (U+00B2). `int()` também recusa textos com mais de 4300 algarismos, pelo limite de conversão do Python.
+- Nos dois casos, `ValueError` escapa do caminho que deveria mostrar o erro do formulário, e a resposta é 500.
+- É uma regressão introduzida pela correção, sem acesso indevido.
+
+### Regra
+
+**A linha só é identificada por valor validado:**
+
+- O id do produto do formulário recusado vem só de `form.cleaned_data["produto"]`, e só quando o campo `produto` foi validado, ou seja, quando não tem erro em `form.errors`. O `IntegerField(min_value=1)` já recusa `²`, textos longos, negativos, zero e vazio sem levantar exceção.
+- Remover `_id` e qualquer outra conversão do `POST` bruto para inteiro na view.
+- **Campo `produto` inválido:** o erro vai para o aviso do topo, sem linha e sem valor preservado, como os erros sem linha correspondente da correção R04. A resposta é 200 e nada é gravado.
+- **Faixa do id:** o campo `produto` do `FormularioInclusao` ganha `max_value=9223372036854775807`, o maior valor de `bigint`, que é o tipo da chave (`BigAutoField`). Um id acima disso, por exemplo `99999999999999999999`, é recusado pelo formulário, sem chegar ao banco, e segue a regra de campo inválido acima.
+- **`produto` dentro da faixa, mas inexistente:** "Produto inválido." no topo, com 200, como hoje.
+- Não capturar `DataError`.
+- **Proibido:** aumentar o limite global de conversão do Python (`sys.set_int_max_str_digits`) e capturar `ValueError` de forma genérica na view.
+- **O que não muda:** os casos válidos da correção R04, isto é, o valor e o erro na linha certa, as outras linhas preservadas e o escape.
+
+### Testes obrigatórios
+
+- O probe `test_id_invalido_no_formulario_nao_provoca_500` do revisor entra literal em `tests/tecnicos/test_rodadas_estoque.py`.
+- Critério A-27, com Red observado antes do código.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-02, E03-03 e E03-04.

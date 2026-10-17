@@ -14,9 +14,11 @@ import pytest
 from django.core.cache import cache
 from django.test import Client
 
+from apps.catalogo import views as catalogo_views
 from apps.catalogo.models import Produto
 from apps.catalogo.servicos import alterar_incremento, alterar_multiplo, editar_produto
 from apps.contas.models import Conta, Papel
+from apps.fornecedores import views as fornecedores_views
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
 from apps.nucleo.auditoria import EntradaAuditoria
@@ -356,3 +358,35 @@ def test_minimo_excedente_fora_de_interesse_responde_409(
     f.refresh_from_db()
     assert f.minimo == Decimal("150")
     assert resposta.status_code == 409
+
+
+@pytest.mark.parametrize("condicao", ["minimo", "multiplo", "incremento"])
+def test_fechamento_entre_leitura_e_servico_nas_outras_rotas(
+    admin_client: Client,
+    monkeypatch: pytest.MonkeyPatch,
+    sinais_do_estoque: list[Any],
+    condicao: str,
+) -> None:  # A-26, E03-R03 (complemento), guarda de regressão
+    contexto = _contexto(Etapa.INTERESSE)
+    modulo, nome = {
+        "minimo": (fornecedores_views, "alterar_minimo"),
+        "multiplo": (catalogo_views, "alterar_multiplo"),
+        "incremento": (catalogo_views, "alterar_incremento"),
+    }[condicao]
+    original = getattr(modulo, nome)
+
+    def fechar_antes(*args: Any, **kwargs: Any) -> Any:
+        Rodada.objects.filter(pk=contexto.rodada.pk).update(etapa=Etapa.FECHAMENTO)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(modulo, nome, fechar_antes)
+    antes = _estado(contexto)
+    url, fixos = URLS_DA_CONDICAO[condicao](contexto)
+    valido = VALORES_DA_ROTA[condicao]["valido"][0]
+    resposta = admin_client.post(url, {**fixos, CAMPO_DO_VALOR[condicao]: valido})
+    corpo = resposta.content.decode()
+    assert resposta.status_code == 409
+    assert MENSAGEM in corpo
+    assert f'name="{CAMPO_DO_VALOR[condicao]}"' not in corpo
+    assert _estado(contexto) == antes
+    assert EntradaAuditoria.objects.count() == 0

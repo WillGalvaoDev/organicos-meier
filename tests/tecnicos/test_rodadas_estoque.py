@@ -14,6 +14,7 @@ from django.test import Client
 from apps.catalogo.models import Produto
 from apps.contas.models import Conta
 from apps.nucleo.auditoria import EntradaAuditoria
+from apps.rodadas import views
 from apps.rodadas.condicoes import CondicoesCongeladas
 from apps.rodadas.estoque import (
     EstoqueAbaixoDoReservado,
@@ -735,3 +736,131 @@ def test_estoque_preserva_entrada_rejeitada(admin_client: Client, incluir: bool)
     assert resposta.status_code == 200
     assert "O valor máximo aceito é 999999999,999." in resposta.content.decode()
     assert 'value="1000000000,000"' in resposta.content.decode()
+
+
+# --- E03-R03 (complemento) e E03-R05 -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("incluir", [True, False])
+def test_fechamento_entre_leitura_e_servico_devolve_estoque_somente_leitura(
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, incluir: bool
+) -> None:  # probe do revisor (E03-08/review.md, revalidação de 8064a14)
+    admin = admin_client
+    r = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=r.fornecedor)
+    if incluir:
+        nome = "incluir_produto_na_rodada"
+        url = f"/administracao/rodadas/{r.pk}/estoque/incluir/"
+    else:
+        e = EstoqueDaRodadaFactory.create(rodada=r, produto=p)
+        nome = "alterar_estoque"
+        url = f"/administracao/estoque/{e.pk}/alterar/"
+    original = getattr(views, nome)
+
+    def fechar_antes(*args: Any, **kwargs: Any) -> Any:
+        Rodada.objects.filter(pk=r.pk).update(etapa="fechamento")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(views, nome, fechar_antes)
+    resposta = admin.post(url, {"produto": str(p.pk), "limite": "7"})
+    assert resposta.status_code == 409
+    assert 'name="limite"' not in resposta.content.decode()
+
+
+@pytest.mark.parametrize("incluir", [True, False])
+def test_409_do_servico_e_pagina_so_de_leitura_com_a_etapa_relida(
+    admin_client: Client,
+    monkeypatch: pytest.MonkeyPatch,
+    receptor: list[Any],
+    incluir: bool,
+) -> None:  # A-25, E03-R03 (complemento)
+    rodada = RodadaFactory.create()
+    produto = ProdutoFactory.create(fornecedor=rodada.fornecedor)
+    estoque = _estoque(rodada, "10") if not incluir else None
+    nome = "incluir_produto_na_rodada" if incluir else "alterar_estoque"
+    url = (
+        f"/administracao/rodadas/{rodada.pk}/estoque/incluir/"
+        if incluir
+        else f"/administracao/estoque/{estoque.pk}/alterar/"  # type: ignore[union-attr]
+    )
+    original = getattr(views, nome)
+
+    def fechar_antes(*args: Any, **kwargs: Any) -> Any:
+        Rodada.objects.filter(pk=rodada.pk).update(etapa=Etapa.FECHAMENTO)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(views, nome, fechar_antes)
+    resposta = admin_client.post(url, {"produto": str(produto.pk), "limite": "7"})
+    html = resposta.content.decode()
+    assert resposta.status_code == 409
+    assert MENSAGEM in html
+    assert 'name="limite"' not in html
+    assert "Incluir na rodada" not in html
+    assert "Salvar" not in html
+    leitor = _Leitor()
+    leitor.feed(html)
+    assert [f.action for f in leitor.formularios] == []
+    assert "Fechamento" in html
+    if incluir:
+        assert not EstoqueDaRodada.objects.filter(rodada=rodada).exists()
+    else:
+        assert estoque is not None
+        estoque.refresh_from_db()
+        assert estoque.limite == D("10.000")
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+IDS_INVALIDOS = ["²", "9" * 4301, "-1", "0", "", "99999999999999999999"]
+
+
+@pytest.mark.parametrize("limite", ["abc", "7"])
+@pytest.mark.parametrize("produto_enviado", IDS_INVALIDOS)
+def test_id_de_produto_invalido_no_formulario_nao_provoca_500(
+    admin_client: Client, receptor: list[Any], produto_enviado: str, limite: str
+) -> None:  # A-27, E03-R05
+    admin_client.raise_request_exception = False
+    rodada = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=rodada.fornecedor)
+    url = f"/administracao/rodadas/{rodada.pk}/estoque/incluir/"
+    resposta = admin_client.post(url, {"produto": produto_enviado, "limite": limite})
+    assert resposta.status_code == 200, getattr(resposta, "exc_info", None) or None
+    html = resposta.content.decode()
+    assert 'role="alert"' in html
+    da_linha = _formulario(html, url, p.pk)
+    assert not da_linha.campos["limite"]
+    assert da_linha.alertas == 0
+    assert not EstoqueDaRodada.objects.exists()
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+def test_produto_inexistente_dentro_da_faixa_e_produto_invalido(
+    admin_client: Client, receptor: list[Any]
+) -> None:  # A-27, E03-R05
+    rodada = RodadaFactory.create()
+    p = ProdutoFactory.create(fornecedor=rodada.fornecedor)
+    url = f"/administracao/rodadas/{rodada.pk}/estoque/incluir/"
+    resposta = admin_client.post(url, {"produto": str(p.pk + 100000), "limite": "7"})
+    html = resposta.content.decode()
+    assert resposta.status_code == 200
+    assert "Produto inválido." in html
+    da_linha = _formulario(html, url, p.pk)
+    assert not da_linha.campos["limite"]
+    assert da_linha.alertas == 0
+    assert not EstoqueDaRodada.objects.exists()
+    assert EntradaAuditoria.objects.count() == 0
+    assert receptor == []
+
+
+@pytest.mark.parametrize("produto", ["²", "9" * 4301], ids=["digito_unicode", "id_longo"])
+def test_id_invalido_no_formulario_nao_provoca_500(
+    admin_client: Client, produto: str
+) -> None:  # probe do revisor (E03-08/review.md, revalidação de 8064a14)
+    admin = admin_client
+    r = RodadaFactory.create()
+    admin.raise_request_exception = False
+    resposta = admin.post(
+        f"/administracao/rodadas/{r.pk}/estoque/incluir/", {"produto": produto, "limite": "abc"}
+    )
+    assert resposta.status_code == 200, getattr(resposta, "exc_info", None) or resposta.status_code
