@@ -81,6 +81,11 @@ class SituacaoEnvio(models.TextChoices):
     CANCELADO = "cancelado", "Cancelado"
 
 
+# tipos de e-mail de acesso (E04-05)
+CONVITE = "acesso:convite"
+LINK_DE_ACESSO = "acesso:link_de_acesso"
+CONTA_ALLAUTH = "acesso:conta_allauth"
+TIPOS_DE_ACESSO = (CONVITE, LINK_DE_ACESSO, CONTA_ALLAUTH)
 CANAIS_EXTERNOS = [(c.value, c.label) for c in Canal if c is not Canal.SITE]
 
 
@@ -89,8 +94,8 @@ class Envio(models.Model):
 
     O conteúdo (canal, tipo, destinatário, assunto, corpo, chave) é congelado na criação. Só os
     campos de estado mudam, e só enquanto o envio está pendente (triggers em `gatilhos.py`).
-    Nesta fatia `notificacao` e `conta` são obrigatórias; a E04-05 relaxa para os e-mails de
-    acesso.
+    `notificacao` é nula se e somente se o tipo é de acesso (E04-05), e `conta` só é nula no
+    convite, cujo destinatário ainda não tem conta.
     """
 
     canal = models.CharField(max_length=10, choices=CANAIS_EXTERNOS)
@@ -113,6 +118,7 @@ class Envio(models.Model):
     criado_em = models.DateTimeField(default=agora)
     concluido_em = models.DateTimeField(null=True, blank=True)
     motivo_cancelamento = models.CharField(max_length=40, blank=True)
+    modelo = models.CharField(max_length=100, blank=True)
 
     class Meta:
         db_table = "notificacoes_envio"
@@ -138,8 +144,17 @@ class Envio(models.Model):
                 name="envio_concluido_se_e_so_se_nao_pendente",
             ),
             models.CheckConstraint(
-                condition=models.Q(notificacao__isnull=False, conta__isnull=False),
-                name="envio_com_notificacao_e_conta",
+                condition=models.Q(tipo__in=TIPOS_DE_ACESSO, notificacao__isnull=True)
+                | (~models.Q(tipo__in=TIPOS_DE_ACESSO) & models.Q(notificacao__isnull=False)),
+                name="envio_notificacao_so_fora_do_acesso",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(conta__isnull=False) | models.Q(tipo=CONVITE),
+                name="envio_conta_obrigatoria_fora_do_convite",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(tipo__in=TIPOS_DE_ACESSO) | models.Q(canal="email"),
+                name="envio_de_acesso_so_por_email",
             ),
         )
 
