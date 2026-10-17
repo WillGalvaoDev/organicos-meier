@@ -1,5 +1,6 @@
 """Adaptador do allauth (E02-02): identidade autorizada, banimento e mensagem única de recusa."""
 
+import uuid
 from typing import Any, ClassVar
 
 from allauth.account.adapter import DefaultAccountAdapter
@@ -22,6 +23,8 @@ from apps.contas.convites import ConviteInvalido, validar_convite
 from apps.contas.emails import EmailInvalido, email_banido, normalizar_email
 from apps.contas.google import CHAVE_CONVITE_PENDENTE, recusar_login_google
 from apps.contas.models import Conta
+from apps.notificacoes.acesso import enviar_email_de_acesso
+from apps.notificacoes.models import CONTA_ALLAUTH
 
 MENSAGEM_GENERICA = "Não foi possível entrar com esses dados."
 
@@ -60,6 +63,22 @@ class AdaptadorConta(DefaultAccountAdapter):
         "username_password_mismatch": MENSAGEM_GENERICA,
         "invalid_login": MENSAGEM_GENERICA,
     }
+
+    def send_mail(
+        self, template_prefix: str, email: str | list[str], context: dict[str, Any]
+    ) -> None:
+        """Os e-mails do allauth (recuperação de senha) saem pelo registro de envios (E04-05)."""
+        mensagem = self.render_mail(template_prefix, email, context)
+        destino = mensagem.to[0]
+        enviar_email_de_acesso(
+            CONTA_ALLAUTH,
+            destino=destino,
+            assunto=mensagem.subject,
+            corpo=mensagem.body,
+            conta=Conta.objects.filter(email_normalizado=destino).first(),
+            referencia=uuid.uuid4(),
+            modelo=template_prefix,
+        )
 
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return False  # cadastro público fora do escopo (§18); a conta nasce por convite

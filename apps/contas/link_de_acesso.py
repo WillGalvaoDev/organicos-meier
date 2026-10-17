@@ -9,13 +9,14 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import EmailMessage
 from django.db import transaction
 from django.template.loader import render_to_string
 
 from apps.contas.acesso import AcessoRecusado, Metodo, verificar_acesso
 from apps.contas.emails import normalizar_email
 from apps.contas.models import Conta, LinkDeAcesso
+from apps.notificacoes.acesso import enviar_email_de_acesso
+from apps.notificacoes.models import LINK_DE_ACESSO
 from apps.nucleo.tempo import agora, prazo_encerrado
 
 logger = logging.getLogger(__name__)
@@ -28,14 +29,18 @@ class LinkInvalido(Exception):
     """Link inexistente, usado, expirado ou cuja conta não pode mais entrar."""
 
 
-def _enviar_email(email: str, link_id: int, token: str, origem: str) -> None:
+def _enviar_email(conta: Conta, link_id: int, token: str, origem: str) -> None:
     contexto = {"link": f"{origem}/entrar/link/{token}/", "minutos": VALIDADE_EM_MINUTOS}
     assunto = " ".join(render_to_string("contas/link_email_assunto.txt", contexto).split())
     corpo = render_to_string("contas/link_email_corpo.txt", contexto)
-    try:
-        EmailMessage(assunto, corpo, to=[email]).send(fail_silently=False)
-    except Exception as erro:
-        logger.error("falha no envio do link de acesso %s (%s)", link_id, type(erro).__name__)
+    enviar_email_de_acesso(
+        LINK_DE_ACESSO,
+        destino=conta.email_normalizado,
+        assunto=assunto,
+        corpo=corpo,
+        conta=conta,
+        referencia=link_id,
+    )
 
 
 def pedir_link(email: str, *, origem: str | None = None) -> None:
@@ -67,8 +72,7 @@ def pedir_link(email: str, *, origem: str | None = None) -> None:
             criado_em=agora_,
             expira_em=agora_ + timedelta(minutes=VALIDADE_EM_MINUTOS),
         )
-        destino = conta.email_normalizado
-        transaction.on_commit(lambda: _enviar_email(destino, link.pk, token, base))
+        transaction.on_commit(lambda: _enviar_email(conta, link.pk, token, base))
 
 
 def validar_link(token: str) -> LinkDeAcesso:

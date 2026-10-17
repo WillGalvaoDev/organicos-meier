@@ -1,0 +1,42 @@
+# E04-05 — Registro do implementador (aguardando revisão independente)
+
+Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.7, `spec.md` e `acceptance.md` da fatia, E02-02, E02-04, E02-06 e E04-02/03.
+
+## Arquivos
+
+- `apps/notificacoes/acesso.py` (novo): `enviar_email_de_acesso`. `apps/notificacoes/models.py`: `Envio.modelo`, constantes `CONVITE`, `LINK_DE_ACESSO`, `CONTA_ALLAUTH` e `TIPOS_DE_ACESSO`, e os `CHECK`s por tipo. Migração `0004_acesso`.
+- `apps/contas/convites.py`, `apps/contas/link_de_acesso.py`, `apps/contas/adaptadores.py` (`AdaptadorConta.send_mail`): passam a usar a função.
+- Testes novos: `test_notificacoes_acesso.py` e `test_notificacoes_ponto_unico_de_email.py`.
+
+## Decisões técnicas
+
+- Sem retentativa automática e sem fila nos três e-mails (spec): o registro nasce concluído, com `corpo` vazio, uma tentativa e `chave = "<tipo>:<referência>"`. A referência é o id do convite, o id do `LinkDeAcesso` e, no allauth, um `uuid4`.
+- A função envia primeiro e grava depois, numa `transaction.atomic()` própria; nunca propaga exceção. Se a gravação falhar, registra `logger.error` com tipo e referência (sem destino) e devolve um `Envio` não gravado com o resultado do envio. Falha de envio também gera `logger.error` com tipo, referência e classe do erro (substitui as mensagens que cada fluxo já registrava).
+- `convite.email_enviado` passa a ser `envio.situacao == enviado`, e a tela continua igual.
+- allauth: `send_mail` renderiza assunto e corpo de texto com `render_mail` e registra `modelo = template_prefix`. A alternativa HTML do allauth, se houvesse, não é enviada; os templates atuais do projeto só têm texto. `conta` é a dona do e-mail (`None` se não existir; nesse caso o `CHECK` recusa o registro, o fluxo segue e o erro é logado).
+- `CHECK`s: `notificacao` nula se e somente se o tipo é de acesso; `conta` nula só no convite; tipos de acesso só por e-mail. Substituem o `CHECK` da E04-02.
+- O allauth chama `send_mail` direto na requisição (como antes); convite e link continuam em `transaction.on_commit`.
+
+## TDD
+
+**Red.** Andaime (`enviar_email_de_acesso` sem comportamento, `Envio.modelo` sem uso, fluxos ainda com `EmailMessage`): `uv run pytest tests/tecnicos/test_notificacoes_acesso.py tests/tecnicos/test_notificacoes_ponto_unico_de_email.py -q` deu **8 failed, 5 passed**, por asserção (nenhum `Envio` de acesso gravado, `EmailMessage(` ainda em `apps/contas`). Passaram já no Red, porque dependem de ausência: e-mail sem conta (A-4, A-6), `email_enviado` falso na falha (A-2 pelo serviço), transação desfeita (A-9) e a ausência de segredo no banco e no log (A-7, que passa trivialmente enquanto não há registro). O A-7 só se torna significativo no Green.
+
+**Green.** Mesmos arquivos: **13 passed**. Suíte completa, que inclui os testes existentes das E02-02, E02-04 e E02-06 sem nenhuma alteração (A-11): **1344 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
+
+## Mapeamento dos critérios
+
+| Critério | Teste |
+|---|---|
+| A-1, A-2 | `test_notificacoes_acesso.py::test_convite_*`, `test_falha_no_envio_do_convite_e_registrada` |
+| A-3, A-4 | `test_link_*` |
+| A-5, A-6 | `test_recuperacao_*` |
+| A-7 | `test_nenhum_segredo_no_banco_nem_no_log` |
+| A-8 | `test_notificacoes_ponto_unico_de_email.py` |
+| A-9, A-10 | `test_convite_em_transacao_desfeita_*`, `test_falha_ao_gravar_o_registro_*` |
+| A-11 | arquivos existentes da E02, sem alteração |
+
+## Limites da verificação
+
+Cliente HTTP do Django e backends de e-mail de teste; nenhum SMTP real. A limitação "pelo menos uma vez" não se aplica aqui (envio único, sem fila).

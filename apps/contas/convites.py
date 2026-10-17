@@ -12,13 +12,14 @@ from allauth.account.models import EmailAddress
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.mail import EmailMessage
 from django.db import transaction
 from django.template.loader import render_to_string
 
 from apps.contas.emails import email_banido, normalizar_email
 from apps.contas.models import Conta, Convite, EmailEmUso, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
+from apps.notificacoes.acesso import enviar_email_de_acesso
+from apps.notificacoes.models import CONVITE, SituacaoEnvio
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
 
@@ -59,13 +60,14 @@ def _enviar_email(convite: Convite, token: str, origem: str, nome_fornecedor: st
     }
     assunto = " ".join(render_to_string("convites/email_assunto.txt", contexto).split())
     corpo = render_to_string("convites/email_corpo.txt", contexto)
-    try:
-        EmailMessage(assunto, corpo, to=[convite.email_normalizado]).send(fail_silently=False)
-    except Exception as erro:
-        convite.email_enviado = False
-        logger.error("falha no envio do e-mail do convite %s (%s)", convite.pk, type(erro).__name__)
-    else:
-        convite.email_enviado = True
+    envio = enviar_email_de_acesso(
+        CONVITE,
+        destino=convite.email_normalizado,
+        assunto=assunto,
+        corpo=corpo,
+        referencia=convite.pk,
+    )
+    convite.email_enviado = envio.situacao == SituacaoEnvio.ENVIADO
 
 
 def emitir_convite(
