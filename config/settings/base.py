@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.rodadas",
     "apps.catalogo",
     "apps.interesses",
+    "apps.notificacoes",
 ]
 
 AUTH_USER_MODEL = "contas.Conta"
@@ -71,6 +72,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.contas.contexto.google_habilitado",
+                "apps.notificacoes.contexto.notificacoes_nao_lidas",
             ],
         },
     },

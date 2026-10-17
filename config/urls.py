@@ -6,6 +6,7 @@ from django.urls import URLPattern, URLResolver, include, path, re_path
 from apps.catalogo import views as catalogo_views
 from apps.contas import views as contas_views
 from apps.fornecedores import views as fornecedores_views
+from apps.notificacoes import views as notificacoes_views
 from apps.rodadas import views as rodadas_views
 
 # Cada rota entra com a fatia que a especifica e testa. Só as rotas do allauth usadas aqui
@@ -60,6 +61,13 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "catalogo/<int:pk>/",
         catalogo_views.catalogo_do_fornecedor,
         name="catalogo_fornecedor",
+    ),
+    path("notificacoes/", notificacoes_views.central, name="notificacoes"),
+    path("notificacoes/lidas/", notificacoes_views.marcar_todas, name="notificacoes_marcar_todas"),
+    path(
+        "notificacoes/<int:pk>/lida/",
+        notificacoes_views.marcar_lida,
+        name="notificacoes_marcar_lida",
     ),
     path("perfil/", contas_views.perfil, name="perfil"),
     path("perfil/avatar/<int:pk>/", contas_views.avatar, name="avatar"),

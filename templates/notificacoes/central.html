@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Notificações · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Notificações</h1>
+  {% if ha_nao_lidas %}
+    <form method="post" action="{% url 'notificacoes_marcar_todas' %}">
+      {% csrf_token %}
+      <button type="submit">Marcar todas como lidas</button>
+    </form>
+  {% endif %}
+  {% if pagina.object_list %}
+    <ul>
+      {% for item in pagina.object_list %}{% include "notificacoes/_item.html" with pagina_atual=pagina.number %}{% endfor %}
+    </ul>
+    {% if pagina.has_other_pages %}
+      <p>
+        {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}">Anteriores</a>{% endif %}
+        Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+        {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}">Mais antigas</a>{% endif %}
+      </p>
+    {% endif %}
+  {% else %}
+    <p>Você não tem notificações.</p>
+  {% endif %}
+  <p><a href="{% url 'inicio' %}">Voltar ao início</a></p>
+{% endblock %}

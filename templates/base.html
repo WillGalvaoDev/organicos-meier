@@ -6,6 +6,9 @@
   <title>{% block titulo %}Orgânicos Méier{% endblock %}</title>
 </head>
 <body>
+  {% if user.is_authenticated %}
+    <nav><a href="{% url 'notificacoes' %}">Notificações{% if notificacoes_nao_lidas %} ({{ notificacoes_nao_lidas }}){% endif %}</a></nav>
+  {% endif %}
   <main>
     {% if messages %}
       <ul>{% for mensagem in messages %}<li>{{ mensagem }}</li>{% endfor %}</ul>

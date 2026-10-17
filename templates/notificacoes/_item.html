@@ -1,0 +1,15 @@
+{% load notificacoes %}
+<li id="notificacao-{{ item.pk }}">
+  <h2>{{ item.titulo }}{% if not item.lida_em %} <strong>Nova</strong>{% endif %}</h2>
+  <p>{{ item.corpo|linebreaksbr }}</p>
+  <p><time datetime="{{ item.criada_em.isoformat }}">{{ item.criada_em|data_hora }}</time></p>
+  {% if item.link %}<p><a href="{{ item.link }}">Ver detalhes</a></p>{% endif %}
+  {% if not item.lida_em %}
+    <form method="post" action="{% url 'notificacoes_marcar_lida' pk=item.pk %}"
+          hx-post="{% url 'notificacoes_marcar_lida' pk=item.pk %}" hx-target="#notificacao-{{ item.pk }}" hx-swap="outerHTML">
+      {% csrf_token %}
+      {% if pagina_atual %}<input type="hidden" name="pagina" value="{{ pagina_atual }}">{% endif %}
+      <button type="submit">Marcar como lida</button>
+    </form>
+  {% endif %}
+</li>
