@@ -230,6 +230,7 @@ Fora da fase de interesse, o valor enviado nunca é avaliado. A resposta é a me
   - `condicoes_editaveis(fornecedor) -> bool`: `True` se e somente se o fornecedor tem rodada em `interesse`. Serve para mínimo, múltiplo e incremento.
   - para o estoque, a verificação é sobre a rodada da rota: `rodada.etapa == Etapa.INTERESSE`. Uma rodada em interesse é sempre a ativa do fornecedor, pelo índice único da E03-02.
 - Essa leitura sem trava só serve para escolher a resposta quando nada será gravado. Se ela disser "editável", o serviço ainda trava e verifica de novo. Uma mudança de etapa que confirme entre as duas leituras é recusada pelo serviço, com 409.
+- Quando o serviço levanta `CondicoesCongeladas` depois de a leitura sem trava ter dito "editável", a resposta é a mesma do 409 direto: só de leitura, sem campo editável e com a etapa relida do banco depois da recusa. A view nunca usa o objeto lido antes do serviço para decidir se oferece edição (complemento de 2026-10-17, ver a E03-05).
 - O `GET` não muda.
 - O 409 vale também com o cabeçalho `HX-Request: true`, como na matriz da E03-07.
 

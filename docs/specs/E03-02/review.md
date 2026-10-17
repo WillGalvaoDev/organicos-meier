@@ -1,6 +1,6 @@
 # E03-02 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -132,3 +132,12 @@ Critérios: A-20 e A-21. Nada aqui é aprovação.
 **Testes (Green).** `tests/tecnicos/test_condicoes_congeladas_matriz.py`: A-12 (rota, 5 condições × 6 situações × 5 classes de valor, com e sem `HX-Request`), A-13 (serviços), A-20 e A-21 da E03-02, completude da matriz com as classes de valor, `condicoes_editaveis` e o probe `test_minimo_excedente_fora_de_interesse_responde_409` do revisor. `tests/tecnicos/test_rodadas_estoque.py`: A-22, A-23, A-24 (verificação dentro do `<form>` com `html.parser`, inclusive escape) e o probe `test_estoque_preserva_entrada_rejeitada`. Nos dois probes literais, só mudaram a fixture (`admin` → `admin_client`/fixture local, porque `admin` já é outra fixture no arquivo de estoque) e as anotações de tipo exigidas pelo `mypy --strict`; o corpo das asserções é o do revisor.
 
 **Resultado.** Mesmos dois arquivos: **168 passed**. Suíte completa: **1187 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros. Nenhum teste existente foi alterado ou afrouxado.
+
+
+## Revalidação independente — 8064a14 — 2026-10-17
+
+Revisor: Codex, agente 3. **Decisão desta fatia: APROVADO.**
+
+R03 corrigido no mínimo: fase prevalece no serviço e na view, inclusive para valor inválido/vazio/excedente. A-20/A-21 e probes anteriores verdes. A pendência remanescente de R03 está na resposta de estoque, E03-05.
+
+Suíte completa: **1187 passed em 129,30 s**. Probes independentes: **22 passed, 4 failed em 14,69 s**; os 22 anteriores passam, quatro adicionais reproduzem as pendências R03/R05. Verificações estáticas e CI verdes. Evidências, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.

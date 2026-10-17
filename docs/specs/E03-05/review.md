@@ -1,6 +1,6 @@
 # E03-05 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `2e7bbcc` (2026-10-16). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **REPROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -138,3 +138,31 @@ Critérios: A-22, A-23 e A-24; A-12 da E03-07. Nada aqui é aprovação.
 **Testes (Green).** `tests/tecnicos/test_condicoes_congeladas_matriz.py`: A-12 (rota, 5 condições × 6 situações × 5 classes de valor, com e sem `HX-Request`), A-13 (serviços), A-20 e A-21 da E03-02, completude da matriz com as classes de valor, `condicoes_editaveis` e o probe `test_minimo_excedente_fora_de_interesse_responde_409` do revisor. `tests/tecnicos/test_rodadas_estoque.py`: A-22, A-23, A-24 (verificação dentro do `<form>` com `html.parser`, inclusive escape) e o probe `test_estoque_preserva_entrada_rejeitada`. Nos dois probes literais, só mudaram a fixture (`admin` → `admin_client`/fixture local, porque `admin` já é outra fixture no arquivo de estoque) e as anotações de tipo exigidas pelo `mypy --strict`; o corpo das asserções é o do revisor.
 
 **Resultado.** Mesmos dois arquivos: **168 passed**. Suíte completa: **1187 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros. Nenhum teste existente foi alterado ou afrouxado.
+
+
+## Revalidação independente — 8064a14 — 2026-10-17
+
+Revisor: Codex, agente 3. **Decisão desta fatia: REPROVADO.**
+
+A-22 a A-24 e probes anteriores verdes. R04 encerrado: texto bruto e erro retornam à linha correta, com escape e sem efeitos persistidos. R03 permanece parcialmente aberto: após fechamento entre leitura e serviço, a resposta 409 ainda contém campos editáveis. R05 novo: identificador inválido no tratamento do formulário pode causar HTTP 500.
+
+Suíte completa: **1187 passed em 129,30 s**. Probes independentes: **22 passed, 4 failed em 14,69 s**; os 22 anteriores passam, quatro adicionais reproduzem as pendências R03/R05. Verificações estáticas e CI verdes. Evidências, reprodução e limites no [parecer consolidado](../E03-08/review.md), seção deste SHA. Nenhuma alteração de produção ou testes versionados pelo revisor.
+
+
+## Correção E03-R03 (complemento) e E03-R05 — implementador (aguardando nova revisão independente)
+
+Critérios: A-25, A-26 e A-27; complemento da E03-02 (409 sempre só de leitura). Nada aqui é aprovação.
+
+**Red.** Testes escritos antes do código, sobre `8064a14`: `uv run pytest tests/tecnicos/test_rodadas_estoque.py tests/tecnicos/test_condicoes_congeladas_matriz.py -q` deu **10 failed, 180 passed**.
+- A-25 e o probe `test_fechamento_entre_leitura_e_servico_devolve_estoque_somente_leitura` (inclusão e alteração): 409 correto, mas `name="limite"`, botões e etapa antiga na página.
+- A-27 e o probe `test_id_invalido_no_formulario_nao_provoca_500`: HTTP 500 por `ValueError` para `²` e para 4301 algarismos (`Exceeds the limit (4300 digits)`).
+- Já passavam no Red, por já existir o comportamento: A-26 (guarda de regressão das rotas de mínimo, múltiplo e incremento, como a spec previu), os ids `-1`, `0`, vazio e `99999999999999999999` do A-27 (o Django trata o valor fora da faixa do `bigint` no filtro) e o "Produto inválido." de um id inexistente dentro da faixa. O `max_value` do campo foi acrescentado mesmo assim, como a spec exige.
+
+**Green.** Em `apps/rodadas/views.py`:
+- `_pagina_do_estoque` calcula `editavel = status != 409 and rodada.etapa == INTERESSE`; a mensagem única sai uma vez só no aviso do topo.
+- `_pagina_congelada` relê a rodada do banco (sem trava) depois de o serviço recusar e monta a página só de leitura com a etapa gravada; usada no 409 direto e no `CondicoesCongeladas` do serviço, na inclusão e na alteração.
+- `_id` foi removido: a linha da inclusão recusada só é identificada por `form.cleaned_data["produto"]` e só quando `produto` não está em `form.errors`; `produto` inválido vai para o aviso do topo, sem linha. Não captura `ValueError` nem muda o limite de conversão do Python.
+- `apps/rodadas/forms.py`: `produto` com `max_value=9223372036854775807`.
+A validação transacional do serviço não mudou.
+
+**Resultado.** Mesmos dois arquivos: todos passando. Suíte completa: **1209 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros. Nos probes literais do revisor mudaram só a fixture (`admin` → `admin_client`), as anotações de tipo e a leitura de `exc_info` por `getattr` (exigência do `mypy --strict`); as asserções são as dele. Nenhum teste existente foi alterado ou afrouxado.

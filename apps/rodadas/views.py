@@ -49,9 +49,10 @@ class Submetido:
     texto: str
 
 
-def _id(request: HttpRequest) -> int | None:
-    bruto = request.POST.get("produto", "")
-    return int(bruto) if bruto.isdigit() else None
+def _pagina_congelada(request: HttpRequest, rodada: Rodada) -> HttpResponse:
+    """409 só de leitura, com a etapa relida do banco depois da recusa (E03-R03, complemento)."""
+    atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+    return _pagina_do_estoque(request, atual, MENSAGEM, status=409)
 
 
 def _pagina_do_estoque(
@@ -96,13 +97,13 @@ def _pagina_do_estoque(
                 "erro": erro if devolvido else None,
             }
         )
-    editavel = rodada.etapa == Etapa.INTERESSE
+    editavel = status != 409 and rodada.etapa == Etapa.INTERESSE
     contexto = {
         "rodada": rodada,
         "na_rodada": na_rodada,
         "fora_da_rodada": fora_da_rodada,
         "editavel": editavel,
-        "mensagem_somente_leitura": None if editavel else MENSAGEM,
+        "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
     return render(request, "rodadas/estoque.html", contexto, status=status)
@@ -121,13 +122,14 @@ def estoque(request: HttpRequest, pk: int) -> HttpResponse:
 def estoque_incluir(request: HttpRequest, pk: int) -> HttpResponse:
     rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
     if rodada.etapa != Etapa.INTERESSE:
-        return _pagina_do_estoque(request, rodada, MENSAGEM, status=409)
+        return _pagina_congelada(request, rodada)
     texto = request.POST.get("limite", "")
     form = FormularioInclusao(request.POST)
     if not form.is_valid():
-        return _pagina_do_estoque(
-            request, rodada, _erros(form), submetido=Submetido("incluir", _id(request), texto)
-        )
+        # só um id já validado identifica a linha; `produto` inválido vai para o aviso do topo
+        alvo_valido = None if "produto" in form.errors else form.cleaned_data.get("produto")
+        submetido = Submetido("incluir", alvo_valido, texto)
+        return _pagina_do_estoque(request, rodada, _erros(form), submetido=submetido)
     alvo = form.cleaned_data["produto"]
     submetido = Submetido("incluir", alvo, texto)
     produto = Produto.objects.select_related("fornecedor").filter(pk=alvo).first()
@@ -135,8 +137,8 @@ def estoque_incluir(request: HttpRequest, pk: int) -> HttpResponse:
         return _pagina_do_estoque(request, rodada, "Produto inválido.")
     try:
         incluir_produto_na_rodada(request.user, rodada, produto, form.cleaned_data["limite"])  # type: ignore[arg-type]
-    except CondicoesCongeladas as erro:
-        return _pagina_do_estoque(request, rodada, str(erro), status=409)
+    except CondicoesCongeladas:
+        return _pagina_congelada(request, rodada)
     except ValidationError as erro:
         return _pagina_do_estoque(request, rodada, " ".join(erro.messages), submetido=submetido)
     messages.success(request, "Produto incluído na rodada.")
@@ -151,15 +153,15 @@ def estoque_alterar(request: HttpRequest, pk: int) -> HttpResponse:
     )
     rodada = estoque.rodada
     if rodada.etapa != Etapa.INTERESSE:
-        return _pagina_do_estoque(request, rodada, MENSAGEM, status=409)
+        return _pagina_congelada(request, rodada)
     submetido = Submetido("alterar", estoque.pk, request.POST.get("limite", ""))
     form = FormularioLimite(request.POST)
     if not form.is_valid():
         return _pagina_do_estoque(request, rodada, _erros(form), submetido=submetido)
     try:
         alterar_estoque(request.user, estoque, form.cleaned_data["limite"])  # type: ignore[arg-type]
-    except CondicoesCongeladas as erro:
-        return _pagina_do_estoque(request, rodada, str(erro), status=409)
+    except CondicoesCongeladas:
+        return _pagina_congelada(request, rodada)
     except (EstoqueAbaixoDoReservado, ValidationError) as erro:
         mensagem = " ".join(erro.messages) if isinstance(erro, ValidationError) else str(erro)
         return _pagina_do_estoque(request, rodada, mensagem, submetido=submetido)
