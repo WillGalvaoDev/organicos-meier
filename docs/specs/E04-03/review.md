@@ -1,5 +1,7 @@
 # E04-03 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **APROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.7, `spec.md` e `acceptance.md` da fatia, E04-01 e E04-02.
@@ -37,3 +39,14 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 O *worker* do Procrastinate não foi subido: os testes chamam `processar_envios` e a tarefa diretamente, e conferem o registro periódico. Nenhum SMTP real foi usado (`locmem` e backends de teste). A leitura do SMTP em produção é coberta apenas pela suíte de configuração existente (carregamento sem erro).
+
+
+## Revisão independente — 0b52010 — 2026-10-17
+
+**Parecer da fatia: APROVADO. E04 global: REPROVADO.**
+
+A-1 a A-12 conferidos e verdes: tentativas, fronteiras de 1 e 10 minutos, limite de três, continuidade após falha, skip_locked, integridade das tentativas e tarefa periódica. Sem achado próprio. Mantida a limitação de entrega pelo menos uma vez prevista na especificação.
+
+Verificação independente: **1385 passed em 160,23 s** na suíte completa. Probes adicionais: **10 failed, 4 passed em 4,39 s**, mais **1 passed em 2,52 s** no caso de isolamento acrescentado. Dez falhas correspondem a R01 (oito) e R02 (duas). Lint, formatação, tipos, Django e CI passaram.
+
+Comandos, matriz, reproduções, TDD, critérios de correção e limites no [parecer consolidado E04-07](../E04-07/review.md). Nenhum código ou teste versionado foi alterado pelo revisor.

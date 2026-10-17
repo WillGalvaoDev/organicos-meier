@@ -18,6 +18,9 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-12 | E02-10 | positivo e negativo | um comprador suspenso, uma conta de fornecedor, o administrador (com passkey) e um anônimo | abro a central e marco uma notificação própria | 200 e redirecionamento para os três autenticados; o anônimo é redirecionado para `/entrar/`; `GET` em `/notificacoes/<id>/lida/` responde 405 |
 | A-13 | Spec da fatia | concorrência | uma notificação não lida | duas marcações em threads, a primeira segurando a linha até ver a segunda esperando por trava (`pg_stat_activity`) | uma única gravação; `lida_em` igual ao da primeira; nenhuma exceção |
 | A-14 | E02-10 | positivo | as rotas desta fatia | rodo a varredura de políticas | política `autenticada` declarada nas três |
+| A-15 | E04-R01 | negativo | um comprador | `criar_notificacao` com cada link recusado da lista de exemplos da correção E04-R01 | `NotificacaoInvalida` com `campo == "link"` em todos; nada gravado |
+| A-16 | E04-R01 | negativo | um comprador | gravo pela `NotificacaoFactory` e, noutro caso, por `INSERT` em SQL direto, os links `"/\\externo.example/"`, `"/\t/externo.example/"`, `"/\n/x"`, `"/ /x"`, `"/é/"` e `"/%zz"` | `IntegrityError` em todos, pelo `CHECK` `notificacao_link_interno` |
+| A-17 | E04-R01 | positivo | um comprador | `criar_notificacao` com cada link aceito da lista de exemplos | cada link é gravado com o mesmo texto; `url_has_allowed_host_and_scheme(link, allowed_hosts={"om.test"})` é verdadeiro em todos; na central, o `href` é igual ao link gravado |
 
 ## Mapeamento para testes
 
@@ -28,3 +31,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-6 a A-12 | `tests/tecnicos/test_notificacoes_central.py` |
 | A-13 | `tests/tecnicos/test_notificacoes_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
 | A-14 | coberto pelo teste existente `tests/tecnicos/test_permissoes_politica_rotas.py` |
+| A-15 a A-17 | `tests/tecnicos/test_notificacoes_link_interno.py`, com os probes de link do revisor de `0b52010` incluídos literalmente |

@@ -1,5 +1,7 @@
 # E04-01 — Registro do implementador (aguardando revisão independente)
 
+Parecer atual do revisor: **REPROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
 Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.7, `spec.md` e `acceptance.md` da fatia.
@@ -39,3 +41,14 @@ Ajuste de teste feito no Green, por erro meu na escrita: `test_aplicacao_aceita_
 ## Limites da verificação
 
 Cliente HTTP do Django, sem navegador; o atributo `hx-*` do fragmento não foi exercitado em navegador (o teste cobre o cabeçalho `HX-Request` e o fragmento devolvido).
+
+
+## Revisão independente — 0b52010 — 2026-10-17
+
+**Parecer da fatia: REPROVADO. E04 global: REPROVADO.**
+
+A-1 a A-14 conferidos: matriz, destinatários, imutabilidade, isolamento por conta, paginação, escape, leitura idempotente e concorrência. R01 importante: a regra de link relativo aceita endereços externos disfarçados, apesar dos exemplos dos critérios passarem.
+
+Verificação independente: **1385 passed em 160,23 s** na suíte completa. Probes adicionais: **10 failed, 4 passed em 4,39 s**, mais **1 passed em 2,52 s** no caso de isolamento acrescentado. Dez falhas correspondem a R01 (oito) e R02 (duas). Lint, formatação, tipos, Django e CI passaram.
+
+Comandos, matriz, reproduções, TDD, critérios de correção e limites no [parecer consolidado E04-07](../E04-07/review.md). Nenhum código ou teste versionado foi alterado pelo revisor.
