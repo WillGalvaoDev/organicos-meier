@@ -16,6 +16,20 @@ uv run pytest                    # suíte de testes
 uv run ruff check . ; uv run ruff format --check . ; uv run mypy .
 ```
 
+### Envio de e-mails (E04-03)
+
+Os avisos por e-mail ficam numa fila no banco e são enviados por uma tarefa periódica do
+Procrastinate, a cada minuto. Em desenvolvimento, suba o *worker* ao lado do servidor:
+
+```powershell
+uv run python manage.py migrate                    # inclui as tabelas do Procrastinate
+uv run python manage.py procrastinate worker       # processa a fila de envios
+```
+
+Sem o *worker*, os envios continuam pendentes; as notificações do site não dependem dele.
+Em produção, o SMTP vem do ambiente (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`,
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`), com os segredos em `fly secrets`.
+
 > Desde a E03-01 o fornecedor tem campos obrigatórios novos. Bancos locais que já tenham
 > fornecedores de teste devem ser recriados (`docker compose down -v`, `docker compose up -d db`,
 > `uv run python manage.py migrate`), como na E02-01.
@@ -42,4 +56,4 @@ docs/specs/_modelo modelos de spec.md, acceptance.md e review.md (AGENTS.md §5)
 
 ## Exceção técnica registrada
 
-A estrutura inicial (configuração, banco, ferramentas e modelos de documentação) é andaime sem comportamento de negócio. Por isso foi criada sem o ciclo Red → Green, como permite o AGENTS.md §3. django-allauth e Procrastinate estão instalados, mas só entram em `INSTALLED_APPS` junto com a fatia que os usa, com testes escritos antes. Assim nenhuma rota, como um cadastro público, existe sem especificação.
+A estrutura inicial (configuração, banco, ferramentas e modelos de documentação) é andaime sem comportamento de negócio. Por isso foi criada sem o ciclo Red → Green, como permite o AGENTS.md §3. django-allauth e Procrastinate estavam instalados, mas só entram em `INSTALLED_APPS` junto com a fatia que os usa, com testes escritos antes (o Procrastinate entrou na E04-03). Assim nenhuma rota, como um cadastro público, existe sem especificação.

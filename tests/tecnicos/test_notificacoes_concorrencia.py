@@ -77,3 +77,38 @@ def test_duas_emissoes_com_a_mesma_chave_geram_uma_so() -> None:  # E04-02 A-7
     assert resultados[0].valor == resultados[1].valor
     assert Notificacao.objects.count() == 1
     assert Envio.objects.count() == 1
+
+
+def test_processador_pula_o_envio_travado_por_outro() -> None:  # E04-03 A-6
+    from django.core import mail
+
+    from apps.notificacoes.processamento import processar_envios
+    from tests.fabricas import EnvioFactory
+
+    e1 = EnvioFactory.create(destino="um@x.com")
+    e2 = EnvioFactory.create(destino="dois@x.com")
+
+    def travador(barreira: Any) -> None:
+        with transaction.atomic():
+            Envio.objects.select_for_update().get(pk=e1.pk)
+            barreira.wait(timeout=10)  # a linha está travada
+            barreira.wait(timeout=30)  # o processador terminou
+
+    def processador(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        feitas = processar_envios()
+        barreira.wait(timeout=30)
+        return feitas
+
+    resultados = executar_em_paralelo(travador, processador)
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert resultados[1].excecao is None, resultados[1].excecao
+    assert resultados[1].valor == 1
+    e1.refresh_from_db()
+    e2.refresh_from_db()
+    assert (e1.situacao, e1.tentativas) == ("pendente", 0)
+    assert e2.situacao == "enviado"
+    assert processar_envios() == 1
+    e1.refresh_from_db()
+    assert (e1.situacao, e1.tentativas) == ("enviado", 1)
+    assert sorted(m.to[0] for m in mail.outbox) == ["dois@x.com", "um@x.com"]

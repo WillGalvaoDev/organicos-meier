@@ -19,6 +19,13 @@ SESSION_COOKIE_SAMESITE = "Lax"
 # O envio real (SES) é configurado na E04 e na homologação.
 EMAIL_BACKEND = env("EMAIL_BACKEND")  # noqa: F405
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")  # noqa: F405
+# SMTP (por exemplo, a interface SMTP do SES). Os segredos vêm do ambiente (`fly secrets`); com
+# usuário e senha vazios o envio falha e entra no fluxo de tentativas (E04-03).
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")  # noqa: F405
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)  # noqa: F405
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)  # noqa: F405
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")  # noqa: F405
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")  # noqa: F405
 # Origem pública dos links enviados por e-mail (convites); sem padrão em produção.
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA")  # noqa: F405
 # Credenciais do login com Google, obrigatórias em produção.

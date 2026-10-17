@@ -11,7 +11,7 @@ from django.db import models
 
 from apps.contas.models import Conta
 from apps.notificacoes.eventos import Canal, Evento
-from apps.nucleo.so_insercao import RegistroImutavel
+from apps.nucleo.so_insercao import RegistroImutavel, RegistroSoInsercao
 from apps.nucleo.tempo import agora
 
 _SO_LIDA_EM = {"lida_em"}
@@ -145,3 +145,37 @@ class Envio(models.Model):
 
     def __str__(self) -> str:
         return f"Envio {self.pk}"
+
+
+class ResultadoDaTentativa(models.TextChoices):
+    SUCESSO = "sucesso", "Sucesso"
+    FALHA = "falha", "Falha"
+
+
+class TentativaDeEnvio(RegistroSoInsercao):
+    """Uma chamada ao canal (E04-03), registrada uma vez e nunca alterada.
+
+    `erro` guarda só o nome da classe da exceção: a mensagem pode conter endereço ou conteúdo.
+    """
+
+    envio = models.ForeignKey(Envio, on_delete=models.PROTECT, related_name="tentativas_feitas")
+    numero = models.PositiveSmallIntegerField()
+    iniciada_em = models.DateTimeField()
+    concluida_em = models.DateTimeField()
+    resultado = models.CharField(max_length=10, choices=ResultadoDaTentativa.choices)
+    erro = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["envio", "numero"], name="tentativa_numero_unico"),
+            models.CheckConstraint(
+                condition=models.Q(numero__gte=1, numero__lte=3), name="tentativa_numero_de_1_a_3"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(resultado__in=ResultadoDaTentativa.values),
+                name="tentativa_resultado_valido",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"Tentativa {self.numero} do envio {self.envio_id}"
