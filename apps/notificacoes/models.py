@@ -194,3 +194,21 @@ class TentativaDeEnvio(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"Tentativa {self.numero} do envio {self.envio_id}"
+
+
+class Comunicado(RegistroSoInsercao):
+    """Comunicado do administrador (E04-06): o registro do que foi dito, nunca editado nem apagado.
+
+    `token` identifica o pedido de publicação (evita duplicidade por duplo clique) e
+    `destinatarios` é o número de contas que receberam a notificação, conhecido antes do `INSERT`.
+    """
+
+    titulo = models.CharField(max_length=150)
+    mensagem = models.CharField(max_length=2000)
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    publicado_em = models.DateTimeField(default=agora)
+    token = models.UUIDField(unique=True)
+    destinatarios = models.PositiveIntegerField()
+
+    def __str__(self) -> str:
+        return self.titulo

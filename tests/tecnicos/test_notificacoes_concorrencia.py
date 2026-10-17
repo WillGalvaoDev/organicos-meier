@@ -112,3 +112,34 @@ def test_processador_pula_o_envio_travado_por_outro() -> None:  # E04-03 A-6
     e1.refresh_from_db()
     assert (e1.situacao, e1.tentativas) == ("enviado", 1)
     assert sorted(m.to[0] for m in mail.outbox) == ["dois@x.com", "um@x.com"]
+
+
+def test_duas_publicacoes_com_o_mesmo_token_publicam_uma_so() -> None:  # E04-06 A-3
+    import uuid
+
+    from apps.notificacoes.comunicados import publicar_comunicado
+    from apps.notificacoes.models import Comunicado
+
+    admin = ContaFactory.create(administrador=True)
+    for _ in range(3):
+        ContaFactory.create()
+    token = uuid.uuid4()
+
+    def primeira(barreira: Any) -> bool:
+        with transaction.atomic():
+            _, novo = publicar_comunicado(admin, titulo="t", mensagem="m", token=token)
+            barreira.wait(timeout=10)
+            _esperar_outra_conexao_na_trava()
+        return novo
+
+    def segunda(barreira: Any) -> bool:
+        barreira.wait(timeout=10)
+        _, novo = publicar_comunicado(admin, titulo="t", mensagem="m", token=token)
+        return novo
+
+    resultados = executar_em_paralelo(primeira, segunda)
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert resultados[1].excecao is None, resultados[1].excecao
+    assert (resultados[0].valor, resultados[1].valor) == (True, False)
+    assert Comunicado.objects.count() == 1
+    assert Notificacao.objects.filter(evento="comunicado").count() == 3

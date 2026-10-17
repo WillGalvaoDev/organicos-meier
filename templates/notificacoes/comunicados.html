@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load notificacoes %}
+{% block titulo %}Comunicados · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Comunicados</h1>
+  {% if pagina.object_list %}
+    <ul>
+      {% for comunicado in pagina.object_list %}
+        <li id="c{{ comunicado.pk }}">
+          <h2>{{ comunicado.titulo }}</h2>
+          <p><time datetime="{{ comunicado.publicado_em.isoformat }}">{{ comunicado.publicado_em|data_hora }}</time></p>
+          <p>{{ comunicado.mensagem|linebreaksbr }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if pagina.has_other_pages %}
+      <p>
+        {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}">Anteriores</a>{% endif %}
+        Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+        {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}">Mais antigos</a>{% endif %}
+      </p>
+    {% endif %}
+  {% else %}
+    <p>Nenhum comunicado publicado.</p>
+  {% endif %}
+  <p><a href="{% url 'inicio' %}">Voltar ao início</a></p>
+{% endblock %}
