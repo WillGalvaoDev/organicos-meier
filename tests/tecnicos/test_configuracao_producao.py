@@ -20,14 +20,16 @@ _AMBIENTE_MINIMO = {
 }
 
 
-def _carregar_producao(ambiente: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _carregar_producao(
+    ambiente: dict[str, str], modulo: str = "config.settings.prod"
+) -> subprocess.CompletedProcess[str]:
     codigo = (
         "import json, importlib;"
-        "m = importlib.import_module('config.settings.prod');"
-        "print(json.dumps({k: getattr(m, k) for k in ["
+        f"m = importlib.import_module('{modulo}');"
+        "print(json.dumps({k: getattr(m, k, None) for k in ["
         "'SESSION_COOKIE_SECURE','CSRF_COOKIE_SECURE','SESSION_COOKIE_HTTPONLY',"
         "'SESSION_COOKIE_SAMESITE','EMAIL_BACKEND','DEFAULT_FROM_EMAIL',"
-        "'AUTH_PASSWORD_VALIDATORS']}))"
+        "'AUTH_PASSWORD_VALIDATORS','CANAL_WHATSAPP']}))"
     )
     base = {k: v for k, v in os.environ.items() if k not in _AMBIENTE_MINIMO}
     return subprocess.run(  # noqa: S603
@@ -108,3 +110,31 @@ def test_validador_de_semelhanca_conhece_os_atributos_da_conta_em_teste(settings
     assert semelhanca.max_similarity == 0.7  # o padrão do Django não foi afrouxado
     assert next(v for v in instancias if isinstance(v, MinimumLengthValidator)).min_length == 10
     assert len(instancias) == 4
+
+
+def test_producao_sem_a_variavel_deixa_o_whatsapp_desligado() -> None:  # E04-04 A-11
+    resultado = _carregar_producao(_AMBIENTE_MINIMO)
+    assert resultado.returncode == 0, resultado.stderr
+    assert json.loads(resultado.stdout.strip().splitlines()[-1])["CANAL_WHATSAPP"] == "desligado"
+
+
+def test_producao_recusa_o_simulador_de_whatsapp() -> None:  # E04-04 A-11
+    resultado = _carregar_producao({**_AMBIENTE_MINIMO, "CANAL_WHATSAPP": "simulado"})
+    assert resultado.returncode != 0
+    assert "ImproperlyConfigured" in resultado.stderr
+    assert "CANAL_WHATSAPP" in resultado.stderr
+
+
+def test_valor_desconhecido_do_canal_de_whatsapp_e_recusado_em_qualquer_ambiente() -> None:  # A-11
+    for modulo in ("config.settings.prod", "config.settings.dev"):
+        resultado = _carregar_producao({**_AMBIENTE_MINIMO, "CANAL_WHATSAPP": "meta"}, modulo)
+        assert resultado.returncode != 0, modulo
+        assert "ImproperlyConfigured" in resultado.stderr, modulo
+        assert "CANAL_WHATSAPP" in resultado.stderr, modulo
+
+
+def test_dev_e_teste_usam_o_simulador_de_whatsapp(settings: Any) -> None:  # E04-04
+    resultado = _carregar_producao(_AMBIENTE_MINIMO, "config.settings.dev")
+    assert resultado.returncode == 0, resultado.stderr
+    assert json.loads(resultado.stdout.strip().splitlines()[-1])["CANAL_WHATSAPP"] == "simulado"
+    assert settings.CANAL_WHATSAPP == "simulado"

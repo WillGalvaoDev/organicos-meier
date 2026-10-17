@@ -17,6 +17,8 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 # App só de testes (modelos de apoio). Nunca em base.py nem em prod.py.
 INSTALLED_APPS = [*_APPS_BASE, "tests.apoio"]
 
+CANAL_WHATSAPP = "simulado"
+
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 DEFAULT_FROM_EMAIL = "contato@organicosmeier.test"
 

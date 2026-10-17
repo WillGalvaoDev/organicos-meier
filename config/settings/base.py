@@ -7,6 +7,7 @@ entram aqui só junto com a fatia que as usa, com testes escritos antes (AGENTS.
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -22,6 +23,12 @@ EMAIL_TIMEOUT = 10
 
 # As tarefas do Procrastinate ficam em `tarefas.py` de cada app (E04-03).
 PROCRASTINATE_AUTODISCOVER_MODULE_NAME = "tarefas"
+
+# Canal de WhatsApp (E04-04). Na fase 1 só existem `desligado` e `simulado`; o canal real é da
+# fase 3. Qualquer outro valor impede o carregamento, em qualquer ambiente.
+CANAL_WHATSAPP = env("CANAL_WHATSAPP", default="desligado")
+if CANAL_WHATSAPP not in ("desligado", "simulado"):
+    raise ImproperlyConfigured("CANAL_WHATSAPP deve ser 'desligado' ou 'simulado'.")
 
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA", default="http://localhost:8000")
 

@@ -71,25 +71,56 @@ def _recusar_chave(evento: str, conta_id: int) -> ChaveDeEventoReutilizada:
     return ChaveDeEventoReutilizada("chave de evento reutilizada com conteúdo diferente")
 
 
-def _envios_de_email(
+def _texto_do_whatsapp(titulo: str, link: str | None) -> str:
+    if not link:
+        return titulo
+    return f"{titulo} {settings.ORIGEM_PUBLICA.rstrip('/')}{link}"
+
+
+def _recebe_whatsapp(conta: Conta) -> bool:
+    return (
+        settings.CANAL_WHATSAPP != "desligado"
+        and bool(conta.telefone)
+        and conta.whatsapp_consentido_em is not None
+    )
+
+
+def _envios_externos(
     evento: Evento, notificacao: Notificacao, conta: Conta, criado_em: Any
 ) -> list[Envio]:
-    if Canal.EMAIL not in CANAIS_POR_EVENTO[evento]:
-        return []
-    return [
-        Envio(
-            canal=Canal.EMAIL,
-            tipo=evento.value,
-            notificacao=notificacao,
-            conta=conta,
-            destino=conta.email_normalizado,
-            assunto=_assunto(notificacao.titulo),
-            corpo=_corpo_do_email(notificacao.corpo, notificacao.link),
-            chave=f"{notificacao.chave}:{Canal.EMAIL.value}",
-            criado_em=criado_em,
-            proxima_tentativa_em=criado_em,
+    """Um envio por canal externo do evento; o WhatsApp só com número e consentimento."""
+    canais = CANAIS_POR_EVENTO[evento]
+    envios: list[Envio] = []
+    comum: dict[str, Any] = {
+        "tipo": evento.value,
+        "notificacao": notificacao,
+        "conta": conta,
+        "criado_em": criado_em,
+        "proxima_tentativa_em": criado_em,
+    }
+    if Canal.EMAIL in canais:
+        envios.append(
+            Envio(
+                canal=Canal.EMAIL,
+                destino=conta.email_normalizado,
+                assunto=_assunto(notificacao.titulo),
+                corpo=_corpo_do_email(notificacao.corpo, notificacao.link),
+                chave=f"{notificacao.chave}:{Canal.EMAIL.value}",
+                **comum,
+            )
         )
-    ]
+    if Canal.WHATSAPP in canais and _recebe_whatsapp(conta):
+        envios.append(
+            Envio(
+                canal=Canal.WHATSAPP,
+                destino="",  # o número é lido da conta no momento do envio
+                assunto=_assunto(notificacao.titulo),
+                corpo=_texto_do_whatsapp(notificacao.titulo, notificacao.link),
+                chave=f"{notificacao.chave}:{Canal.WHATSAPP.value}",
+                **comum,
+            )
+        )
+    return envios
 
 
 def emitir_evento(
@@ -118,7 +149,7 @@ def emitir_evento(
                     chave=chave,
                     criada_em=agora_,
                 )
-                Envio.objects.bulk_create(_envios_de_email(evento, notificacao, conta, agora_))
+                Envio.objects.bulk_create(_envios_externos(evento, notificacao, conta, agora_))
         except IntegrityError:
             # outra transação confirmou a mesma chave entre a leitura e a gravação
             existente = Notificacao.objects.filter(chave=chave).first()
@@ -190,6 +221,6 @@ def emitir_evento_para_varios(
                     link=link,
                     chave=chaves[pk],
                 )
-                envios += _envios_de_email(evento, notificacao, conta, agora_)
+                envios += _envios_externos(evento, notificacao, conta, agora_)
         Envio.objects.bulk_create(envios)
     return len(novas)
