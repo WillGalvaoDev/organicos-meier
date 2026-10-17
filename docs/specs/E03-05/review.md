@@ -1,6 +1,6 @@
 # E03-05 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `8064a14` (2026-10-17). E03 global: **REPROVADO**. Histórico preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8257f66` (2026-10-17). E03 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -166,3 +166,12 @@ Critérios: A-25, A-26 e A-27; complemento da E03-02 (409 sempre só de leitura)
 A validação transacional do serviço não mudou.
 
 **Resultado.** Mesmos dois arquivos: todos passando. Suíte completa: **1209 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros. Nos probes literais do revisor mudaram só a fixture (`admin` → `admin_client`), as anotações de tipo e a leitura de `exc_info` por `getattr` (exigência do `mypy --strict`); as asserções são as dele. Nenhum teste existente foi alterado ou afrouxado.
+
+
+## Revalidação independente — 8257f66 — 2026-10-17
+
+**Parecer: APROVADO. E03 global: APROVADO.**
+
+R03 (complemento) e R05 encerrados. A-25 confirma inclusão e alteração com fechamento entre leitura e serviço: HTTP 409, etapa relida, aviso e ausência de formulários editáveis, sem alteração de estoque, auditoria ou sinal. A-26 protege mínimo, múltiplo e incremento. A-27 confirma identificadores inválidos e inexistentes: erro HTTP 200 controlado, sem efeitos persistidos. O parser bruto foi removido; a identificação da linha usa apenas o campo validado, limitado ao bigint.
+
+Suíte completa: **1209 passed em 101,35 s**. Reexecução dos três scripts independentes preservados no histórico: **26 passed em 4,01 s**, incluindo as quatro falhas anteriores. Verificações estáticas, Django e CI verdes. Comandos, fechamento dos achados e limitações no [parecer consolidado](../E03-08/review.md), seção deste SHA.
