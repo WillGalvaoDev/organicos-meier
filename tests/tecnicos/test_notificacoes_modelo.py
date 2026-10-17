@@ -8,12 +8,12 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from apps.contas.models import Conta
 from apps.notificacoes.eventos import Evento
-from apps.notificacoes.models import Notificacao
+from apps.notificacoes.models import Envio, Notificacao
 from apps.notificacoes.servicos import NotificacaoInvalida, criar_notificacao
 from apps.nucleo.so_insercao import RegistroImutavel
 from apps.nucleo.tempo import agora
 from tests.conftest import RelogioControlado
-from tests.fabricas import ContaFactory, NotificacaoFactory
+from tests.fabricas import ContaFactory, EnvioFactory, NotificacaoFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -179,3 +179,93 @@ def test_banco_aceita_link_relativo_e_nulo() -> None:
     NotificacaoFactory.create(link="/catalogo/3/")
     NotificacaoFactory.create(link=None)
     assert Notificacao.objects.count() == 2
+
+
+# --- E04-02: Envio (acceptance A-12 e A-13) ----------------------------------------------------
+
+
+def _envios() -> tuple[Envio, Envio]:
+    pendente = EnvioFactory.create()
+    enviado = EnvioFactory.create(situacao="enviado", tentativas=1, concluido_em=INSTANTE)
+    return pendente, enviado
+
+
+@pytest.mark.parametrize(
+    ("comando", "do_enviado"),
+    [
+        ("DELETE FROM notificacoes_envio WHERE id = %s", False),
+        ("DELETE FROM notificacoes_envio WHERE id = %s", True),
+        ("UPDATE notificacoes_envio SET corpo = 'x' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET destino = 'x@y.com' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET chave = 'nova' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET assunto = 'x' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET canal = 'whatsapp' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET tipo = 'x' WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET criado_em = now() WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET situacao = 'pendente' WHERE id = %s", True),
+        ("UPDATE notificacoes_envio SET tentativas = 2 WHERE id = %s", True),
+        ("UPDATE notificacoes_envio SET tentativas = 4 WHERE id = %s", False),
+        ("UPDATE notificacoes_envio SET situacao = 'enviado' WHERE id = %s", False),
+    ],
+)
+def test_banco_recusa_apagar_e_alterar_envios(comando: str, do_enviado: bool) -> None:  # A-12
+    pendente, enviado = _envios()
+    alvo = enviado if do_enviado else pendente
+    antes = Envio.objects.filter(pk=alvo.pk).values().get()
+    with pytest.raises(DatabaseError):
+        _sql(comando, [alvo.pk])
+    assert Envio.objects.filter(pk=alvo.pk).values().get() == antes
+
+
+def test_banco_aceita_atualizar_o_estado_de_um_envio_pendente() -> None:  # A-13
+    pendente, _ = _envios()
+    _sql(
+        "UPDATE notificacoes_envio SET tentativas = 1, proxima_tentativa_em = %s, "
+        "situacao = 'falhou', concluido_em = %s WHERE id = %s",
+        [INSTANTE, INSTANTE, pendente.pk],
+    )
+    pendente.refresh_from_db()
+    assert pendente.situacao == "falhou"
+    assert pendente.tentativas == 1
+
+
+def test_banco_aceita_reagendar_um_envio_pendente() -> None:  # A-13
+    pendente, _ = _envios()
+    _sql(
+        "UPDATE notificacoes_envio SET tentativas = 1, proxima_tentativa_em = %s WHERE id = %s",
+        [INSTANTE, pendente.pk],
+    )
+    pendente.refresh_from_db()
+    assert (pendente.tentativas, pendente.situacao) == (1, "pendente")
+
+
+@pytest.mark.parametrize(
+    "campos",
+    [
+        {"tentativas": 4},
+        {"tentativas": -1},
+        {"situacao": "enviado"},  # concluído sem concluido_em
+        {"concluido_em": INSTANTE},  # pendente com concluido_em
+        {"situacao": "outra", "concluido_em": INSTANTE},
+        {
+            "notificacao": None,
+            "tipo": "estorno",
+            "assunto": "a",
+            "corpo": "c",
+            "chave": "k",
+            "conta": ContaFactory.create,
+        },
+        {"conta": None, "destino": "x@y.com"},
+    ],
+)
+def test_banco_recusa_envios_invalidos(campos: dict[str, Any]) -> None:  # restrições da spec
+    dados = {k: (v() if callable(v) else v) for k, v in campos.items()}
+    with pytest.raises(IntegrityError), transaction.atomic():
+        EnvioFactory.create(**dados)
+    assert Envio.objects.count() == 0
+
+
+def test_banco_recusa_chave_repetida_de_envio() -> None:
+    primeiro = EnvioFactory.create()
+    with pytest.raises(IntegrityError), transaction.atomic():
+        EnvioFactory.create(chave=primeiro.chave)

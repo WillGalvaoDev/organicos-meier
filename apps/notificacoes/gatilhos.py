@@ -1,4 +1,4 @@
-"""Triggers da notificação (E04-01), no estilo da E02-10.
+"""Triggers da notificação (E04-01) e do envio (E04-02), no estilo da E02-10.
 
 Nada é apagado. O único `UPDATE` aceito muda `lida_em` de nulo para um instante, sem tocar em
 nenhuma outra coluna; marcar de novo, desmarcar ou alterar conteúdo é recusado.
@@ -50,5 +50,58 @@ def instalar_gatilhos() -> migrations.RunSQL:
         reverse_sql=[
             f'DROP TRIGGER IF EXISTS "{_TABELA}_so_marcar_como_lida" ON "{_TABELA}";',
             f'DROP TRIGGER IF EXISTS "{_TABELA}_sem_exclusao" ON "{_TABELA}";',
+        ],
+    )
+
+
+_TABELA_ENVIO = "notificacoes_envio"
+
+
+def instalar_gatilhos_do_envio() -> migrations.RunSQL:
+    """Envio: nada é apagado; o conteúdo é imutável; envio concluído não muda mais."""
+    funcao_exclusao = """
+        CREATE OR REPLACE FUNCTION notificacoes_envio_recusar_exclusao() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'o envio não pode ser excluído'
+                USING ERRCODE = 'integrity_constraint_violation';
+        END;
+        $$ LANGUAGE plpgsql;
+    """
+    funcao_alteracao = """
+        CREATE OR REPLACE FUNCTION notificacoes_envio_proteger() RETURNS trigger AS $$
+        BEGIN
+            IF OLD.situacao <> 'pendente' THEN
+                RAISE EXCEPTION 'o envio concluído não pode ser alterado'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            IF OLD.canal <> NEW.canal
+               OR OLD.tipo <> NEW.tipo
+               OR OLD.notificacao_id IS DISTINCT FROM NEW.notificacao_id
+               OR OLD.conta_id IS DISTINCT FROM NEW.conta_id
+               OR OLD.destino <> NEW.destino
+               OR OLD.assunto <> NEW.assunto
+               OR OLD.corpo <> NEW.corpo
+               OR OLD.chave <> NEW.chave
+               OR OLD.criado_em <> NEW.criado_em THEN
+                RAISE EXCEPTION 'o conteúdo do envio não pode ser alterado'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """
+    trigger_exclusao = f"""
+        CREATE TRIGGER "{_TABELA_ENVIO}_sem_exclusao" BEFORE DELETE ON "{_TABELA_ENVIO}"
+        FOR EACH ROW EXECUTE FUNCTION notificacoes_envio_recusar_exclusao();
+    """
+    trigger_alteracao = f"""
+        CREATE TRIGGER "{_TABELA_ENVIO}_protegido" BEFORE UPDATE ON "{_TABELA_ENVIO}"
+        FOR EACH ROW EXECUTE FUNCTION notificacoes_envio_proteger();
+    """
+    return migrations.RunSQL(
+        sql=[funcao_exclusao, funcao_alteracao, trigger_exclusao, trigger_alteracao],
+        reverse_sql=[
+            f'DROP TRIGGER IF EXISTS "{_TABELA_ENVIO}_protegido" ON "{_TABELA_ENVIO}";',
+            f'DROP TRIGGER IF EXISTS "{_TABELA_ENVIO}_sem_exclusao" ON "{_TABELA_ENVIO}";',
         ],
     )
