@@ -4,6 +4,8 @@ A recusa de iniciar com o simulador de pagamentos (A3, cenário 38, T-12) entra
 como comportamento testado, em fatia própria, e não como configuração solta.
 """
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F403
 
 DEBUG = False
@@ -31,3 +33,7 @@ ORIGEM_PUBLICA = env("ORIGEM_PUBLICA")  # noqa: F405
 # Credenciais do login com Google, obrigatórias em produção.
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")  # noqa: F405
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")  # noqa: F405
+
+# Mensagens simuladas em produção dariam a falsa impressão de que o aviso saiu (A3, cenário 38).
+if CANAL_WHATSAPP == "simulado":  # noqa: F405
+    raise ImproperlyConfigured("CANAL_WHATSAPP=simulado não é permitido em produção.")

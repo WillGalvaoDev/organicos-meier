@@ -86,3 +86,13 @@ def webauthn(monkeypatch: pytest.MonkeyPatch) -> Any:
     from tests.apoio.webauthn_falso import instalar
 
     return instalar(monkeypatch)
+
+
+@pytest.fixture
+def simulador_whatsapp() -> Iterator[Any]:
+    """O simulador de WhatsApp (E04-04), reiniciado antes e depois de cada teste."""
+    from apps.notificacoes.whatsapp import SIMULADOR
+
+    SIMULADOR.reiniciar()
+    yield SIMULADOR
+    SIMULADOR.reiniciar()
