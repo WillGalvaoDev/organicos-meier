@@ -16,6 +16,12 @@ from apps.nucleo.tempo import agora
 
 _SO_LIDA_EM = {"lida_em"}
 
+# Link interno (E04-R01): começa por uma única "/" e só tem caracteres de caminho, consulta e
+# fragmento (RFC 3986), com "%" seguido de dois hexadecimais. Lista do que é permitido, não do
+# que é proibido: barra invertida, controles, espaço e não ASCII ficam de fora, porque o
+# navegador (WHATWG) os reinterpreta e poderia levar o link para outra origem.
+PADRAO_LINK_INTERNO = r"^/(?:[A-Za-z0-9._~!$&'()*+,;=:@/?#-]|%[0-9A-Fa-f]{2})*$"
+
 
 class NotificacaoQuerySet(models.QuerySet["Notificacao"]):
     def update(self, **kwargs: Any) -> int:
@@ -57,8 +63,8 @@ class Notificacao(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(link__isnull=True)
-                | (models.Q(link__startswith="/") & ~models.Q(link__startswith="//")),
-                name="notificacao_link_relativo",
+                | (models.Q(link__regex=PADRAO_LINK_INTERNO) & ~models.Q(link__startswith="//")),
+                name="notificacao_link_interno",
             ),
         )
 

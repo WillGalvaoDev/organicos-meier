@@ -18,6 +18,7 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-12 | Infra 5 | negativo | um envio pendente e outro `enviado` | por SQL direto: `DELETE`; `UPDATE` de `corpo`, `destino` e `chave` no pendente; `UPDATE` de `situacao` no `enviado`; `tentativas = 4`; `situacao='enviado'` com `concluido_em` nulo | o banco recusa todos |
 | A-13 | Spec da fatia | positivo | um envio pendente | por SQL direto, `UPDATE` de `tentativas`, `proxima_tentativa_em`, `situacao='falhou'` e `concluido_em` juntos | aceito |
 | A-14 | Infra 5 | negativo | `caplog` em nível `DEBUG` | emito para `ana@x.com`, com título "Estorno" e corpo "R$ 10,00", e forço uma `NotificacaoInvalida` noutra emissão | nenhum registro de log contém `ana@x.com`, "Estorno" nem "R$ 10,00" |
+| A-15 | E04-R01 | negativo | um comprador e um segundo comprador | dentro de `transaction.atomic()`, `emitir_evento` e `emitir_evento_para_varios` (com os dois compradores) com cada link recusado da lista de exemplos da correção E04-R01 (E04-01) | `NotificacaoInvalida` com `campo == "link"` em todos; nenhuma notificação e nenhum envio gravados; com o link `"/catalogo/1/?q=abc#x"`, as duas funções gravam normalmente |
 
 ## Mapeamento para testes
 
@@ -27,3 +28,4 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-5 | também marcado `acceptance`, com o comentário `cenário 17` |
 | A-7 | `tests/tecnicos/test_notificacoes_concorrencia.py` (marcador `concorrencia`) |
 | A-12, A-13 | `tests/tecnicos/test_notificacoes_modelo.py` |
+| A-15 | `tests/tecnicos/test_notificacoes_link_interno.py` (o mesmo arquivo dos critérios A-15 a A-17 da E04-01) |

@@ -160,6 +160,12 @@ emitir_evento_para_varios(evento, contas, *, titulo, corpo, link=None, chave_bas
 - **`emitir_evento_para_varios` com lista vazia:** devolve 0 e não grava nada.
 - **Conta com papel errado para o evento:** `NotificacaoInvalida` (E04-01). Em lote, nada é gravado.
 
+## Correção E04-R01 — revisão da especificação em 2026-10-17
+
+- **Diagnóstico e regra:** estão na correção E04-R01 da E04-01. O link de qualquer emissão passa pela regra de link interno de `validar_notificacao`. `emitir_evento` e `emitir_evento_para_varios` não ganham validação própria.
+- **Lote:** em `emitir_evento_para_varios`, a validação do link continua acontecendo antes de qualquer gravação. Um link recusado não grava nada para nenhuma conta, como as outras violações.
+- **Testes obrigatórios:** critério A-15, com Red observado antes do código. Os casos `emitir` e `lote` do probe `test_link_externo_disfarcado_de_relativo_deve_ser_recusado` ficam no arquivo indicado na E04-01.
+
 ## Dependências e decisões em aberto
 
 - Depende de E04-01.

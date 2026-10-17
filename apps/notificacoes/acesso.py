@@ -45,9 +45,9 @@ def enviar_email_de_acesso(
 ) -> Envio:
     """Envia o e-mail, registra o resultado e devolve o `Envio`. Nunca propaga exceção.
 
-    Chamada de dentro do `transaction.on_commit` do fluxo (ou direto, no allauth). Se a gravação
-    do registro falhar depois de um envio aceito, registra um erro com o tipo e a referência, sem
-    destino, e devolve um `Envio` não gravado com o mesmo resultado.
+    Sempre chamada de dentro do `transaction.on_commit` dos três fluxos, sem exceção (E04-R02).
+    Se a gravação do registro falhar depois de um envio aceito, registra um erro com o tipo e a
+    referência, sem destino, e devolve um `Envio` não gravado com o mesmo resultado.
     """
     iniciada_em = agora()
     erro = ""

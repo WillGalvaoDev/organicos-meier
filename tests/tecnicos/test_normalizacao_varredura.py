@@ -93,7 +93,8 @@ def test_variacoes_de_caixa_e_espaco_sao_o_mesmo_endereco_em_todos_os_fluxos(
 
         # recuperação de acesso
         mail.outbox.clear()
-        Client().post("/recuperar-acesso/", {"email": variado})
+        with django_capture_on_commit_callbacks(execute=True):
+            Client().post("/recuperar-acesso/", {"email": variado})
         assert [m.to for m in mail.outbox] == [[base]]
 
         # Google

@@ -112,12 +112,12 @@ Critérios usados na matriz:
 | `evento` | `Evento` |
 | `titulo` | de 1 a 150 caracteres |
 | `corpo` | de 1 a 2000 caracteres |
-| `link` | opcional: caminho relativo do site, como `/catalogo/3/`, com até 500 caracteres |
+| `link` | opcional: caminho interno do site, como `/catalogo/3/`, com até 500 caracteres, conforme a regra de link interno da correção E04-R01 |
 | `chave` | de 1 a 200 caracteres, `UNIQUE`; é a chave de idempotência (E04-02) |
 | `criada_em` | `agora()` |
 | `lida_em` | nulo até ser marcada |
 
-- `CHECK` no banco para `evento` dentro dos valores, `titulo` e `corpo` não vazios, e `link` nulo ou começando por `/` sem começar por `//`.
+- `CHECK` no banco para `evento` dentro dos valores, `titulo` e `corpo` não vazios, e `link` nulo ou conforme a regra de link interno da correção E04-R01.
 - Índice em `(conta, lida_em, criada_em)` para a central e o contador.
 
 **Proteção no banco** (triggers, padrão da E01-04):
@@ -130,7 +130,7 @@ Critérios usados na matriz:
 
 - `evento` dentro de `Evento`;
 - `titulo`, `corpo` e `chave` nos limites;
-- `link` com a regra do `CHECK`;
+- `link` com a regra de link interno da correção E04-R01, a mesma do `CHECK`;
 - papel da `conta` igual a `DESTINATARIO_POR_EVENTO[evento]`.
 
 Qualquer violação levanta `NotificacaoInvalida` com o nome do campo, sem gravar. Essas violações são erro de programação de quem emite, e não erro de formulário.
@@ -185,10 +185,119 @@ Qualquer violação levanta `NotificacaoInvalida` com o nome do campo, sem grava
 
 - **Duas marcações simultâneas da mesma notificação:** as duas respondem com sucesso, e `lida_em` é o da primeira que confirmou. A segunda vê a notificação já lida e não grava, porque a gravação é condicional (`UPDATE ... WHERE lida_em IS NULL`).
 - **"Marcar todas" concorrendo com uma notificação nova:** a nova pode ficar não lida. Isso é correto, porque ela não existia quando a ação foi pedida.
-- **Link com `//exemplo.com` ou `https://...`:** recusado (`NotificacaoInvalida` e `CHECK`), para que nenhum aviso aponte para fora do site.
+- **Link com `//exemplo.com`, `https://...`, barra invertida, caractere de controle ou espaço:** recusado (`NotificacaoInvalida` e `CHECK`), para que nenhum aviso aponte para fora do site. A lista completa de exemplos está na correção E04-R01.
 - **Corpo com HTML:** exibido escapado.
 - **Conta suspensa:** continua vendo e marcando as próprias notificações (política `autenticada`).
 - **Conta removida:** não acessa nada (E02-08). Suas notificações ficam gravadas.
+
+## Correção E04-R01 — revisão da especificação em 2026-10-17
+
+### Diagnóstico
+
+- A regra "começa por `/` e não por `//`" foi implementada literalmente em `validar_notificacao` (`apps/notificacoes/servicos.py`) e no `CHECK` `notificacao_link_relativo` (migração `0001_inicial`).
+- Ela não garante o objetivo declarado, que é nenhum aviso apontar para fora do site. O navegador interpreta o `href` pelo padrão de URL do WHATWG, e esse padrão:
+  - trata `\` como `/`;
+  - remove tabulações e quebras de linha antes de interpretar o endereço.
+- Por isso `"/\\externo.example/"` e `"/\t/externo.example/"` (literais Python: uma barra invertida e uma tabulação) passam pelas duas camadas. Em `templates/notificacoes/_item.html`, os dois viram links para `https://externo.example/`.
+- A falha é minha na especificação: descrevi a regra pela forma do texto, e não pelo destino que o navegador calcula.
+
+### Regra
+
+**Link interno** é a única forma aceita. O texto precisa ter as três propriedades abaixo:
+
+1. começa por `/`;
+2. não começa por `//`;
+3. só tem caracteres permitidos em caminho, consulta e fragmento de URL (RFC 3986):
+   - letras ASCII, algarismos e `-._~`;
+   - `!$&'()*+,;=:@`;
+   - `/?#`;
+   - `%` seguido de dois dígitos hexadecimais.
+
+Por consequência, ficam recusados:
+
+- a barra invertida;
+- todo caractere de controle, incluindo tabulação, quebras de linha, NUL e DEL;
+- o espaço;
+- qualquer caractere fora do ASCII. O acento entra em percent-encoding, como `%C3%A9`;
+- `"`, `<`, `>`, `[`, `]`, `^`, a crase, `{`, `|` e `}`;
+- `%` sem dois dígitos hexadecimais depois.
+
+A regra é uma lista de caracteres permitidos, e não de casos proibidos. Ela não tenta reproduzir o analisador do navegador. Com um texto que começa por uma única `/` e só tem esses caracteres, a origem calculada é sempre a do site.
+
+**Fonte única:**
+
+- `apps/notificacoes/models.py` ganha a constante `PADRAO_LINK_INTERNO = r"^/(?:[A-Za-z0-9._~!$&'()*+,;=:@/?#-]|%[0-9A-Fa-f]{2})*$"`.
+- `validar_notificacao` aplica `re.fullmatch(PADRAO_LINK_INTERNO, link)` e a verificação de `//`.
+  - Use `fullmatch`, e não `re.match`: no Python, o `$` aceita uma quebra de linha no final do texto.
+  - A `NotificacaoInvalida` continua igual, com o campo `link` e a mensagem "deve ser um caminho relativo do site".
+- O `CHECK` passa a se chamar `notificacao_link_interno` e é escrito com `Q(link__isnull=True) | (Q(link__regex=PADRAO_LINK_INTERNO) & ~Q(link__startswith="//"))`. A expressão é a mesma no Python (`re`) e no Postgres (sintaxe ARE). No Postgres, o `$` só casa no fim do texto.
+
+**Pontos de entrada:**
+
+- `criar_notificacao`, `emitir_evento` e `emitir_evento_para_varios` já passam por `validar_notificacao` (E04-02). A regra fica só ali, e nenhuma das três funções ganha validação própria.
+- O `CHECK` é a segunda camada, para gravações que não passem pelo serviço.
+
+**Migração:**
+
+- Uma migração nova em `apps/notificacoes` remove o `CHECK` antigo e cria o novo.
+- Não há migração de dados: a aplicação não está em produção, e nenhum emissor real grava `link` ainda. Os eventos chegam a partir da E05.
+
+**O que não muda:**
+
+- O limite de 500 caracteres.
+- O `href` direto em `_item.html`. Com a validação na gravação, o template não precisa de filtro próprio.
+- A montagem `ORIGEM_PUBLICA + link` no corpo do e-mail (E04-02), que agora só recebe links internos.
+
+### Exemplos
+
+Os exemplos estão em literais Python: `\\` é uma barra invertida, `\t` é uma tabulação, `\n` e `\r` são quebras de linha, `\x00` é NUL e `\x7f` é DEL.
+
+**Recusados:**
+
+- `"/\\externo.example/"`
+- `"/\t/externo.example/"`
+- `"/\n/externo.example/"`
+- `"/\r/externo.example/"`
+- `"/\\/externo.example"`
+- `"/x\\y"`
+- `"\\\\externo.example"`
+- `"/\x00"`
+- `"/\x7f"`
+- `"/ /x"`
+- `"/é/"`
+- `"/%zz"`
+- `"/%4"`
+- `"/<x>"`
+- `"/x\n"`
+- `"//x.com"`
+- `"https://x.com"`
+- `"x/"`
+
+**Aceitos:**
+
+- `"/"`
+- `"/historico/"`
+- `"/catalogo/1/?q=abc#x"`
+- `"/catalogo/?q=caf%C3%A9"`
+- `"/rodadas/3/?a=1&b=2"`
+- `"/a/b;c=1/~x/"`
+- `"/x?proximo=//y"`
+
+### Testes obrigatórios
+
+- Três probes do revisor entram literais em `tests/tecnicos/test_notificacoes_link_interno.py`:
+  - `test_link_externo_disfarcado_de_relativo_deve_ser_recusado`;
+  - `test_banco_deve_recusar_link_externo_disfarcado`;
+  - `test_links_internos_continuam_validos`.
+
+  Eles estão em `docs/specs/E04-07/review.md`, seção "Script reproduzível" da revisão de `0b52010`.
+- Critérios A-15 a A-17 desta fatia e A-15 da E04-02, com Red observado antes do código.
+
+### O que não fazer
+
+- Não aceitar links absolutos, nem para a própria origem. A regra continua sendo de caminho interno.
+- Não limpar o link (por exemplo, remover os caracteres recusados ou trocar `\` por `/`) para gravar o resultado. Link fora da regra é erro de programação de quem emite e é recusado.
+- Não usar `url_has_allowed_host_and_scheme`, `urljoin` ou `urlsplit` como regra de produção, porque o analisador de URL do Python não segue o WHATWG em todos os casos. Nos testes, `url_has_allowed_host_and_scheme` serve só como conferência adicional dos links aceitos.
 
 ## Dependências e decisões em aberto
 

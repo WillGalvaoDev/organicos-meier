@@ -73,7 +73,7 @@ Cada um gera token novo e envio novo. O registro mostra a falha ao administrador
 enviar_email_de_acesso(tipo, *, destino, assunto, corpo, conta=None, referencia) -> Envio
 ```
 
-1. É chamada de dentro do `transaction.on_commit` de cada fluxo, depois de a transação do fato ter confirmado. Ela envia primeiro e depois grava o registro numa `transaction.atomic()` própria.
+1. É chamada de dentro do `transaction.on_commit` de cada fluxo, depois de a transação do fato ter confirmado. Isso vale para os três fluxos, sem exceção, incluindo `AdaptadorConta.send_mail` (correção E04-R02). Ela envia primeiro e depois grava o registro numa `transaction.atomic()` própria.
 2. Envia com `enviar_email(destino, assunto, corpo)` (E04-03).
 3. Grava um `Envio` com:
    - `canal=email`, `tipo`, `conta` (nula no convite), `destino` e `assunto`;
@@ -104,7 +104,7 @@ enviar_email_de_acesso(tipo, *, destino, assunto, corpo, conta=None, referencia)
 
 **allauth** (`AdaptadorConta.send_mail(template_prefix, email, context)`):
 
-- Monta assunto e corpo pelos templates do allauth (`render_mail`) e envia com `enviar_email_de_acesso("acesso:conta_allauth", ...)`.
+- Monta assunto e corpo pelos templates do allauth (`render_mail`) durante a requisição e registra no `transaction.on_commit` o envio com `enviar_email_de_acesso("acesso:conta_allauth", ...)` (correção E04-R02).
 - A `conta` é a dona do e-mail, quando existir.
 - O registro guarda também o `template_prefix` (por exemplo, `account/email/password_reset_key`), num campo `modelo` do `Envio`, opcional, com até 100 caracteres e vazio nos outros tipos.
 - Nenhum envio direto pela API de e-mail fica em `apps/contas`. Um teste procura chamadas a `EmailMessage(`, `send_mail(` e `send_mass_mail(` fora de `apps/notificacoes/canais.py` e falha se encontrar alguma.
@@ -128,6 +128,73 @@ enviar_email_de_acesso(tipo, *, destino, assunto, corpo, conta=None, referencia)
 - **Recuperação de senha para e-mail desconhecido:** com `ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False`, nenhum e-mail e nenhum `Envio`.
 - **Convite cuja transação é desfeita:** o `on_commit` não roda; nenhum e-mail e nenhum `Envio`.
 - **Os testes existentes da E02** continuam verdes sem alteração de asserção. Os ajustes de fixture, se houver, ficam justificados no `review.md`.
+
+## Correção E04-R02 — revisão da especificação em 2026-10-17
+
+### Diagnóstico
+
+- A regra 1 desta fatia exige que os três fluxos chamem `enviar_email_de_acesso` dentro do `transaction.on_commit`. `AdaptadorConta.send_mail` (`apps/contas/adaptadores.py`) chama a função direto, durante a requisição.
+- Quando já existe uma transação aberta, a `transaction.atomic()` de `enviar_email_de_acesso` (`apps/notificacoes/acesso.py`) vira um *savepoint*. Nesse caso:
+  - o e-mail sai antes da confirmação;
+  - se a transação externa for desfeita, o `Envio` e a `TentativaDeEnvio` somem junto, e o e-mail aceito fica sem registro.
+- **Reprodução do revisor:** `POST /recuperar-acesso/` dentro de `transaction.atomic()`, seguido de rollback. Resultado: um e-mail em `mail.outbox` e nenhum `Envio`.
+- `ATOMIC_REQUESTS` é `False` (`config/settings/base.py`), então a requisição comum não tem transação externa. O defeito aparece sempre que o allauth, ou o código que o chama, envia dentro de uma transação. O convite e o link de acesso já usam `on_commit`.
+- A docstring de `enviar_email_de_acesso` registra essa exceção ("ou direto, no allauth"), que a especificação não autorizou.
+
+### Regra
+
+**`AdaptadorConta.send_mail` adia o envio para depois da confirmação.**
+
+1. **Durante a requisição**, nesta ordem:
+   - monta a mensagem com `self.render_mail(template_prefix, email, context)`;
+   - lê o destino em `mensagem.to[0]`;
+   - busca a conta pelo `email_normalizado`;
+   - gera a `referencia` com `uuid4`.
+
+   Esses valores ficam só na memória da requisição. O corpo renderizado leva o token e não é gravado em lugar nenhum.
+2. **Registro do envio:** `send_mail` chama `transaction.on_commit(...)` com uma função que executa `enviar_email_de_acesso(CONTA_ALLAUTH, destino=..., assunto=mensagem.subject, corpo=mensagem.body, conta=..., referencia=..., modelo=template_prefix)`.
+   - **Sem transação aberta:** o Django executa a função na hora, no mesmo momento de hoje.
+   - **Com transação aberta:** a função só roda depois da confirmação. Se houver rollback, ela não roda, e não sai nem e-mail nem registro.
+3. **Alcance:** a regra vale para todo e-mail que o allauth manda por `send_mail`, e não só para a recuperação de senha.
+4. **Resposta:** `send_mail` não devolve nem propaga o resultado do envio. Para o allauth, a resposta é igual em todos os casos: sucesso, falha do canal, falha do registro ou e-mail desconhecido. Isso mantém a proteção contra enumeração.
+5. **Docstring:** a de `enviar_email_de_acesso` passa a dizer que a função é sempre chamada de dentro do `on_commit` dos três fluxos, sem exceção.
+
+**O que não muda:**
+
+- o conteúdo renderizado, o assunto e o `modelo`;
+- a associação à conta;
+- o `corpo` vazio no `Envio`;
+- a tentativa única;
+- o tratamento de falha do canal: `falhou`, com a classe do erro;
+- o tratamento de falha da gravação: `logger.error` com o tipo e a referência, sem destino;
+- o envio imediato, fora da fila;
+- `ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False`.
+
+**Testes existentes da E02:**
+
+- `tests/tecnicos/test_contas_recuperacao.py` usa `pytest.mark.django_db` sem `transaction=True`. Nesse modo, cada teste roda numa transação que nunca é confirmada, e a função registrada no `on_commit` não executa.
+- Nesse arquivo, e em qualquer outro cujo e-mail venha do allauth, o ajuste permitido é trocar o marcador para `django_db(transaction=True)`, como já fazem os testes do convite e do link de acesso. Também vale envolver a chamada em `django_capture_on_commit_callbacks(execute=True)`.
+- Nenhuma asserção muda. Cada arquivo ajustado fica listado no `review.md` com essa justificativa (A-11).
+
+### Testes obrigatórios
+
+- Três probes do revisor entram literais em `tests/tecnicos/test_notificacoes_acesso.py`:
+  - `test_recuperacao_rollback_nao_envia_email`;
+  - `test_recuperacao_so_envia_apos_commit`;
+  - `test_link_rollback_nao_envia_email`.
+
+  Eles estão em `docs/specs/E04-07/review.md`, na seção "Script reproduzível" da revisão de `0b52010`.
+- Os critérios A-12 a A-16 exigem Red observado antes do código.
+  - Na recuperação de senha, o A-12 e o A-13 cobrem o próprio defeito.
+  - No convite e no link de acesso, o A-12 e o A-13 são guarda de regressão. Se passarem já no Red, registre isso no `review.md` com a justificativa (o comportamento já existia). Isso não é violação do TDD.
+
+### O que não fazer
+
+- Não guardar o `context` do allauth para renderizar a mensagem dentro do `on_commit`. A renderização acontece na requisição, como hoje.
+- Não gravar o corpo nem o contexto em banco, cache ou sessão para enviar depois.
+- Não mandar o e-mail do allauth para a fila do `processar_envios`.
+- Não usar `transaction.atomic(durable=True)` nem uma conexão separada para gravar o registro antes da confirmação. A ordem exigida é: confirmar o fato, enviar e depois registrar.
+- Não ligar `ATOMIC_REQUESTS`.
 
 ## Dependências e decisões em aberto
 

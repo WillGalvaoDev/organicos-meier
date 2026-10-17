@@ -46,7 +46,7 @@ Esta fatia entrega:
 
 - A integração real com a Meta, os templates e a conta comercial (fase 3).
 - SMS (a §12 manda não presumir).
-- O cenário 24 com pagamento real do simulador de pagamentos. Ele fica herdado pela E08, que confirma pagamentos e emite `pagamento_confirmado`.
+- O cenário 24 com pagamento real do simulador de pagamentos. Ele fica herdado pela E08: a abertura real do pagamento emite `pagamento_aberto`, com o WhatsApp simulado falhando, e a confirmação real emite `pagamento_confirmado`, que não tem WhatsApp na matriz. A falha não desfaz nenhum dos dois fatos (correção E04-R03).
 
 ## Decisões técnicas
 
@@ -108,7 +108,7 @@ O `Envio` de WhatsApp:
   - a notificação continua na central, com o conteúdo emitido;
   - o e-mail do mesmo evento segue o próprio fluxo;
   - nenhuma exceção chega a quem emitiu.
-- O teste do cenário 24 usa um fato de teste, como uma tabela de `tests/apoio`, gravado na mesma transação da emissão de `pagamento_confirmado`. A E08 repete o cenário com o pagamento real do simulador de pagamentos.
+- O teste do cenário 24 usa um fato de teste, como uma tabela de `tests/apoio`, gravado na mesma transação da emissão de `pagamento_aberto`, evento que tem WhatsApp na matriz. `pagamento_confirmado` não tem WhatsApp e não ganha esse canal (correção E04-R03). A E08 repete o cenário com o pagamento real do simulador de pagamentos.
 
 ## Interfaces
 
@@ -130,6 +130,47 @@ O `Envio` de WhatsApp:
 - **Evento sem WhatsApp na matriz** (por exemplo, `estorno`) para uma conta com consentimento: nenhum envio de WhatsApp.
 - **Emissão repetida com a mesma chave:** nenhum envio novo, em nenhum canal (E04-02).
 - **Falha em duas tentativas e sucesso na terceira:** `enviado`, com três tentativas registradas e uma mensagem na lista do simulador.
+
+## Correção E04-R03 — revisão da especificação em 2026-10-17
+
+### Diagnóstico
+
+- A regra "Isolamento da falha" desta fatia e o A-9 pedem que o fato de teste seja gravado na mesma transação da emissão de `pagamento_confirmado` e que o WhatsApp desse evento falhe.
+- A matriz da E04-01 define `pagamento_confirmado` só para site e e-mail. A emissão desse evento nunca cria envio de WhatsApp, então o cenário pedido é impossível.
+- O teste `test_falha_no_whatsapp_nao_desfaz_o_fato_nem_a_notificacao` (`tests/tecnicos/test_notificacoes_falha_isolada.py`) contornou a contradição: emitiu também `pagamento_aberto`, mas numa segunda transação, separada do fato.
+  - O mecanismo funciona. O revisor confirmou isso com um probe independente.
+  - O teste, porém, não prova o que o A-9 descreve: a falha do WhatsApp de um evento emitido junto com o fato.
+- A falha é minha na especificação: escolhi o evento do exemplo sem conferir a matriz que eu mesmo defini.
+
+### Regra
+
+- **A matriz não muda.** `pagamento_confirmado` continua só em site e e-mail. Não acrescente WhatsApp a ele para satisfazer o cenário.
+- **Evento do cenário:** o cenário 24 desta fatia usa `pagamento_aberto`, que tem WhatsApp na matriz e também é um fato de pagamento. O fato de teste (`ModeloContador`, de `tests/apoio`) e a emissão de `pagamento_aberto` ficam na mesma `transaction.atomic()`, com uma única emissão.
+- **Redação corrigida nesta especificação:**
+  - Em "Isolamento da falha", o fato de teste é gravado na mesma transação da emissão de `pagamento_aberto`.
+  - Em "Fora", a E08 repete o cenário com o pagamento real do simulador de pagamentos:
+    - a abertura real do pagamento emite `pagamento_aberto`, com o WhatsApp falhando;
+    - a confirmação real emite `pagamento_confirmado`;
+    - a falha do WhatsApp não desfaz nenhum dos dois fatos e não impede que as notificações e o estado correto apareçam no site.
+- **O teste existente é reescrito conforme o A-9 corrigido:**
+  - saem a emissão de `pagamento_confirmado` e a segunda transação;
+  - fica uma única transação, com o fato e `pagamento_aberto`.
+
+  A reescrita não afrouxa nenhuma asserção. O teste continua exigindo:
+
+  - o fato inalterado;
+  - três tentativas de WhatsApp;
+  - o e-mail enviado;
+  - a notificação idêntica à emitida;
+  - o conteúdo na central.
+
+  Registre o motivo no `review.md`: o teste antigo seguia uma redação contraditória da especificação.
+- **O A-10 não muda.**
+
+### Testes obrigatórios
+
+- O probe `test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao` do revisor (`docs/specs/E04-07/review.md`, seção "Script reproduzível" da revisão de `0b52010`) entra literalmente em `tests/tecnicos/test_notificacoes_falha_isolada.py`.
+- O A-9 corrigido já passa com o código atual, porque o defeito estava na especificação e no teste, e não no mecanismo. Registre no `review.md` que não há Red esperado e por quê.
 
 ## Dependências e decisões em aberto
 

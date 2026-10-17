@@ -67,18 +67,28 @@ class AdaptadorConta(DefaultAccountAdapter):
     def send_mail(
         self, template_prefix: str, email: str | list[str], context: dict[str, Any]
     ) -> None:
-        """Os e-mails do allauth (recuperação de senha) saem pelo registro de envios (E04-05)."""
+        """Os e-mails do allauth (recuperação de senha) saem pelo registro de envios (E04-05).
+
+        A mensagem é montada na requisição (o corpo leva o token e não é guardado); o envio e o
+        registro só acontecem depois da confirmação da transação em curso (E04-R02).
+        """
         mensagem = self.render_mail(template_prefix, email, context)
         destino = mensagem.to[0]
-        enviar_email_de_acesso(
-            CONTA_ALLAUTH,
-            destino=destino,
-            assunto=mensagem.subject,
-            corpo=mensagem.body,
-            conta=Conta.objects.filter(email_normalizado=destino).first(),
-            referencia=uuid.uuid4(),
-            modelo=template_prefix,
-        )
+        conta = Conta.objects.filter(email_normalizado=destino).first()
+        referencia = uuid.uuid4()
+
+        def enviar() -> None:
+            enviar_email_de_acesso(
+                CONTA_ALLAUTH,
+                destino=destino,
+                assunto=mensagem.subject,
+                corpo=mensagem.body,
+                conta=conta,
+                referencia=referencia,
+                modelo=template_prefix,
+            )
+
+        transaction.on_commit(enviar)
 
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return False  # cadastro público fora do escopo (§18); a conta nasce por convite
