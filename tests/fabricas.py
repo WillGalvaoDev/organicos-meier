@@ -20,6 +20,8 @@ from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta, Convite, Papel, Situacao
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
+from apps.notificacoes.eventos import Evento
+from apps.notificacoes.models import Notificacao
 from apps.nucleo.tempo import agora
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 
@@ -149,3 +151,17 @@ class EstoqueDaRodadaFactory(DjangoModelFactory[EstoqueDaRodada]):
     rodada = SubFactory(RodadaFactory)
     produto = SubFactory(ProdutoFactory, fornecedor=SelfAttribute("..rodada.fornecedor"))
     limite = Decimal("10.000")
+
+
+class NotificacaoFactory(DjangoModelFactory[Notificacao]):
+    """Notificação de estorno não lida para um comprador; informe `lida_em` para a versão lida."""
+
+    class Meta:
+        model = Notificacao
+
+    conta = SubFactory(ContaFactory)
+    evento = Evento.ESTORNO
+    titulo = Sequence(lambda n: f"Aviso {n}")
+    corpo = Sequence(lambda n: f"Corpo do aviso {n}")
+    link = None
+    chave = Sequence(lambda n: f"fabrica:{n}")
