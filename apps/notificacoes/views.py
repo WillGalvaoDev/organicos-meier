@@ -7,19 +7,28 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import CharField, Count, F, Func, Value
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
-from django.views.decorators.http import require_POST
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta
 from apps.contas.permissoes import exige_comprador, exige_login
 from apps.notificacoes.comunicados import compradores_do_comunicado, publicar_comunicado
+from apps.notificacoes.consultas import (
+    ROTULOS_CANAL,
+    ROTULOS_SITUACAO,
+    ROTULOS_TIPO,
+    contar_falhas,
+    envios_para_administracao,
+    filtros_validos,
+)
 from apps.notificacoes.eventos import Evento
 from apps.notificacoes.forms import FormularioComunicado
-from apps.notificacoes.models import Comunicado, Envio, Notificacao
+from apps.notificacoes.models import TIPOS_DE_ACESSO, Comunicado, Envio, Notificacao
 from apps.notificacoes.servicos import marcar_como_lida, marcar_todas_como_lidas
 
 POR_PAGINA = 30
+POR_PAGINA_DOS_ENVIOS = 50
 ROTULOS_DE_CANAL = {"email": "e-mail", "whatsapp": "WhatsApp"}
 
 
@@ -161,3 +170,46 @@ def comunicados(request: HttpRequest) -> HttpResponse:
     publicados = Comunicado.objects.order_by("-publicado_em", "-pk")
     pagina = Paginator(publicados, POR_PAGINA).get_page(request.GET.get("pagina"))
     return render(request, "notificacoes/comunicados.html", {"pagina": pagina})
+
+
+@somente_administrador
+@require_GET
+def envios_lista(request: HttpRequest) -> HttpResponse:
+    filtros = filtros_validos(request.GET.dict())
+    pagina = Paginator(envios_para_administracao(filtros), POR_PAGINA_DOS_ENVIOS).get_page(
+        request.GET.get("pagina")
+    )
+    return render(
+        request,
+        "notificacoes/envios_lista.html",
+        {
+            "pagina": pagina,
+            "filtros": filtros,
+            "tem_filtro": bool(filtros),
+            "situacoes": ROTULOS_SITUACAO,
+            "canais": ROTULOS_CANAL,
+            "tipos": ROTULOS_TIPO,
+            "rotulo_situacao": ROTULOS_SITUACAO,
+            "rotulo_canal": ROTULOS_CANAL,
+            "rotulo_tipo": ROTULOS_TIPO,
+            "falhas": contar_falhas(),
+        },
+    )
+
+
+@somente_administrador
+@require_GET
+def envio_detalhe(request: HttpRequest, pk: int) -> HttpResponse:
+    envio = get_object_or_404(Envio.objects.select_related("conta", "notificacao"), pk=pk)
+    return render(
+        request,
+        "notificacoes/envio_detalhe.html",
+        {
+            "envio": envio,
+            "tentativas": envio.tentativas_feitas.order_by("numero"),
+            "de_acesso": envio.tipo in TIPOS_DE_ACESSO,
+            "rotulo_situacao": ROTULOS_SITUACAO,
+            "rotulo_canal": ROTULOS_CANAL,
+            "rotulo_tipo": ROTULOS_TIPO,
+        },
+    )

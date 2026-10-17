@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load notificacoes %}
+{% block titulo %}Envio {{ envio.pk }} · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Envio {{ envio.pk }}</h1>
+  <dl>
+    <dt>Tipo</dt><dd>{{ envio.tipo|valor_do_mapa:rotulo_tipo }}</dd>
+    <dt>Canal</dt><dd>{{ envio.canal|valor_do_mapa:rotulo_canal }}</dd>
+    <dt>Destinatário</dt><dd>{% if envio.conta %}{{ envio.conta.nome }}{% else %}{{ envio.destino }}{% endif %}</dd>
+    <dt>Situação</dt><dd>{{ envio.situacao|valor_do_mapa:rotulo_situacao }}{% if envio.situacao == "pendente" %} · Próxima tentativa: {{ envio.proxima_tentativa_em|data_hora }}{% endif %}</dd>
+    <dt>Criado em</dt><dd>{{ envio.criado_em|data_hora }}</dd>
+    {% if envio.concluido_em %}<dt>Concluído em</dt><dd>{{ envio.concluido_em|data_hora }}</dd>{% endif %}
+    {% if envio.motivo_cancelamento %}<dt>Motivo do cancelamento</dt><dd>{{ envio.motivo_cancelamento }}</dd>{% endif %}
+    <dt>Assunto</dt><dd>{{ envio.assunto }}</dd>
+    <dt>Corpo</dt><dd>{% if de_acesso %}(não armazenado: contém link de acesso){% else %}{{ envio.corpo|linebreaksbr }}{% endif %}</dd>
+  </dl>
+  {% if envio.notificacao %}
+    <h2>Notificação</h2>
+    <p>{{ envio.notificacao.titulo }} · {{ envio.notificacao.evento|valor_do_mapa:rotulo_tipo }} · {% if envio.notificacao.lida_em %}lida{% else %}não lida{% endif %}</p>
+  {% endif %}
+  <h2>Tentativas</h2>
+  {% if tentativas %}
+    <table>
+      <thead><tr><th>Nº</th><th>Início</th><th>Fim</th><th>Resultado</th><th>Erro</th></tr></thead>
+      <tbody>
+        {% for tentativa in tentativas %}
+          <tr>
+            <td>{{ tentativa.numero }}</td>
+            <td>{{ tentativa.iniciada_em|data_hora }}</td>
+            <td>{{ tentativa.concluida_em|data_hora }}</td>
+            <td>{{ tentativa.get_resultado_display }}</td>
+            <td>{{ tentativa.erro }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhuma tentativa feita.</p>
+  {% endif %}
+  <p><a href="{% url 'envios_lista' %}">Voltar aos envios</a></p>
+{% endblock %}
