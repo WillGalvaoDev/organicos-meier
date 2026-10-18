@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Carrinho · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Carrinho</h1>
+  <p>Os itens do carrinho são interesses, não compras pagas.</p>
+  {% if retorno and retorno.topo %}<p role="alert">{{ retorno.topo }}</p>{% endif %}
+  {% for entrada in grupos %}
+    {% with grupo=entrada.grupo %}
+      <section>
+        <h2>{{ grupo.fornecedor.nome }}</h2>
+        {% if grupo.rodada %}
+          <p>Etapa: {{ grupo.rodada.get_etapa_display }}</p>
+          {% include "interesses/_progresso.html" with percentual=grupo.percentual atingido=grupo.atingido %}
+        {% else %}
+          <p>Sem rodada ativa.</p>
+        {% endif %}
+        <ul>
+          {% for item in entrada.linhas %}
+            {% with linha=item.linha %}
+              <li>
+                <h3>{{ linha.produto.nome }}</h3>
+                {% if not linha.produto.disponivel %}<p><strong>Produto indisponível</strong></p>{% endif %}
+                <p>{{ linha.produto.preco|reais }} / {{ linha.produto.get_unidade_display }}</p>
+                <p>Reservado: {{ linha.reservado|quantidade_br }}</p>
+                <p>Pendente: {{ linha.pendente|quantidade_br }}</p>
+                <p>Subtotal: {{ linha.subtotal|reais }}</p>
+                {% if linha.caixas %}{% include "interesses/_caixas.html" with caixas=linha.caixas %}{% endif %}
+                {% include "interesses/_quantidade.html" with form=item.quantidade produto=linha.produto origem="carrinho" rotulo="Atualizar" remover=True %}
+                {% if item.pendentes.mostrar %}
+                  <form method="post" action="{% url 'interesses_remover_pendentes' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="produto" value="{{ linha.produto.pk }}">
+                    <input type="text" name="quantidade" value="{{ item.pendentes.valor }}" aria-label="Pendentes de {{ linha.produto.nome }}">
+                    <button type="submit">Remover pendentes</button>
+                    {% if item.pendentes.mensagem %}<p role="alert">{{ item.pendentes.mensagem }}</p>{% endif %}
+                  </form>
+                {% endif %}
+              </li>
+            {% endwith %}
+          {% endfor %}
+        </ul>
+        <p>Total reservado: {{ grupo.total_reservado|reais }}</p>
+      </section>
+    {% endwith %}
+  {% empty %}
+    <p>Seu carrinho está vazio.</p>
+    <p><a href="{% url 'catalogo_lista' %}">Ver o catálogo</a></p>
+  {% endfor %}
+{% endblock %}

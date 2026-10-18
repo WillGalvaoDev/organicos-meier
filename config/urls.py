@@ -6,6 +6,7 @@ from django.urls import URLPattern, URLResolver, include, path, re_path
 from apps.catalogo import views as catalogo_views
 from apps.contas import views as contas_views
 from apps.fornecedores import views as fornecedores_views
+from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
 from apps.rodadas import views as rodadas_views
 
@@ -61,6 +62,13 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "catalogo/<int:pk>/",
         catalogo_views.catalogo_do_fornecedor,
         name="catalogo_fornecedor",
+    ),
+    path("carrinho/", interesses_views.carrinho, name="carrinho"),
+    path("interesses/", interesses_views.definir, name="interesses_definir"),
+    path(
+        "interesses/pendentes/remover/",
+        interesses_views.remover_pendentes,
+        name="interesses_remover_pendentes",
     ),
     path("notificacoes/", notificacoes_views.central, name="notificacoes"),
     path("notificacoes/lidas/", notificacoes_views.marcar_todas, name="notificacoes_marcar_todas"),

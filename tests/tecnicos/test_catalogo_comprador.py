@@ -49,6 +49,15 @@ def _produto_na_rodada(rodada: Any, limite: str | None = "10", **campos: Any) ->
     return produto
 
 
+def _reservar_para(comprador: Any, produto: Produto, quantidade: str) -> None:
+    ParcelaFactory.create(
+        comprador=comprador,
+        produto=produto,
+        quantidade_original=D(quantidade),
+        quantidade_reservada=D(quantidade),
+    )
+
+
 def _reservar(produto: Produto, quantidade: str) -> None:
     ParcelaFactory.create(
         produto=produto, quantidade_original=D(quantidade), quantidade_reservada=D(quantidade)
@@ -223,8 +232,9 @@ def test_campos_internos_e_dados_de_compradores_nao_aparecem(
         "bia@x.com",
     ):
         assert proibido not in html, proibido
-    assert "reservad" not in html.lower()
-    assert "pendente" not in html.lower()
+    assert "Seu interesse: reservado 0, pendente 0" in html
+    assert "reservado 2" not in html
+    assert "pendente 1" not in html
 
 
 @pytest.mark.parametrize("quantidade", [1, 20])
@@ -232,10 +242,12 @@ def test_numero_de_consultas_nao_cresce_com_os_produtos(
     comprador_client: Client, django_assert_max_num_queries: Any, quantidade: int
 ) -> None:  # A-10
     rodada = RodadaFactory.create()
+    sessao = Conta.objects.get(email_normalizado="leitor@exemplo.com")
     for numero in range(quantidade):
         produto = _produto_na_rodada(rodada, "10", nome=f"Produto {numero:02d}")
-        _reservar(produto, "3")
-    with django_assert_max_num_queries(8):
+        _reservar(produto, "2")
+        _reservar_para(sessao, produto, "1")  # o comprador da sessão tem uma parcela por produto
+    with django_assert_max_num_queries(10):
         resposta = comprador_client.get(f"/catalogo/{rodada.fornecedor_id}/")
     assert resposta.status_code == 200
     assert resposta.content.decode().count("7 kg disponível") == quantidade

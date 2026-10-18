@@ -1,0 +1,11 @@
+{% if form.mostrar %}
+  <form method="post" action="{% url 'interesses_definir' %}">
+    {% csrf_token %}
+    <input type="hidden" name="produto" value="{{ produto.pk }}">
+    <input type="hidden" name="origem" value="{{ origem }}">
+    <input type="text" name="quantidade" value="{{ form.valor }}" aria-label="Quantidade de {{ produto.nome }}">
+    <button type="submit">{{ rotulo }}</button>
+    {% if remover %}<button type="submit" name="quantidade" value="0">Remover</button>{% endif %}
+    {% if form.mensagem %}<p role="alert">{{ form.mensagem }}</p>{% endif %}
+  </form>
+{% endif %}

@@ -4,9 +4,12 @@
 {% block conteudo %}
   <h1>{{ rodada.fornecedor.nome }}</h1>
   <p>Etapa: {{ rodada.get_etapa_display }}</p>
-  {% if itens %}
+  {% if retorno and retorno.topo %}<p role="alert">{{ retorno.topo }}</p>{% endif %}
+  {% include "interesses/_progresso.html" %}
+  {% if linhas %}
     <ul>
-      {% for item in itens %}
+      {% for linha in linhas %}
+        {% with item=linha.item %}
         <li>
           <h2>{{ item.produto.nome }}</h2>
           {% if not item.produto.disponivel %}<p><strong>Produto indisponível</strong></p>{% endif %}
@@ -17,7 +20,11 @@
           <p>
             {% if item.livre is None %}Sem limite{% elif item.livre == 0 %}Esgotado{% else %}{{ item.livre|quantidade_br }} {{ item.produto.get_unidade_display }} disponível{% endif %}
           </p>
+          <p>Seu interesse: reservado {{ linha.interesse.reservado|quantidade_br }}, pendente {{ linha.interesse.pendente|quantidade_br }}</p>
+          {% if linha.caixas %}{% include "interesses/_caixas.html" with caixas=linha.caixas %}{% endif %}
+          {% include "interesses/_quantidade.html" with form=linha.quantidade produto=item.produto origem="catalogo" rotulo="Atualizar interesse" remover=False %}
         </li>
+        {% endwith %}
       {% endfor %}
     </ul>
   {% else %}
