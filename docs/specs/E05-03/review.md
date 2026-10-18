@@ -15,7 +15,7 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 
 **Red.** `uv run pytest tests/tecnicos/test_interesses_remover_pendente.py -q`: **16 failed**, por asserção (`DID NOT RAISE QuantidadeInvalida/RemocaoAcimaDoPendente/PermissionDenied`, pendência continuava igual, parcela não virava `removida`). Entre o Red e o Green mudei só a forma de um teste (separar os dois ramos do `pytest.raises` para satisfazer o `mypy`), sem alterar asserção.
 
-**Green.** Mesmo arquivo: **16 passed**. Com A-9: `test_interesses_concorrencia.py` **10 passed**. Suíte completa: ver abaixo. `ruff check`, `ruff format --check` e `mypy .` sem erros.
+**Green.** Mesmo arquivo: **16 passed**. Com A-9: `test_interesses_concorrencia.py` **10 passed**. Suíte completa: **1547 passed** (eram 1529). `ruff check`, `ruff format --check` e `mypy .` sem erros.
 
 **Concorrência (A-9).** Escrito depois do Green, como nas fatias anteriores (a operação que segura as travas roda numa transação externa e a outra espera em `pg_stat_activity`). Cobre as duas ordens: remoção primeiro (parcela `removida`, total reservado 0) e atendimento primeiro (parcela com 6 reservados e a remoção recusada com pendente 0). Sem Red observado.
 
