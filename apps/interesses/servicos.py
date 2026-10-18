@@ -101,7 +101,10 @@ class _Travado:
 
 
 def _travar_conta(comprador: Conta) -> Conta:
-    travada = Conta.objects.select_for_update().get(pk=comprador.pk)
+    # FOR NO KEY UPDATE: não bloqueia o FOR KEY SHARE que a conferência das chaves estrangeiras
+    # para a conta (notificações, auditoria) pede ao confirmar; continua serializando as
+    # operações do comprador e a moderação entre si (E05-R03).
+    travada = Conta.objects.select_for_update(no_key=True).get(pk=comprador.pk)
     if not travada.pode_adicionar_interesse:
         raise PermissionDenied
     return travada

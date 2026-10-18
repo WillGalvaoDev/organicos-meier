@@ -2,8 +2,9 @@
 
 Suspensão é reversível e não encerra sessões (o suspenso continua entrando). Remoção é definitiva:
 bane o e-mail, apaga as sessões e mantém a conta e todo o histórico. Todas as ações travam a conta
-(`select_for_update`), revalidam a situação depois da trava e rodam numa única transação com a
-auditoria e os sinais, para que efeitos de etapas futuras sejam atômicos com a moderação.
+(`select_for_update(no_key=True)`), revalidam a situação depois da trava e rodam numa única
+transação com a auditoria e os sinais, para que efeitos de etapas futuras sejam atômicos com a
+moderação.
 """
 
 from django.core.exceptions import PermissionDenied
@@ -31,7 +32,9 @@ def _exigir_administrador(autor: Conta) -> None:
 def _travar(conta: Conta, papeis: tuple[str, ...], situacoes: tuple[str, ...]) -> tuple[Conta, str]:
     """Trava a conta e revalida papel e situação. Devolve a conta e a situação anterior."""
     try:
-        travada = Conta.objects.select_for_update().get(pk=conta.pk)
+        # FOR NO KEY UPDATE: não bloqueia o FOR KEY SHARE das chaves estrangeiras para a conta
+        # (notificações, auditoria), que a edição de preço pede no COMMIT (E05-R03).
+        travada = Conta.objects.select_for_update(no_key=True).get(pk=conta.pk)
     except Conta.DoesNotExist:
         raise ModeracaoInvalida("conta inexistente") from None
     if travada.papel not in papeis or travada.situacao not in situacoes:
