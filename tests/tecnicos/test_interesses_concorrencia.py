@@ -1,12 +1,29 @@
 """E03-04: sequência da parcela sob concorrência (acceptance A-9)."""
 
+import time
+from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core.exceptions import PermissionDenied
+from django.db import connection, transaction
 
+from apps.catalogo.models import Produto, Unidade
+from apps.catalogo.quantidades import QuantidadeInvalida
+from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento
+from apps.contas.models import Conta
+from apps.contas.moderacao import suspender
+from apps.interesses.consultas import total_reservado
 from apps.interesses.models import ParcelaDeInteresse
+from apps.interesses.servicos import EstoqueInsuficiente, adicionar_interesse
 from tests.apoio.concorrencia import executar_em_paralelo
-from tests.fabricas import ContaFactory, ParcelaFactory, ProdutoFactory
+from tests.fabricas import (
+    ContaFactory,
+    EstoqueDaRodadaFactory,
+    ParcelaFactory,
+    ProdutoFactory,
+    RodadaFactory,
+)
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
 
@@ -27,3 +44,125 @@ def test_vinte_insercoes_em_paralelo_recebem_sequencias_distintas() -> None:  # 
         ParcelaDeInteresse.objects.order_by("sequencia").values_list("sequencia", flat=True)
     )
     assert sorted(sequencias) == gravadas
+
+
+D = Decimal
+
+
+def _esperar_outra_conexao_na_trava(segundos: float = 15) -> None:
+    with connection.cursor() as cursor:
+        limite = time.monotonic() + segundos
+        while time.monotonic() < limite:
+            cursor.execute(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+            )
+            (esperando,) = cursor.fetchone()
+            if esperando:
+                return
+            time.sleep(0.05)
+    raise AssertionError("a outra conexão não ficou esperando pela trava")
+
+
+def _produto_na_rodada(limite: str | None) -> Produto:
+    rodada = RodadaFactory.create()
+    produto = ProdutoFactory.create(fornecedor=rodada.fornecedor, unidade=Unidade.UNIDADE)
+    EstoqueDaRodadaFactory.create(
+        rodada=rodada, produto=produto, limite=None if limite is None else D(limite)
+    )
+    return produto
+
+
+def _segurando(operacao: Any) -> Any:
+    """Roda a operação numa transação externa e segura as travas até a outra esperar."""
+
+    def segura(barreira: Any) -> None:
+        with transaction.atomic():
+            operacao()
+            barreira.wait(timeout=10)
+            _esperar_outra_conexao_na_trava()
+
+    return segura
+
+
+def _esperando(operacao: Any) -> Any:
+    def espera(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return operacao()
+
+    return espera
+
+
+def test_ultima_unidade_disputada_so_uma_vence() -> None:  # A-13, cenário 3
+    produto = _produto_na_rodada("1")
+    a, b = ContaFactory.create(), ContaFactory.create()
+    resultados = executar_em_paralelo(
+        _segurando(lambda: adicionar_interesse(a, produto, "1")),
+        _esperando(lambda: adicionar_interesse(b, produto, "1")),
+    )
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, EstoqueInsuficiente)
+    assert resultados[1].excecao.mensagem == "Este produto está esgotado nesta rodada."
+    assert total_reservado(produto) == D("1")
+    assert ParcelaDeInteresse.objects.filter(produto=produto).count() == 1
+
+
+@pytest.mark.parametrize("adicao_primeiro", [True, False])
+def test_adicao_e_alteracao_de_incremento_se_serializam(adicao_primeiro: bool) -> None:  # A-14
+    # cenário 108
+    produto = _produto_na_rodada(None)
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+    adicionar = lambda: adicionar_interesse(a, produto, "3")  # noqa: E731
+    alterar = lambda: alterar_incremento(admin, Produto.objects.get(pk=produto.pk), "2")  # noqa: E731
+    if adicao_primeiro:
+        resultados = executar_em_paralelo(_segurando(adicionar), _esperando(alterar))
+        assert resultados[0].excecao is None, resultados[0].excecao
+        assert isinstance(resultados[1].excecao, IncrementoIncompativel)
+        assert resultados[1].excecao.codigo == "quantidade"
+        assert Produto.objects.get(pk=produto.pk).incremento == D("1")
+    else:
+        resultados = executar_em_paralelo(_segurando(alterar), _esperando(adicionar))
+        assert resultados[0].excecao is None, resultados[0].excecao
+        assert isinstance(resultados[1].excecao, QuantidadeInvalida)
+        assert Produto.objects.get(pk=produto.pk).incremento == D("2")
+        assert ParcelaDeInteresse.objects.count() == 0
+    incremento = Produto.objects.get(pk=produto.pk).incremento
+    for parcela in ParcelaDeInteresse.objects.all():
+        assert parcela.quantidade_reservada % incremento == 0
+
+
+def test_suspensao_confirmada_antes_barra_a_adicao() -> None:  # A-15
+    produto = _produto_na_rodada(None)
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+    resultados = executar_em_paralelo(
+        _segurando(lambda: suspender(admin, a)),
+        _esperando(lambda: adicionar_interesse(a, produto, "1")),
+    )
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, PermissionDenied)
+    assert ParcelaDeInteresse.objects.count() == 0
+
+
+def test_dez_adicoes_de_dois_com_limite_dez() -> None:  # A-16
+    produto = _produto_na_rodada("10")
+    compradores = [ContaFactory.create() for _ in range(10)]
+
+    def adicionar(comprador: Conta) -> Any:
+        def operacao(barreira: Any) -> None:
+            barreira.wait(timeout=10)
+            adicionar_interesse(comprador, produto, "2")
+
+        return operacao
+
+    resultados = executar_em_paralelo(*[adicionar(c) for c in compradores])
+    aceitas = [r for r in resultados if r.excecao is None]
+    recusadas = [r for r in resultados if r.excecao is not None]
+    assert len(aceitas) == 5, [r.excecao for r in recusadas]
+    assert all(isinstance(r.excecao, EstoqueInsuficiente) for r in recusadas)
+    assert total_reservado(produto) == D("10")
+    sequencias = list(
+        ParcelaDeInteresse.objects.filter(produto=produto).values_list("sequencia", flat=True)
+    )
+    assert len(sequencias) == len(set(sequencias)) == 5

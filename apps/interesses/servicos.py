@@ -1,0 +1,234 @@
+"""Serviços de interesse do comprador (E05-01).
+
+Cada operação roda numa única transação e adquire as travas na ordem global: conta do comprador,
+fornecedor, rodada, produto, estoque e parcelas (por sequência). A trava do fornecedor, adquirida
+por todas as operações de interesse, é o que as serializa; a das parcelas é a segunda defesa.
+Uma recusa desfaz a transação inteira e não grava nada, nem auditoria.
+"""
+
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
+
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Q, Sum
+
+from apps.catalogo.models import Produto, Unidade
+from apps.catalogo.quantidades import formatar_quantidade, validar_quantidade
+from apps.contas.models import Conta
+from apps.fornecedores.models import Fornecedor
+from apps.interesses.consultas import SITUACOES_QUE_RESERVAM, travar_parcelas
+from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
+from apps.nucleo.auditoria import registrar_auditoria
+from apps.nucleo.valores import ValorInvalido
+from apps.nucleo.valores import quantidade as converter_quantidade
+from apps.rodadas.condicoes import travar_rodada_para_interesses
+from apps.rodadas.estoque import calcular_livre, travar_estoque
+from apps.rodadas.models import EstoqueDaRodada, Rodada
+
+_ZERO = Decimal("0.000")
+
+
+class InteresseRecusado(Exception):
+    """Base das recusas de interesse; `mensagem` é a que a tela mostra."""
+
+    def __init__(self, mensagem: str) -> None:
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+
+
+class ProdutoForaDaRodada(InteresseRecusado):
+    def __init__(self) -> None:
+        super().__init__("Este produto não está disponível para interesse agora.")
+
+
+class EstoqueInsuficiente(InteresseRecusado):
+    def __init__(self, disponivel: Decimal, unidade: str) -> None:
+        if disponivel == 0:
+            mensagem = "Este produto está esgotado nesta rodada."
+        else:
+            rotulo = Unidade(unidade).label
+            mensagem = f"Há apenas {formatar_quantidade(disponivel)} {rotulo} disponível."
+        super().__init__(mensagem)
+        self.disponivel = disponivel
+
+
+class ReducaoAcimaDoReservado(InteresseRecusado):
+    def __init__(self, reservado: Decimal) -> None:
+        super().__init__(
+            f"A redução passa da quantidade reservada ({formatar_quantidade(reservado)})."
+        )
+        self.reservado = reservado
+
+
+@dataclass(frozen=True)
+class ResumoDoInteresse:
+    """Soma das parcelas do comprador no produto: `reservado` (ativas) e `pendente` (fila)."""
+
+    reservado: Decimal
+    pendente: Decimal
+
+
+@dataclass
+class _Travado:
+    """Estado depois de todas as travas; `parcelas` são as do produto, por sequência."""
+
+    comprador: Conta
+    rodada: Rodada
+    produto: Produto
+    estoque: EstoqueDaRodada
+    parcelas: list[ParcelaDeInteresse]
+
+    def reservado(self) -> Decimal:
+        total = sum(
+            (p.quantidade_reservada for p in self.parcelas if p.situacao in SITUACOES_QUE_RESERVAM),
+            _ZERO,
+        )
+        return total.quantize(_ZERO)
+
+    def do_comprador(self) -> list[ParcelaDeInteresse]:
+        return [p for p in self.parcelas if p.comprador_id == self.comprador.pk]
+
+
+def _travar_conta(comprador: Conta) -> Conta:
+    travada = Conta.objects.select_for_update().get(pk=comprador.pk)
+    if not travada.pode_adicionar_interesse:
+        raise PermissionDenied
+    return travada
+
+
+def _travar(comprador: Conta, produto: Produto) -> _Travado:
+    """Passos 1 a 3 e 5 comuns: conta, rodada, produto e estoque, parcelas."""
+    conta = _travar_conta(comprador)
+    rodada = travar_rodada_para_interesses(Fornecedor(pk=produto.fornecedor_id))
+    try:
+        estoque = travar_estoque(rodada, produto)
+    except EstoqueDaRodada.DoesNotExist:
+        raise ProdutoForaDaRodada from None
+    atual = Produto.objects.get(pk=produto.pk)  # relido já travado: incremento vigente
+    return _Travado(conta, rodada, atual, estoque, travar_parcelas(atual))
+
+
+def _validar_total(produto: Produto, entrada: Any) -> Decimal:
+    """Como `validar_quantidade`, mas aceita zero (remover tudo)."""
+    try:
+        if converter_quantidade(entrada) == 0:
+            return _ZERO
+    except ValorInvalido:
+        pass  # a validação padrão recusa com a mensagem de quantidade
+    return validar_quantidade(produto, entrada)
+
+
+def _acrescentar(t: _Travado, quantidade: Decimal) -> None:
+    livre = calcular_livre(t.estoque.limite, t.reservado())
+    if livre is not None and quantidade > livre:
+        raise EstoqueInsuficiente(livre, t.produto.unidade)
+    parcela = ParcelaDeInteresse.objects.create(
+        comprador=t.comprador,
+        produto=t.produto,
+        quantidade_original=quantidade,
+        quantidade_reservada=quantidade,
+        quantidade_pendente=_ZERO,
+        situacao=SituacaoParcela.ATIVA,
+    )
+    registrar_auditoria(
+        t.comprador,
+        "interesse.adicionar",
+        parcela,
+        {
+            "parcela": parcela.pk,
+            "produto": t.produto.pk,
+            "rodada": t.rodada.pk,
+            "quantidade": str(quantidade),
+        },
+    )
+
+
+def _reservado_do_comprador(t: _Travado) -> Decimal:
+    return sum(
+        (p.quantidade_reservada for p in t.do_comprador() if p.situacao == SituacaoParcela.ATIVA),
+        _ZERO,
+    ).quantize(_ZERO)
+
+
+def _diminuir(t: _Travado, quantidade: Decimal) -> None:
+    reservado = _reservado_do_comprador(t)
+    if quantidade > reservado:
+        raise ReducaoAcimaDoReservado(reservado)
+    restante = quantidade
+    tocadas: list[int] = []
+    candidatas = [
+        p
+        for p in t.do_comprador()
+        if p.situacao == SituacaoParcela.ATIVA and p.quantidade_reservada > 0
+    ]
+    for parcela in sorted(candidatas, key=lambda p: p.sequencia, reverse=True):
+        if restante <= 0:
+            break
+        tirada = min(parcela.quantidade_reservada, restante)
+        parcela.quantidade_reservada -= tirada
+        if parcela.quantidade_reservada == 0:
+            sem_pendencia = parcela.quantidade_pendente == 0
+            parcela.situacao = (
+                SituacaoParcela.REMOVIDA if sem_pendencia else SituacaoParcela.PENDENTE
+            )
+        parcela.save(update_fields=["quantidade_reservada", "situacao"])
+        restante -= tirada
+        tocadas.append(parcela.pk)
+    registrar_auditoria(
+        t.comprador,
+        "interesse.reduzir",
+        t.produto,
+        {
+            "produto": t.produto.pk,
+            "rodada": t.rodada.pk,
+            "quantidade": str(quantidade),
+            "parcelas": tocadas,
+        },
+    )
+
+
+def adicionar_interesse(comprador: Conta, produto: Produto, quantidade: Any) -> ResumoDoInteresse:
+    with transaction.atomic():
+        t = _travar(comprador, produto)
+        valor = validar_quantidade(t.produto, quantidade)
+        _acrescentar(t, valor)
+        return interesse_do_comprador(t.comprador, t.produto)
+
+
+def reduzir_interesse(comprador: Conta, produto: Produto, quantidade: Any) -> ResumoDoInteresse:
+    with transaction.atomic():
+        t = _travar(comprador, produto)
+        valor = validar_quantidade(t.produto, quantidade)
+        _diminuir(t, valor)
+        return interesse_do_comprador(t.comprador, t.produto)
+
+
+def definir_interesse(comprador: Conta, produto: Produto, total: Any) -> ResumoDoInteresse:
+    """Leva o reservado do comprador no produto ao total desejado (idempotente)."""
+    with transaction.atomic():
+        t = _travar(comprador, produto)
+        desejado = _validar_total(t.produto, total)
+        atual = _reservado_do_comprador(t)
+        if desejado > atual:
+            _acrescentar(t, desejado - atual)
+        elif desejado < atual:
+            _diminuir(t, atual - desejado)
+        return interesse_do_comprador(t.comprador, t.produto)
+
+
+def interesse_do_comprador(comprador: Conta, produto: Produto) -> ResumoDoInteresse:
+    soma = ParcelaDeInteresse.objects.filter(
+        comprador_id=comprador.pk, produto_id=produto.pk
+    ).aggregate(
+        reservado=Sum("quantidade_reservada", filter=Q(situacao=SituacaoParcela.ATIVA)),
+        pendente=Sum(
+            "quantidade_pendente",
+            filter=Q(situacao__in=(SituacaoParcela.ATIVA, SituacaoParcela.PENDENTE)),
+        ),
+    )
+    return ResumoDoInteresse(
+        reservado=(soma["reservado"] or _ZERO).quantize(_ZERO),
+        pendente=(soma["pendente"] or _ZERO).quantize(_ZERO),
+    )
