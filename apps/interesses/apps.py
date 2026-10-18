@@ -6,6 +6,8 @@ class InteressesConfig(AppConfig):
     label = "interesses"
 
     def ready(self) -> None:
+        from apps.catalogo.sinais import preco_alterado
+        from apps.interesses.avisos import avisar_preco_alterado
         from apps.interesses.receptores import (
             atender_fila_na_abertura,
             atender_fila_no_aumento_de_estoque,
@@ -13,6 +15,7 @@ class InteressesConfig(AppConfig):
         from apps.rodadas.sinais import estoque_alterado, rodada_aberta
 
         rodada_aberta.connect(atender_fila_na_abertura, dispatch_uid="interesses.fila.abertura")
+        preco_alterado.connect(avisar_preco_alterado, dispatch_uid="interesses.aviso.preco")
         estoque_alterado.connect(
             atender_fila_no_aumento_de_estoque, dispatch_uid="interesses.fila.estoque"
         )
