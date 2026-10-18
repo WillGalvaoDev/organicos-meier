@@ -12,7 +12,7 @@ from apps.catalogo.models import Produto, Unidade
 from apps.catalogo.quantidades import QuantidadeInvalida
 from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento
 from apps.contas.models import Conta
-from apps.contas.moderacao import suspender
+from apps.contas.moderacao import remover, suspender
 from apps.interesses.consultas import total_reservado
 from apps.interesses.fila import alocar_pendentes
 from apps.interesses.models import ParcelaDeInteresse
@@ -279,3 +279,53 @@ def test_remocao_e_atendimento_da_fila_se_serializam(remocao_primeiro: bool) -> 
     parcela.refresh_from_db()
     assert parcela.quantidade_reservada + parcela.quantidade_pendente <= parcela.quantidade_original
     assert total_reservado(produto) <= D("10")
+
+
+@pytest.mark.parametrize("acao", [suspender, remover], ids=["suspensao", "remocao"])
+@pytest.mark.parametrize("adicao_primeiro", [True, False])
+def test_adicao_e_suspensao_ou_remocao_se_serializam(acao: Any, adicao_primeiro: bool) -> None:
+    # A-8 e A-14
+    _, produto, _ = cenario("10")
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+
+    def adicionar() -> Any:
+        return adicionar_interesse(a, produto, "2")
+
+    def moderar() -> Any:
+        return acao(admin, a)
+
+    if adicao_primeiro:
+        resultados = executar_em_paralelo(_segurando(adicionar), _esperando(moderar))
+        assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    else:
+        resultados = executar_em_paralelo(_segurando(moderar), _esperando(adicionar))
+        assert resultados[0].excecao is None, resultados[0].excecao
+        assert isinstance(resultados[1].excecao, PermissionDenied)
+    assert not ParcelaDeInteresse.objects.filter(
+        comprador=a, situacao__in=("ativa", "pendente")
+    ).exists()
+    assert total_reservado(produto) == 0
+
+
+@pytest.mark.parametrize("fila_primeiro", [True, False])
+def test_atendimento_da_fila_e_suspensao_se_serializam(fila_primeiro: bool) -> None:  # A-9
+    rodada, produto, _ = cenario("4")
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+    pendente(a, produto, 4)
+
+    def alocar() -> None:
+        with transaction.atomic():
+            alocar_pendentes(rodada.fornecedor)
+
+    def suspensao() -> None:
+        suspender(admin, a)
+
+    primeiro, segundo = (alocar, suspensao) if fila_primeiro else (suspensao, alocar)
+    resultados = executar_em_paralelo(_segurando(primeiro), _esperando(segundo))
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert not ParcelaDeInteresse.objects.filter(
+        comprador=a, situacao__in=("ativa", "pendente")
+    ).exists()
+    assert total_reservado(produto) == 0

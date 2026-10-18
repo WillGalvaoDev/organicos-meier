@@ -11,22 +11,23 @@ from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q, Sum
+from django.db.transaction import TransactionManagementError
 
 from apps.catalogo.models import Produto, Unidade
 from apps.catalogo.quantidades import formatar_quantidade, validar_quantidade
-from apps.contas.models import Conta
+from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import SITUACOES_QUE_RESERVAM, travar_parcelas
 from apps.interesses.fila import _alocar_produto
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
-from apps.nucleo.auditoria import registrar_auditoria
+from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.valores import ValorInvalido
 from apps.nucleo.valores import quantidade as converter_quantidade
 from apps.rodadas.condicoes import travar_rodada_para_interesses
 from apps.rodadas.estoque import calcular_livre, travar_estoque
-from apps.rodadas.models import EstoqueDaRodada, Rodada
+from apps.rodadas.models import ETAPAS_ATIVAS, EstoqueDaRodada, Etapa, Rodada
 
 _ZERO = Decimal("0.000")
 
@@ -295,3 +296,81 @@ def remover_pendente(comprador: Conta, produto: Produto, quantidade: Any) -> Res
             {"produto": atual.pk, "quantidade": str(valor), "parcelas": tocadas},
         )
         return interesse_do_comprador(conta, atual)
+
+
+MOTIVOS_DE_REMOCAO = {
+    "suspensao": "interesse.remover_por_suspensao",
+    "remocao_da_conta": "interesse.remover_por_remocao_da_conta",
+}
+
+
+def remover_interesses_do_comprador(conta: Conta, *, motivo: str) -> int:
+    """Remove as parcelas `ativa` e `pendente` do comprador e atende a fila onde couber (E05-07).
+
+    Chamada dentro da transação de `suspender` ou `remover`, com a conta já travada. Não depende
+    da etapa: as travas seguem a ordem global (fornecedores por id; em cada um, a rodada ativa, os
+    produtos por id, o estoque e as parcelas). A fila só é atendida quando a rodada aceita
+    reservas. Parcelas `em_pedido` não mudam. Devolve quantas parcelas foram removidas.
+    """
+    if not connection.in_atomic_block:
+        raise TransactionManagementError("remover_interesses_do_comprador exige uma transação.")
+    if motivo not in MOTIVOS_DE_REMOCAO:
+        raise ValueError(f"motivo desconhecido: {motivo!r}")
+    if conta.papel != Papel.COMPRADOR:
+        return 0
+    na_fila = (SituacaoParcela.ATIVA, SituacaoParcela.PENDENTE)
+    produtos = list(
+        Produto.objects.filter(parcelas__comprador_id=conta.pk, parcelas__situacao__in=na_fila)
+        .distinct()
+        .order_by("pk")
+    )
+    if not produtos:
+        return 0
+    por_fornecedor: dict[int, list[Produto]] = {}
+    for produto in produtos:
+        por_fornecedor.setdefault(produto.fornecedor_id, []).append(produto)
+    removidas: list[list[Any]] = []
+    for fornecedor_id in sorted(por_fornecedor):
+        Fornecedor.objects.select_for_update().get(pk=fornecedor_id)
+        rodada = (
+            Rodada.objects.select_for_update()
+            .filter(fornecedor_id=fornecedor_id, etapa__in=ETAPAS_ATIVAS)
+            .first()
+        )
+        for produto in por_fornecedor[fornecedor_id]:
+            Produto.objects.select_for_update().get(pk=produto.pk)
+            tem_estoque = (
+                rodada is not None
+                and EstoqueDaRodada.objects.select_for_update()
+                .filter(rodada_id=rodada.pk, produto_id=produto.pk)
+                .exists()
+            )
+            liberou = False
+            for parcela in travar_parcelas(produto):
+                if parcela.comprador_id != conta.pk or parcela.situacao not in na_fila:
+                    continue
+                removidas.append(
+                    [
+                        parcela.pk,
+                        str(parcela.quantidade_reservada),
+                        str(parcela.quantidade_pendente),
+                    ]
+                )
+                liberou = liberou or parcela.quantidade_reservada > 0
+                parcela.quantidade_reservada = _ZERO
+                parcela.quantidade_pendente = _ZERO
+                parcela.situacao = SituacaoParcela.REMOVIDA
+                parcela.save(
+                    update_fields=["quantidade_reservada", "quantidade_pendente", "situacao"]
+                )
+            aceita = rodada is not None and rodada.etapa in (Etapa.INTERESSE, Etapa.FECHAMENTO)
+            if liberou and tem_estoque and aceita and rodada is not None:
+                _alocar_produto(rodada, produto)
+    if removidas:
+        registrar_auditoria(
+            SISTEMA,
+            MOTIVOS_DE_REMOCAO[motivo],
+            conta,
+            {"conta": conta.pk, "parcelas": removidas},
+        )
+    return len(removidas)
