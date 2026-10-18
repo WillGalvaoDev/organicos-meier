@@ -16,7 +16,13 @@ from apps.contas.moderacao import suspender
 from apps.interesses.consultas import total_reservado
 from apps.interesses.fila import alocar_pendentes
 from apps.interesses.models import ParcelaDeInteresse
-from apps.interesses.servicos import EstoqueInsuficiente, adicionar_interesse, reduzir_interesse
+from apps.interesses.servicos import (
+    EstoqueInsuficiente,
+    RemocaoAcimaDoPendente,
+    adicionar_interesse,
+    reduzir_interesse,
+    remover_pendente,
+)
 from apps.rodadas.condicoes import travar_rodada_para_interesses
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.interesses import cenario, pendente, reservada
@@ -241,3 +247,35 @@ def test_reducao_e_adicao_concorrentes_dao_a_fila_o_que_foi_liberado() -> None: 
     )
     assert total_reservado(produto) == D("10")
     assert ParcelaDeInteresse.objects.filter(comprador=e).count() == 0
+
+
+@pytest.mark.parametrize("remocao_primeiro", [True, False])
+def test_remocao_e_atendimento_da_fila_se_serializam(remocao_primeiro: bool) -> None:  # A-9
+    # cenário 100, T-45
+    rodada, produto, _ = cenario("10")
+    a = ContaFactory.create()
+    parcela = pendente(a, produto, 6)
+
+    def remover() -> None:
+        remover_pendente(a, produto, "6")
+
+    def alocar() -> None:
+        with transaction.atomic():
+            alocar_pendentes(rodada.fornecedor)
+
+    if remocao_primeiro:
+        resultados = executar_em_paralelo(_segurando(remover), _esperando(alocar))
+        assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+        parcela.refresh_from_db()
+        assert parcela.situacao == "removida"
+        assert total_reservado(produto) == 0
+    else:
+        resultados = executar_em_paralelo(_segurando(alocar), _esperando(remover))
+        assert resultados[0].excecao is None, resultados[0].excecao
+        assert isinstance(resultados[1].excecao, RemocaoAcimaDoPendente)
+        assert resultados[1].excecao.pendente == 0
+        parcela.refresh_from_db()
+        assert (parcela.quantidade_reservada, parcela.quantidade_pendente) == (D("6"), D("0"))
+    parcela.refresh_from_db()
+    assert parcela.quantidade_reservada + parcela.quantidade_pendente <= parcela.quantidade_original
+    assert total_reservado(produto) <= D("10")
