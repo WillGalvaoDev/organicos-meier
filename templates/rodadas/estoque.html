@@ -7,6 +7,29 @@
   {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
   {% if mensagem_somente_leitura %}<p>{{ mensagem_somente_leitura }}</p>{% endif %}
 
+  <h2>Progresso da rodada</h2>
+  <p>Progresso elegível: {{ progresso.valor_elegivel|reais }} de {{ progresso.minimo|reais }}.
+    {% if progresso.atingido %}Mínimo atingido.{% else %}Faltam {{ progresso.falta|reais }}.{% endif %}</p>
+  {% if progresso.produtos %}
+    <table>
+      <thead><tr><th>Produto</th><th>Total em interesse</th><th>Elegível</th><th>Valor bruto</th><th>Valor elegível</th><th>Caixas completas</th><th>Faltam para a próxima caixa</th><th>Excedente</th></tr></thead>
+      <tbody>
+        {% for item in progresso.produtos %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.total_reservado|quantidade_br }}</td>
+            <td>{{ item.quantidade_elegivel|quantidade_br }}</td>
+            <td>{{ item.valor_bruto|reais }}</td>
+            <td>{{ item.valor_elegivel|reais }}</td>
+            <td>{% if item.caixas_completas is None %}—{% else %}{{ item.caixas_completas }}{% endif %}</td>
+            <td>{% if item.faltam_para_proxima_caixa is None %}—{% else %}{{ item.faltam_para_proxima_caixa|quantidade_br }}{% endif %}</td>
+            <td>{{ item.excedente|quantidade_br }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
   <h2>Produtos na rodada</h2>
   {% if na_rodada %}
     <table>
