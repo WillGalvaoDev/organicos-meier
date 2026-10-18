@@ -30,6 +30,7 @@ class Retorno:
     texto: str | None = ""  # None: mostra o valor atual do banco
     mensagem: str | None = None
     sem_formulario: bool = False
+    produto_nome: str | None = None  # prefixo da mensagem quando ela vai para o topo
 
 
 def texto_decimal(valor: Decimal) -> str:
@@ -63,9 +64,20 @@ def _formulario(
     }
 
 
+def _mensagem_sem_destino(retorno: Retorno | None, formularios: list[dict[str, Any]]) -> str | None:
+    """A mensagem da recusa, com o nome do produto, quando nenhum formulário de destino foi
+    desenhado para recebê-la (E05-R05). Se algum recebe, devolve `None`: ela aparece uma vez só."""
+    if retorno is None or not retorno.mensagem:
+        return None
+    if any(f["mostrar"] and f["mensagem"] for f in formularios):
+        return None
+    prefixo = f"{retorno.produto_nome}: " if retorno.produto_nome else ""
+    return prefixo + retorno.mensagem
+
+
 def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[str, Any]:
     ativa = conta.pode_adicionar_interesse
-    grupos = []
+    grupos: list[dict[str, Any]] = []
     for grupo in carrinho_do_comprador(conta):
         linhas = [
             {
@@ -90,7 +102,14 @@ def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[s
             for linha in grupo.linhas
         ]
         grupos.append({"grupo": grupo, "linhas": linhas})
-    return {"grupos": grupos, "retorno": retorno}
+    desenhados = [
+        f for g in grupos for item in g["linhas"] for f in (item["quantidade"], item["pendentes"])
+    ]
+    return {
+        "grupos": grupos,
+        "retorno": retorno,
+        "retorno_sem_destino": _mensagem_sem_destino(retorno, desenhados),
+    }
 
 
 def contexto_do_catalogo(
@@ -99,7 +118,7 @@ def contexto_do_catalogo(
     progresso = progresso_da_rodada(rodada, conta)
     por_produto = {p.produto.pk: p for p in progresso.produtos}
     editavel = conta.pode_adicionar_interesse and rodada.etapa in ETAPAS_QUE_ACEITAM
-    linhas = []
+    linhas: list[dict[str, Any]] = []
     for item in produtos_da_rodada(rodada):
         dele = por_produto[item.produto.pk]
         participacao = dele.do_comprador
@@ -127,4 +146,7 @@ def contexto_do_catalogo(
         "percentual": progresso.percentual,
         "atingido": progresso.atingido,
         "retorno": retorno,
+        "retorno_sem_destino": _mensagem_sem_destino(
+            retorno, [linha["quantidade"] for linha in linhas]
+        ),
     }

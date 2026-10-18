@@ -14,7 +14,11 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses import views
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
-from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador
+from apps.interesses.servicos import (
+    adicionar_interesse,
+    definir_interesse,
+    interesse_do_comprador,
+)
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.models import Etapa, Rodada
 from tests.apoio.admin_fluxos import administrador_logado
@@ -573,3 +577,169 @@ def test_remover_pendentes_com_estado_repetido_e_recusado() -> None:  # A-24
     assert segunda.status_code == 409
     assert DESATUALIZADO in segunda.content.decode()
     assert interesse_do_comprador(a, produto).pendente == D("2")
+
+
+# --- E05-R05 (critérios A-25 a A-27): mensagem de recusa sem formulário para recebê-la ---
+
+
+def _fora_dos_formularios(html: str) -> str:
+    return re.sub(r"<form\b.*?</form>", "", html, flags=re.S)
+
+
+def _no_alerta_do_topo(html: str, mensagem: str) -> bool:
+    """A mensagem está num `role="alert"` fora de qualquer `<form>`."""
+    resto = _fora_dos_formularios(html)
+    return re.search(rf'<p role="alert">[^<]*{re.escape(mensagem)}[^<]*</p>', resto) is not None
+
+
+@pytest.mark.parametrize("origem", ["carrinho", "catalogo"])
+def test_conflito_item_ja_removido_exibe_mensagem(origem: str) -> None:
+    # prova do revisor de 8728b4b, corpo original (A-25)
+    _, p, _ = cenario("10")
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    c = Client()
+    c.force_login(a)
+    definir_interesse(a, p, "0")
+    resposta = c.post(
+        "/interesses/",
+        {
+            "produto": p.pk,
+            "quantidade": "3",
+            "origem": origem,
+            "reservado_atual": "4",
+            "pendente_atual": "0",
+        },
+    )
+    assert resposta.status_code == 409
+    assert "Seu interesse neste produto mudou." in resposta.content.decode()
+
+
+@pytest.mark.parametrize("com_reserva", [False, True])
+def test_reenvio_remocao_total_pendente_exibe_mensagem(com_reserva: bool) -> None:
+    # prova do revisor de 8728b4b, corpo original (A-26)
+    _, p, _ = cenario("10")
+    a = ContaFactory.create()
+    if com_reserva:
+        reservada(a, p, 4)
+    pendente(a, p, 2)
+    c = Client()
+    c.force_login(a)
+    corpo = {
+        "produto": p.pk,
+        "quantidade": "2",
+        "reservado_atual": "4" if com_reserva else "0",
+        "pendente_atual": "2",
+    }
+    assert c.post("/interesses/pendentes/remover/", corpo).status_code == 302
+    resposta = c.post("/interesses/pendentes/remover/", corpo)
+    assert resposta.status_code == 409
+    assert "Seu interesse neste produto mudou." in resposta.content.decode()
+
+
+def test_conflito_do_item_removido_no_carrinho_vai_para_o_topo() -> None:  # A-25 (carrinho)
+    _, p, _ = cenario("10", nome="P")
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    definir_interesse(a, p, "0")
+    corpo = {
+        "produto": p.pk,
+        "quantidade": "3",
+        "origem": "carrinho",
+        "reservado_atual": "4",
+        "pendente_atual": "0",
+    }
+    resposta = entrar(a).post("/interesses/", corpo)
+    html = resposta.content.decode()
+    assert resposta.status_code == 409
+    assert "Seu carrinho está vazio." in html
+    assert html.count(f"P: {DESATUALIZADO}") == 1
+    assert _no_alerta_do_topo(html, f"P: {DESATUALIZADO}")
+    resumo = interesse_do_comprador(a, p)
+    assert (resumo.reservado, resumo.pendente) == (D("0"), D("0"))
+    assert not ParcelaDeInteresse.objects.filter(comprador=a, situacao="ativa").exists()
+
+
+def test_conflito_do_item_removido_no_catalogo_fica_no_formulario() -> None:  # A-25 (catálogo)
+    _rodada, p, _ = cenario("10", nome="P")
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    definir_interesse(a, p, "0")
+    corpo = {
+        "produto": p.pk,
+        "quantidade": "3",
+        "origem": "catalogo",
+        "reservado_atual": "4",
+        "pendente_atual": "0",
+    }
+    resposta = entrar(a).post("/interesses/", corpo)
+    html = resposta.content.decode()
+    assert resposta.status_code == 409
+    assert html.count(DESATUALIZADO) == 1
+    (formulario,) = formularios(html, p)
+    assert DESATUALIZADO in formulario
+    assert valor_do_campo(formulario) == "0"
+    assert _campo_oculto(formulario, "reservado_atual") == "0"
+    assert _campo_oculto(formulario, "pendente_atual") == "0"
+    assert interesse_do_comprador(a, p).reservado == 0
+
+
+@pytest.mark.parametrize("com_reserva", [False, True])
+def test_reenvio_da_remocao_total_de_pendentes_mostra_a_mensagem_no_topo(
+    com_reserva: bool,
+) -> None:  # A-26
+    _, p, _ = cenario("10", nome="P")
+    a = ContaFactory.create()
+    if com_reserva:
+        reservada(a, p, 4)
+    pendente(a, p, 2)
+    cliente = entrar(a)
+    corpo = {
+        "produto": p.pk,
+        "quantidade": "2",
+        "reservado_atual": "4" if com_reserva else "0",
+        "pendente_atual": "2",
+    }
+    assert cliente.post(REMOVER, corpo).status_code == 302
+    antes = EntradaAuditoria.objects.count()
+    resposta = cliente.post(REMOVER, corpo)
+    html = resposta.content.decode()
+    assert resposta.status_code == 409
+    assert html.count(DESATUALIZADO) == 1
+    assert _no_alerta_do_topo(html, f"P: {DESATUALIZADO}")
+    assert formularios(html, p, REMOVER) == []
+    assert EntradaAuditoria.objects.count() == antes
+    if com_reserva:
+        assert "Reservado: 4" in html
+        assert "Pendente: 0" in html
+        (quantidade,) = formularios(html, p)
+        assert 'role="alert"' not in quantidade
+    else:
+        assert "Seu carrinho está vazio." in html
+
+
+def test_recusas_de_quantidade_sem_formulario_de_destino_vao_para_o_topo() -> None:  # A-27
+    rodada, p, _ = cenario("10", nome="P")
+    q = ProdutoFactory.create(fornecedor=rodada.fornecedor, unidade=Unidade.UNIDADE, nome="Q")
+    EstoqueDaRodadaFactory.create(rodada=rodada, produto=q, limite=D("10"))
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    cliente = entrar(a)
+    resposta = cliente.post(REMOVER, {"produto": p.pk, "quantidade": "1"})
+    html = resposta.content.decode()
+    mensagem = "P: A remoção passa da quantidade pendente (0)."
+    assert resposta.status_code == 200
+    assert html.count(mensagem) == 1
+    assert _no_alerta_do_topo(html, mensagem)
+    assert formularios(html, p, REMOVER) == []
+    resposta = cliente.post(
+        "/interesses/", {"produto": q.pk, "quantidade": "abc", "origem": "carrinho"}
+    )
+    html = resposta.content.decode()
+    assert resposta.status_code == 200
+    assert len(re.findall(r"Q: A quantidade deve ser", html)) == 1
+    assert _no_alerta_do_topo(html, "Q: A quantidade deve ser")
+    assert formularios(html, q) == []
+    assert "<h3>Q</h3>" not in html
+    assert interesse_do_comprador(a, p).reservado == D("4")
+    assert not ParcelaDeInteresse.objects.filter(produto=q).exists()

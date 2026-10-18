@@ -78,12 +78,20 @@ def _gravar(request: HttpRequest, acao: str) -> HttpResponse:
     origem = form.cleaned_data.get("origem", "carrinho") if acao == "quantidade" else "carrinho"
     texto = request.POST.get("quantidade", "")[:30]
     if "quantidade" in form.errors:
-        retorno = Retorno(200, None, produto.pk, acao, texto, "Informe a quantidade.")
+        retorno = Retorno(
+            200, None, produto.pk, acao, texto, "Informe a quantidade.", produto_nome=produto.nome
+        )
         return _pagina_de_origem(request, origem, produto, retorno)
     conta: Conta = request.user  # type: ignore[assignment]
     valor = form.cleaned_data["quantidade"].replace(",", ".")  # decimal digitado à brasileira
     desatualizado = Retorno(
-        409, None, produto.pk, acao, None, InteresseDesatualizado().mensagem
+        409,
+        None,
+        produto.pk,
+        acao,
+        None,
+        InteresseDesatualizado().mensagem,
+        produto_nome=produto.nome,
     )  # o formulário volta com os valores atuais
     estado_valido, esperado = form.estado_esperado()
     if not estado_valido:
@@ -98,7 +106,15 @@ def _gravar(request: HttpRequest, acao: str) -> HttpResponse:
         return _pagina_de_origem(request, origem, produto, desatualizado)
     except RECUSAS_DE_QUANTIDADE as erro:
         mensagem = getattr(erro, "mensagem", None) or str(erro)
-        retorno = Retorno(200, None, produto.pk, acao, form.cleaned_data["quantidade"], mensagem)
+        retorno = Retorno(
+            200,
+            None,
+            produto.pk,
+            acao,
+            form.cleaned_data["quantidade"],
+            mensagem,
+            produto_nome=produto.nome,
+        )
         return _pagina_de_origem(request, origem, produto, retorno)
     except (InteressesBloqueados, ProdutoForaDaRodada) as erro:
         mensagem = getattr(erro, "mensagem", None) or str(erro)
