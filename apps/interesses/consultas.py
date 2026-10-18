@@ -38,3 +38,12 @@ def quantidades_em_uso(produto: Produto, *, travar: bool = False) -> list[Decima
     for reservada, pendente in parcelas.values_list("quantidade_reservada", "quantidade_pendente"):
         em_uso.extend(quantidade for quantidade in (reservada, pendente) if quantidade > 0)
     return em_uso
+
+
+def travar_parcelas(produto: Produto) -> list[ParcelaDeInteresse]:
+    """Trava, por sequência, todas as parcelas do produto que não foram removidas.
+
+    Cobre as `ativa`, `em_pedido` e `pendente`: toda parcela que uma operação de interesse lê
+    para decidir ou altera. Exige transação aberta (o `FOR UPDATE` do Django já a exige).
+    """
+    return list(_parcelas(produto, True).exclude(situacao=SituacaoParcela.REMOVIDA))

@@ -50,3 +50,44 @@ def condicoes_editaveis(fornecedor: Fornecedor) -> bool:
     verifica de novo (`travar_condicoes`).
     """
     return Rodada.objects.filter(fornecedor_id=fornecedor.pk, etapa=Etapa.INTERESSE).exists()
+
+
+MENSAGEM_INTERESSES = "Os interesses deste fornecedor não podem ser alterados nesta etapa."
+
+
+class InteressesBloqueados(Exception):
+    """Operação de interesse recusada. `codigo`: `sem_rodada_ativa` ou `etapa_bloqueada`."""
+
+    def __init__(self, codigo: str) -> None:
+        super().__init__(MENSAGEM_INTERESSES)
+        self.codigo = codigo
+
+
+def travar_rodada_para_interesses(fornecedor: Fornecedor) -> Rodada:
+    """Trava o fornecedor e a rodada ativa e devolve a rodada, que aceita interesses.
+
+    Aceitam `interesse` e `fechamento` (§7). Nas demais etapas, ou sem rodada ativa, levanta
+    `InteressesBloqueados`. Exige transação aberta, como `travar_condicoes`.
+    """
+    if not connection.in_atomic_block:
+        raise TransactionManagementError(
+            "travar_rodada_para_interesses exige uma transação aberta."
+        )
+    Fornecedor.objects.select_for_update().get(pk=fornecedor.pk)
+    rodada = (
+        Rodada.objects.select_for_update()
+        .filter(fornecedor_id=fornecedor.pk, etapa__in=ETAPAS_ATIVAS)
+        .first()
+    )
+    if rodada is None:
+        raise InteressesBloqueados("sem_rodada_ativa")
+    if rodada.etapa not in (Etapa.INTERESSE, Etapa.FECHAMENTO):
+        raise InteressesBloqueados("etapa_bloqueada")
+    return rodada
+
+
+def interesses_editaveis(fornecedor: Fornecedor) -> bool:
+    """Leitura sem trava: a rodada ativa aceita interesses? Só para a tela escolher a resposta."""
+    return Rodada.objects.filter(
+        fornecedor_id=fornecedor.pk, etapa__in=(Etapa.INTERESSE, Etapa.FECHAMENTO)
+    ).exists()
