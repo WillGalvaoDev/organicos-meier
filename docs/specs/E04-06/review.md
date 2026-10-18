@@ -1,6 +1,6 @@
 # E04-06 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8b4e771` (2026-10-18). E04 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -53,3 +53,12 @@ A-1 a A-15 conferidos e verdes: destinatários, exclusões, imutabilidade, token
 Verificação independente: **1385 passed em 160,23 s** na suíte completa. Probes adicionais: **10 failed, 4 passed em 4,39 s**, mais **1 passed em 2,52 s** no caso de isolamento acrescentado. Dez falhas correspondem a R01 (oito) e R02 (duas). Lint, formatação, tipos, Django e CI passaram.
 
 Comandos, matriz, reproduções, TDD, critérios de correção e limites no [parecer consolidado E04-07](../E04-07/review.md). Nenhum código ou teste versionado foi alterado pelo revisor.
+
+
+## Revalidação independente — 8b4e771 — 2026-10-18
+
+**Parecer da fatia: APROVADO. E04 global: APROVADO.**
+
+Aprovação mantida. Publicação, distribuição, permissões, concorrência, idempotência, histórico e consultas cobertos pela suíte integral. Sem alteração de implementação nesta correção.
+
+Suíte completa: **1461 passed em 137,79 s**. Script independente original da revisão de 0b52010, sem alterações: **15 passed em 6,78 s**. As dez falhas anteriores não se reproduzem. Lint, formatação, tipos, verificações Django e CI passaram. Evidências e limites no [parecer consolidado](../E04-07/review.md), seção deste SHA.

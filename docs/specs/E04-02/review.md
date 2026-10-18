@@ -1,6 +1,6 @@
 # E04-02 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8b4e771` (2026-10-18). E04 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -59,3 +59,12 @@ Comandos, matriz, reproduções, TDD, critérios de correção e limites no [par
 A-15 (`emitir_evento` e `emitir_evento_para_varios`, com dois compradores, recusando cada link da lista e sem gravar `Notificacao` nem `Envio`; e aceitando `/catalogo/1/?q=abc#x`) está em `tests/tecnicos/test_notificacoes_link_interno.py`. Red e Green são os da E04-01: as 18 recusas de emissão falharam com `DID NOT RAISE` e passaram com a regra compartilhada de `validar_notificacao`; nenhuma validação nova foi escrita nas duas funções. O caso de aceitação passou já no Red (comportamento existente).
 
 Verificação final da correção: suíte completa **1461 passed**; `ruff check`, `ruff format --check`, `mypy .`, `makemigrations --check --dry-run` e `manage.py check` sem erros. Nenhuma asserção existente foi afrouxada ou removida.
+
+
+## Revalidação independente — 8b4e771 — 2026-10-18
+
+**Parecer da fatia: APROVADO. E04 global: APROVADO.**
+
+R01 encerrado também na emissão única e em lote. A-15 atendido pela validação compartilhada antes da gravação; os probes das duas entradas passam. Mantidas atomicidade e idempotência.
+
+Suíte completa: **1461 passed em 137,79 s**. Script independente original da revisão de 0b52010, sem alterações: **15 passed em 6,78 s**. As dez falhas anteriores não se reproduzem. Lint, formatação, tipos, verificações Django e CI passaram. Evidências e limites no [parecer consolidado](../E04-07/review.md), seção deste SHA.

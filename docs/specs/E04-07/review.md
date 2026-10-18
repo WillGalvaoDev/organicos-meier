@@ -1,6 +1,6 @@
 # E04-07 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8b4e771` (2026-10-18). E04 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -266,3 +266,47 @@ def test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao():
 R01 (E04-01 e E04-02), R02 (E04-05) e R03 (E04-04) foram corrigidas na branch `e04-correcoes-r01-r03`, com Red e Green registrados nos `review.md` de cada fatia. Suíte completa: **1461 passed**. Aguardando a revalidação do agente 3. Nenhum parecer foi alterado por mim.
 
 Ajuste de configuração: `pyproject.toml` ganhou `docs/**/*.md` em `extend-exclude` do `ruff`. O `ruff format --check .` passou a tentar reformatar o bloco Python do "Script reproduzível" deste parecer (os probes literais do revisor) e falharia no CI; a exclusão evita reescrever o parecer.
+
+
+## Revalidação independente — 8b4e771 — 2026-10-18
+
+**Parecer da fatia: APROVADO. E04 global: APROVADO.**
+
+Aprovação mantida. Lista, detalhe, filtros, permissões e somente leitura continuam verdes. E04 global aprovada após encerramento de R01, R02 e R03.
+
+Suíte completa: **1461 passed em 137,79 s**. Script independente original da revisão de 0b52010, sem alterações: **15 passed em 6,78 s**. As dez falhas anteriores não se reproduzem. Lint, formatação, tipos, verificações Django e CI passaram. Evidências e limites no [parecer consolidado](../E04-07/review.md), seção deste SHA.
+
+### Escopo e decisão
+
+Commit auditado: `8b4e7717d78686d5d8ff33d2ed1fd12bab17f775` (PR 57), árvore inicialmente limpa em main. Requisitos corrigidos em `d49a47f`, implementação em `9fb5e9f`. Conferidos os diffs dos quatro documentos de especificação afetados, critérios novos/corrigidos, implementação, migração e testes antes da conclusão. As sete fatias estão **APROVADAS**, sem achados impeditivos conhecidos no escopo auditado.
+
+| Achado | Evidência de encerramento |
+|---|---|
+| R01 — links externos | Regex compartilhada, fullmatch no serviço e CHECK novo no Postgres. Testes de controles, barra invertida, espaços, não ASCII e percent-encoding; os oito negativos originais e os controles passam. E04-01 A-15 a A-17 e E04-02 A-15 atendidos. |
+| R02 — envio antes do commit | Adaptador usa on_commit em todos os seus e-mails. Dois probes originais de recuperação passam; controle do link de acesso também. A-12 a A-16 verificam os três fluxos, falhas e proteção do token. |
+| R03 — cenário incompatível com matriz | Documentação e teste alinhados a pagamento_aberto, sem alterar canais. Fato e emissão na mesma atomic; probe adicional confirma persistência após três falhas do canal, com commit real. |
+
+Não foram encontradas regressões no diff. A alteração em pyproject.toml apenas exclui Markdown do Ruff; não exclui código Python ou testes adicionais. Os ajustes em test_contas_recuperacao.py, test_contas_google_cadastro.py e test_normalizacao_varredura.py executam callbacks após commit, conforme permitido pela especificação; suas asserções foram preservadas. A mudança de texto do teste do cenário 24 corresponde ao evento corrigido, mantendo as verificações do fato, notificação, tentativas e e-mail.
+
+### Verificação independente
+
+| Comando | Resultado |
+|---|---|
+| `uv run pytest -q` | **1461 passed em 137,79 s** |
+| `uv run pytest -q -c pyproject.toml $env:TEMP/om_e04_0b52010_probes.py --tb=short --show-capture=no` | **15 passed em 6,78 s** |
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 201 arquivos já formatados |
+| `uv run mypy .` | Sem problemas em 235 arquivos |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | No changes detected |
+| `uv run python manage.py check --settings=config.settings.test` | Nenhum problema |
+| `uv sync --locked` | 51 pacotes resolvidos, 50 verificados |
+
+[CI do commit](https://github.com/WillGalvaoDev/organicos-meier/actions/runs/39041850399): completed/success. Logs locais: `$env:TEMP/om_e04_8b4e771_suite.log` e `$env:TEMP/om_e04_8b4e771_probes.log`. A execução integral iniciou em 17/10 e seu resultado foi recuperado do log ao retomar em 18/10; HEAD continuava idêntico e a árvore limpa. Na retomada, o Postgres local estava parado: a primeira tentativa dos probes foi interrompida antes de produzir resultados, o serviço foi iniciado com `docker compose up -d db` e a execução acima concluiu verde. Nenhuma falha de produto foi inferida dessa interrupção ambiental.
+
+### TDD e limites
+
+Conferidos os registros do implementador: R01 com **48 failed, 18 passed** antes da implementação e **66 passed** após; R02 com **5 failed, 16 passed** e depois **21 passed**. R03 não exige Red novo: correção documental/de teste sobre mecanismo existente, justificada pela spec. Os probes do revisor foram incorporados preservando as asserções. A cronologia Red continua sendo evidência documental do implementador, não execução presenciada; Green integral e probes originais foram executados independentemente.
+
+Mantidos os limites anteriores: cliente HTTP Django e Postgres, WebAuthn com dublê, canais simulados; sem navegador interativo, SMTP/SES real, Meta ou worker executado como processo. Homologações externas e cenário E08 permanecem fora desta revisão. As limitações previstas de aceite versus entrega e de duplicata após queda entre SMTP e commit não foram alteradas.
+
+Alterações desta revisão: somente sete review.md da E04, na branch `revisao/e04-8b4e771`, sem commit/push. Não houve correção de código ou teste versionado pelo revisor. Gate de revisão independente concluído: **E04 APROVADA**.
