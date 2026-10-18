@@ -219,6 +219,58 @@ A mensagem de `remover_pendente` não muda.
 
 **Testes existentes:** nenhum precisa mudar. Os envios sem os campos novos caem em `esperado=None`, e os critérios A-1 a A-20 continuam valendo. No A-6, o reenvio com o total já atingido continua não gravando nada.
 
+## Correção E05-R05 — mensagem de recusa sem formulário para recebê-la (2026-10-18)
+
+### Diagnóstico
+
+A correção E05-R02 mandou mostrar a mensagem de `InteresseDesatualizado` "dentro do `<form>` do produto". Antes dela, a regra da linha de 200 já fazia o mesmo com as mensagens de quantidade. Eu não previ o caso em que esse formulário não aparece na página relida.
+
+- **Pelo carrinho:** a linha do produto some quando o reservado e o pendente são zero (`apps/interesses/consultas.py`).
+- **Na própria linha:** o formulário de pendentes some quando o pendente é zero (`templates/interesses/carrinho.html`).
+- **No catálogo:** o formulário de quantidade não aparece quando a conta ou a etapa não permitem edição.
+
+Nesses casos, a rota responde corretamente sem gravar nada, mas a mensagem fica ligada a um formulário que não é desenhado. O comprador recebe a página sem nenhuma explicação.
+
+O revisor reproduziu três casos, todos com 409 e sem o texto "Seu interesse neste produto mudou.":
+
+1. A tinha 4 reservados, e o item foi removido noutra aba. A página antiga envia quantidade 3 com o estado (4, 0), pelo carrinho, e recebe o carrinho vazio.
+2. A tem 2 pendentes, sem reserva. O reenvio da remoção de 2 recebe o carrinho vazio.
+3. O mesmo caso de 2, mas A tem também 4 reservados. A linha continua na página, mas o formulário de pendentes some.
+
+O mesmo defeito atinge as recusas que respondem 200, que eu mesmo não tinha previsto. Por exemplo, uma remoção de pendentes sem pendência nenhuma, ou uma quantidade inválida enviada pelo carrinho para um produto sem linha no carrinho. A correção cobre os dois casos.
+
+### Regra
+
+**Destino da mensagem.** Toda resposta com `Retorno.mensagem`, seja ela 200 ou 409, mostra a mensagem exatamente uma vez na página:
+
+- **dentro do formulário de destino**, quando a página relida desenha o formulário da mesma ação (`quantidade` ou `pendentes`) do produto enviado. É o comportamento atual, sem mudança;
+- **no topo da página**, quando esse formulário não é desenhado. O texto é "<nome do produto>: <mensagem>", no mesmo elemento `role="alert"` do aviso de topo já existente.
+
+**O que decide é o formulário realmente desenhado.** A decisão sai do mesmo cálculo de `mostrar` que o template usa: `contexto_do_carrinho` e `contexto_do_catalogo` em `apps/interesses/apresentacao.py`. A rota não tenta adivinhar se o formulário vai aparecer.
+
+- O contexto expõe, por exemplo, `retorno_sem_destino`, com a mensagem a mostrar no topo quando nenhum formulário de destino foi desenhado.
+- A mensagem não pode aparecer duas vezes. A forma exata fica a critério do implementador.
+
+**Sem ações novas.** Nenhum formulário, linha ou botão passa a aparecer só para hospedar a mensagem:
+
+- o carrinho vazio continua mostrando "Seu carrinho está vazio.";
+- a linha sem pendência continua sem o formulário de pendentes;
+- as regras de `mostrar` não mudam.
+
+**Junto com um aviso de topo:** quando o `Retorno` já tem `topo` (`InteressesBloqueados` ou `ProdutoForaDaRodada`), ele continua como está. Esses casos não preenchem `mensagem`.
+
+**Status e gravação:** não mudam. É 409 para `InteresseDesatualizado` e para os campos de estado inválidos, 200 para as recusas de quantidade, e nada é gravado.
+
+### O que não muda
+
+- A decisão da correção E05-R02.
+- Os serviços e as mensagens dos serviços.
+- Os critérios A-1 a A-24. Nos casos deles, o formulário de destino existe, e a mensagem continua dentro dele.
+
+### TDD
+
+Os critérios A-25 a A-27 seguem Red → Green → Refactor, com as regras de prevenção da correção E05-R04 da E05-01. As três provas `test_conflito_item_ja_removido_exibe_mensagem` (pelo carrinho) e `test_reenvio_remocao_total_pendente_exibe_mensagem` (os dois casos) do revisor são o Red esperado no código atual, e entram literalmente nos testes.
+
 ## Dependências e decisões em aberto
 
 - Depende de E05-01 a E05-04 e de E03-08.
