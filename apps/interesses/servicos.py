@@ -40,6 +40,13 @@ class InteresseRecusado(Exception):
         self.mensagem = mensagem
 
 
+class InteresseDesatualizado(InteresseRecusado):
+    def __init__(self) -> None:
+        super().__init__(
+            "Seu interesse neste produto mudou. Confira os valores atuais e envie de novo."
+        )
+
+
 class ProdutoForaDaRodada(InteresseRecusado):
     def __init__(self) -> None:
         super().__init__("Este produto não está disponível para interesse agora.")
@@ -215,19 +222,98 @@ def reduzir_interesse(comprador: Conta, produto: Produto, quantidade: Any) -> Re
         return interesse_do_comprador(t.comprador, t.produto)
 
 
-def definir_interesse(comprador: Conta, produto: Produto, total: Any) -> ResumoDoInteresse:
-    """Leva o reservado do comprador no produto ao total desejado (idempotente)."""
+def _resumo_das(parcelas: list[ParcelaDeInteresse]) -> ResumoDoInteresse:
+    """Reservado (parcelas `ativa`) e pendente (`ativa` e `pendente`) de uma lista travada."""
+    reservado = sum(
+        (p.quantidade_reservada for p in parcelas if p.situacao == SituacaoParcela.ATIVA), _ZERO
+    )
+    pendente = sum(
+        (
+            p.quantidade_pendente
+            for p in parcelas
+            if p.situacao in (SituacaoParcela.ATIVA, SituacaoParcela.PENDENTE)
+        ),
+        _ZERO,
+    )
+    return ResumoDoInteresse(reservado.quantize(_ZERO), pendente.quantize(_ZERO))
+
+
+def _exigir_estado(esperado: ResumoDoInteresse | None, atual: ResumoDoInteresse) -> None:
+    """Recusa o envio feito sobre um estado que já mudou (E05-R02). Sem `esperado`, não confere."""
+    if esperado is None:
+        return
+    esperado_exato = ResumoDoInteresse(
+        esperado.reservado.quantize(_ZERO), esperado.pendente.quantize(_ZERO)
+    )
+    if esperado_exato != atual:
+        raise InteresseDesatualizado
+
+
+def _tirar_pendencias(
+    conta: Conta, produto: Produto, parcelas: list[ParcelaDeInteresse], quantidade: Decimal
+) -> None:
+    """Reduz a pendência das parcelas mais recentes primeiro e audita (E05-03)."""
+    na_fila = [
+        p for p in parcelas if p.situacao in (SituacaoParcela.ATIVA, SituacaoParcela.PENDENTE)
+    ]
+    restante = quantidade
+    tocadas: list[int] = []
+    for parcela in sorted(na_fila, key=lambda p: p.sequencia, reverse=True):
+        if restante <= 0:
+            break
+        tirada = min(parcela.quantidade_pendente, restante)
+        if tirada <= 0:
+            continue
+        parcela.quantidade_pendente -= tirada
+        if parcela.quantidade_reservada == 0 and parcela.quantidade_pendente == 0:
+            parcela.situacao = SituacaoParcela.REMOVIDA
+        parcela.save(update_fields=["quantidade_pendente", "situacao"])
+        restante -= tirada
+        tocadas.append(parcela.pk)
+    registrar_auditoria(
+        conta,
+        "interesse.remover_pendente",
+        produto,
+        {"produto": produto.pk, "quantidade": str(quantidade), "parcelas": tocadas},
+    )
+
+
+def definir_interesse(
+    comprador: Conta,
+    produto: Produto,
+    total: Any,
+    *,
+    esperado: ResumoDoInteresse | None = None,
+) -> ResumoDoInteresse:
+    """Leva o reservado do comprador ao total desejado; zero remove o item inteiro (E05-R02).
+
+    Com `esperado` (o resumo que a página mostrou) diferente do estado travado, recusa sem gravar.
+    Se o pedido já está cumprido, devolve o estado atual sem gravar nem auditar, mesmo com
+    `esperado` diferente. A fila é atendida pela FIFO, inclusive as pendências do próprio
+    comprador, então o resumo final pode diferir do total.
+    """
     with transaction.atomic():
         t = _travar(comprador, produto)
         desejado = _validar_total(t.produto, total)
-        atual = _reservado_do_comprador(t)
-        if desejado > atual:
+        atual = _resumo_das(t.do_comprador())
+        if desejado > 0 and atual.reservado == desejado:
+            return atual
+        if desejado == 0 and atual == ResumoDoInteresse(_ZERO, _ZERO):
+            return atual
+        _exigir_estado(esperado, atual)
+        if desejado == 0:
+            if atual.pendente > 0:
+                _tirar_pendencias(t.comprador, t.produto, t.do_comprador(), atual.pendente)
+            if atual.reservado > 0:
+                _diminuir(t, atual.reservado)
             _atender_a_fila(t)
-            atual = _reservado_do_comprador(t)
-            if desejado > atual:
-                _acrescentar(t, desejado - atual)
-        elif desejado < atual:
-            _diminuir(t, atual - desejado)
+        elif desejado > atual.reservado:
+            _atender_a_fila(t)
+            reservado = _reservado_do_comprador(t)
+            if desejado > reservado:
+                _acrescentar(t, desejado - reservado)
+        else:
+            _diminuir(t, atual.reservado - desejado)
             _atender_a_fila(t)
         return interesse_do_comprador(t.comprador, t.produto)
 
@@ -256,7 +342,13 @@ class RemocaoAcimaDoPendente(InteresseRecusado):
         self.pendente = pendente
 
 
-def remover_pendente(comprador: Conta, produto: Produto, quantidade: Any) -> ResumoDoInteresse:
+def remover_pendente(
+    comprador: Conta,
+    produto: Produto,
+    quantidade: Any,
+    *,
+    esperado: ResumoDoInteresse | None = None,
+) -> ResumoDoInteresse:
     """Reduz só a quantidade pendente do comprador, em qualquer etapa (E05-03).
 
     Trava, nesta ordem, a conta, o fornecedor, o produto e as parcelas. Não usa a rodada nem o
@@ -269,32 +361,11 @@ def remover_pendente(comprador: Conta, produto: Produto, quantidade: Any) -> Res
         atual = Produto.objects.select_for_update().get(pk=produto.pk)
         valor = validar_quantidade(atual, quantidade)
         parcelas = [p for p in travar_parcelas(atual) if p.comprador_id == conta.pk]
-        na_fila = [
-            p for p in parcelas if p.situacao in (SituacaoParcela.ATIVA, SituacaoParcela.PENDENTE)
-        ]
-        total = sum((p.quantidade_pendente for p in na_fila), _ZERO).quantize(_ZERO)
-        if valor > total:
-            raise RemocaoAcimaDoPendente(total)
-        restante = valor
-        tocadas: list[int] = []
-        for parcela in sorted(na_fila, key=lambda p: p.sequencia, reverse=True):
-            if restante <= 0:
-                break
-            tirada = min(parcela.quantidade_pendente, restante)
-            if tirada <= 0:
-                continue
-            parcela.quantidade_pendente -= tirada
-            if parcela.quantidade_reservada == 0 and parcela.quantidade_pendente == 0:
-                parcela.situacao = SituacaoParcela.REMOVIDA
-            parcela.save(update_fields=["quantidade_pendente", "situacao"])
-            restante -= tirada
-            tocadas.append(parcela.pk)
-        registrar_auditoria(
-            conta,
-            "interesse.remover_pendente",
-            atual,
-            {"produto": atual.pk, "quantidade": str(valor), "parcelas": tocadas},
-        )
+        estado = _resumo_das(parcelas)
+        _exigir_estado(esperado, estado)
+        if valor > estado.pendente:
+            raise RemocaoAcimaDoPendente(estado.pendente)
+        _tirar_pendencias(conta, atual, parcelas, valor)
         return interesse_do_comprador(conta, atual)
 
 
