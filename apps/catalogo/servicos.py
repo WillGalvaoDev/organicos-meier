@@ -174,7 +174,7 @@ def editar_produto(autor: Conta, produto: Produto, **campos: Any) -> Produto:
                 autor, "produto.editar", atual, {"produto": atual.pk, "campos": alterados}
             )
             if "preco" in alterados:
-                registrar_auditoria(
+                alteracao = registrar_auditoria(
                     autor,
                     "produto.alterar_preco",
                     atual,
@@ -185,7 +185,11 @@ def editar_produto(autor: Conta, produto: Produto, **campos: Any) -> Produto:
                     },
                 )
                 preco_alterado.send(
-                    sender=Produto, produto=atual, anterior=preco_anterior, novo=atual.preco
+                    sender=Produto,
+                    produto=atual,
+                    anterior=preco_anterior,
+                    novo=atual.preco,
+                    alteracao=alteracao,
                 )
     return atual
 
