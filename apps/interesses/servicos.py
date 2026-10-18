@@ -19,6 +19,7 @@ from apps.catalogo.quantidades import formatar_quantidade, validar_quantidade
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import SITUACOES_QUE_RESERVAM, travar_parcelas
+from apps.interesses.fila import _alocar_produto
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.valores import ValorInvalido
@@ -120,6 +121,12 @@ def _validar_total(produto: Produto, entrada: Any) -> Decimal:
     return validar_quantidade(produto, entrada)
 
 
+def _atender_a_fila(t: _Travado) -> None:
+    """Atende os pendentes do produto e recarrega as parcelas travadas (E05-02)."""
+    _alocar_produto(t.rodada, t.produto)
+    t.parcelas = travar_parcelas(t.produto)
+
+
 def _acrescentar(t: _Travado, quantidade: Decimal) -> None:
     livre = calcular_livre(t.estoque.limite, t.reservado())
     if livre is not None and quantidade > livre:
@@ -193,6 +200,7 @@ def adicionar_interesse(comprador: Conta, produto: Produto, quantidade: Any) -> 
     with transaction.atomic():
         t = _travar(comprador, produto)
         valor = validar_quantidade(t.produto, quantidade)
+        _atender_a_fila(t)
         _acrescentar(t, valor)
         return interesse_do_comprador(t.comprador, t.produto)
 
@@ -202,6 +210,7 @@ def reduzir_interesse(comprador: Conta, produto: Produto, quantidade: Any) -> Re
         t = _travar(comprador, produto)
         valor = validar_quantidade(t.produto, quantidade)
         _diminuir(t, valor)
+        _atender_a_fila(t)
         return interesse_do_comprador(t.comprador, t.produto)
 
 
@@ -212,9 +221,13 @@ def definir_interesse(comprador: Conta, produto: Produto, total: Any) -> ResumoD
         desejado = _validar_total(t.produto, total)
         atual = _reservado_do_comprador(t)
         if desejado > atual:
-            _acrescentar(t, desejado - atual)
+            _atender_a_fila(t)
+            atual = _reservado_do_comprador(t)
+            if desejado > atual:
+                _acrescentar(t, desejado - atual)
         elif desejado < atual:
             _diminuir(t, atual - desejado)
+            _atender_a_fila(t)
         return interesse_do_comprador(t.comprador, t.produto)
 
 

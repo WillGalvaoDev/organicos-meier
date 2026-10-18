@@ -7,7 +7,7 @@ import pytest
 from django.core.exceptions import PermissionDenied
 from django.db.transaction import TransactionManagementError
 
-from apps.catalogo.models import Produto, Unidade
+from apps.catalogo.models import Unidade
 from apps.catalogo.quantidades import QuantidadeInvalida, calcular_subtotal
 from apps.contas.models import Conta
 from apps.interesses.consultas import total_reservado
@@ -28,10 +28,10 @@ from apps.rodadas.condicoes import (
     InteressesBloqueados,
     travar_rodada_para_interesses,
 )
-from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
+from apps.rodadas.models import Etapa
+from tests.apoio.interesses import auditorias, cenario, parcelas
 from tests.fabricas import (
     ContaFactory,
-    EstoqueDaRodadaFactory,
     FornecedorFactory,
     ParcelaFactory,
     ProdutoFactory,
@@ -41,27 +41,6 @@ from tests.fabricas import (
 pytestmark = pytest.mark.django_db
 
 D = Decimal
-
-
-def cenario(
-    limite: str | None = "10", etapa: str = Etapa.INTERESSE, **produto: Any
-) -> tuple[Rodada, Produto, EstoqueDaRodada]:
-    rodada = RodadaFactory.create(etapa=etapa)
-    campos = {"unidade": Unidade.UNIDADE, **produto}
-    item = ProdutoFactory.create(fornecedor=rodada.fornecedor, **campos)
-    estoque = EstoqueDaRodadaFactory.create(
-        rodada=rodada, produto=item, limite=None if limite is None else D(limite)
-    )
-    return rodada, item, estoque
-
-
-def parcelas(produto: Produto, comprador: Conta | None = None) -> list[ParcelaDeInteresse]:
-    consulta = ParcelaDeInteresse.objects.filter(produto=produto).order_by("sequencia")
-    return list(consulta.filter(comprador=comprador) if comprador else consulta)
-
-
-def auditorias(acao: str) -> list[EntradaAuditoria]:
-    return list(EntradaAuditoria.objects.filter(acao=acao).order_by("id"))
 
 
 def test_adicionar_cria_parcela_e_audita() -> None:  # A-1
