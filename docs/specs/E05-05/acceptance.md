@@ -1,0 +1,35 @@
+# E05-05 — Critérios de aceitação
+
+Cada critério precisa de um teste automatizado escrito antes do código, com a falha da asserção observada (Red). As requisições usam o cliente HTTP do Django. Salvo indicação, o fornecedor `X` tem rodada em `interesse`, com o produto `P` (unidade, incremento 1, R$ 10,00, limite 20). O comprador `A` é `ativa`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-1 | Spec §5, §13 | positivo | A com 4 de `P` em X e 2 de `Q` (R$ 3,50) num fornecedor `Y` com rodada em `fechamento`; mínimo de X R$ 100,00 | A abre `/carrinho/` | dois grupos, X e Y, em ordem de nome; "Etapa: Interesse" e "Etapa: Fechamento"; em X, "Progresso do mínimo: 40%", sem "Mínimo atingido." e sem os textos "100,00" e "60,00"; linhas com "Reservado: 4", "Pendente: 0" e "Subtotal: R$ 40,00"; "Total reservado: R$ 40,00" em X e "R$ 7,00" em Y; o aviso de que itens são interesses |
+| A-2 | Cenário 96, T-42 | positivo | A com uma parcela `ativa` de 6 reservados e 4 pendentes; o limite de `P` igual ao total reservado (livre 0) | A abre `/carrinho/` | "Reservado: 6" e "Pendente: 4" na linha de `P`; o formulário "Remover pendentes" presente |
+| A-3 | Spec §5.2 | positivo | A com 3 pendentes em `R`, de um fornecedor `Z` sem rodada ativa | A abre `/carrinho/` | um grupo Z com "Sem rodada ativa.", a linha com "Reservado: 0" e "Pendente: 3", o formulário "Remover pendentes" e nenhum formulário de quantidade |
+| A-4 | Cenário 7, Spec §6.2 | positivo | `P` com múltiplo 12; A adiciona 8 e B adiciona 10 | A e B abrem `/carrinho/` | A vê "Total agregado: 18", "Caixas completas: 1", "Faltam 6 para a próxima caixa", "Suas unidades em caixas: 8" e "Suas unidades excedentes: 0"; B vê 4 em caixas e 6 excedentes; nenhuma página contém o nome ou o e-mail do outro |
+| A-5 | E03-03 D-1 | positivo | `P` com `disponivel=False` e A com 2 | A abre `/carrinho/` e `/catalogo/<X>/` | "Produto indisponível" junto ao nome nas duas páginas; o formulário de quantidade presente nas duas |
+| A-6 | Spec da fatia | positivo | A com 4 | `POST /interesses/` com `produto=P`, `quantidade=6`, `origem=carrinho`; o mesmo envio de novo; depois `quantidade=0` | 302 para `/carrinho/` nos três; a mensagem "Interesse atualizado: P, reservado 6." na página seguinte; uma única parcela nova de 2 depois dos dois primeiros envios; no fim, reservado 0 |
+| A-7 | Spec da fatia | positivo | A sem interesse | `POST /interesses/` com `quantidade=3` e `origem=catalogo` | 302 para `/catalogo/<X>/`; a página mostra "Seu interesse: reservado 3, pendente 0" |
+| A-8 | Cenários 63, 85, 109 pela rota, Spec §5 | negativo | A com 4 e `Q` (outro produto de X) com 1 | `POST /interesses/` com `quantidade` igual a `2,5`, `abc`, `-1`, `1000000000,000` e `"><b>x</b>`; depois `25` (acima do livre de 16) | 200 em todos; dentro do `<form>` de `P`, o `value` com o texto enviado, escapado (`&quot;&gt;&lt;b&gt;` e nenhum `<b>x</b>`), e a mensagem do serviço, inclusive "Há apenas 16 unidade disponível."; o `<form>` de `Q` com `value="1"` e sem mensagem; reservado de A continua 4 |
+| A-9 | Spec da fatia | negativo | A com 4 | `POST /interesses/` com `produto` igual a `abc`, `0`, `²` e `99999999999999999999`; depois com um id inexistente dentro da faixa | 200 com "Produto inválido." no topo nos quatro primeiros, nunca 500; 404 no último; nada gravado |
+| A-10 | Spec da fatia | negativo | A com 4; a rodada passa a `fechamento_encerrado` por `update()` antes do envio | `POST /interesses/` com `quantidade=5`, com origem carrinho e depois catálogo | 409 nos dois; a mensagem "Os interesses deste fornecedor não podem ser alterados nesta etapa." no topo; "Etapa: Fechamento com prazo encerrado"; nenhum formulário de quantidade para `P`; reservado 4 |
+| A-11 | Spec da fatia | negativo | um produto de X fora da rodada; noutro caso, X sem rodada ativa e `origem=catalogo` | `POST /interesses/` | 409 com "Este produto não está disponível para interesse agora."; no segundo caso, a página é o carrinho |
+| A-12 | Cenário 97 pela rota | positivo | A com 6 reservados e 4 pendentes | `POST /interesses/pendentes/remover/` com `quantidade=2` | 302 para `/carrinho/`; "Pendência removida: P, pendente 2."; reservado 6 |
+| A-13 | Cenários 98 e 99 pela rota | negativo | A com 4 pendentes e uma parcela `em_pedido` de outro produto | `POST /interesses/pendentes/remover/` com `quantidade=5`; outro com `quantidade=1.5`; outro com `produto=P`, `quantidade=1` e campos extras `parcela=<id da em_pedido>` e `item=<id>` | 200 com a mensagem no formulário de pendentes de `P` nos dois primeiros; no terceiro, só a pendente de `P` cai para 3 e a parcela `em_pedido` não muda |
+| A-14 | Spec §2, T-25 | negativo | um comprador suspenso, uma conta de fornecedor, o administrador e um anônimo | `GET /carrinho/`; `POST` nas duas rotas | suspenso: 200 no carrinho, sem formulários, e recusa da política `comprador_ativo` nos `POST`; fornecedor e administrador: recusa da política em todos; anônimo: redirecionamento para `/entrar/`; nada gravado |
+| A-15 | Spec da fatia | negativo | A ativa; o `monkeypatch` suspende A dentro de `definir_interesse`, depois da política e antes da trava | `POST /interesses/` | 403; nada gravado |
+| A-16 | Spec da fatia | positivo | carrinho de A com 1 fornecedor e 1 produto; noutro caso, 1 fornecedor e 10 produtos com 40 parcelas de vários compradores | conto as consultas de `GET /carrinho/` | o mesmo teto nos dois casos; com 3 fornecedores, o teto cresce no máximo uma constante por fornecedor |
+| A-17 | E02-10 | positivo | as rotas desta fatia | rodo a varredura de políticas | `comprador` em `carrinho`; `comprador_ativo` em `interesses_definir` e `interesses_remover_pendentes`; `GET` nas duas rotas de `POST` responde 405 |
+| A-18 | Spec da fatia | positivo | A comprador; um fornecedor logado | abro `/inicio/` | o link "Carrinho" aparece para A e não aparece para o fornecedor |
+| A-19 | Spec da fatia, E03-08 | negativo | mínimo de X R$ 987,65; estoque de `P` sem limite; A com 47 de `P` e B com 3 (valor elegível R$ 500,00) | A abre `/carrinho/` e `/catalogo/<X>/` | "Progresso do mínimo: 50%" nas duas páginas; nenhuma contém "987,65", "987.65", "500,00" nem "487,65"; nenhuma contém o nome nem o e-mail de B; depois que A define 96 (valor elegível R$ 990,00 com as 3 de B), as duas mostram "Progresso do mínimo: 100%" e "Mínimo atingido.", sem "990,00" |
+| A-20 | Spec da fatia, E03-08 | positivo | — | rodo `tests/tecnicos/test_catalogo_comprador.py` com os dois ajustes autorizados na seção "Relação com a E03-08" | verde; o diff do arquivo mostra só esses dois ajustes, registrados no `review.md` |
+
+## Mapeamento para testes
+
+| Critério | Arquivo e função de teste |
+|---|---|
+| A-1 a A-16, A-18, A-19 | `tests/tecnicos/test_interesses_carrinho.py` |
+| A-20 | `tests/tecnicos/test_catalogo_comprador.py` (arquivo existente, com os ajustes autorizados) |
+| A-2 | também marcado `acceptance`, com o comentário `cenário 96` |
+| A-17 | coberto pelo teste existente `tests/tecnicos/test_permissoes_politica_rotas.py`, mais o 405 em `test_interesses_carrinho.py` |
