@@ -228,6 +228,7 @@ def test_reenvio_remocao_total_pendente_exibe_mensagem(com_reserva):
     resposta=c.post('/interesses/pendentes/remover/',corpo)
     assert resposta.status_code==409
     assert 'Seu interesse neste produto mudou.' in resposta.content.decode()
+
 ```
 
 ---
