@@ -14,9 +14,12 @@ from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento
 from apps.contas.models import Conta
 from apps.contas.moderacao import suspender
 from apps.interesses.consultas import total_reservado
+from apps.interesses.fila import alocar_pendentes
 from apps.interesses.models import ParcelaDeInteresse
-from apps.interesses.servicos import EstoqueInsuficiente, adicionar_interesse
+from apps.interesses.servicos import EstoqueInsuficiente, adicionar_interesse, reduzir_interesse
+from apps.rodadas.condicoes import travar_rodada_para_interesses
 from tests.apoio.concorrencia import executar_em_paralelo
+from tests.apoio.interesses import cenario, pendente, reservada
 from tests.fabricas import (
     ContaFactory,
     EstoqueDaRodadaFactory,
@@ -166,3 +169,75 @@ def test_dez_adicoes_de_dois_com_limite_dez() -> None:  # A-16
         ParcelaDeInteresse.objects.filter(produto=produto).values_list("sequencia", flat=True)
     )
     assert len(sequencias) == len(set(sequencias)) == 5
+
+
+def test_fila_e_nova_adicao_se_serializam_em_qualquer_ordem() -> None:  # A-15
+    # T-31, cenário 78
+    rodada, produto, _ = cenario("6")
+    a, e = ContaFactory.create(), ContaFactory.create()
+    pa = pendente(a, produto, 4)
+
+    def alocar() -> Any:
+        with transaction.atomic():
+            return alocar_pendentes(rodada.fornecedor)
+
+    def adicionar() -> Any:
+        try:
+            adicionar_interesse(e, produto, "4")
+        except EstoqueInsuficiente as erro:
+            return erro
+        return None
+
+    def segurando_a_trava_e_adicionando(barreira: Any) -> Any:
+        with transaction.atomic():
+            travar_rodada_para_interesses(rodada.fornecedor)  # a trava fica até o fim do bloco
+            recusa = adicionar()
+            barreira.wait(timeout=10)
+            _esperar_outra_conexao_na_trava()
+        return recusa
+
+    for primeiro, segundo in (
+        (_segurando(alocar), _esperando(adicionar)),
+        (segurando_a_trava_e_adicionando, _esperando(alocar)),
+    ):
+        ParcelaDeInteresse.objects.filter(produto=produto).exclude(pk=pa.pk).delete()
+        ParcelaDeInteresse.objects.filter(pk=pa.pk).update(
+            quantidade_reservada=D(0), quantidade_pendente=D(4), situacao="pendente"
+        )
+        resultados = executar_em_paralelo(primeiro, segundo)
+        assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+        recusas = [r.valor for r in resultados if isinstance(r.valor, EstoqueInsuficiente)]
+        assert [r.mensagem for r in recusas] == ["Há apenas 2 unidade disponível."]
+        pa.refresh_from_db()
+        assert (pa.quantidade_reservada, pa.quantidade_pendente) == (D("4"), D("0"))
+        assert total_reservado(produto) == D("4")
+        assert ParcelaDeInteresse.objects.filter(produto=produto).count() == 1
+
+
+def test_reducao_e_adicao_concorrentes_dao_a_fila_o_que_foi_liberado() -> None:  # A-16
+    # cenário 101, T-46
+    _, produto, _ = cenario("10")
+    d, outro, c, e = (ContaFactory.create() for _ in range(4))
+    reservada(d, produto, 3)
+    reservada(outro, produto, 7)
+    pc = pendente(c, produto, 4)
+
+    def reduzir(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        reduzir_interesse(d, produto, "3")
+
+    def adicionar(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        adicionar_interesse(e, produto, "3")
+
+    resultados = executar_em_paralelo(reduzir, adicionar)
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, EstoqueInsuficiente)
+    pc.refresh_from_db()
+    assert (pc.situacao, pc.quantidade_reservada, pc.quantidade_pendente) == (
+        "ativa",
+        D("3"),
+        D("1"),
+    )
+    assert total_reservado(produto) == D("10")
+    assert ParcelaDeInteresse.objects.filter(comprador=e).count() == 0

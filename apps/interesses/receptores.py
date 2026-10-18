@@ -1,0 +1,21 @@
+"""Receptores que atendem a fila de pendentes (E05-02).
+
+Rodam dentro da transação do remetente: uma falha desfaz a abertura ou a alteração de estoque.
+"""
+
+from typing import Any
+
+from apps.interesses.fila import _alocar_produto, alocar_pendentes
+from apps.rodadas.models import Rodada
+
+
+def atender_fila_na_abertura(sender: Any, rodada: Rodada, **kwargs: Any) -> None:
+    alocar_pendentes(rodada.fornecedor)
+
+
+def atender_fila_no_aumento_de_estoque(
+    sender: Any, estoque: Any, anterior: Any, novo: Any, **kwargs: Any
+) -> None:
+    """Só quando o estoque aumentou (ou deixou de ter limite). A inclusão conta como aumento."""
+    if novo is None or novo > anterior:
+        _alocar_produto(estoque.rodada, estoque.produto)
