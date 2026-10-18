@@ -7,10 +7,13 @@ class InteressesConfig(AppConfig):
 
     def ready(self) -> None:
         from apps.catalogo.sinais import preco_alterado
+        from apps.contas.moderacao import conta_removida, conta_suspensa
         from apps.interesses.avisos import avisar_preco_alterado
         from apps.interesses.receptores import (
             atender_fila_na_abertura,
             atender_fila_no_aumento_de_estoque,
+            remover_interesses_na_remocao,
+            remover_interesses_na_suspensao,
         )
         from apps.rodadas.sinais import estoque_alterado, rodada_aberta
 
@@ -19,3 +22,5 @@ class InteressesConfig(AppConfig):
         estoque_alterado.connect(
             atender_fila_no_aumento_de_estoque, dispatch_uid="interesses.fila.estoque"
         )
+        conta_suspensa.connect(remover_interesses_na_suspensao, dispatch_uid="interesses.suspensao")
+        conta_removida.connect(remover_interesses_na_remocao, dispatch_uid="interesses.remocao")
