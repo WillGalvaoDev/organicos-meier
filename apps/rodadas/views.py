@@ -13,6 +13,7 @@ from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
+from apps.interesses.progresso import progresso_da_rodada
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
     EstoqueAbaixoDoReservado,
@@ -103,6 +104,7 @@ def _pagina_do_estoque(
         "na_rodada": na_rodada,
         "fora_da_rodada": fora_da_rodada,
         "editavel": editavel,
+        "progresso": progresso_da_rodada(rodada),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }

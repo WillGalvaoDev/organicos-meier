@@ -864,3 +864,69 @@ def test_id_invalido_no_formulario_nao_provoca_500(
         f"/administracao/rodadas/{r.pk}/estoque/incluir/", {"produto": produto, "limite": "abc"}
     )
     assert resposta.status_code == 200, getattr(resposta, "exc_info", None) or resposta.status_code
+
+
+def _linhas_da_tabela_de_progresso(html: str) -> dict[str, list[str]]:
+    import re
+
+    bloco = html[html.index("Progresso elegível") :]
+    tabela = re.search(r"<table.*?</table>", bloco, re.S)
+    assert tabela is not None
+    linhas = {}
+    for linha in re.findall(r"<tr>(.*?)</tr>", tabela.group(0), re.S):
+        celulas = [
+            re.sub(r"<[^>]+>", "", c).strip()
+            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", linha, re.S)
+        ]
+        linhas[celulas[0]] = celulas
+    return linhas
+
+
+def test_administrador_ve_o_progresso_agregado_sem_identidades(
+    admin_client: Client,
+) -> None:  # A-12
+    from apps.catalogo.models import Unidade
+    from apps.fornecedores.models import Fornecedor
+    from apps.interesses.servicos import adicionar_interesse
+
+    rodada = RodadaFactory.create()
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("200.00"))
+    com_caixa = ProdutoFactory.create(
+        fornecedor=rodada.fornecedor,
+        nome="Ovos caixa",
+        unidade=Unidade.UNIDADE,
+        preco=D("10.00"),
+        multiplo=D("12"),
+    )
+    solto = ProdutoFactory.create(
+        fornecedor=rodada.fornecedor, nome="Mel solto", unidade=Unidade.UNIDADE, preco=D("3.00")
+    )
+    for produto in (com_caixa, solto):
+        EstoqueDaRodadaFactory.create(rodada=rodada, produto=produto, limite=None)
+    a = ContaFactory.create(nome="Ana Visivel", email_normalizado="ana@visivel.example")
+    b = ContaFactory.create(nome="Beto Visivel", email_normalizado="beto@visivel.example")
+    adicionar_interesse(a, com_caixa, "8")
+    adicionar_interesse(b, com_caixa, "10")
+    adicionar_interesse(a, solto, "2")
+    html = admin_client.get(f"/administracao/rodadas/{rodada.pk}/estoque/").content.decode()
+    assert "Progresso elegível: R$ 126,00 de R$ 200,00" in html
+    assert "Faltam R$ 74,00." in html
+    linhas = _linhas_da_tabela_de_progresso(html)
+    assert linhas["Ovos caixa"][1:] == [
+        "18",
+        "12",
+        "R$ 180,00",
+        "R$ 120,00",
+        "1",
+        "6",
+        "6",
+    ]
+    assert linhas["Mel solto"][1:] == ["2", "2", "R$ 6,00", "R$ 6,00", "—", "—", "0"]
+    for segredo in ("Ana Visivel", "Beto Visivel", "visivel.example"):
+        assert segredo not in html
+    rodada.etapa = Etapa.PAGAMENTO
+    rodada.save(update_fields=["etapa"])
+    assert (
+        "Progresso elegível"
+        in admin_client.get(f"/administracao/rodadas/{rodada.pk}/estoque/").content.decode()
+    )
