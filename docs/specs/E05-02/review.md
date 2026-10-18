@@ -1,5 +1,23 @@
 # E05-02 — Revisão independente
 
+## Nova revisão independente — correções em 8728b4b
+
+Commit: `8728b4b3f459d97bf9c1ce1c74407bbaa2a8655e` (`main`, PR #66), revisto em 2026-10-18. Este parecer substitui o estado de aprovação anterior, cujo histórico permanece abaixo.
+
+**Parecer global: E05 REPROVADA**, por R05 (importante) na apresentação de conflitos da E05-05. R01 e R03 estão corrigidos; o contrato de R02 foi decidido e seu comportamento de serviço está conforme; R04 recebeu o tratamento excepcional aprovado, sem alegação de Red retroativo.
+
+Verificações independentes:
+
+- `uv run pytest -q`: **1657 passed em 133,38 s** (todas as fatias e regressões).
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- `uv run pytest -c pyproject.toml $env:TEMP/test_review_e05_8728b4b.py -q --tb=short`: **17 passed, 3 failed em 2,98 s**. As 16 provas anteriores adaptadas ao contrato aprovado passaram; o controle adicional pelo catálogo passou; as três falhas adicionais são R05. Código e reprodução no [parecer consolidado](../E05-01/review.md).
+
+**Fatia APROVADA.** A-1 a A-17 reexecutados. R01 encerrado. R04 tratado conforme a opção aprovada; permanece documentado o limite de sensibilidade de A-16, com reforço proposto pelo implementador. Ver o consolidado.
+
+---
+
 ## Revisão independente — 2026-10-18
 
 Commit auditado: `32b05a24fb38aa7bcaef2d67c5917fdef59bc2c5` (`main`, PR #65). Parecer global da E05: **REPROVADO**.
