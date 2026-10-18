@@ -1,6 +1,6 @@
 # E04-04 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **APROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8b4e771` (2026-10-18). E04 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -62,3 +62,12 @@ Comandos, matriz, reproduções, TDD, critérios de correção e limites no [par
 O probe `test_falha_whatsapp_preserva_fato_emitido_na_mesma_transacao` do revisor entrou com o corpo original em `tests/tecnicos/test_notificacoes_falha_isolada.py`. Resultado: o arquivo tem **3 passed**.
 
 Verificação final da correção: suíte completa **1461 passed**; `ruff check`, `ruff format --check`, `mypy .`, `makemigrations --check --dry-run` e `manage.py check` sem erros. Nenhuma asserção existente foi afrouxada ou removida.
+
+
+## Revalidação independente — 8b4e771 — 2026-10-18
+
+**Parecer da fatia: APROVADO. E04 global: APROVADO.**
+
+R03 encerrado. Spec e A-9 agora usam pagamento_aberto, com fato e emissão na mesma transação. Matriz de canais preservada. Teste corrigido e probe independente com commit real passam; nenhuma mudança no mecanismo de envio foi necessária.
+
+Suíte completa: **1461 passed em 137,79 s**. Script independente original da revisão de 0b52010, sem alterações: **15 passed em 6,78 s**. As dez falhas anteriores não se reproduzem. Lint, formatação, tipos, verificações Django e CI passaram. Evidências e limites no [parecer consolidado](../E04-07/review.md), seção deste SHA.

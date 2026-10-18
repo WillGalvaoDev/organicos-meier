@@ -1,6 +1,6 @@
 # E04-05 — Registro do implementador (aguardando revisão independente)
 
-Parecer atual do revisor: **REPROVADO** sobre `0b52010` (2026-10-17). E04 global: **REPROVADO**. Registro do implementador preservado abaixo.
+Parecer atual do revisor: **APROVADO** sobre `8b4e771` (2026-10-18). E04 global: **APROVADO**. Histórico preservado abaixo.
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
 
@@ -69,3 +69,12 @@ Comandos, matriz, reproduções, TDD, critérios de correção e limites no [par
 **Decisão técnica no A-14.** O critério cita `BackendQueFalha`, que não tem contador. Usei `BackendQueFalhaPara`, que também falha e conta as chamadas, para provar que nada é tentado antes da confirmação.
 
 Verificação final da correção: suíte completa **1461 passed**; `ruff check`, `ruff format --check`, `mypy .`, `makemigrations --check --dry-run` e `manage.py check` sem erros. Nenhuma asserção existente foi afrouxada ou removida.
+
+
+## Revalidação independente — 8b4e771 — 2026-10-18
+
+**Parecer da fatia: APROVADO. E04 global: APROVADO.**
+
+R02 encerrado. A-12 a A-16 atendidos: allauth renderiza na requisição e registra on_commit; commit envia uma vez, rollback não envia nem registra, falhas permanecem controladas e tokens não são persistidos no registro. Ajustes dos testes E02 limitados a marcadores/captura de callbacks, sem afrouxar asserções.
+
+Suíte completa: **1461 passed em 137,79 s**. Script independente original da revisão de 0b52010, sem alterações: **15 passed em 6,78 s**. As dez falhas anteriores não se reproduzem. Lint, formatação, tipos, verificações Django e CI passaram. Evidências e limites no [parecer consolidado](../E04-07/review.md), seção deste SHA.
