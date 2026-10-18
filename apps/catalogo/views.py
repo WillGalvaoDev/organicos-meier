@@ -8,7 +8,6 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.catalogo.consultas import (
     fornecedores_no_catalogo,
-    produtos_da_rodada,
     rodada_ativa_do_catalogo,
 )
 from apps.catalogo.forms import (
@@ -34,6 +33,7 @@ from apps.catalogo.servicos import (
 from apps.contas.administracao import somente_administrador
 from apps.contas.permissoes import exige_comprador
 from apps.fornecedores.models import Fornecedor
+from apps.interesses.apresentacao import contexto_do_catalogo
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas, condicoes_editaveis
 
 
@@ -192,5 +192,8 @@ def catalogo_do_fornecedor(request: HttpRequest, pk: int) -> HttpResponse:
     rodada = rodada_ativa_do_catalogo(pk)
     if rodada is None:
         raise Http404
-    contexto = {"rodada": rodada, "itens": produtos_da_rodada(rodada)}
-    return render(request, "catalogo/comprador_fornecedor.html", contexto)
+    return render(
+        request,
+        "catalogo/comprador_fornecedor.html",
+        contexto_do_catalogo(request.user, rodada),  # type: ignore[arg-type]
+    )

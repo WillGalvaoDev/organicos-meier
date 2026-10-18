@@ -1,0 +1,6 @@
+{% load catalogo %}
+<p>Total agregado: {{ caixas.total_reservado|quantidade_br }}</p>
+<p>Caixas completas: {{ caixas.caixas_completas }}</p>
+<p>Faltam {{ caixas.faltam_para_proxima_caixa|quantidade_br }} para a próxima caixa</p>
+<p>Suas unidades em caixas: {{ caixas.do_comprador.em_caixas|quantidade_br }}</p>
+<p>Suas unidades excedentes: {{ caixas.do_comprador.excedente|quantidade_br }}</p>

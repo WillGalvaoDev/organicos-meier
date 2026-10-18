@@ -7,7 +7,7 @@
 </head>
 <body>
   {% if user.is_authenticated %}
-    <nav><a href="{% url 'notificacoes' %}">Notificações{% if notificacoes_nao_lidas %} ({{ notificacoes_nao_lidas }}){% endif %}</a></nav>
+    <nav>{% if user.papel == "comprador" %}<a href="{% url 'carrinho' %}">Carrinho</a> {% endif %}<a href="{% url 'notificacoes' %}">Notificações{% if notificacoes_nao_lidas %} ({{ notificacoes_nao_lidas }}){% endif %}</a></nav>
   {% endif %}
   <main>
     {% if messages %}
