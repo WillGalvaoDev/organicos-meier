@@ -1,3 +1,30 @@
+# E05-05 — Revisão independente
+
+## Revisão independente — 2026-10-18
+
+Commit auditado: `32b05a24fb38aa7bcaef2d67c5917fdef59bc2c5` (`main`, PR #65). Parecer global da E05: **REPROVADO**.
+
+Fontes: especificação funcional v1.6 (§§2, 4.4, 5, 5.1, 5.2 e 6), infraestrutura v1.7 (§§4.10–4.12), AGENTS.md e os sete pares `spec.md`/`acceptance.md` da E05, incluindo a decisão D-1 da E05-07. Código e testes foram confrontados com esses contratos. A revisão não altera regras, código de produção ou testes versionados.
+
+Validação independente no PostgreSQL local:
+
+- `uv run pytest -q`: **1619 passed em 161,01 s**.
+- `uv run ruff check .`: passou.
+- `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais do revisor: **8 failed, 8 passed em 4,71 s**, conforme reprodução integral em [E05-01/review.md](../E05-01/review.md). As falhas são deliberadamente asserções do contrato contra o commit auditado; não são falhas da suíte versionada.
+
+Os registros Red/Green do implementador são preservados abaixo. Eles documentam os testes funcionais e os comandos; o revisor não afirma ter presenciado as execuções históricas. A ausência confessada de Red nos testes de concorrência é tratada em R04. Nenhum teste foi afrouxado nesta revisão. As duas mudanças nos testes da E03-08 estão autorizadas pela E05-05; a suíte de regressão inteira passou.
+
+### Parecer da fatia: REPROVADO
+
+A-1 a A-20 passaram nos cenários versionados, incluindo privacidade, políticas de acesso, erros e consultas. R02 demonstra falha adicional no contrato de A-6: POST de remoção com pendência própria retorna 302 nas duas origens, deixando 4 reservados. O reenvio também altera estado novamente. Corrigir somente após explicitar a combinação com FIFO obrigatório; ver [parecer consolidado](../E05-01/review.md).
+
+---
+
+## Registro original do implementador (preservado como evidência)
+
 # E05-05 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.

@@ -98,6 +98,12 @@ Em `apps/interesses/servicos.py`, numa única `transaction.atomic()`:
   - total reservado ≤ limite;
   - a quantidade removida não aparece em nenhuma reserva.
 
+## Correções de 2026-10-18
+
+- **E05-R02:** `remover_pendente` ganha o argumento opcional `esperado`. Com `esperado` diferente do estado travado, levanta `InteresseDesatualizado` sem gravar. As regras estão na correção E05-R02 da E05-01, e o critério é o A-20 de lá. O resto desta fatia não muda.
+- **E05-R03:** a conta passa a ser travada com `select_for_update(no_key=True)`, por meio de `_travar_conta`. O critério é o A-21 da E05-01.
+- **E05-R04:** o A-9 segue o tratamento da não conformidade de TDD descrito na E05-01.
+
 ## Dependências e decisões em aberto
 
 - Depende de E05-01 e E05-02.
