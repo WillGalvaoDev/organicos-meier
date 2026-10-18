@@ -20,6 +20,7 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-14 | Spec da fatia | negativo | — | chamo `alocar_pendentes` fora de transação | `TransactionManagementError` |
 | A-15 | T-31, cenário 78 | concorrência | limite 6; A com 4 pendentes | em threads: (a) `alocar_pendentes(X)` segura as travas enquanto E adiciona 4; (b) E adiciona 4 e segura as travas enquanto `alocar_pendentes(X)` espera | nos dois casos: A com 4 reservados; E recusado com "Há apenas 2 unidade disponível."; total reservado 4; nenhuma parcela duplicada; nenhum deadlock |
 | A-16 | Cenário 101, T-46 | concorrência | limite 10, cheio; D com 3 reservados; C com 4 pendentes | em threads, D reduz 3 enquanto E adiciona 3 | C recebe as 3 liberadas; E é recusado; total reservado 10, em qualquer ordem |
+| A-17 | E05-R01, E03-05 | negativo e positivo | estoque de `P` sem limite; (i) sem reservas; (ii) A com 3 reservados; noutros casos, os pares de controle (`"6"` → `"10"`, `"6"` → sem limite, `"6"` → `"3"`), sem reservas e com C com 2 pendentes | (i) e (ii): `alterar_estoque(admin, estoque, "10")`; (iii) com o estado de (ii), `alterar_estoque(admin, estoque, "2")`; os pares de controle; um espião em `apps.interesses.receptores._alocar_produto` | (i) e (ii): limite 10, nenhuma exceção, uma auditoria `estoque.alterar` com `anterior` nulo, e o espião não é chamado; (iii) `EstoqueAbaixoDoReservado`, com o limite ainda sem limite e nada gravado; nos pares: o espião é chamado em `"6"` → `"10"` e em `"6"` → sem limite, e C recebe 2 nesses dois; não é chamado em `"6"` → `"3"`; antes da correção, (i) e (ii) falham com `TypeError` (Red) |
 
 ## Mapeamento para testes
 
@@ -27,4 +28,5 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 |---|---|
 | A-1 a A-14 | `tests/tecnicos/test_interesses_fila.py` |
 | A-1, A-2, A-3, A-6 e A-12 | também marcados `acceptance`, com os comentários `cenário 75`, `cenário 76`, `cenário 101`, `cenário 102` e `cenário 78` |
-| A-15, A-16 | `tests/tecnicos/test_interesses_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
+| A-15, A-16 | `tests/tecnicos/test_interesses_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`); tratamento da correção E05-R04 da E05-01 |
+| A-17 | `tests/tecnicos/test_interesses_fila.py`, com as provas `test_sem_limite_para_finito` e `test_controle_transicoes_estoque` do revisor incluídas literalmente, além do espião e dos casos (iii) e de C |

@@ -24,12 +24,17 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-18 | Spec da fatia | positivo | A comprador; um fornecedor logado | abro `/inicio/` | o link "Carrinho" aparece para A e não aparece para o fornecedor |
 | A-19 | Spec da fatia, E03-08 | negativo | mínimo de X R$ 987,65; estoque de `P` sem limite; A com 47 de `P` e B com 3 (valor elegível R$ 500,00) | A abre `/carrinho/` e `/catalogo/<X>/` | "Progresso do mínimo: 50%" nas duas páginas; nenhuma contém "987,65", "987.65", "500,00" nem "487,65"; nenhuma contém o nome nem o e-mail de B; depois que A define 96 (valor elegível R$ 990,00 com as 3 de B), as duas mostram "Progresso do mínimo: 100%" e "Mínimo atingido.", sem "990,00" |
 | A-20 | Spec da fatia, E03-08 | positivo | — | rodo `tests/tecnicos/test_catalogo_comprador.py` com os dois ajustes autorizados na seção "Relação com a E03-08" | verde; o diff do arquivo mostra só esses dois ajustes, registrados no `review.md` |
+| A-21 | E05-R02 | positivo | limite 6; A com 6 reservados e 4 pendentes | A abre `/carrinho/` e `/catalogo/<X>/` | nos formulários de quantidade e de pendentes de `P`, nas duas páginas, os campos ocultos `reservado_atual` com "6" e `pendente_atual` com "4" |
+| A-22 | E05-R02, Spec §5.2 | positivo e negativo | o estado do A-21 | `POST /interesses/` com `quantidade=4`, `reservado_atual=6` e `pendente_atual=4`, duas vezes, com `origem=carrinho`; noutro cenário igual, com `origem=catalogo` | o primeiro envio responde 302, com a mensagem "Interesse atualizado: P, reservado 6, pendente 2. As pendências da fila, inclusive as suas, são atendidas primeiro."; o segundo responde 409, com "Seu interesse neste produto mudou. Confira os valores atuais e envie de novo." dentro do `<form>` de `P`, e esse formulário aparece com `quantidade` 6, `reservado_atual` 6 e `pendente_atual` 2; o estado final é (6, 2) e não há auditoria do segundo envio |
+| A-23 | E05-R02 | positivo | o estado do A-21 | `POST /interesses/` com `quantidade=0`, pelas duas origens: com os campos ocultos (6 e 4) e, noutro caso, sem eles | 302 em todos; reservado 0 e pendente 0; as parcelas de A em `P` ficam `removida` |
+| A-24 | E05-R02 | negativo | o estado do A-21 | `POST /interesses/` com `quantidade=4` e: só `reservado_atual=6`; `reservado_atual=abc` e `pendente_atual=4`; `reservado_atual=-1` e `pendente_atual=4`. Depois, `POST /interesses/pendentes/remover/` com `quantidade=2`, `reservado_atual=6` e `pendente_atual=4`, duas vezes | os três primeiros respondem 409 com a mensagem de interesse desatualizado e não gravam nada; na remoção de pendentes, o primeiro envio responde 302 com "Pendência removida: P, pendente 2." e o segundo responde 409, com a pendência ainda em 2 |
 
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
 |---|---|
 | A-1 a A-16, A-18, A-19 | `tests/tecnicos/test_interesses_carrinho.py` |
+| A-21 a A-24 | `tests/tecnicos/test_interesses_carrinho.py`; o A-23 inclui literalmente a prova `test_http_zero_remove_com_pendencia` do revisor |
 | A-20 | `tests/tecnicos/test_catalogo_comprador.py` (arquivo existente, com os ajustes autorizados) |
 | A-2 | também marcado `acceptance`, com o comentário `cenário 96` |
 | A-17 | coberto pelo teste existente `tests/tecnicos/test_permissoes_politica_rotas.py`, mais o 405 em `test_interesses_carrinho.py` |

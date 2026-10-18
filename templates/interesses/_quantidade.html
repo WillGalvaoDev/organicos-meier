@@ -3,6 +3,8 @@
     {% csrf_token %}
     <input type="hidden" name="produto" value="{{ produto.pk }}">
     <input type="hidden" name="origem" value="{{ origem }}">
+    <input type="hidden" name="reservado_atual" value="{{ form.reservado_atual }}">
+    <input type="hidden" name="pendente_atual" value="{{ form.pendente_atual }}">
     <input type="text" name="quantidade" value="{{ form.valor }}" aria-label="Quantidade de {{ produto.nome }}">
     <button type="submit">{{ rotulo }}</button>
     {% if remover %}<button type="submit" name="quantidade" value="0">Remover</button>{% endif %}

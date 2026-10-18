@@ -14,11 +14,13 @@ from apps.interesses.consultas import total_reservado
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.interesses.servicos import (
     EstoqueInsuficiente,
+    InteresseDesatualizado,
     ProdutoForaDaRodada,
     ReducaoAcimaDoReservado,
     ResumoDoInteresse,
     adicionar_interesse,
     definir_interesse,
+    interesse_do_comprador,
     reduzir_interesse,
 )
 from apps.nucleo.auditoria import EntradaAuditoria
@@ -29,7 +31,7 @@ from apps.rodadas.condicoes import (
     travar_rodada_para_interesses,
 )
 from apps.rodadas.models import Etapa
-from tests.apoio.interesses import auditorias, cenario, parcelas
+from tests.apoio.interesses import auditorias, cenario, parcelas, pendente, reservada
 from tests.fabricas import (
     ContaFactory,
     FornecedorFactory,
@@ -301,3 +303,128 @@ def test_total_reservado_nunca_passa_do_limite() -> None:
         except EstoqueInsuficiente:
             pass
     assert total_reservado(produto) == D("4")
+
+
+# --- E05-R02 (critérios A-17 a A-20): total desejado com pendência própria ---
+
+DESATUALIZADO = "Seu interesse neste produto mudou. Confira os valores atuais e envie de novo."
+
+
+def _resumo(reservado: int, pendente_: int) -> ResumoDoInteresse:
+    return ResumoDoInteresse(D(reservado), D(pendente_))
+
+
+def _cenario_com_pendencia_propria(
+    com_b: bool = False,
+) -> tuple[Any, Any, Any, Any, Any]:
+    _, p, _ = cenario("6")
+    a = ContaFactory.create()
+    a1 = reservada(a, p, 6)
+    a2 = pendente(a, p, 4)
+    b = pendente(ContaFactory.create(), p, 3) if com_b else None
+    return p, a, a1, a2, b
+
+
+def _confere_invariantes(p: Any) -> None:
+    assert total_reservado(p) <= D("6")
+    for parcela in ParcelaDeInteresse.objects.filter(produto=p):
+        soma = parcela.quantidade_reservada + parcela.quantidade_pendente
+        assert soma <= parcela.quantidade_original
+
+
+def _estado(parcela: ParcelaDeInteresse) -> tuple[str, Decimal, Decimal]:
+    parcela.refresh_from_db()
+    return (parcela.situacao, parcela.quantidade_reservada, parcela.quantidade_pendente)
+
+
+def test_total_desejado_com_pendencia_propria_reenvio_recusado() -> None:  # A-17 (a)
+    p, a, a1, a2, _ = _cenario_com_pendencia_propria()
+    resumo = definir_interesse(a, p, "4", esperado=_resumo(6, 4))
+    assert resumo == _resumo(6, 2)
+    assert _estado(a1) == (SituacaoParcela.ATIVA, D("4"), D("0"))
+    assert _estado(a2) == (SituacaoParcela.ATIVA, D("2"), D("2"))
+    _confere_invariantes(p)
+    auditorias_antes = EntradaAuditoria.objects.count()
+    parcelas_antes = ParcelaDeInteresse.objects.count()
+    with pytest.raises(InteresseDesatualizado) as erro:
+        definir_interesse(a, p, "4", esperado=_resumo(6, 4))
+    assert erro.value.mensagem == DESATUALIZADO
+    assert EntradaAuditoria.objects.count() == auditorias_antes
+    assert ParcelaDeInteresse.objects.count() == parcelas_antes
+    assert _estado(a2) == (SituacaoParcela.ATIVA, D("2"), D("2"))
+
+
+def test_total_desejado_seguindo_o_estado_da_pagina() -> None:  # A-17 (b)
+    p, a, _, _, _ = _cenario_com_pendencia_propria()
+    assert definir_interesse(a, p, "4", esperado=_resumo(6, 4)) == _resumo(6, 2)
+    assert definir_interesse(a, p, "4", esperado=_resumo(6, 2)) == _resumo(6, 0)
+    _confere_invariantes(p)
+    assert definir_interesse(a, p, "4", esperado=_resumo(6, 0)) == _resumo(4, 0)
+    _confere_invariantes(p)
+
+
+def test_total_desejado_sem_esperado_opera_sobre_o_estado_atual() -> None:  # A-17 (c)
+    p, a, _, _, _ = _cenario_com_pendencia_propria()
+    passos = [definir_interesse(a, p, "4") for _ in range(3)]
+    assert passos == [_resumo(6, 2), _resumo(6, 0), _resumo(4, 0)]
+    _confere_invariantes(p)
+
+
+@pytest.mark.acceptance
+def test_zero_remove_o_item_inteiro_e_a_fila_segue_para_os_outros() -> None:  # A-18
+    p, a, a1, a2, b = _cenario_com_pendencia_propria(com_b=True)
+    resumo = definir_interesse(a, p, "0", esperado=_resumo(6, 4))
+    assert resumo == _resumo(0, 0)
+    assert _estado(a1)[0] == SituacaoParcela.REMOVIDA
+    assert _estado(a2)[0] == SituacaoParcela.REMOVIDA
+    assert _estado(b) == (SituacaoParcela.ATIVA, D("3"), D("0"))
+    acoes = [
+        e.acao
+        for e in EntradaAuditoria.objects.filter(acao__startswith="interesse.").order_by("id")
+    ]
+    assert acoes == [
+        "interesse.remover_pendente",
+        "interesse.reduzir",
+        "interesse.alocar_pendentes",
+    ]
+    antes = EntradaAuditoria.objects.count()
+    assert definir_interesse(a, p, "0") == _resumo(0, 0)
+    assert EntradaAuditoria.objects.count() == antes
+
+
+def test_total_ja_cumprido_nao_grava_e_estado_diferente_e_recusado() -> None:  # A-19
+    _, p, _ = cenario(None)
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    assert definir_interesse(a, p, "6", esperado=_resumo(4, 0)) == _resumo(6, 0)
+    assert [x.quantidade_original for x in parcelas(p, a)] == [D("4"), D("2")]
+    antes = EntradaAuditoria.objects.count()
+    assert definir_interesse(a, p, "6", esperado=_resumo(4, 0)) == _resumo(6, 0)
+    assert EntradaAuditoria.objects.count() == antes
+    assert len(parcelas(p, a)) == 2
+
+
+def test_esperado_diferente_do_atual_nao_grava() -> None:  # A-19 (b)
+    _, p, _ = cenario(None)
+    a = ContaFactory.create()
+    reservada(a, p, 4)
+    adicionar_interesse(a, p, "1")
+    antes = EntradaAuditoria.objects.count()
+    with pytest.raises(InteresseDesatualizado):
+        definir_interesse(a, p, "6", esperado=_resumo(4, 0))
+    assert EntradaAuditoria.objects.count() == antes
+    assert interesse_do_comprador(a, p) == _resumo(5, 0)
+
+
+def test_remover_pendente_com_esperado() -> None:  # A-20
+    from apps.interesses.servicos import remover_pendente
+
+    _, p, _ = cenario("10")
+    a = ContaFactory.create()
+    parcela = pendente(a, p, 4)
+    assert remover_pendente(a, p, "2", esperado=_resumo(0, 4)) == _resumo(0, 2)
+    with pytest.raises(InteresseDesatualizado):
+        remover_pendente(a, p, "2", esperado=_resumo(0, 4))
+    assert _estado(parcela) == (SituacaoParcela.PENDENTE, D("0"), D("2"))
+    assert remover_pendente(a, p, "2", esperado=_resumo(0, 2)) == _resumo(0, 0)
+    assert _estado(parcela)[0] == SituacaoParcela.REMOVIDA

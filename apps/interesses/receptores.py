@@ -18,7 +18,13 @@ def atender_fila_na_abertura(sender: Any, rodada: Rodada, **kwargs: Any) -> None
 def atender_fila_no_aumento_de_estoque(
     sender: Any, estoque: Any, anterior: Any, novo: Any, **kwargs: Any
 ) -> None:
-    """Só quando o estoque aumentou (ou deixou de ter limite). A inclusão conta como aumento."""
+    """Só quando o estoque aumentou. A inclusão conta como aumento (`anterior` é zero).
+
+    `None` é sem limite: finito -> `None` é aumento; `None` -> finito é redução e não libera nada;
+    a comparação numérica só acontece com os dois lados finitos (E05-R01).
+    """
+    if anterior is None:
+        return
     if novo is None or novo > anterior:
         _alocar_produto(estoque.rodada, estoque.produto)
 

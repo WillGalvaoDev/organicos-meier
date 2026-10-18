@@ -218,3 +218,79 @@ def test_alocar_exige_transacao() -> None:  # A-14
     rodada, _, _ = cenario("10")
     with pytest.raises(TransactionManagementError):
         alocar_pendentes(rodada.fornecedor)
+
+
+# --- E05-R01 (critério A-17): estoque sem limite que passa a ter limite ---
+
+
+@pytest.fixture
+def espiao_da_fila(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, object]]:
+    from apps.interesses import receptores
+
+    chamadas: list[tuple[object, object]] = []
+    original = receptores._alocar_produto  # type: ignore[attr-defined]
+
+    def espiao(rodada: object, produto: object) -> object:
+        chamadas.append((rodada, produto))
+        return original(rodada, produto)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(receptores, "_alocar_produto", espiao)
+    return chamadas
+
+
+@pytest.mark.parametrize("reserva", [0, 3])
+def test_sem_limite_para_finito(
+    reserva: int, espiao_da_fila: list[tuple[object, object]]
+) -> None:  # A-17 (i) e (ii), prova do revisor de 32b05a2
+    _, p, e = cenario(None)
+    a = ContaFactory.create()
+    if reserva:
+        reservada(a, p, reserva)
+    alterar_estoque(Conta.objects.get(papel="administrador"), e, "10")
+    e.refresh_from_db()
+    assert e.limite == D("10")
+    (entrada,) = auditorias("estoque.alterar")
+    assert entrada.alteracoes["anterior"] is None
+    assert espiao_da_fila == []
+
+
+def test_limite_novo_abaixo_do_reservado_continua_recusado_a_partir_do_ilimitado() -> None:
+    from apps.rodadas.estoque import EstoqueAbaixoDoReservado
+
+    _, p, e = cenario(None)
+    reservada(ContaFactory.create(), p, 3)
+    with pytest.raises(EstoqueAbaixoDoReservado):
+        alterar_estoque(administrador(), e, "2")  # A-17 (iii)
+    e.refresh_from_db()
+    assert e.limite is None
+    assert auditorias("estoque.alterar") == []
+
+
+@pytest.mark.parametrize(
+    ("anterior", "novo"),
+    [("0", "6"), ("6", "10"), ("6", None), (None, None), ("6", "6"), ("6", "3")],
+)
+def test_controle_transicoes_estoque(anterior: str | None, novo: str | None) -> None:
+    # A-17, prova do revisor de 32b05a2
+    _, _produto, e = cenario(anterior)
+    alterar_estoque(Conta.objects.get(papel="administrador"), e, novo)
+    e.refresh_from_db()
+    assert e.limite == (None if novo is None else D(novo))
+
+
+@pytest.mark.parametrize(
+    ("novo", "atende"), [("10", True), (None, True), ("3", False)], ids=["6-10", "6-None", "6-3"]
+)
+def test_so_o_aumento_aciona_a_fila(
+    novo: str | None, atende: bool, espiao_da_fila: list[tuple[object, object]]
+) -> None:  # A-17, pares de controle
+    _, p, e = cenario("6")
+    c = ContaFactory.create()
+    pc = pendente(c, p, 2)
+    alterar_estoque(administrador(), e, novo)
+    assert bool(espiao_da_fila) is atende
+    assert estado(pc) == (
+        (SituacaoParcela.ATIVA, D("2"), D("0"))
+        if atende
+        else (SituacaoParcela.PENDENTE, D("0"), D("2"))
+    )

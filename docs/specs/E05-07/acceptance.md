@@ -18,6 +18,8 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-12 | D-1 | negativo | A `suspensa`, cujos interesses já saíram na suspensão; uma conta de fornecedor `ativa` | `remover(admin, A)`; `remover(admin, fornecedor)` | as duas remoções são aceitas; nenhuma auditoria `interesse.remover_por_remocao_da_conta`; nenhuma parcela alterada |
 | A-13 | D-1, E02-08 | negativo | A `ativa` com 4 de `P`; um `monkeypatch` faz `remover_interesses_do_comprador` levantar `RuntimeError` | `remover(admin, A)` | a exceção chega a quem chamou; A continua `ativa`; o e-mail não fica banido; a parcela continua `ativa` com 4 |
 | A-14 | D-1 | concorrência | A `ativa` | em threads: (a) A adiciona 2 e segura as travas enquanto `remover(admin, A)` espera; (b) `remover` segura a trava da conta enquanto A adiciona 2 | em (a), a parcela nova é removida pela remoção da conta; em (b), a adição é recusada com `PermissionDenied`; nos dois, A sem parcela `ativa` ao final |
+| A-15 | E05-R03 | concorrência | limite 10; A `ativa` com 1 reservado de `P` | a edição de preço trava o produto com `select_for_update()` e espera a barreira; `suspender(admin, A)` roda com a substituta de `remover_interesses_do_comprador` em `apps.interesses.receptores`, que espera a barreira e chama a original; depois da barreira, a edição chama `editar_produto(admin, P, preco="15.99")` | as duas terminam sem exceção e sem `OperationalError`; o preço é 15,99; A tem a notificação `preco_alterado` da alteração; A fica `suspensa`, e a parcela, `removida`; antes da correção, o teste falha com `deadlock detected` (Red) |
+| A-16 | E05-R03, D-1 | concorrência | o mesmo estado do A-15 | o mesmo arranjo, com `remover(admin, A)` no lugar de `suspender` | as duas terminam sem exceção; o preço é 15,99; A fica `removida`, com o e-mail banido e a parcela `removida`; a notificação de preço fica gravada; antes da correção, o teste falha com `deadlock detected` (Red) |
 
 ## Mapeamento para testes
 
@@ -26,4 +28,5 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-1 a A-7, A-10 a A-13 | `tests/tecnicos/test_interesses_suspensao.py` |
 | A-1 e A-2 | também marcados `acceptance`, com o comentário `cenário 19` |
 | A-11 | também marcado `acceptance`, com o comentário `cenário 20` |
-| A-8, A-9, A-14 | `tests/tecnicos/test_interesses_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
+| A-8, A-9, A-14 | `tests/tecnicos/test_interesses_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`); tratamento da correção E05-R04 da E05-01 |
+| A-15, A-16 | `tests/tecnicos/test_interesses_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |

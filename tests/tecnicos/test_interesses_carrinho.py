@@ -15,6 +15,7 @@ from apps.fornecedores.models import Fornecedor
 from apps.interesses import views
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador
+from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.models import Etapa, Rodada
 from tests.apoio.admin_fluxos import administrador_logado
 from tests.apoio.interesses import cenario, parcelas, pendente, reservada
@@ -436,3 +437,139 @@ def test_so_o_percentual_do_minimo_chega_ao_comprador() -> None:  # A-19
         assert "Progresso do mínimo: 100%" in html, endereco
         assert "Mínimo atingido." in html
         assert "990,00" not in html
+
+
+# --- E05-R02 (critérios A-21 a A-24): formulários com pendência própria ---
+
+DESATUALIZADO = "Seu interesse neste produto mudou. Confira os valores atuais e envie de novo."
+REMOVER = "/interesses/pendentes/remover/"
+
+
+def _cenario_com_pendencia_propria() -> tuple[Any, Produto, Conta]:
+    rodada, produto, _ = cenario("6", nome="P")
+    a = ContaFactory.create()
+    reservada(a, produto, 6)
+    pendente(a, produto, 4)
+    return rodada, produto, a
+
+
+def _campo_oculto(formulario: str, nome: str) -> str:
+    achado = re.search(rf'name="{nome}"\s+value="([^"]*)"', formulario)
+    assert achado is not None, (nome, formulario)
+    return achado.group(1)
+
+
+def test_formularios_levam_o_estado_que_a_pagina_mostrou() -> None:  # A-21
+    rodada, produto, a = _cenario_com_pendencia_propria()
+    cliente = entrar(a)
+    for url in ("/carrinho/", f"/catalogo/{rodada.fornecedor_id}/"):
+        html = pagina(cliente, url)
+        lista = formularios(html, produto)
+        assert len(lista) == 1, url
+        assert _campo_oculto(lista[0], "reservado_atual") == "6", url
+        assert _campo_oculto(lista[0], "pendente_atual") == "4", url
+    pendentes = formularios(pagina(cliente), produto, REMOVER)
+    assert len(pendentes) == 1
+    assert _campo_oculto(pendentes[0], "reservado_atual") == "6"
+    assert _campo_oculto(pendentes[0], "pendente_atual") == "4"
+
+
+@pytest.mark.parametrize("origem", ["carrinho", "catalogo"])
+def test_reenvio_sobre_estado_que_mudou_e_recusado(origem: str) -> None:  # A-22
+    rodada, produto, a = _cenario_com_pendencia_propria()
+    cliente = entrar(a)
+    corpo = {
+        "produto": produto.pk,
+        "quantidade": "4",
+        "reservado_atual": "6",
+        "pendente_atual": "4",
+        "origem": origem,
+    }
+    destino = "/carrinho/" if origem == "carrinho" else f"/catalogo/{rodada.fornecedor_id}/"
+    primeira = cliente.post("/interesses/", corpo)
+    assert (primeira.status_code, primeira.get("Location")) == (302, destino)
+    assert (
+        "Interesse atualizado: P, reservado 6, pendente 2. "
+        "As pendências da fila, inclusive as suas, são atendidas primeiro."
+    ) in pagina(cliente, destino)
+    auditorias_antes = EntradaAuditoria.objects.count()
+    segunda = cliente.post("/interesses/", corpo)
+    assert segunda.status_code == 409
+    html = segunda.content.decode()
+    (formulario,) = formularios(html, produto)
+    assert DESATUALIZADO in formulario
+    assert valor_do_campo(formulario) == "6"
+    assert _campo_oculto(formulario, "reservado_atual") == "6"
+    assert _campo_oculto(formulario, "pendente_atual") == "2"
+    resumo = interesse_do_comprador(a, produto)
+    assert (resumo.reservado, resumo.pendente) == (D("6"), D("2"))
+    assert EntradaAuditoria.objects.count() == auditorias_antes
+
+
+@pytest.mark.acceptance
+@pytest.mark.parametrize("origem", ["carrinho", "catalogo"])
+@pytest.mark.parametrize("com_estado", [True, False])
+def test_remover_leva_o_item_inteiro(origem: str, com_estado: bool) -> None:  # A-23
+    _, produto, a = _cenario_com_pendencia_propria()
+    corpo = {"produto": produto.pk, "quantidade": "0", "origem": origem}
+    if com_estado:
+        corpo |= {"reservado_atual": "6", "pendente_atual": "4"}
+    resposta = entrar(a).post("/interesses/", corpo)
+    assert resposta.status_code == 302
+    resumo = interesse_do_comprador(a, produto)
+    assert (resumo.reservado, resumo.pendente) == (D("0"), D("0"))
+    assert {p.situacao for p in parcelas(produto, a)} == {SituacaoParcela.REMOVIDA}
+
+
+@pytest.mark.parametrize("origem", ["carrinho", "catalogo"])
+def test_http_zero_remove_com_pendencia(origem: str) -> None:
+    # prova do revisor de 32b05a2, corpo original (A-23)
+    _, p, _ = cenario("6")
+    a = ContaFactory.create()
+    reservada(a, p, 6)
+    pendente(a, p, 4)
+    c = Client()
+    c.force_login(a)
+    resposta = c.post("/interesses/", {"produto": p.pk, "quantidade": "0", "origem": origem})
+    assert resposta.status_code == 302
+    assert interesse_do_comprador(a, p).reservado == 0
+
+
+@pytest.mark.parametrize(
+    "estado",
+    [
+        {"reservado_atual": "6"},
+        {"reservado_atual": "abc", "pendente_atual": "4"},
+        {"reservado_atual": "-1", "pendente_atual": "4"},
+    ],
+    ids=["so-um-campo", "texto", "negativo"],
+)
+def test_campos_de_estado_invalidos_sao_estado_desatualizado(estado: dict[str, str]) -> None:
+    # A-24
+    _, produto, a = _cenario_com_pendencia_propria()
+    antes = EntradaAuditoria.objects.count()
+    resposta = entrar(a).post("/interesses/", {"produto": produto.pk, "quantidade": "4", **estado})
+    assert resposta.status_code == 409
+    (formulario,) = formularios(resposta.content.decode(), produto)
+    assert DESATUALIZADO in formulario
+    resumo = interesse_do_comprador(a, produto)
+    assert (resumo.reservado, resumo.pendente) == (D("6"), D("4"))
+    assert EntradaAuditoria.objects.count() == antes
+
+
+def test_remover_pendentes_com_estado_repetido_e_recusado() -> None:  # A-24
+    _, produto, a = _cenario_com_pendencia_propria()
+    cliente = entrar(a)
+    corpo = {
+        "produto": produto.pk,
+        "quantidade": "2",
+        "reservado_atual": "6",
+        "pendente_atual": "4",
+    }
+    primeira = cliente.post(REMOVER, corpo)
+    assert (primeira.status_code, primeira.get("Location")) == (302, "/carrinho/")
+    assert "Pendência removida: P, pendente 2." in pagina(cliente)
+    segunda = cliente.post(REMOVER, corpo)
+    assert segunda.status_code == 409
+    assert DESATUALIZADO in segunda.content.decode()
+    assert interesse_do_comprador(a, produto).pendente == D("2")

@@ -19,12 +19,14 @@ from apps.interesses.apresentacao import Retorno, contexto_do_carrinho, contexto
 from apps.interesses.forms import FormularioInteresse
 from apps.interesses.servicos import (
     EstoqueInsuficiente,
+    InteresseDesatualizado,
     ProdutoForaDaRodada,
     ReducaoAcimaDoReservado,
     RemocaoAcimaDoPendente,
     definir_interesse,
     remover_pendente,
 )
+from apps.nucleo.valores import quantidade as converter_quantidade
 from apps.rodadas.condicoes import InteressesBloqueados
 
 RECUSAS_DE_QUANTIDADE = (
@@ -80,11 +82,20 @@ def _gravar(request: HttpRequest, acao: str) -> HttpResponse:
         return _pagina_de_origem(request, origem, produto, retorno)
     conta: Conta = request.user  # type: ignore[assignment]
     valor = form.cleaned_data["quantidade"].replace(",", ".")  # decimal digitado à brasileira
+    desatualizado = Retorno(
+        409, None, produto.pk, acao, None, InteresseDesatualizado().mensagem
+    )  # o formulário volta com os valores atuais
+    estado_valido, esperado = form.estado_esperado()
+    if not estado_valido:
+        return _pagina_de_origem(request, origem, produto, desatualizado)
+    estado = {} if esperado is None else {"esperado": esperado}  # sem estado: chamada simples
     try:
         if acao == "quantidade":
-            resumo = definir_interesse(conta, produto, valor)
+            resumo = definir_interesse(conta, produto, valor, **estado)
         else:
-            resumo = remover_pendente(conta, produto, valor)
+            resumo = remover_pendente(conta, produto, valor, **estado)
+    except InteresseDesatualizado:
+        return _pagina_de_origem(request, origem, produto, desatualizado)
     except RECUSAS_DE_QUANTIDADE as erro:
         mensagem = getattr(erro, "mensagem", None) or str(erro)
         retorno = Retorno(200, None, produto.pk, acao, form.cleaned_data["quantidade"], mensagem)
@@ -95,7 +106,11 @@ def _gravar(request: HttpRequest, acao: str) -> HttpResponse:
         return _pagina_de_origem(request, origem, produto, retorno)
     if acao == "quantidade":
         reservado = formatar_quantidade(resumo.reservado)
-        messages.success(request, f"Interesse atualizado: {produto.nome}, reservado {reservado}.")
+        texto = f"Interesse atualizado: {produto.nome}, reservado {reservado}"
+        texto += f", pendente {formatar_quantidade(resumo.pendente)}." if resumo.pendente else "."
+        if converter_quantidade(valor) > 0 and resumo.reservado != converter_quantidade(valor):
+            texto += " As pendências da fila, inclusive as suas, são atendidas primeiro."
+        messages.success(request, texto)
         if origem == "catalogo":
             return redirect("catalogo_fornecedor", pk=produto.fornecedor_id)
     else:

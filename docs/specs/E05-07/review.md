@@ -1,3 +1,30 @@
+# E05-07 — Revisão independente
+
+## Revisão independente — 2026-10-18
+
+Commit auditado: `32b05a24fb38aa7bcaef2d67c5917fdef59bc2c5` (`main`, PR #65). Parecer global da E05: **REPROVADO**.
+
+Fontes: especificação funcional v1.6 (§§2, 4.4, 5, 5.1, 5.2 e 6), infraestrutura v1.7 (§§4.10–4.12), AGENTS.md e os sete pares `spec.md`/`acceptance.md` da E05, incluindo a decisão D-1 da E05-07. Código e testes foram confrontados com esses contratos. A revisão não altera regras, código de produção ou testes versionados.
+
+Validação independente no PostgreSQL local:
+
+- `uv run pytest -q`: **1619 passed em 161,01 s**.
+- `uv run ruff check .`: passou.
+- `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais do revisor: **8 failed, 8 passed em 4,71 s**, conforme reprodução integral em [E05-01/review.md](../E05-01/review.md). As falhas são deliberadamente asserções do contrato contra o commit auditado; não são falhas da suíte versionada.
+
+Os registros Red/Green do implementador são preservados abaixo. Eles documentam os testes funcionais e os comandos; o revisor não afirma ter presenciado as execuções históricas. A ausência confessada de Red nos testes de concorrência é tratada em R04. Nenhum teste foi afrouxado nesta revisão. As duas mudanças nos testes da E03-08 estão autorizadas pela E05-05; a suíte de regressão inteira passou.
+
+### Parecer da fatia: REPROVADO
+
+A-1 a A-14 passaram, incluindo moderação/adição/fila nas duas ordens, rollback, `em_pedido` e remoção conforme D-1 aprovada. R03 acrescenta a corrida não coberta com edição de preço, que causa deadlock e pode abortar a suspensão. R04 registra ausência de Red para A-8/A-9/A-14. Achados e reproduções no [parecer consolidado](../E05-01/review.md).
+
+---
+
+## Registro original do implementador (preservado como evidência)
+
 # E05-07 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
@@ -48,3 +75,30 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 Postgres real, sem navegador. O cancelamento dos pedidos não pagos do suspenso e do removido é da E08 (a spec registra a pergunta para a E08). A D-1 foi aplicada como decidida (opção a), sem alteração.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R03 — suspensão e remoção em paralelo com alteração de preço (critérios A-15 e A-16)
+
+**Red real:** `uv run pytest tests/tecnicos/test_interesses_concorrencia.py -k preco -q` contra o código anterior: **6 failed** com `deadlock detected`, dos quais 2 são estes: `test_preco_e_moderacao_sem_deadlock[suspensao]` (A-15) e `[remocao]` (A-16). A pausa fica dentro da moderação: `remover_interesses_do_comprador` é substituída, em `apps.interesses.receptores`, por uma função que espera a barreira e chama a original; a edição de preço trava o produto e espera a mesma barreira.
+
+**Green:** `_travar` de `apps/contas/moderacao.py` passou a usar `select_for_update(no_key=True)` (vale para `suspender`, `reativar` e `remover`). O teste confere: sem exceção, preço 15,99, aviso gravado com a chave da alteração, conta `suspensa` ou `removida`, parcela `removida` e, na remoção, e-mail banido. Arquivo de concorrência: **22 passed**.
+
+### Não conformidade de TDD (E05-R04): critérios A-8, A-9 e A-14
+
+**O que aconteceu:** testes escritos depois do código de produção; **sem Red observado**. Causas e tratamento: ver [E05-01/review.md](../E05-01/review.md), que confirmo para estes critérios.
+
+### Sensibilidade (mutação), não Red — E05-07
+
+Comando: `uv run pytest -q -p no:cacheprovider --tb=line tests/tecnicos/test_interesses_concorrencia.py::test_adicao_e_suspensao_ou_remocao_se_serializam tests/tecnicos/test_interesses_concorrencia.py::test_atendimento_da_fila_e_suspensao_se_serializam`.
+
+| Critério | Mutação | Resultado mutado | Desfeita |
+|---|---|---|---|
+| A-8, A-9 e A-14 | `moderacao.py`: `Conta.objects.select_for_update(no_key=True).get(pk=conta.pk)` → `Conta.objects.get(pk=conta.pk)` | **6 passed: a mutação não é detectada** | 6 passed |
+
+**Limite do teste.** Os testes não detectam a leitura sem trava em `_travar` da moderação. A causa provável (não verificada por outra prova) é que o `UPDATE` da situação, na própria moderação, já toma a trava da linha, e a adição que espera a conta espera por esse `UPDATE`. A trava explícita só importa na janela entre a leitura e o `UPDATE`, que esses critérios não exercitam. **Reforço proposto:** um critério com duas moderações concorrentes sobre a mesma conta (por exemplo, `suspender` e `remover`), segurando a primeira entre a leitura e o `UPDATE`, em que a segunda precisa revalidar a situação depois da trava e ser recusada com `ModeracaoInvalida`; sem a trava, as duas passariam pela validação.

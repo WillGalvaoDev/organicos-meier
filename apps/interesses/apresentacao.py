@@ -27,7 +27,7 @@ class Retorno:
     topo: str | None = None
     produto_id: int | None = None
     acao: str = "quantidade"
-    texto: str = ""
+    texto: str | None = ""  # None: mostra o valor atual do banco
     mensagem: str | None = None
     sem_formulario: bool = False
 
@@ -38,14 +38,27 @@ def texto_decimal(valor: Decimal) -> str:
 
 
 def _formulario(
-    retorno: Retorno | None, produto_id: int, acao: str, padrao: Decimal, permitido: bool
+    retorno: Retorno | None,
+    produto_id: int,
+    acao: str,
+    padrao: Decimal,
+    permitido: bool,
+    estado: tuple[Decimal, Decimal],
 ) -> dict[str, Any]:
+    """Estado de um formulário. `estado` é (reservado, pendente) lido para montar a página: vai
+    nos campos ocultos, para o servidor reconhecer o envio feito sobre um estado que mudou."""
     devolvido = retorno is not None and retorno.produto_id == produto_id and retorno.acao == acao
     if retorno is not None and acao == "quantidade" and retorno.sem_formulario:
         permitido = permitido and retorno.produto_id != produto_id
     return {
         "mostrar": permitido,
-        "valor": retorno.texto if devolvido and retorno else texto_decimal(padrao),
+        "valor": (
+            retorno.texto
+            if devolvido and retorno and retorno.texto is not None
+            else texto_decimal(padrao)
+        ),
+        "reservado_atual": texto_decimal(estado[0]),
+        "pendente_atual": texto_decimal(estado[1]),
         "mensagem": retorno.mensagem if devolvido and retorno else None,
     }
 
@@ -63,6 +76,7 @@ def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[s
                     "quantidade",
                     linha.reservado,
                     ativa and grupo.editavel and linha.no_estoque,
+                    (linha.reservado, linha.pendente),
                 ),
                 "pendentes": _formulario(
                     retorno,
@@ -70,6 +84,7 @@ def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[s
                     "pendentes",
                     linha.pendente,
                     ativa and linha.pendente > 0,
+                    (linha.reservado, linha.pendente),
                 ),
             }
             for linha in grupo.linhas
@@ -96,7 +111,12 @@ def contexto_do_catalogo(
                 "interesse": participacao,
                 "caixas": dele if item.produto.multiplo is not None else None,
                 "quantidade": _formulario(
-                    retorno, item.produto.pk, "quantidade", participacao.reservado, editavel
+                    retorno,
+                    item.produto.pk,
+                    "quantidade",
+                    participacao.reservado,
+                    editavel,
+                    (participacao.reservado, participacao.pendente),
                 ),
             }
         )

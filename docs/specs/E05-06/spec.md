@@ -105,6 +105,16 @@ Os totais e o progresso não precisam de recálculo gravado, porque já são cal
 - **Produto sem nenhum interesse:** o preço muda e nenhum aviso é emitido.
 - **Comprador com reserva e pendência:** o aviso só cita a quantidade reservada.
 
+## Correção E05-R03 — travas implícitas dos avisos (2026-10-18)
+
+- Cada aviso grava uma notificação com chave estrangeira para a conta, e o Postgres confere essa chave com `FOR KEY SHARE` na conta, enquanto a edição ainda segura a trava do produto.
+- Com a conta travada em `FOR UPDATE` por uma operação do comprador ou pela moderação, isso fechava um ciclo de travas. O revisor reproduziu `deadlock detected`.
+- A correção fica nas travas de conta (correção E05-R03 da E05-01) e não muda esta fatia:
+  - o receptor e a emissão continuam na mesma transação da alteração de preço;
+  - nenhum aviso vai para `on_commit`;
+  - a edição de preço não ganha trava de conta.
+- Os critérios de concorrência são o A-21 da E05-01 e os A-15 e A-16 da E05-07. Os critérios A-1 a A-9 desta fatia continuam valendo sem mudança.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-03, E04-01, E04-02 e E05-01.

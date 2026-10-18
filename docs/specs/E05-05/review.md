@@ -1,3 +1,30 @@
+# E05-05 — Revisão independente
+
+## Revisão independente — 2026-10-18
+
+Commit auditado: `32b05a24fb38aa7bcaef2d67c5917fdef59bc2c5` (`main`, PR #65). Parecer global da E05: **REPROVADO**.
+
+Fontes: especificação funcional v1.6 (§§2, 4.4, 5, 5.1, 5.2 e 6), infraestrutura v1.7 (§§4.10–4.12), AGENTS.md e os sete pares `spec.md`/`acceptance.md` da E05, incluindo a decisão D-1 da E05-07. Código e testes foram confrontados com esses contratos. A revisão não altera regras, código de produção ou testes versionados.
+
+Validação independente no PostgreSQL local:
+
+- `uv run pytest -q`: **1619 passed em 161,01 s**.
+- `uv run ruff check .`: passou.
+- `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais do revisor: **8 failed, 8 passed em 4,71 s**, conforme reprodução integral em [E05-01/review.md](../E05-01/review.md). As falhas são deliberadamente asserções do contrato contra o commit auditado; não são falhas da suíte versionada.
+
+Os registros Red/Green do implementador são preservados abaixo. Eles documentam os testes funcionais e os comandos; o revisor não afirma ter presenciado as execuções históricas. A ausência confessada de Red nos testes de concorrência é tratada em R04. Nenhum teste foi afrouxado nesta revisão. As duas mudanças nos testes da E03-08 estão autorizadas pela E05-05; a suíte de regressão inteira passou.
+
+### Parecer da fatia: REPROVADO
+
+A-1 a A-20 passaram nos cenários versionados, incluindo privacidade, políticas de acesso, erros e consultas. R02 demonstra falha adicional no contrato de A-6: POST de remoção com pendência própria retorna 302 nas duas origens, deixando 4 reservados. O reenvio também altera estado novamente. Corrigir somente após explicitar a combinação com FIFO obrigatório; ver [parecer consolidado](../E05-01/review.md).
+
+---
+
+## Registro original do implementador (preservado como evidência)
+
 # E05-05 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
@@ -63,3 +90,29 @@ Justificativa: seção "Relação com a E03-08" do `spec.md` da E05-05. O diff d
 ## Limites da verificação
 
 Cliente HTTP do Django, sem navegador (nenhum comportamento de HTMX; as rotas respondem página inteira ou redirecionamento). O prazo do fechamento no carrinho é da E06; o pedido e o pagamento, da E08.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. **Nenhum teste existente foi alterado**, nem o da E03-08 nem os desta fatia; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R02 — formulários com pendência própria (critérios A-21 a A-24)
+
+**Red.** `uv run pytest tests/tecnicos/test_interesses_carrinho.py -q`: **7 failed, 35 passed**, por asserção: A-21 (`reservado_atual` ausente nos formulários), A-22 (`assert 302 == 409` no reenvio, nas duas origens), A-24 (`assert 302 == 409` nos três estados inválidos e no reenvio da remoção de pendentes). Passaram já no Red os casos de A-23 (`quantidade=0` com e sem os campos de estado, nas duas origens, inclusive a prova `test_http_zero_remove_com_pendencia` do revisor, literal), porque o serviço corrigido na parte dos serviços (acima) já zera o item; o Red desse critério está nos serviços (E05-01 A-18).
+
+**Green.** Mesmo arquivo: **42 passed**.
+- `FormularioInteresse`: campos `reservado_atual` e `pendente_atual` (`CharField(max_length=30, required=False)`), convertidos por `quantidade()` com vírgula trocada por ponto; nenhum presente = sem estado esperado; só um, texto inválido ou negativo = mesma resposta do estado desatualizado (o serviço não é chamado).
+- Formulários de quantidade e de pendentes levam os campos ocultos com o estado lido para montar a página.
+- `InteresseDesatualizado` (ou campos inválidos): 409 com a página de origem relida, a mensagem dentro do `<form>` do produto e o formulário com os valores atuais do banco.
+- Mensagem de sucesso com pendência final: "..., reservado <x>, pendente <y>." e, quando o reservado final difere do total pedido, o acréscimo "As pendências da fila, inclusive as suas, são atendidas primeiro."
+
+### Decisões técnicas
+
+- **A-21, "nas duas páginas":** o formulário de pendentes só existe no carrinho (a spec do catálogo não o prevê). O teste confere os campos nos formulários de quantidade das duas páginas e no de pendentes do carrinho.
+- **Teste existente A-15 (suspensão entre a política e a trava):** o `monkeypatch` dele substitui `definir_interesse` por uma função de três parâmetros. Para **não mexer no teste**, a rota só passa `esperado` quando a página o enviou; sem ele, chama o serviço exatamente como antes.
+
+### Não conformidade de TDD (E05-R04)
+
+Esta fatia não tem critério de concorrência próprio (o A-21 de concorrência está na E05-01). Os critérios novos acima seguiram Red → Green completo.

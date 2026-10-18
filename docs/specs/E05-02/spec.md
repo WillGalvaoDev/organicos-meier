@@ -92,7 +92,7 @@ A função não confere a etapa e não trava fornecedor nem rodada. Quem chama j
   - Isso não deixa pendentes esperando estoque livre: as chamadas depois de liberar e no aumento de estoque já as atenderam. Na prática, a alocação antes de reservar só tem efeito num estado que nenhum serviço produz, como o criado por fábrica nos testes.
 - **Depois de liberar:** em `reduzir_interesse` e na redução de `definir_interesse`, `_alocar_produto` roda depois da redução, na mesma transação.
 - **`rodada_aberta`:** um receptor em `apps.interesses` chama `alocar_pendentes(rodada.fornecedor)`. Na abertura, a rodada ainda não tem estoques, então o efeito real vem da inclusão de produtos. O receptor existe para que a rotina rode em qualquer abertura futura que já traga estoques.
-- **`estoque_alterado`:** um receptor chama `_alocar_produto(rodada, estoque.produto)` quando o estoque aumentou, ou seja, quando `novo is None` ou `novo > anterior`. A inclusão de produto na rodada conta como aumento, porque o `anterior` é `Decimal("0")`.
+- **`estoque_alterado`:** um receptor chama `_alocar_produto(rodada, estoque.produto)` quando o estoque aumentou, conforme a classificação da correção E05-R01. A inclusão de produto na rodada conta como aumento, porque o `anterior` é `Decimal("0")`.
 - Os receptores são conectados no `ready()` de `apps.interesses`. Eles rodam dentro da transação do remetente: uma falha desfaz a abertura ou a alteração de estoque.
 
 **Isolamento por fornecedor:** a rotina só lê parcelas de produtos do fornecedor da rodada travada e só reserva no estoque dessa rodada (cenário 102, R-5).
@@ -122,6 +122,30 @@ A função não confere a etapa e não trava fornecedor nem rodada. Quem chama j
 - **Produto fora da rodada:** as pendentes de um produto do fornecedor que não está no estoque da rodada continuam pendentes.
 - **Rodada em `fechamento_encerrado` ou `pagamento`:** nada é alocado.
 - **Livre não múltiplo do incremento:** limite 10, incremento 4 e uma pendente de 12 recebem 8 e ficam com 4 pendentes.
+
+## Correção E05-R01 — estoque sem limite que passa a ter limite (2026-10-18)
+
+### Diagnóstico
+
+- Escrevi o critério do receptor como "`novo is None` ou `novo > anterior`" e não tratei o `anterior` igual a `None`, que significa sem limite (E03-05).
+- O código seguiu a frase. Em `alterar_estoque(admin, estoque, "10")` com o limite atual `None`, a comparação `Decimal > None` levanta `TypeError`. Isso desfaz a alteração e impede o administrador de limitar um estoque que estava sem limite. O defeito aparece com ou sem reservas.
+
+### Regra
+
+O receptor classifica a mudança pelo par (`anterior`, `novo`), em que `None` é sem limite:
+
+| `anterior` | `novo` | Classificação | Receptor |
+|---|---|---|---|
+| `None` | finito | redução (ilimitado → limitado) | não aloca |
+| finito | `None` | aumento | chama `_alocar_produto` |
+| finito | finito, maior | aumento | chama `_alocar_produto` |
+| finito | finito, menor ou igual | redução ou sem mudança | não aloca |
+| `None` | `None` | sem mudança (`alterar_estoque` nem envia o sinal) | não aloca |
+
+- A comparação numérica só acontece com os dois lados finitos.
+- A inclusão continua chegando com `anterior=Decimal("0")` e cai nas linhas de aumento: finito → `None` ou finito → maior.
+- A validação de reservas não muda e continua em `alterar_estoque` (E03-05), antes do sinal. Um limite novo menor que o total reservado é recusado com `EstoqueAbaixoDoReservado`, também quando o limite anterior era `None`.
+- Sem alocação na passagem de ilimitado para limitado: nenhuma unidade foi liberada. Com estoque sem limite, as pendentes do produto já tinham sido atendidas na inclusão ou no aumento.
 
 ## Dependências e decisões em aberto
 

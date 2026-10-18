@@ -52,7 +52,7 @@ Toda regra fica nos serviços. As rotas só convertem a entrada, chamam o servi�
 
 ## Decisões técnicas
 
-- **Quantidade desejada:** o formulário envia o total reservado desejado do produto, e a rota chama `definir_interesse` (E05-01). O botão "Remover" envia `quantidade=0`. Reenviar o mesmo formulário não cria parcela nova.
+- **Quantidade desejada:** o formulário envia o total reservado desejado do produto, e a rota chama `definir_interesse` (E05-01). O botão "Remover" envia `quantidade=0`. Reenviar o mesmo formulário não cria parcela nova. Com pendência própria, valem também os campos de estado da correção E05-R02, no fim desta spec.
 - **Agrupamento por fornecedor:**
   - a parcela não tem vínculo com a rodada (E05-01), e um fornecedor tem no máximo uma rodada ativa;
   - cada grupo mostra a rodada ativa do fornecedor, quando ela existe;
@@ -171,7 +171,7 @@ Nenhum outro teste existente pode ser alterado por esta fatia.
 - Nenhuma página mostra nome, e-mail ou quantidade individual de outro comprador.
 - Nenhuma página do comprador mostra o mínimo do fornecedor, o valor elegível nem o que falta em reais.
 - Toda alteração passa por `definir_interesse` ou `remover_pendente`.
-- Nenhuma resposta 409 tem formulário de quantidade para o produto recusado.
+- Nenhuma resposta 409 por `InteressesBloqueados` ou `ProdutoForaDaRodada` tem formulário de quantidade para o produto recusado. O 409 por `InteresseDesatualizado` (correção E05-R02) mostra o formulário com os valores atuais.
 
 ## Casos-limite e concorrência
 
@@ -181,6 +181,43 @@ Nenhum outro teste existente pode ser alterado por esta fatia.
 - **Conta de fornecedor ou administrador** chamando as rotas: recusada pela política (T-25).
 - **Visitante anônimo:** redirecionado para `/entrar/`.
 - **`quantidade` com `"><b>x</b>`:** aparece escapada no `value`.
+
+## Correção E05-R02 — formulários com pendência própria (2026-10-18)
+
+O diagnóstico e a decisão estão na correção E05-R02 da E05-01. Esta seção define o que muda nas rotas e nas telas. O revisor reproduziu o defeito pelas duas origens: um `POST /interesses/` com `quantidade=0`, de A com 6 reservados e 4 pendentes, responde 302 e deixa 4 reservados.
+
+**Campos novos** nos dois formulários (quantidade e pendentes), no carrinho e no catálogo:
+
+- `reservado_atual` e `pendente_atual`, ocultos (`type="hidden"`);
+- preenchidos com o `ResumoDoInteresse` do comprador no produto, lido para montar a página, no formato de `formatar_quantidade`.
+
+**Conversão na rota** (`FormularioInteresse`):
+
+- Os dois campos são `CharField(max_length=30, required=False)` e são convertidos por `quantidade()`, que aceita vírgula.
+- Os dois ausentes ou vazios: `esperado=None`. É o caso de clientes que não são a página.
+- Os dois presentes, cada um convertível e maior ou igual a zero: `esperado=ResumoDoInteresse(reservado, pendente)`.
+- Qualquer outro caso, como só um dos dois, texto inválido ou negativo, tem a mesma resposta de `InteresseDesatualizado`. O serviço não é chamado.
+
+**Chamadas:** `definir_interesse(conta, produto, valor, esperado=esperado)` e `remover_pendente(conta, produto, valor, esperado=esperado)`.
+
+**Respostas:**
+
+| Situação | Resposta |
+|---|---|
+| `InteresseDesatualizado`, ou campos de estado inválidos | 409 com a página de origem relida. A mensagem do serviço fica dentro do `<form>` do produto, que aparece com os valores atuais do banco: `quantidade`, `reservado_atual` e `pendente_atual`. Nada é gravado. |
+| sucesso de `definir_interesse` | 302, como antes, com a mensagem montada pelas três regras abaixo |
+
+Mensagem de sucesso de `definir_interesse`:
+
+- com pendente final zero: "Interesse atualizado: <produto>, reservado <x>.", sem mudança;
+- com pendente final maior que zero: "Interesse atualizado: <produto>, reservado <x>, pendente <y>.";
+- com `total > 0` e reservado final diferente de `total`, a frase " As pendências da fila, inclusive as suas, são atendidas primeiro." é acrescentada ao final.
+
+A mensagem de `remover_pendente` não muda.
+
+**Botão "Remover"** (`quantidade=0`): pela correção E05-R02, remove o item inteiro, com as pendências e o reservado do comprador no produto. O texto do botão continua "Remover".
+
+**Testes existentes:** nenhum precisa mudar. Os envios sem os campos novos caem em `esperado=None`, e os critérios A-1 a A-20 continuam valendo. No A-6, o reenvio com o total já atingido continua não gravando nada.
 
 ## Dependências e decisões em aberto
 

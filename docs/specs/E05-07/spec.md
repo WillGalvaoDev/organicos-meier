@@ -116,6 +116,16 @@ Fica em `apps/interesses/servicos.py`. `motivo` vale `"suspensao"` ou `"remocao_
 - **Conta removida:** as mesmas regras e os mesmos casos da suspensão. A diferença é que não há reversão, porque a remoção é definitiva.
 - **Remoção de conta suspensa:** nada a remover. Os interesses já saíram na suspensão.
 
+## Correção E05-R03 — suspensão e remoção em paralelo com alteração de preço (2026-10-18)
+
+O diagnóstico e a regra estão na correção E05-R03 da E05-01. Nesta fatia, a mudança é esta:
+
+- `_travar` em `apps/contas/moderacao.py` passa a travar a conta com `select_for_update(no_key=True)`. Isso vale para `suspender`, `reativar` e `remover`.
+- O `UPDATE` da situação continua restrito a `situacao` (`update_fields`).
+- O resto da moderação não muda: a revalidação depois da trava, a auditoria, o banimento do e-mail, o encerramento das sessões e os sinais na mesma transação.
+- A serialização entre moderação e operações de interesse continua pela conta, porque `FOR NO KEY UPDATE` conflita com `FOR NO KEY UPDATE`. A-8 e A-14 continuam valendo sem mudança.
+- A alteração de preço que avisa o comprador durante a suspensão ou a remoção dele termina normalmente. O aviso fica gravado, mesmo que a conta acabe suspensa ou removida: a notificação é histórico da conta (E04-01).
+
 ## Dependências e decisões em aberto
 
 - Depende de E02-08, E05-01 e E05-02.

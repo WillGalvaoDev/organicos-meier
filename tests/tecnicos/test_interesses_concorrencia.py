@@ -10,9 +10,10 @@ from django.db import connection, transaction
 
 from apps.catalogo.models import Produto, Unidade
 from apps.catalogo.quantidades import QuantidadeInvalida
-from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento
-from apps.contas.models import Conta
+from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento, editar_produto
+from apps.contas.models import Conta, EmailBanido
 from apps.contas.moderacao import remover, suspender
+from apps.interesses import receptores, servicos
 from apps.interesses.consultas import total_reservado
 from apps.interesses.fila import alocar_pendentes
 from apps.interesses.models import ParcelaDeInteresse
@@ -20,9 +21,13 @@ from apps.interesses.servicos import (
     EstoqueInsuficiente,
     RemocaoAcimaDoPendente,
     adicionar_interesse,
+    definir_interesse,
+    interesse_do_comprador,
     reduzir_interesse,
     remover_pendente,
 )
+from apps.notificacoes.models import Notificacao
+from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.condicoes import travar_rodada_para_interesses
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.interesses import cenario, pendente, reservada
@@ -329,3 +334,97 @@ def test_atendimento_da_fila_e_suspensao_se_serializam(fila_primeiro: bool) -> N
         comprador=a, situacao__in=("ativa", "pendente")
     ).exists()
     assert total_reservado(produto) == 0
+
+
+# --- E05-R03: alteração de preço em paralelo com operações do comprador e a moderação ---
+
+
+def _edicao_de_preco(admin: Conta, produto: Produto) -> Any:
+    """Trava o produto como `editar_produto` faz, espera a outra operação travar a conta dela e
+    só então edita o preço."""
+
+    def edicao(barreira: Any) -> None:
+        with transaction.atomic():
+            Produto.objects.select_for_update().get(pk=produto.pk)
+            barreira.wait(timeout=10)
+            editar_produto(admin, produto, preco="15.99")
+
+    return edicao
+
+
+def _confere_preco_e_aviso(produto: Produto, conta: Conta) -> None:
+    assert Produto.objects.get(pk=produto.pk).preco == Decimal("15.99")
+    alteracao = EntradaAuditoria.objects.get(acao="produto.alterar_preco")
+    avisos = Notificacao.objects.filter(conta=conta, evento="preco_alterado")
+    assert [n.chave for n in avisos] == [f"preco_alterado:{alteracao.pk}:{conta.pk}"]
+
+
+def _servico_de_interesse(nome: str, conta: Conta, produto: Produto) -> Any:
+    chamadas = {
+        "adicionar": lambda: adicionar_interesse(conta, produto, "1"),
+        "definir": lambda: definir_interesse(conta, produto, "3"),
+        "reduzir": lambda: reduzir_interesse(conta, produto, "1"),
+        "remover_pendente": lambda: remover_pendente(conta, produto, "1"),
+    }
+    return chamadas[nome]
+
+
+@pytest.mark.parametrize("servico", ["adicionar", "definir", "reduzir", "remover_pendente"])
+def test_preco_e_operacao_do_comprador_sem_deadlock(
+    servico: str, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-21
+    _, produto, _ = cenario("10")
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+    reservada(a, produto, 1)
+    if servico == "remover_pendente":
+        pendente(a, produto, 1)
+    original = servicos._travar_conta
+
+    def operacao(barreira: Any) -> Any:
+        def com_pausa(comprador: Conta) -> Conta:
+            travada = original(comprador)
+            barreira.wait(timeout=10)  # a conta já está travada pelo serviço
+            return travada
+
+        monkeypatch.setattr(servicos, "_travar_conta", com_pausa)
+        return _servico_de_interesse(servico, a, produto)()
+
+    resultados = executar_em_paralelo(_edicao_de_preco(admin, produto), operacao)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    _confere_preco_e_aviso(produto, a)
+    resumo = interesse_do_comprador(a, produto)
+    esperado = {
+        "adicionar": (D("2"), D("0")),
+        "definir": (D("3"), D("0")),
+        "reduzir": (D("0"), D("0")),
+        "remover_pendente": (D("1"), D("0")),
+    }[servico]
+    assert (resumo.reservado, resumo.pendente) == esperado
+
+
+@pytest.mark.parametrize("acao", [suspender, remover], ids=["suspensao", "remocao"])
+def test_preco_e_moderacao_sem_deadlock(acao: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    # E05-07 A-15 (suspensão) e A-16 (remoção)
+    _, produto, _ = cenario("10")
+    admin = Conta.objects.get(papel="administrador")
+    a = ContaFactory.create()
+    reservada(a, produto, 1)
+    original = receptores.remover_interesses_do_comprador  # type: ignore[attr-defined]
+
+    def moderacao(barreira: Any) -> Any:
+        def com_pausa(conta: Conta, *, motivo: str) -> int:
+            barreira.wait(timeout=10)  # a conta já foi atualizada pela moderação
+            return original(conta, motivo=motivo)
+
+        monkeypatch.setattr(receptores, "remover_interesses_do_comprador", com_pausa)
+        return acao(admin, a)
+
+    resultados = executar_em_paralelo(_edicao_de_preco(admin, produto), moderacao)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    _confere_preco_e_aviso(produto, a)
+    a.refresh_from_db()
+    assert a.situacao == ("suspensa" if acao is suspender else "removida")
+    assert not ParcelaDeInteresse.objects.filter(comprador=a, situacao="ativa").exists()
+    if acao is remover:
+        assert EmailBanido.objects.filter(email_normalizado=a.email_normalizado).exists()
