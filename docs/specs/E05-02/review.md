@@ -76,3 +76,31 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 Pendentes são criadas por fábrica, porque o fluxo que as produz é da E11. O receptor de `rodada_aberta` não tem teste de efeito próprio (a rodada nasce sem estoques); o teste de abertura existente garante que ele não quebra a abertura. Postgres e serviços reais, sem navegador.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado ou afrouxado; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R01 — estoque ilimitado que passa a ter limite (critério A-17)
+
+**Red.** Com as provas do revisor incluídas literalmente (`test_sem_limite_para_finito` e `test_controle_transicoes_estoque`), mais o espião de `_alocar_produto`, o caso (iii) e os pares de controle, em `tests/tecnicos/test_interesses_fila.py`: **2 failed, 26 passed**, os dois com `TypeError: '>' not supported between instances of 'decimal.Decimal' and 'NoneType'` (`test_sem_limite_para_finito[0]` e `[3]`). As outras provas passaram já no Red porque descrevem o comportamento que a correção preserva (as outras transições, o caso (iii) e os pares).
+
+**Green.** `atender_fila_no_aumento_de_estoque` (`apps/interesses/receptores.py`) classifica pelo par (`anterior`, `novo`): `anterior` nulo (ilimitado) retorna sem alocar, pois nada foi liberado; finito → `None` e finito → maior chamam `_alocar_produto`; a comparação numérica só ocorre com os dois lados finitos. A validação de reservas continua em `alterar_estoque`. Arquivo: **28 passed**.
+
+### Não conformidade de TDD (E05-R04): critérios A-15 e A-16
+
+**O que aconteceu:** testes escritos depois do código de produção; **sem Red observado**. Causas e tratamento: ver o registro consolidado em [E05-01/review.md](../E05-01/review.md), que confirmo para estes critérios. Não houve exceção válida do AGENTS.md.
+
+### Sensibilidade (mutação), não Red — E05-02
+
+Comando: `uv run pytest -q -p no:cacheprovider --tb=line <testes>`; mutação aplicada, teste rodado, mutação desfeita e teste rodado de novo (árvore limpa).
+
+| Critério | Mutação | Resultado mutado | Desfeita |
+|---|---|---|---|
+| A-15 e A-16 | retirar a trava de fornecedor e rodada e a de parcelas (`consultas._parcelas`) no caminho da fila e do serviço concorrente | A-15: 1 failed em 16,8 s, `AssertionError: [AssertionError('a outra conexão não ficou esperando pela trava'), None]`. **A-16: 1 passed (não detectada)** | 2 passed |
+| A-16 | retirar **todas** as travas depois da conta (fornecedor, rodada, produto, estoque e parcelas) | **1 passed: a mutação não é detectada** | 1 passed |
+
+**Limite do teste de A-16.** As duas operações disparam juntas e não há ponto de retenção; o resultado final correto sai mesmo sem travas na intercalação que a máquina produz. **Reforço proposto:** uma variante determinística em que a redução de D segura as travas até a adição de E aparecer esperando (o mesmo arranjo do A-15), de modo que a ausência de trava produza um estado final errado ou uma falha de sincronização.

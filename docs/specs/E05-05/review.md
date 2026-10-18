@@ -90,3 +90,29 @@ Justificativa: seção "Relação com a E03-08" do `spec.md` da E05-05. O diff d
 ## Limites da verificação
 
 Cliente HTTP do Django, sem navegador (nenhum comportamento de HTMX; as rotas respondem página inteira ou redirecionamento). O prazo do fechamento no carrinho é da E06; o pedido e o pagamento, da E08.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. **Nenhum teste existente foi alterado**, nem o da E03-08 nem os desta fatia; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R02 — formulários com pendência própria (critérios A-21 a A-24)
+
+**Red.** `uv run pytest tests/tecnicos/test_interesses_carrinho.py -q`: **7 failed, 35 passed**, por asserção: A-21 (`reservado_atual` ausente nos formulários), A-22 (`assert 302 == 409` no reenvio, nas duas origens), A-24 (`assert 302 == 409` nos três estados inválidos e no reenvio da remoção de pendentes). Passaram já no Red os casos de A-23 (`quantidade=0` com e sem os campos de estado, nas duas origens, inclusive a prova `test_http_zero_remove_com_pendencia` do revisor, literal), porque o serviço corrigido na parte dos serviços (acima) já zera o item; o Red desse critério está nos serviços (E05-01 A-18).
+
+**Green.** Mesmo arquivo: **42 passed**.
+- `FormularioInteresse`: campos `reservado_atual` e `pendente_atual` (`CharField(max_length=30, required=False)`), convertidos por `quantidade()` com vírgula trocada por ponto; nenhum presente = sem estado esperado; só um, texto inválido ou negativo = mesma resposta do estado desatualizado (o serviço não é chamado).
+- Formulários de quantidade e de pendentes levam os campos ocultos com o estado lido para montar a página.
+- `InteresseDesatualizado` (ou campos inválidos): 409 com a página de origem relida, a mensagem dentro do `<form>` do produto e o formulário com os valores atuais do banco.
+- Mensagem de sucesso com pendência final: "..., reservado <x>, pendente <y>." e, quando o reservado final difere do total pedido, o acréscimo "As pendências da fila, inclusive as suas, são atendidas primeiro."
+
+### Decisões técnicas
+
+- **A-21, "nas duas páginas":** o formulário de pendentes só existe no carrinho (a spec do catálogo não o prevê). O teste confere os campos nos formulários de quantidade das duas páginas e no de pendentes do carrinho.
+- **Teste existente A-15 (suspensão entre a política e a trava):** o `monkeypatch` dele substitui `definir_interesse` por uma função de três parâmetros. Para **não mexer no teste**, a rota só passa `esperado` quando a página o enviou; sem ele, chama o serviço exatamente como antes.
+
+### Não conformidade de TDD (E05-R04)
+
+Esta fatia não tem critério de concorrência próprio (o A-21 de concorrência está na E05-01). Os critérios novos acima seguiram Red → Green completo.

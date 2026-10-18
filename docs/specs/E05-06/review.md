@@ -69,3 +69,14 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 Cliente HTTP do Django e Postgres reais, sem navegador. O aviso é só no site (matriz da E04-01). O retorno ao interesse quando o valor elegível cai abaixo do mínimo é da E06.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R03 — travas implícitas dos avisos
+
+Nenhuma mudança no código desta fatia, como a spec da correção determina: o receptor e a emissão continuam na mesma transação da alteração de preço, sem `on_commit` e sem trava de conta na edição. A correção está nas travas de conta (`select_for_update(no_key=True)`) e os critérios são o A-21 da E05-01 e o A-15 e o A-16 da E05-07, com Red real (`deadlock detected`) e Green registrados em [E05-01/review.md](../E05-01/review.md). Os testes A-1 a A-9 desta fatia seguem verdes sem alteração.

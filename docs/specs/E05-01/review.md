@@ -285,3 +285,49 @@ O cenário 63/85/109 usa `float` e `"1000000000.000"` em `test_entradas_invalida
 ## Limites da verificação
 
 Cliente e banco reais (Postgres); sem navegador. A recusa do prazo de fechamento vencido é da E06. As telas e as rotas são da E05-05.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado, afrouxado ou removido: todas as mudanças em testes são acréscimos. Suíte completa: **1657 passed** (eram 1619). `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
+
+### E05-R02 — total desejado com pendência própria (critérios A-17 a A-20)
+
+**Andaime sem comportamento (exceção técnica):** a exceção `InteresseDesatualizado` e o argumento `esperado` aceito e ignorado em `definir_interesse` e `remover_pendente`.
+
+**Red.** `uv run pytest tests/tecnicos/test_interesses_servicos.py -q`: **4 failed, 48 passed**, por asserção (`DID NOT RAISE InteresseDesatualizado` em A-17 (a), A-19 (b) e A-20; `ResumoDoInteresse(...) == ResumoDoInteresse(0, 0)` falhando em A-18). Passaram já no Red os casos que descrevem o comportamento anterior, que a correção preserva: A-17 (b) e (c), e A-19 (a).
+
+**Green.** `definir_interesse` passou a: calcular o estado atual a partir das parcelas travadas; devolver sem gravar quando o pedido já está cumprido (mesmo com `esperado` diferente); recusar com `InteresseDesatualizado` quando `esperado` difere do estado; com total zero, remover primeiro as pendências (`interesse.remover_pendente`), depois o reservado (`interesse.reduzir`) e por último atender a fila. `remover_pendente` ganhou a mesma conferência de `esperado`, depois das travas e antes de remover. Os três arquivos de serviços, fila e remoção: **96 passed**. A-17 (a) a (c), A-18, A-19 e A-20 em `tests/tecnicos/test_interesses_servicos.py`, com os invariantes (total reservado ≤ 6 e reservado + pendente ≤ original) conferidos passo a passo.
+
+A prova `test_definir_com_pendencia_propria` do revisor (que espera (4, 4) três vezes) **não** foi incluída, conforme a decisão da correção: ela contradiz a FIFO. As provas `test_zero_remove_com_pendencia_propria` e `test_http_zero_remove_com_pendencia` valem: a primeira está coberta por A-18 (resultado (0, 0)) e a segunda entrou literal em `test_interesses_carrinho.py` (E05-05, A-23).
+
+### E05-R03 — deadlock entre preço e operações do comprador (critério A-21)
+
+**Red real.** Os testes foram escritos **antes** da correção, contra o código de `32b05a2` mais as correções R01 e R02: `uv run pytest tests/tecnicos/test_interesses_concorrencia.py -k preco -q`: **6 failed**, todos com `deadlock detected` (`['None', 'deadlock detected ...']`): `adicionar`, `definir`, `reduzir`, `remover_pendente` (A-21) e, na E05-07, suspensão (A-15) e remoção da conta (A-16). A pausa fica dentro do serviço: a função `_travar_conta` é substituída por outra que chama a original e espera a barreira, e a edição de preço trava o produto com `select_for_update()` e espera a mesma barreira antes de chamar `editar_produto`.
+
+**Green.** `_travar_conta` (`apps/interesses/servicos.py`) e `_travar` (`apps/contas/moderacao.py`) passaram a usar `select_for_update(no_key=True)`. Arquivo de concorrência: **22 passed**; suíte completa **1657 passed**. Para cada serviço, o teste confere: sem exceção nas duas operações, preço 15,99, uma notificação `preco_alterado` com a chave da alteração e o efeito do serviço gravado. Os testes A-8 e A-14 da E05-07 e o A-15 da E05-01, que dependem de a conta serializar a adição e a moderação, continuam verdes.
+
+### Não conformidade de TDD (E05-R04): critérios A-13, A-14, A-15 e A-16
+
+**Critérios:** E05-01 A-13 a A-16.
+
+**O que aconteceu:** os quatro testes de concorrência foram escritos **depois** do código de produção correspondente (os serviços e todas as suas travas foram escritos no mesmo passo do Green funcional). **Não houve Red observado nesses critérios.** Os registros originais acima dizem isso; este registro não altera o que eles dizem.
+
+**Causas (confirmo as do especificador):** (1) classifiquei como "exceção" algo que não é scaffolding sem comportamento testável, e a exceção não existe no AGENTS.md; (2) no Green escrevi todas as travas de uma vez, e nenhum teste em falha as exigia; (3) repeti o desvio nas fatias seguintes em vez de parar e escalar a dúvida; (5) cada fatia saiu em um commit com produção e testes juntos. Sobre (4), os critérios de concorrência descreviam o arranjo do teste, mas não como obter o Red; isso não justifica o que fiz.
+
+**Tratamento (opção (a), decidida pelo responsável):** este registro mais a prova de sensibilidade abaixo. Não reconstitui Red histórico e **não** autoriza dizer que o TDD original ocorreu.
+
+### Sensibilidade (mutação), não Red — E05-01
+
+Comando de cada rodada: `uv run pytest -q -p no:cacheprovider --tb=line <testes>`. A mutação foi aplicada, o teste rodou, a mutação foi desfeita (árvore limpa conferida com `git status`) e o teste rodou de novo.
+
+| Critério | Mutação | Resultado mutado | Desfeita |
+|---|---|---|---|
+| A-15 | `servicos.py`: `Conta.objects.select_for_update(no_key=True).get(pk=comprador.pk)` → `Conta.objects.get(pk=comprador.pk)` | 1 failed em 16,6 s: `AssertionError('a outra conexão não ficou esperando pela trava')` | 1 passed |
+| A-14 | `servicos.py`: `atual = Produto.objects.get(pk=produto.pk)` (produto relido sob trava) → `atual = produto` (validar com a instância recebida) | 1 failed, 1 passed: `AssertionError: assert False` em `test_adicao_e_alteracao_de_incremento_se_serializam[False]` (a adição passou a ser aceita com o incremento antigo) | 2 passed |
+| A-13 e A-16 | retirar as travas de fornecedor e rodada (`travar_rodada_para_interesses`), de produto e estoque (`travar_estoque`) e de parcelas (`_parcelas`) | 2 failed em 16,8 s: A-13 com `AssertionError('a outra conexão não ficou esperando pela trava')` e A-16 com `AssertionError: []` (nenhuma adição recusada: sobrevenda) | 2 passed |
+| A-13 e A-16 | retirar **só** as travas de fornecedor e rodada | **2 passed: a mutação não é detectada** | 2 passed |
+
+**Limites dos testes.** (1) Nos critérios de "segurar a trava", quando a proteção some a falha vem da asserção de sincronização do próprio teste (`a outra conexão não ficou esperando pela trava`), depois do prazo de 15 s; é uma falha por asserção com mensagem, mas lenta. (2) A trava de fornecedor e rodada, retirada sozinha, não quebra nenhum teste, porque produto, estoque e parcelas já serializam: o caso já registrado. **Reforço proposto:** um critério que exercite duas operações de fornecedores iguais sobre produtos **diferentes** do mesmo fornecedor (a trava do fornecedor é a única comum), segurando a primeira até a segunda aparecer esperando.

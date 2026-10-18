@@ -69,3 +69,30 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 Parcelas pendentes criadas por fábrica (o fluxo que as produz é da E11). A rota e a tela são da E05-05. Postgres real, sem navegador.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R02 — `esperado` em `remover_pendente`
+
+O argumento opcional `esperado` foi acrescentado e testado no critério A-20 da E05-01 (`tests/tecnicos/test_interesses_servicos.py::test_remover_pendente_com_esperado`): Red com `DID NOT RAISE InteresseDesatualizado`, Green com a conferência depois das travas e antes de remover. A regra da E05-03 não mudou; o teste `test_interesses_remover_pendente.py` segue verde sem alteração. Em `remover_pendente`, o corpo que tira as pendências virou a função interna `_tirar_pendencias`, compartilhada com `definir_interesse(..., "0")` (refatoração coberta pelos testes existentes).
+
+### E05-R03
+
+`_travar_conta` usa `select_for_update(no_key=True)`; o critério A-21 (caso `remover_pendente`) está em `test_interesses_concorrencia.py::test_preco_e_operacao_do_comprador_sem_deadlock[remover_pendente]`, com Red real (`deadlock detected`) e Green. Ver o registro consolidado em [E05-01/review.md](../E05-01/review.md).
+
+### Não conformidade de TDD (E05-R04): critério A-9
+
+**O que aconteceu:** teste escrito depois do código de produção; **sem Red observado**. Causas e tratamento: ver [E05-01/review.md](../E05-01/review.md), que confirmo para este critério.
+
+### Sensibilidade (mutação), não Red — E05-03
+
+Comando: `uv run pytest -q -p no:cacheprovider --tb=line tests/tecnicos/test_interesses_concorrencia.py::test_remocao_e_atendimento_da_fila_se_serializam`.
+
+| Critério | Mutação | Resultado mutado | Desfeita |
+|---|---|---|---|
+| A-9 | retirar a trava do fornecedor e a das parcelas: `travar_rodada_para_interesses`, `consultas._parcelas` e, em `remover_pendente`, `Fornecedor.objects.select_for_update()` e `Produto.objects.select_for_update()` | 2 failed, por asserção de estado: `AssertionError: assert 'ativa' == 'removida'` (ordem remoção primeiro) e `assert False` (ordem fila primeiro) | 2 passed |

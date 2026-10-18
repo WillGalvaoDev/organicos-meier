@@ -75,3 +75,30 @@ Fontes lidas antes de editar: especificação funcional v1.6, infraestrutura v1.
 ## Limites da verificação
 
 Postgres real, sem navegador. O cancelamento dos pedidos não pagos do suspenso e do removido é da E08 (a spec registra a pergunta para a E08). A D-1 foi aplicada como decidida (opção a), sem alteração.
+
+
+---
+
+## Correções do implementador após o parecer de `32b05a2` (2026-10-18)
+
+Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado; só acréscimos. Suíte completa: **1657 passed**.
+
+### E05-R03 — suspensão e remoção em paralelo com alteração de preço (critérios A-15 e A-16)
+
+**Red real:** `uv run pytest tests/tecnicos/test_interesses_concorrencia.py -k preco -q` contra o código anterior: **6 failed** com `deadlock detected`, dos quais 2 são estes: `test_preco_e_moderacao_sem_deadlock[suspensao]` (A-15) e `[remocao]` (A-16). A pausa fica dentro da moderação: `remover_interesses_do_comprador` é substituída, em `apps.interesses.receptores`, por uma função que espera a barreira e chama a original; a edição de preço trava o produto e espera a mesma barreira.
+
+**Green:** `_travar` de `apps/contas/moderacao.py` passou a usar `select_for_update(no_key=True)` (vale para `suspender`, `reativar` e `remover`). O teste confere: sem exceção, preço 15,99, aviso gravado com a chave da alteração, conta `suspensa` ou `removida`, parcela `removida` e, na remoção, e-mail banido. Arquivo de concorrência: **22 passed**.
+
+### Não conformidade de TDD (E05-R04): critérios A-8, A-9 e A-14
+
+**O que aconteceu:** testes escritos depois do código de produção; **sem Red observado**. Causas e tratamento: ver [E05-01/review.md](../E05-01/review.md), que confirmo para estes critérios.
+
+### Sensibilidade (mutação), não Red — E05-07
+
+Comando: `uv run pytest -q -p no:cacheprovider --tb=line tests/tecnicos/test_interesses_concorrencia.py::test_adicao_e_suspensao_ou_remocao_se_serializam tests/tecnicos/test_interesses_concorrencia.py::test_atendimento_da_fila_e_suspensao_se_serializam`.
+
+| Critério | Mutação | Resultado mutado | Desfeita |
+|---|---|---|---|
+| A-8, A-9 e A-14 | `moderacao.py`: `Conta.objects.select_for_update(no_key=True).get(pk=conta.pk)` → `Conta.objects.get(pk=conta.pk)` | **6 passed: a mutação não é detectada** | 6 passed |
+
+**Limite do teste.** Os testes não detectam a leitura sem trava em `_travar` da moderação. A causa provável (não verificada por outra prova) é que o `UPDATE` da situação, na própria moderação, já toma a trava da linha, e a adição que espera a conta espera por esse `UPDATE`. A trava explícita só importa na janela entre a leitura e o `UPDATE`, que esses critérios não exercitam. **Reforço proposto:** um critério com duas moderações concorrentes sobre a mesma conta (por exemplo, `suspender` e `remover`), segurando a primeira entre a leitura e o `UPDATE`, em que a segunda precisa revalidar a situação depois da trava e ser recusada com `ModeracaoInvalida`; sem a trava, as duas passariam pela validação.
