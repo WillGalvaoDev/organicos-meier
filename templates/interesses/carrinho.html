@@ -31,6 +31,8 @@
                   <form method="post" action="{% url 'interesses_remover_pendentes' %}">
                     {% csrf_token %}
                     <input type="hidden" name="produto" value="{{ linha.produto.pk }}">
+                    <input type="hidden" name="reservado_atual" value="{{ item.pendentes.reservado_atual }}">
+                    <input type="hidden" name="pendente_atual" value="{{ item.pendentes.pendente_atual }}">
                     <input type="text" name="quantidade" value="{{ item.pendentes.valor }}" aria-label="Pendentes de {{ linha.produto.nome }}">
                     <button type="submit">Remover pendentes</button>
                     {% if item.pendentes.mensagem %}<p role="alert">{{ item.pendentes.mensagem }}</p>{% endif %}
