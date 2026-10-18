@@ -1,5 +1,237 @@
 # E05-01 — Revisão independente
 
+## Nova revisão independente — correções em 8728b4b
+
+Commit: `8728b4b3f459d97bf9c1ce1c74407bbaa2a8655e` (`main`, PR #66), revisto em 2026-10-18. Este parecer substitui o estado de aprovação anterior, cujo histórico permanece abaixo.
+
+**Parecer global: E05 REPROVADA**, por R05 (importante) na apresentação de conflitos da E05-05. R01 e R03 estão corrigidos; o contrato de R02 foi decidido e seu comportamento de serviço está conforme; R04 recebeu o tratamento excepcional aprovado, sem alegação de Red retroativo.
+
+Verificações independentes:
+
+- `uv run pytest -q`: **1657 passed em 133,38 s** (todas as fatias e regressões).
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- `uv run pytest -c pyproject.toml $env:TEMP/test_review_e05_8728b4b.py -q --tb=short`: **17 passed, 3 failed em 2,98 s**. As 16 provas anteriores adaptadas ao contrato aprovado passaram; o controle adicional pelo catálogo passou; as três falhas adicionais são R05. Código e reprodução no [parecer consolidado](../E05-01/review.md).
+
+### Revalidação R01 a R04
+
+| Achado | Resultado | Evidência |
+|---|---|---|
+| R01 | Encerrado | Transição ilimitado → finito funciona com e sem reservas; controles das outras transições passaram. E05-02 A-17 e provas próprias reexecutados. O receptor não compara Decimal com None. |
+| R02 | Contrato decidido; serviço corrigido | Decisão registrada na spec da E05-01, confirmada pelo responsável: FIFO inclui pendências próprias; zero remove o item inteiro; estado esperado protege o reenvio; sem estado esperado cada chamada é nova. E05-01 A-17–A-20 e E05-05 A-21–A-24 verdes. A integração de apresentação ainda tem R05 abaixo. |
+| R03 | Encerrado | Conta usa FOR NO KEY UPDATE em interesses e moderação. Passaram os seis cenários de preço × adicionar/definir/reduzir/remover pendentes/suspender/remover conta, com efeitos e notificações conferidos. As provas próprias de preço × interesse e preço × suspensão também passaram com a força real da trava corrigida. |
+| R04 | Tratamento excepcional aceito | A spec registra a opção (a) aprovada: não conformidade, causas, prevenção e sensibilidade por mutação; quando uma mutação não falha, registrar limite e propor reforço. Os quatro review.md afetados contêm esse tratamento e distinguem mutação de Red. Não há atestado de que o TDD histórico ocorreu. |
+
+A prova antiga que exigia (4,4) em três chamadas sem estado esperado foi substituída pela sequência aprovada: (6,4) → (6,2), e reenvio com esperado (6,4) recusado sem alterar esse estado. Manter aquela expectativa contrariaria a decisão e o FIFO. As provas antigas que tomavam FOR UPDATE na conta em transação externa passaram a tomar FOR NO KEY UPDATE, para não reintroduzir artificialmente a trava retirada da produção; os testes versionados novos fazem a pausa dentro do serviço real.
+
+TDD das correções: conferidos os registros de R01 (2 falhas por TypeError), R02 serviços (4 falhas), R02 tela (7 falhas) e R03 (6 falhas por deadlock), seus comandos, motivos, Green e commits correspondentes. A cronologia histórica é evidência documental do implementador, não execução presenciada pelo revisor. As mutações históricas de R04 não foram reexecutadas nesta rodada. Os limites declarados permanecem: E05-02 A-16 não detectou remoção de todas as travas; E05-07 A-8/A-9/A-14 não detectaram retirada da leitura travada da moderação. O tratamento aprovado admite registrar esses limites e propor reforços; os reforços estão propostos, não implementados. A asserção de sincronização com prazo é expressamente aceita pela seção de prevenção da correção, distinta de erro de infraestrutura/tempo esgotado do executor. Não se exige repetir ficticiamente um Red histórico.
+
+### Matriz de aceite reexecutada
+
+| Fatia | Matriz atual | Parecer da fatia |
+|---|---|---|
+| E05-01 | A-1 a A-21 | APROVADO no contrato corrigido |
+| E05-02 | A-1 a A-17 | APROVADO, com limites de sensibilidade registrados em R04 |
+| E05-03 | A-1 a A-9; esperado e trava cobertos também em E05-01 A-20/A-21 | APROVADO |
+| E05-04 | A-1 a A-15 | APROVADO, mantido |
+| E05-05 | A-1 a A-24 | REPROVADO: cenários versionados verdes, mas extensão do retorno de conflito falha em R05 |
+| E05-06 | A-1 a A-9; concorrência em E05-01/E05-07 | APROVADO |
+| E05-07 | A-1 a A-16 | APROVADO, com limites de sensibilidade registrados em R04 |
+
+### R05 — Importante: conflito sem mensagem quando o formulário deixa de existir
+
+**Requisito:** E05-05/spec.md, correção E05-R02, tabela de respostas: `InteresseDesatualizado` deve retornar 409 com página relida, mensagem de conflito e estado atual. A-22/A-24 exercitam a resposta somente enquanto ainda há reserva/pendência para manter o formulário na página.
+
+**Referências de código:** `apps/interesses/views.py:85` cria `Retorno(409, None, ..., mensagem=...)`, sem mensagem de topo; `apps/interesses/consultas.py:121` omite linhas com reservado e pendente zero; `templates/interesses/carrinho.html:30` omite o formulário de pendentes quando não há pendências. A mensagem é renderizada somente dentro do formulário que acaba de desaparecer.
+
+**Reproduções independentes (todas recebem 409 sem o texto “Seu interesse neste produto mudou.”):**
+
+1. A tem 4 reservados, sem pendências. Outra ação remove o item. A página antiga envia quantidade 3, estado esperado (4,0), origem carrinho. O servidor recusa corretamente, mas responde somente com o carrinho vazio, sem explicar a recusa. O controle com origem catálogo exibe a mensagem e passa.
+2. A tem 2 pendentes, sem reserva. Enviar remoção de 2 com esperado (0,2) retorna 302. Reenviar o mesmo corpo retorna 409 com carrinho vazio e sem mensagem.
+3. Mesmo caso, com 4 reservados: a linha permanece, porém o formulário de pendentes desaparece após a primeira remoção. O reenvio retorna 409 com os 4 reservados, mas sem a mensagem de conflito.
+
+**Impacto:** a proteção de estado no backend funciona, mas o comprador não recebe a explicação nem a orientação exigidas para recuperar o envio. Não foi observada gravação indevida ou perda de dados nesses casos. É uma falha funcional de apresentação, classificada como importante, não como deadlock ou falha de integridade.
+
+**Devolução ao implementador:** garantir feedback visível de conflito mesmo quando a linha ou o formulário de origem não existe mais, preservando estado atual e regras de editabilidade. Cobrir os três casos com Red → Green. Não reexibir ações proibidas apenas para hospedar uma mensagem. A escolha de apresentação/fallback é técnica; não requer nova decisão comercial. Registrar de forma compatível com o contrato a resposta quando não há formulário aplicável.
+
+### Limites, arquivos e próximo gate
+
+Somente os sete `review.md` foram alterados nesta revisão. Produção, especificações e testes versionados permanecem intactos. Serviços, cliente HTTP Django e PostgreSQL reais foram usados; não houve inspeção visual em navegador ou acionamento externo. Logs locais: `%TEMP%/om_e05_8728b4b_suite.log` e `%TEMP%/om_e05_8728b4b_probes.log`.
+
+Próximo gate: corrigir R05 com evidências Red/Green e revalidar os retornos de conflito, a E05-05 e regressões pertinentes. Não é necessário reabrir a decisão de R02 ou refazer o tratamento histórico de R04.
+
+### Provas independentes reproduzíveis
+
+Salvar o bloco a seguir em `$env:TEMP/test_review_e05_8728b4b.py` e executar o comando de probes acima a partir da raiz, sem outra suíte concorrendo pelo banco de testes. Resultado no commit auditado: **17 passed, 3 failed**.
+
+```python
+from decimal import Decimal as D
+import pytest
+from django.db import transaction
+from django.test import Client
+from apps.contas.models import Conta
+from apps.catalogo.models import Produto
+from apps.catalogo.servicos import editar_produto
+from apps.rodadas.estoque import alterar_estoque
+from apps.interesses.servicos import definir_interesse, adicionar_interesse
+from apps.interesses.models import ParcelaDeInteresse
+from tests.apoio.interesses import cenario, reservada, pendente
+from tests.fabricas import ContaFactory
+from tests.apoio.concorrencia import executar_em_paralelo
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('reserva', [0, 3])
+def test_sem_limite_para_finito(reserva):
+    _, p, e = cenario(None)
+    a = ContaFactory.create()
+    if reserva:
+        reservada(a, p, reserva)
+    alterar_estoque(Conta.objects.get(papel='administrador'), e, '10')
+    e.refresh_from_db()
+    assert e.limite == D('10')
+
+@pytest.mark.django_db
+def test_definir_com_pendencia_propria():
+    from apps.interesses.servicos import ResumoDoInteresse, InteresseDesatualizado
+    _, p, _ = cenario('6')
+    a = ContaFactory.create()
+    reservada(a,p,6); pendente(a,p,4)
+    esperado = ResumoDoInteresse(D(6),D(4))
+    assert definir_interesse(a,p,'4',esperado=esperado)==ResumoDoInteresse(D(6),D(2))
+    with pytest.raises(InteresseDesatualizado):
+        definir_interesse(a,p,'4',esperado=esperado)
+    from apps.interesses.servicos import interesse_do_comprador
+    assert interesse_do_comprador(a,p)==ResumoDoInteresse(D(6),D(2))
+
+@pytest.mark.django_db
+def test_zero_remove_com_pendencia_propria():
+    _, p, _ = cenario('6')
+    a = ContaFactory.create()
+    reservada(a, p, 6)
+    pendente(a, p, 4)
+    r = definir_interesse(a, p, '0')
+    assert r.reservado == 0, r
+
+@pytest.mark.django_db(transaction=True)
+def test_preco_e_interesse_sem_deadlock():
+    _, p, _ = cenario('10')
+    a = ContaFactory.create()
+    admin = Conta.objects.get(papel='administrador')
+    reservada(a, p, 1)
+    def preco(barreira):
+        with transaction.atomic():
+            Produto.objects.select_for_update().get(pk=p.pk)
+            barreira.wait(timeout=10)
+            editar_produto(admin, p, preco='15.99')
+    def interesse(barreira):
+        with transaction.atomic():
+            Conta.objects.select_for_update(no_key=True).get(pk=a.pk)
+            barreira.wait(timeout=10)
+            adicionar_interesse(a, p, '1')
+    resultados = executar_em_paralelo(preco, interesse)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('origem', ['carrinho', 'catalogo'])
+def test_http_zero_remove_com_pendencia(origem):
+    _, p, _ = cenario('6')
+    a = ContaFactory.create()
+    reservada(a, p, 6)
+    pendente(a, p, 4)
+    c = Client()
+    c.force_login(a)
+    resposta = c.post('/interesses/', {'produto': p.pk, 'quantidade':'0', 'origem':origem})
+    assert resposta.status_code == 302
+    from apps.interesses.servicos import interesse_do_comprador
+    assert interesse_do_comprador(a,p).reservado == 0
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('anterior,novo', [('0','6'), ('6','10'), ('6',None), (None,None), ('6','6'), ('6','3')])
+def test_controle_transicoes_estoque(anterior, novo):
+    _, p, e = cenario(anterior)
+    alterar_estoque(Conta.objects.get(papel='administrador'),e,novo)
+    e.refresh_from_db()
+    assert e.limite == (None if novo is None else D(novo))
+
+@pytest.mark.django_db
+def test_controle_fifo_outro_comprador_e_remocao_pendente():
+    from apps.interesses.servicos import remover_pendente
+    _, p, _ = cenario('6')
+    a,b = ContaFactory.create(),ContaFactory.create()
+    reservada(a,p,6)
+    x = pendente(b,p,4)
+    r=definir_interesse(a,p,'4')
+    assert r.reservado==4
+    x.refresh_from_db()
+    assert (x.quantidade_reservada,x.quantidade_pendente)==(2,2)
+    remover_pendente(b,p,'2')
+    x.refresh_from_db()
+    assert (x.quantidade_reservada,x.quantidade_pendente)==(2,0)
+
+@pytest.mark.django_db
+def test_controle_arredondamento_e_isolamento():
+    from apps.catalogo.models import Unidade
+    from apps.interesses.progresso import progresso_da_rodada
+    r,p,_=cenario(None,unidade=Unidade.KG,incremento=D('.25'),preco=D('2.50'))
+    a,b=ContaFactory.create(),ContaFactory.create()
+    reservada(a,p,'.25'); reservada(b,p,'.25')
+    pendente(a,p,'1')
+    progresso=progresso_da_rodada(r,a)
+    assert progresso.valor_elegivel==D('1.26')
+    assert progresso.produtos[0].do_comprador.reservado==D('.25')
+    assert progresso.produtos[0].do_comprador.pendente==D('1')
+
+@pytest.mark.django_db(transaction=True)
+def test_preco_e_suspensao_sem_deadlock():
+    from apps.contas.moderacao import suspender
+    _,p,_=cenario('10')
+    a=ContaFactory.create()
+    admin=Conta.objects.get(papel='administrador')
+    reservada(a,p,1)
+    def preco(barreira):
+        with transaction.atomic():
+            Produto.objects.select_for_update().get(pk=p.pk)
+            barreira.wait(timeout=10)
+            editar_produto(admin,p,preco='15.99')
+    def suspensao(barreira):
+        with transaction.atomic():
+            Conta.objects.select_for_update(no_key=True).get(pk=a.pk)
+            barreira.wait(timeout=10)
+            suspender(admin,a)
+    resultados=executar_em_paralelo(preco,suspensao)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('origem', ['carrinho','catalogo'])
+def test_conflito_item_ja_removido_exibe_mensagem(origem):
+    _,p,_=cenario('10')
+    a=ContaFactory.create()
+    reservada(a,p,4)
+    c=Client(); c.force_login(a)
+    definir_interesse(a,p,'0')
+    resposta=c.post('/interesses/',{'produto':p.pk,'quantidade':'3','origem':origem,'reservado_atual':'4','pendente_atual':'0'})
+    assert resposta.status_code==409
+    assert 'Seu interesse neste produto mudou.' in resposta.content.decode()
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('com_reserva',[False,True])
+def test_reenvio_remocao_total_pendente_exibe_mensagem(com_reserva):
+    _,p,_=cenario('10')
+    a=ContaFactory.create()
+    if com_reserva: reservada(a,p,4)
+    pendente(a,p,2)
+    c=Client(); c.force_login(a)
+    corpo={'produto':p.pk,'quantidade':'2','reservado_atual': '4' if com_reserva else '0','pendente_atual':'2'}
+    assert c.post('/interesses/pendentes/remover/',corpo).status_code==302
+    resposta=c.post('/interesses/pendentes/remover/',corpo)
+    assert resposta.status_code==409
+    assert 'Seu interesse neste produto mudou.' in resposta.content.decode()
+```
+
+---
+
 ## Revisão independente — 2026-10-18
 
 Commit auditado: `32b05a24fb38aa7bcaef2d67c5917fdef59bc2c5` (`main`, PR #65). Parecer global da E05: **REPROVADO**.

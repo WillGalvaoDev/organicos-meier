@@ -116,3 +116,24 @@ Status: correções concluídas; **aguardando nova revisão do agente 3**. Nada 
 ### Não conformidade de TDD (E05-R04)
 
 Esta fatia não tem critério de concorrência próprio (o A-21 de concorrência está na E05-01). Os critérios novos acima seguiram Red → Green completo.
+
+
+---
+
+## Correção E05-R05 — implementador (aguardando nova revisão)
+
+Status: correção concluída; **aguardando o agente 3**. Nada aqui é aprovação. Nenhum teste existente foi alterado; só acréscimos. Suíte completa: **1666 passed** (eram 1657). `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
+
+**Red.** Os testes A-25 a A-27 foram escritos contra o código de `8728b4b`, com as provas `test_conflito_item_ja_removido_exibe_mensagem` e `test_reenvio_remocao_total_pendente_exibe_mensagem` do revisor literais: `uv run pytest tests/tecnicos/test_interesses_carrinho.py -q`: **7 failed, 44 passed**. As falhas são por asserção: o texto "Seu interesse neste produto mudou." ausente da página (provas do revisor, pelo carrinho e nos dois casos de remoção de pendentes) e `assert 0 == 1` nas contagens da mensagem no topo (A-25 carrinho, A-26 com e sem reserva, A-27). Passou já no Red o A-25 pelo catálogo (a mensagem já ficava no formulário, que continua desenhado), e a prova literal do revisor pelo catálogo.
+
+**Green.**
+- `Retorno` ganhou `produto_nome`; as rotas o preenchem nas recusas com mensagem (desatualizado, quantidade, quantidade ausente).
+- `apresentacao.py` decide pelo **mesmo cálculo de `mostrar` que o template usa**: se nenhum formulário desenhado recebe a mensagem, o contexto expõe `retorno_sem_destino` ("<produto>: <mensagem>"); se algum recebe, ela fica só nele. Vale para o carrinho e para o catálogo.
+- Os dois templates mostram `retorno_sem_destino` no `role="alert"` do topo. Nenhum formulário, linha ou botão novo; as regras de `mostrar` não mudaram.
+- Arquivo do carrinho: **51 passed**.
+
+**Cobertura dos três casos do revisor:** (1) item removido noutra aba, pelo carrinho, vai para o topo; pelo catálogo continua no formulário, que é desenhado com 0, 0 e 0; (2) e (3) reenvio da remoção total de pendentes, sem e com reserva, vai para o topo, sem formulário de pendentes e sem gravação nem auditoria. O A-27 cobre as recusas de 200 (remoção sem pendência; quantidade inválida para produto sem linha no carrinho).
+
+### Incidente com os documentos (registro de transparência)
+
+Ao rodar o `ruff format`, usei `git checkout -q docs` para desfazer a reformatação de markdown e, sem querer, **descartei as alterações não commitadas** do revisor e do especificador nos documentos. Restaurei, a partir do que li nesta sessão e do arquivo de provas do revisor em `%TEMP%/test_review_e05_8728b4b.py`: `docs/specs/E05-05/spec.md` e `acceptance.md` (correção E05-R05, A-25 a A-27, exatos) e o parecer do revisor sobre `8728b4b` em `E05-01/review.md` (**reconstruído**, texto do que li; o bloco de provas é o arquivo original do revisor). **Não consegui restaurar** os trechos do parecer que o revisor escreveu nos `review.md` de E05-02, E05-03, E05-04, E05-05, E05-06 e E05-07 (nunca os li inteiros). O revisor deve reemitir esses trechos, ou o responsável pode recuperá-los pelo histórico de versões do OneDrive dessas pastas.
