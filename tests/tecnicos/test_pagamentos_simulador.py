@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 
 from apps.nucleo.tempo import InstanteSemFuso
 from apps.pagamentos.provedor import (
@@ -423,3 +424,11 @@ def test_a_mesma_sequencia_da_o_mesmo_resultado(sim: Any) -> None:  # A-18
     AvisoSimulado.objects.all().delete()
     CobrancaSimulada.objects.all().delete()
     assert sequencia(sim) == primeiro
+
+
+def test_producao_recusa_o_simulador_em_obter_provedor(settings: Any) -> None:  # A-9
+    settings.AMBIENTE = "producao"
+    with pytest.raises(ImproperlyConfigured, match="não pode ser usado em produção"):
+        obter_provedor()
+    settings.AMBIENTE = "homologacao"
+    assert obter_provedor().nome == "simulador"

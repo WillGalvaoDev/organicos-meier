@@ -30,6 +30,12 @@ CANAL_WHATSAPP = env("CANAL_WHATSAPP", default="desligado")
 if CANAL_WHATSAPP not in ("desligado", "simulado"):
     raise ImproperlyConfigured("CANAL_WHATSAPP deve ser 'desligado' ou 'simulado'.")
 
+# Provedor de pagamentos (E07-02). Na fase 1 só existe o simulador; o valor é exato (sem caixa
+# nem espaços). O Mercado Pago entra na fase 2a. Qualquer outro valor impede o carregamento.
+PROVEDOR_PAGAMENTOS = env("PROVEDOR_PAGAMENTOS", default="simulador")
+if PROVEDOR_PAGAMENTOS != "simulador":
+    raise ImproperlyConfigured("PROVEDOR_PAGAMENTOS deve ser 'simulador' na fase 1.")
+
 # Segredo com que o simulador de pagamentos assina os avisos (E07-01). Sem valor padrão aqui: só
 # dev.py e test.py o definem; o simulador recusa operar sem ele.
 SEGREDO_AVISOS_SIMULADOR = env("SEGREDO_AVISOS_SIMULADOR", default="")

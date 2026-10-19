@@ -12,6 +12,7 @@ from .base import *  # noqa: F403
 from .base import INSTALLED_APPS as _APPS_BASE
 
 DEBUG = False
+AMBIENTE = "testes"
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # App só de testes (modelos de apoio). Nunca em base.py nem em prod.py.

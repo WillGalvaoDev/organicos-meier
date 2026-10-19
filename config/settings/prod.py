@@ -1,7 +1,8 @@
 """Produção (Fly.io + Neon). Ainda não usado: a fase 1 roda só em desenvolvimento e homologação.
 
-A recusa de iniciar com o simulador de pagamentos (A3, cenário 38, T-12) entra
-como comportamento testado, em fatia própria, e não como configuração solta.
+`AMBIENTE` (`homologacao` ou `producao`) é obrigatório. Na fase 1 o único provedor de pagamentos
+é o simulador, então `producao` nunca carrega: a aplicação não inicia em produção com o simulador
+(A3, cenário 38, T-12; E07-02). A homologação usa estas configurações com dados de teste.
 """
 
 from django.core.exceptions import ImproperlyConfigured
@@ -33,6 +34,16 @@ ORIGEM_PUBLICA = env("ORIGEM_PUBLICA")  # noqa: F405
 # Credenciais do login com Google, obrigatórias em produção.
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")  # noqa: F405
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")  # noqa: F405
+
+# Ambiente e provedor de pagamentos (E07-02). A recusa vale para web, worker e comandos, porque
+# todos carregam estas configurações. As mensagens não trazem segredos.
+AMBIENTE = env("AMBIENTE", default="")  # noqa: F405
+if AMBIENTE not in ("homologacao", "producao"):
+    raise ImproperlyConfigured("AMBIENTE deve ser 'homologacao' ou 'producao'.")
+if AMBIENTE == "producao" and PROVEDOR_PAGAMENTOS == "simulador":  # noqa: F405
+    raise ImproperlyConfigured("O simulador de pagamentos não pode ser usado em produção.")
+if PROVEDOR_PAGAMENTOS == "simulador":  # noqa: F405
+    SEGREDO_AVISOS_SIMULADOR = env("SEGREDO_AVISOS_SIMULADOR")  # noqa: F405
 
 # Mensagens simuladas em produção dariam a falsa impressão de que o aviso saiu (A3, cenário 38).
 if CANAL_WHATSAPP == "simulado":  # noqa: F405

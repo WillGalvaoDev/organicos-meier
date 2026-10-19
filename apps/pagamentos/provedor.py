@@ -119,7 +119,17 @@ class Provedor(Protocol):
 
 
 def obter_provedor() -> Provedor:
-    """A implementação configurada; quem usa o provedor nunca importa uma delas."""
+    """A implementação configurada; quem usa o provedor nunca importa uma delas.
+
+    Segunda barreira, além do carregamento das configurações: cobre configurações alteradas
+    depois (`override_settings`), recusando o simulador em produção (E07-02).
+    """
+    from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
+
     from apps.simulador_pagamentos.provedor import SIMULADO
+
+    if settings.AMBIENTE == "producao":
+        raise ImproperlyConfigured("O simulador de pagamentos não pode ser usado em produção.")
 
     return SIMULADO
