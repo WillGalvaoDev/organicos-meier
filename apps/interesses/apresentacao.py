@@ -13,9 +13,9 @@ from apps.catalogo.quantidades import formatar_quantidade
 from apps.contas.models import Conta
 from apps.interesses.consultas import carrinho_do_comprador
 from apps.interesses.progresso import progresso_da_rodada
-from apps.rodadas.models import Etapa, Rodada
-
-ETAPAS_QUE_ACEITAM = (Etapa.INTERESSE, Etapa.FECHAMENTO)
+from apps.nucleo.tempo import agora
+from apps.rodadas.condicoes import aceita_interesses
+from apps.rodadas.models import Rodada
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,7 @@ def contexto_do_catalogo(
 ) -> dict[str, Any]:
     progresso = progresso_da_rodada(rodada, conta)
     por_produto = {p.produto.pk: p for p in progresso.produtos}
-    editavel = conta.pode_adicionar_interesse and rodada.etapa in ETAPAS_QUE_ACEITAM
+    editavel = conta.pode_adicionar_interesse and aceita_interesses(rodada, agora())
     linhas: list[dict[str, Any]] = []
     for item in produtos_da_rodada(rodada):
         dele = por_produto[item.produto.pk]

@@ -16,7 +16,9 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.interesses.progresso import ProgressoDoProduto, progresso_da_rodada
-from apps.rodadas.models import ETAPAS_ATIVAS, Etapa, Rodada
+from apps.nucleo.tempo import agora
+from apps.rodadas.condicoes import aceita_interesses
+from apps.rodadas.models import ETAPAS_ATIVAS, Rodada
 
 _ZERO = Decimal("0.000")
 SITUACOES_QUE_RESERVAM = (SituacaoParcela.ATIVA, SituacaoParcela.EM_PEDIDO)
@@ -137,7 +139,7 @@ def carrinho_do_comprador(comprador: Conta) -> list[GrupoDoCarrinho]:
                 rodada=rodada,
                 percentual=progresso.percentual if progresso else 0,
                 atingido=progresso.atingido if progresso else False,
-                editavel=rodada is not None and rodada.etapa in (Etapa.INTERESSE, Etapa.FECHAMENTO),
+                editavel=rodada is not None and aceita_interesses(rodada, agora()),
                 linhas=linhas,
                 total_reservado=sum((x.subtotal for x in linhas), Decimal("0.00")),
             )
