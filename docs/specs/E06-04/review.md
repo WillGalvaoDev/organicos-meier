@@ -56,3 +56,33 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§7, 13), infrae
 ## Limites da verificação
 
 Postgres real, sem navegador. O formulário e o botão são da E06-07; não há aviso de prorrogação (a §12 não o define). Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R03 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R03", A-12) e o achado R03 do parecer consolidado em `E06-01/review.md`.
+
+**Arquivos:** `apps/rodadas/fechamento.py` (`prorrogar_fechamento`), `tests/tecnicos/test_rodadas_fechamento_prorrogacao.py`. Sem andaime e sem migração.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_prorrogacao.py tests/tecnicos/test_rodadas_fechamento_concorrencia.py -q`: **2 failed, 29 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-12 (`-03:00`) | `test_a_auditoria_grava_os_instantes_em_utc[brasilia]` | falhou por asserção sobre `alteracoes["novo"]` (gravava o texto no fuso recebido) |
+| A-12 (`+05:30`) | `test_a_auditoria_grava_os_instantes_em_utc[mais-05-30]` | falhou: `'2026-11-04T10:00:00+05:30' == '2026-11-04T04:30:00+00:00'` |
+| A-1 a A-11 | testes existentes dos dois arquivos | passaram (29) |
+
+O teste também confere `anterior`, o valor devolvido pelo serviço (o mesmo instante) e o prazo vigente.
+
+### Green
+
+Os dois arquivos mais `test_rodadas_fechamento_inicio.py`: **47 passed**. `ruff check`, `ruff format --check` e `mypy .` sem erros. A auditoria grava `anterior` e `novo` por `astimezone(UTC).isoformat()`; o valor devolvido e a linha de prazo não mudaram.
+
+### Limites
+
+Postgres real. A auditoria `rodada.iniciar_fechamento` não mudou (já vinha em UTC). Nenhuma mutação aplicada nesta correção.

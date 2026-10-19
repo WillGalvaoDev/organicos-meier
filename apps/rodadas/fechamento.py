@@ -8,7 +8,7 @@ produto, então nada muda entre a conferência do mínimo e a gravação da etap
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
@@ -179,8 +179,8 @@ def prorrogar_fechamento(autor: Conta | None, rodada: Rodada, novo_termino: date
             {
                 "rodada": ativa.pk,
                 "ciclo": ciclo.pk,
-                "anterior": prazo.isoformat(),
-                "novo": novo_termino.isoformat(),
+                "anterior": prazo.astimezone(UTC).isoformat(),
+                "novo": novo_termino.astimezone(UTC).isoformat(),
             },
         )
     return novo_termino

@@ -1,7 +1,8 @@
 """E06-04: prorrogação do fechamento (acceptance A-1 a A-9)."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.core.exceptions import PermissionDenied
@@ -185,3 +186,23 @@ def test_a_queda_do_minimo_nao_prorroga(relogio: RelogioControlado) -> None:  # 
     reduzir_interesse(a, produto, "9")
     assert prazo_do_fechamento(rodada) == T
     assert not PrazoDoFechamento.objects.filter(origem=OrigemDoPrazo.PRORROGACAO).exists()
+
+
+@pytest.mark.parametrize(
+    "fuso",
+    [ZoneInfo("America/Sao_Paulo"), timezone(timedelta(hours=5, minutes=30))],
+    ids=["brasilia", "mais-05-30"],
+)
+def test_a_auditoria_grava_os_instantes_em_utc(
+    fuso: tzinfo, relogio: RelogioControlado
+) -> None:  # A-12, E06-R03
+    rodada, _, _ = em_fechamento(relogio)
+    relogio.congelar(T - 2 * H)
+    destino = datetime(2026, 11, 4, 4, 30, tzinfo=UTC)
+    novo = destino.astimezone(fuso)
+    assert novo.utcoffset() != timedelta(0)
+    assert prorrogar_fechamento(admin(), rodada, novo) == destino
+    (entrada,) = EntradaAuditoria.objects.filter(acao=ACAO)
+    assert entrada.alteracoes["novo"] == "2026-11-04T04:30:00+00:00"
+    assert entrada.alteracoes["anterior"] == "2026-11-03T13:30:00+00:00"
+    assert prazo_do_fechamento(rodada) == destino
