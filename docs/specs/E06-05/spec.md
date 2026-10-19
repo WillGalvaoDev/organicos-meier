@@ -193,7 +193,7 @@ Estas regras se somam às da correção E05-R04 (E05-01) e valem para esta corre
 
 ### Tratamento
 
-**Proposta do especificador, aguardando decisão do responsável pelo projeto.** É a mesma solução que o responsável escolheu para a E05-R04 em 2026-10-18 (opção (a)):
+**Aprovado pelo responsável pelo projeto em 2026-10-19.** É a mesma solução escolhida para a E05-R04 em 2026-10-18 (opção (a)):
 
 1. **Registro da não conformidade.** No `review.md` desta fatia, o implementador acrescenta uma seção "Não conformidade de TDD":
    - os critérios A-8, A-12 e A-13;
@@ -214,4 +214,4 @@ Os passos 1 e 2 são o tratamento definitivo de A-8, A-12 e A-13. Refazer esses 
 ## Dependências e decisões em aberto
 
 - Depende de E04-01 a E04-03, E05-01, E05-04, E06-01 e E06-03.
-- **Em aberto:** o tratamento da correção E06-R05 depende de decisão do responsável pelo projeto. O revisor encaminhou esse gate ao responsável. Até a decisão, o implementador pode fazer as correções E06-R01 a E06-R04 e o registro do passo 1, que não dependem dela.
+- Sem decisões em aberto. O tratamento da correção E06-R05, encaminhado pelo revisor ao responsável pelo projeto, foi aprovado em 2026-10-19.
