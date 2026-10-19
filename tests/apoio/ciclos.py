@@ -8,15 +8,16 @@ reais, que devem passar nos mesmos testes.
 
 from django.db import transaction
 
+from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
-from apps.rodadas.ciclos import registrar_condicoes_do_ciclo
+from apps.rodadas.fechamento import iniciar_fechamento
 from apps.rodadas.models import Ciclo, Etapa, Rodada
 
 
 def simular_inicio_do_fechamento(rodada: Rodada) -> Ciclo:
-    with transaction.atomic():
-        ciclo = registrar_condicoes_do_ciclo(rodada)
-        Rodada.objects.filter(pk=rodada.pk).update(etapa=Etapa.FECHAMENTO)
+    """Usa a transição real da E06-01 (o administrador é o que a fábrica já cria)."""
+    administrador = Conta.objects.get(papel=Papel.ADMINISTRADOR)
+    ciclo = iniciar_fechamento(administrador, rodada)
     rodada.refresh_from_db()
     return ciclo
 
