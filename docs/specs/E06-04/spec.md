@@ -107,6 +107,22 @@ Numa única `transaction.atomic()`:
   - para o mesmo instante: a segunda recebe `prazo_nao_posterior`;
   - para instantes diferentes: vale a ordem de confirmação. A segunda só é aceita se for posterior à primeira.
 
+## Correção E06-R03 — instantes da auditoria em UTC (2026-10-19)
+
+### Diagnóstico
+
+A regra 7 pede `anterior` e `novo` em ISO 8601 em UTC. O serviço grava `novo_termino.isoformat()` com o fuso recebido. Com `2026-11-04T01:30:00-03:00`, a auditoria guarda esse texto, e não `2026-11-04T04:30:00+00:00`. O instante é o mesmo e o prazo gravado no banco está certo; o desvio é só na representação do registro auditável. `anterior` sai do banco e já vem em UTC.
+
+### Regra
+
+- `anterior` e `novo` são gravados como `instante.astimezone(UTC).isoformat()`, no formato `AAAA-MM-DDTHH:MM:SS+00:00` (com `.ffffff` só quando houver microssegundos).
+- A normalização vale para qualquer fuso recebido. O valor devolvido pelo serviço e a linha de prazo gravada não mudam: continuam sendo o mesmo instante.
+- A auditoria `rodada.iniciar_fechamento` (E06-01) já grava `termina_em` a partir do valor calculado em UTC e não muda.
+
+### TDD
+
+O critério A-12 segue Red → Green → Refactor. A prova `test_prorrogacao_audita_utc` do revisor de `2fbf143` é o Red esperado no código atual e entra literalmente nos testes.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01-03, E03-02, E06-01 e E06-03.

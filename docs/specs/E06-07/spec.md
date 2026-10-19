@@ -127,6 +127,42 @@ Os formulários de quantidade seguem `aceita_interesses` (E06-03). A linha "Etap
 - **Prorrogação enviada depois do prazo:** 409 com "O prazo deste fechamento já terminou e não pode mais ser prorrogado.".
 - **Horário digitado na madrugada:** "2026-11-04T01:30" é 2026-11-04 04:30 UTC.
 
+## Correção E06-R02 — formato do novo prazo (2026-10-19)
+
+### Diagnóstico
+
+`FormularioProrrogacao` usa `forms.DateTimeField(input_formats=["%Y-%m-%dT%H:%M"])`. No Django 5.2, esse campo tenta primeiro o leitor ISO 8601 e só depois os `input_formats`, então a lista não restringe a entrada. O revisor mostrou três entradas aceitas fora do contrato:
+
+- `2026-11-04`: só a data, lida como meia-noite;
+- `2026-11-04T01:30:59`: os segundos 59 chegam ao prazo;
+- `2026-11-04T01:30:00+00:00`: o fuso enviado prevalece, e o horário é lido em UTC, e não no horário de Brasília.
+
+O serviço (E06-04) aceita qualquer instante com fuso, como especificado. Por isso, o formato precisa ser garantido no formulário.
+
+### Regra
+
+**Formato aceito:** exatamente `AAAA-MM-DDTHH:MM`, depois de retirados os espaços das pontas (como o Django faz com os campos de texto):
+
+- quatro dígitos de ano, dois de mês, dois de dia, a letra `T` maiúscula, dois de hora e dois de minuto, com `-` e `:` como separadores;
+- só dígitos ASCII `0`–`9`. O `\d` das expressões regulares do Python aceita dígitos de outros alfabetos e não serve sozinho; use `[0-9]` ou `re.ASCII`;
+- a data e a hora precisam existir no calendário (`strptime` com `%Y-%m-%dT%H:%M`). O `strptime` sozinho também não basta: ele ignora maiúsculas e aceita `t` no lugar de `T`.
+
+**Conversão:** o texto é sempre interpretado em America/Sao_Paulo (`ZoneInfo("America/Sao_Paulo")`, o fuso da operação), independentemente da configuração ativa do Django. O resultado é um instante com fuso, com segundos e microssegundos zero.
+
+**Recusa:** qualquer outra entrada é inválida. A rota responde como já especificado para `termino` vazio ou inválido: 200, a página de estoque, "Informe a data e a hora do novo prazo." junto ao campo, o texto enviado escapado e nada gravado (nenhuma linha de prazo, nenhuma auditoria).
+
+**A forma de implementar fica com o implementador**, por exemplo um campo de texto com `clean_termino` ou um campo próprio que substitua `to_python`. O nome `FormularioProrrogacao`, o campo `termino` e o valor limpo (um `datetime` com fuso) continuam os mesmos.
+
+### O que não muda
+
+- O serviço `prorrogar_fechamento` e as recusas dele (E06-04).
+- As respostas 302 e 409 da rota e o campo preenchido com o prazo atual.
+- Os critérios A-1 a A-14.
+
+### TDD
+
+Os critérios A-15 e A-16 seguem Red → Green → Refactor, com as regras de prevenção da correção E05-R04 (E05-01). A prova `test_formato_do_prazo_restrito_ao_contrato` do revisor de `2fbf143` (as três entradas) é o Red esperado no código atual e entra literalmente nos testes.
+
 ## Dependências e decisões em aberto
 
 - Depende de E02-10, E05-04, E05-05 e E06-01 a E06-06.

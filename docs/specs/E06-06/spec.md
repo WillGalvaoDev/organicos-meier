@@ -132,6 +132,29 @@ voltar_para_interesse(rodada, *, motivo, destinatarios=None) -> None
 - **Pendentes no retorno:** C tem 3 pendentes, e os excedentes liberaram estoque. C recebe a reserva na mesma transação do retorno.
 - **Novo fechamento depois do retorno:** gera um ciclo novo, com número seguinte, novo prazo e novo aviso `fechamento_iniciado` (E06-02).
 
+## Correção E06-R04 — destinatários padrão lidos antes da fila (2026-10-19)
+
+### Diagnóstico
+
+A decisão dos destinatários diz: "Chamado sem `destinatarios`, o serviço usa os compradores com reserva no momento da chamada." O serviço chama `alocar_pendentes` (passo 6) e só depois calcula `compradores_com_reserva` (passo 7). Quem tinha só pendência e foi atendido pela fila no próprio retorno entra no aviso. O revisor reproduziu: A com reserva e B só com pendência na entrada; o retorno aloca B e avisa A e B, quando o contrato pede só A.
+
+O caminho principal está certo: `encerrar_fechamento` passa `participantes` explicitamente, lidos antes da remoção dos excedentes.
+
+### Regra
+
+Com `destinatarios` omitido, o conjunto padrão é lido **depois das travas e da conferência da etapa (passo 3) e antes de qualquer gravação** (passo 4 em diante). São os compradores com parcela `ativa` e reserva maior que zero nos produtos da rodada, como hoje, só que nesse momento. O passo 7 avisa esse conjunto, sem recalculá-lo.
+
+Com `destinatarios` informado, nada muda: a lista recebida é avisada como veio, e quem a fila atendeu no retorno só é avisado se estiver nela.
+
+### O que não muda
+
+- A ordem dos passos 4 a 7: etapa, auditoria, fila e aviso.
+- Os critérios A-1 a A-12.
+
+### TDD
+
+O critério A-13 segue Red → Green → Refactor. A prova `test_destinatarios_do_retorno_antes_da_alocacao` do revisor de `2fbf143` (com e sem destinatários) é o Red esperado no código atual (o caso sem destinatários falha) e entra literalmente nos testes.
+
 ## Dependências e decisões em aberto
 
 - Depende de E03-07, E04-01, E04-02, E05-02, E05-04 e E06-05.
