@@ -15,6 +15,7 @@ from apps.contas.moderacao import suspender
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
 from apps.interesses import receptores, servicos
+from apps.interesses.consultas import total_reservado
 from apps.interesses.models import ParcelaDeInteresse
 from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador, reduzir_interesse
 from apps.notificacoes.models import Notificacao
@@ -313,3 +314,31 @@ def test_encerramento_espera_a_edicao_de_preco(
     assert Produto.objects.get(pk=produto.pk).preco == D("11.00")
     assert interesse_do_comprador(b, produto).reservado == D("4")
     assert etapa(rodada) == Etapa.FECHAMENTO_ENCERRADO
+
+
+def test_adicao_que_espera_o_encerramento_entra_na_rodada_de_volta_ao_interesse(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-06 A-12
+    rodada, produto, _ = cenario(None, nome="Ovos", preco=D("10.00"), multiplo=D("12"))
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("150.00"))
+    a, b, c, d = (ContaFactory.create() for _ in range(4))
+    adicionar_interesse(a, produto, "15")
+    adicionar_interesse(b, produto, "1")
+    adicionar_interesse(c, produto, "8")
+    relogio.congelar(datetime(2026, 11, 2, 13, 30, tzinfo=UTC))
+    iniciar_fechamento(admin(), rodada)
+    reduzir_interesse(c, produto, "8")
+    relogio.parar()
+    prazo = prazo_do_fechamento(rodada)
+    assert prazo is not None
+    monkeypatch.setattr(fechamento, "agora", lambda: prazo)
+    resultados = executar_em_paralelo(
+        segurando(lambda: encerrar_fechamento(rodada)),
+        esperando(lambda: adicionar_interesse(d, produto, "12")),
+    )
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    assert resultados[0].valor is not None
+    assert resultados[0].valor.etapa_final == Etapa.INTERESSE
+    assert etapa(rodada) == Etapa.INTERESSE
+    assert interesse_do_comprador(d, produto).reservado == D("12")
+    assert total_reservado(produto) == D("24")

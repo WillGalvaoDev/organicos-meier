@@ -14,7 +14,7 @@ from django.db.models import Max
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.tempo import agora
-from apps.rodadas.fechamento import iniciar_fechamento
+from apps.rodadas.fechamento import iniciar_fechamento, voltar_para_interesse
 from apps.rodadas.models import Ciclo, Etapa, PrazoDoFechamento, Rodada
 
 
@@ -27,11 +27,10 @@ def simular_inicio_do_fechamento(rodada: Rodada) -> Ciclo:
 
 
 def simular_volta_para_interesse(rodada: Rodada) -> None:
+    """Usa a transição real da E06-06: o `update` representa o encerramento do fechamento."""
     with transaction.atomic():
-        Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
-        travada = Rodada.objects.select_for_update().get(pk=rodada.pk)
-        travada.etapa = Etapa.INTERESSE
-        travada.save(update_fields=["etapa"])
+        Rodada.objects.filter(pk=rodada.pk).update(etapa=Etapa.FECHAMENTO_ENCERRADO)
+        voltar_para_interesse(rodada, motivo="minimo_nao_atingido")
     rodada.refresh_from_db()
 
 
