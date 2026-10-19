@@ -6,20 +6,32 @@ e estoques). Toda operação de interesse trava o fornecedor primeiro e a ediç�
 produto, então nada muda entre a conferência do mínimo e a gravação da etapa.
 """
 
+import logging
+from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Max
 
+from apps.catalogo.models import Produto
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
+from apps.interesses.consultas import travar_parcelas
+from apps.interesses.models import SituacaoParcela
 from apps.interesses.progresso import progresso_da_rodada
-from apps.nucleo.auditoria import registrar_auditoria
+from apps.interesses.servicos import interesse_do_comprador
+from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
-from apps.rodadas.avisos import avisar_fechamento_iniciado
+from apps.rodadas.avisos import (
+    ExcedenteRemovido,
+    avisar_excedentes_removidos,
+    avisar_fechamento_iniciado,
+)
 from apps.rodadas.ciclos import ciclo_vigente, registrar_condicoes_do_ciclo
 from apps.rodadas.condicoes import CondicoesCongeladas
+from apps.rodadas.estoque import travar_estoque
 from apps.rodadas.models import (
     ETAPAS_ATIVAS,
     Ciclo,
@@ -28,6 +40,8 @@ from apps.rodadas.models import (
     PrazoDoFechamento,
     Rodada,
 )
+
+logger = logging.getLogger(__name__)
 
 HORAS_DO_FECHAMENTO = 24
 
@@ -152,3 +166,137 @@ def prorrogar_fechamento(autor: Conta | None, rodada: Rodada, novo_termino: date
             },
         )
     return novo_termino
+
+
+@dataclass(frozen=True)
+class ResultadoDoEncerramento:
+    rodada: Rodada
+    ciclo: Ciclo
+    removidas: dict[int, Decimal]
+    etapa_final: str
+
+
+def _divisao_dos_excedentes(rodada: Rodada) -> list[ExcedenteRemovido]:
+    """Remove das parcelas `ativa` o que não completa caixa e devolve o que saiu, por parcela.
+
+    Mesma divisão da E05-04: as parcelas entram nas caixas por ordem de `sequencia`, e as últimas
+    adições perdem primeiro (§6.3, §5). Produto sem múltiplo não tem excedente. O que sai deixa
+    a reserva e não vira pendência; a pendência que a parcela já tinha não muda.
+    """
+    saidas: list[ExcedenteRemovido] = []
+    for estoque in rodada.estoques.order_by("produto_id"):
+        travar_estoque(rodada, estoque.produto)
+        produto = Produto.objects.get(pk=estoque.produto_id)
+        parcelas = travar_parcelas(produto)
+        if produto.multiplo is None:
+            continue
+        ativas = [
+            p
+            for p in parcelas
+            if p.situacao == SituacaoParcela.ATIVA and p.quantidade_reservada > 0
+        ]
+        total = sum((p.quantidade_reservada for p in ativas), Decimal("0.000"))
+        restante = (total // produto.multiplo) * produto.multiplo
+        for parcela in ativas:
+            em_caixas = min(parcela.quantidade_reservada, restante)
+            restante -= em_caixas
+            removida = parcela.quantidade_reservada - em_caixas
+            if removida == 0:
+                continue
+            parcela.quantidade_reservada = em_caixas
+            if em_caixas == 0:
+                sem_pendencia = parcela.quantidade_pendente == 0
+                parcela.situacao = (
+                    SituacaoParcela.REMOVIDA if sem_pendencia else SituacaoParcela.PENDENTE
+                )
+            parcela.save(update_fields=["quantidade_reservada", "situacao"])
+            saidas.append(
+                ExcedenteRemovido(parcela.comprador_id, produto, removida, Decimal("0"), parcela.pk)
+            )
+    return saidas
+
+
+def _por_comprador_e_produto(saidas: list[ExcedenteRemovido]) -> list[ExcedenteRemovido]:
+    """Uma linha por par (comprador, produto), com a soma removida e o reservado que ficou."""
+    somas: dict[tuple[int, int], ExcedenteRemovido] = {}
+    for saida in saidas:
+        chave = (saida.comprador_id, saida.produto.pk)
+        antiga = somas.get(chave)
+        if antiga is None:
+            mantida = interesse_do_comprador(Conta(pk=saida.comprador_id), saida.produto).reservado
+            somas[chave] = ExcedenteRemovido(
+                saida.comprador_id, saida.produto, saida.removida, mantida
+            )
+        else:
+            somas[chave] = ExcedenteRemovido(
+                antiga.comprador_id,
+                antiga.produto,
+                antiga.removida + saida.removida,
+                antiga.mantida,
+            )
+    return [somas[chave] for chave in sorted(somas)]
+
+
+def encerrar_fechamento(rodada: Rodada) -> ResultadoDoEncerramento | None:
+    """Encerra o fechamento vencido: grava `fechamento_encerrado`, tira os excedentes e avisa.
+
+    A etapa e o prazo são relidos sob as travas (fornecedor e rodada); sem fechamento vencido,
+    não faz nada e devolve `None`. Tudo acontece numa transação: uma falha desfaz o encerramento
+    e a próxima execução da tarefa o refaz. A verificação do mínimo é da E06-06.
+    """
+    with transaction.atomic():
+        Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
+        travada = Rodada.objects.select_for_update().filter(pk=rodada.pk).first()
+        if travada is None or travada.etapa != Etapa.FECHAMENTO:
+            return None
+        prazo = prazo_do_fechamento(travada)
+        ciclo = ciclo_vigente(travada)
+        if prazo is None or ciclo is None:
+            raise RuntimeError("rodada em fechamento sem prazo gravado")
+        if not prazo_encerrado(agora(), prazo):  # o instante é lido depois das travas
+            return None
+        travada.etapa = Etapa.FECHAMENTO_ENCERRADO
+        travada.save(update_fields=["etapa"])
+        saidas = _divisao_dos_excedentes(travada)
+        registrar_auditoria(
+            SISTEMA,
+            "rodada.encerrar_fechamento",
+            travada,
+            {
+                "rodada": travada.pk,
+                "ciclo": ciclo.pk,
+                "prazo": prazo.isoformat(),
+                "removidas": [[s.parcela_id, s.produto.pk, str(s.removida)] for s in saidas],
+            },
+        )
+        avisar_excedentes_removidos(travada, ciclo, _por_comprador_e_produto(saidas))
+        removidas: dict[int, Decimal] = {}
+        for saida in saidas:
+            anterior = removidas.get(saida.produto.pk, Decimal("0"))
+            removidas[saida.produto.pk] = anterior + saida.removida
+    rodada.etapa = Etapa.FECHAMENTO_ENCERRADO
+    return ResultadoDoEncerramento(rodada, ciclo, removidas, Etapa.FECHAMENTO_ENCERRADO)
+
+
+def encerrar_fechamentos_vencidos() -> int:
+    """Encerra os fechamentos cujo prazo vigente já chegou. Devolve quantos foram encerrados.
+
+    A busca é sem trava; cada rodada é decidida por `encerrar_fechamento`, que relê etapa e
+    prazo sob trava. Uma falha numa rodada vai para o log (id e tipo da exceção, sem dado
+    pessoal) e não impede as demais.
+    """
+    encerradas = 0
+    for rodada in Rodada.objects.filter(etapa=Etapa.FECHAMENTO).order_by("fornecedor_id", "pk"):
+        prazo = prazo_do_fechamento(rodada)
+        if prazo is None or not prazo_encerrado(agora(), prazo):
+            continue
+        try:
+            resultado = encerrar_fechamento(rodada)
+        except Exception as erro:
+            logger.error(
+                "falha ao encerrar o fechamento: rodada=%s erro=%s", rodada.pk, type(erro).__name__
+            )
+            continue
+        if resultado is not None:
+            encerradas += 1
+    return encerradas

@@ -8,16 +8,21 @@ from typing import Any
 import pytest
 from django.db import transaction
 
+from apps.catalogo.models import Produto
+from apps.catalogo.servicos import editar_produto
 from apps.contas.models import Conta
+from apps.contas.moderacao import suspender
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
-from apps.interesses import servicos
+from apps.interesses import receptores, servicos
+from apps.interesses.models import ParcelaDeInteresse
 from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador, reduzir_interesse
 from apps.notificacoes.models import Notificacao
 from apps.rodadas import condicoes, fechamento
 from apps.rodadas.condicoes import CondicoesCongeladas, InteressesBloqueados
 from apps.rodadas.fechamento import (
     TransicaoRecusada,
+    encerrar_fechamento,
     iniciar_fechamento,
     prazo_do_fechamento,
     prorrogar_fechamento,
@@ -227,3 +232,84 @@ def test_o_prazo_da_prorrogacao_e_lido_depois_das_travas(
     assert isinstance(resultados[1].excecao, TransicaoRecusada), resultados[1].excecao
     assert resultados[1].excecao.codigo == "prazo_encerrado"
     assert not PrazoDoFechamento.objects.filter(origem="prorrogacao").exists()
+
+
+def _estado_de_encerramento(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> tuple[Rodada, Produto, Conta, Conta]:
+    """A com 8 e B com 10 de Ovos (múltiplo 12), fechamento iniciado e relógio fixo em `T`.
+
+    O mínimo é R$ 1,00 (e não zero): tirar a restrição do banco é DDL e sobreviveria ao teste.
+    """
+    rodada, produto, _ = cenario(None, nome="Ovos", preco=D("10.00"), multiplo=D("12"))
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("1.00"))
+    a, b = ContaFactory.create(), ContaFactory.create()
+    adicionar_interesse(a, produto, "8")
+    adicionar_interesse(b, produto, "10")
+    relogio.congelar(datetime(2026, 11, 2, 13, 30, tzinfo=UTC))
+    iniciar_fechamento(admin(), rodada)
+    relogio.parar()
+    prazo = prazo_do_fechamento(rodada)
+    assert prazo is not None
+    monkeypatch.setattr(fechamento, "agora", lambda: prazo)
+    return rodada, produto, a, b
+
+
+def test_dois_encerramentos_simultaneos_so_um_age(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-05 A-14
+    rodada, produto, _, b = _estado_de_encerramento(monkeypatch, relogio)
+    resultados = executar_em_paralelo(
+        segurando(lambda: encerrar_fechamento(rodada)),
+        esperando(lambda: encerrar_fechamento(rodada)),
+    )
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert [r.valor is None for r in resultados].count(True) == 1
+    assert Notificacao.objects.filter(conta=b, evento="excedentes_removidos").count() == 1
+    assert interesse_do_comprador(b, produto).reservado == D("4")
+    assert etapa(rodada) == Etapa.FECHAMENTO_ENCERRADO
+
+
+def test_encerramento_e_suspensao_sem_deadlock(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-05 A-15
+    rodada, produto, _, b = _estado_de_encerramento(monkeypatch, relogio)
+    original = receptores.remover_interesses_do_comprador  # type: ignore[attr-defined]
+
+    def suspensao(barreira: Any) -> Any:
+        def com_pausa(conta: Conta, *, motivo: str) -> int:
+            barreira.wait(timeout=10)  # a conta de B já foi atualizada e continua travada
+            return original(conta, motivo=motivo)
+
+        monkeypatch.setattr(receptores, "remover_interesses_do_comprador", com_pausa)
+        return suspender(admin(), b)
+
+    def encerramento(barreira: Any) -> Any:
+        with transaction.atomic():
+            Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
+            barreira.wait(timeout=10)
+            return encerrar_fechamento(rodada)
+
+    resultados = executar_em_paralelo(encerramento, suspensao)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    assert resultados[0].valor is not None
+    assert etapa(rodada) == Etapa.FECHAMENTO_ENCERRADO
+    assert Notificacao.objects.filter(conta=b, evento="excedentes_removidos").count() == 1
+    b.refresh_from_db()
+    assert b.situacao == "suspensa"
+    assert not ParcelaDeInteresse.objects.filter(comprador=b, situacao="ativa").exists()
+    assert interesse_do_comprador(b, produto).reservado == D("0")
+
+
+def test_encerramento_espera_a_edicao_de_preco(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-05 A-16
+    rodada, produto, _, b = _estado_de_encerramento(monkeypatch, relogio)
+    resultados = executar_em_paralelo(
+        segurando(lambda: editar_produto(admin(), produto, preco="11.00")),
+        esperando(lambda: encerrar_fechamento(rodada)),
+    )
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    assert Produto.objects.get(pk=produto.pk).preco == D("11.00")
+    assert interesse_do_comprador(b, produto).reservado == D("4")
+    assert etapa(rodada) == Etapa.FECHAMENTO_ENCERRADO

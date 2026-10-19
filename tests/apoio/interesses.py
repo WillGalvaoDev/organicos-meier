@@ -3,8 +3,11 @@
 from decimal import Decimal
 from typing import Any
 
+from django.db import connection
+
 from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta
+from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
@@ -60,3 +63,14 @@ def pendente(comprador: Conta, produto: Produto, quantidade: int | str) -> Parce
         quantidade_pendente=valor,
         situacao=SituacaoParcela.PENDENTE,
     )
+
+
+def sem_minimo(rodada: Rodada) -> None:
+    """Zera o mínimo do fornecedor da rodada. O banco recusa mínimo zero, então a restrição sai
+    da tabela: só use em teste que roda dentro de transação (o rollback a devolve)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE fornecedores_fornecedor DROP CONSTRAINT IF EXISTS "
+            "fornecedor_minimo_positivo"
+        )
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("0.00"))
