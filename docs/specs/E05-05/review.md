@@ -1,5 +1,27 @@
 # E05-05 — Revisão independente
 
+## Veredito final da E05 — 2026-10-19
+
+**E05 APROVADA** sobre `9ec351a3a364c0089af2c2e35745ece11ab84926` (main). Correção R05: `4559b57`, PR #67. Este veredito substitui os estados anteriores, preservados abaixo como histórico.
+
+R01 a R03 permanecem resolvidos conforme o contrato aprovado; o tratamento excepcional de R04 permanece aceito, sem alegação de TDD retroativo. **R05 está encerrado. Nenhum achado aberto permanece na E05.**
+
+Validação independente nesta revisão:
+
+- `uv run pytest -q`: **1666 passed em 142,80 s**, incluindo E05-05 A-25 a A-27 e regressões de todas as fatias.
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- `uv run pytest -c pyproject.toml $env:TEMP/test_review_e05_9ec351a.py -q --tb=short`: **26 passed em 3,04 s**. As 20 provas da revisão de 8728b4b foram reexecutadas sem alteração; as três falhas de R05 agora passam. Outros seis casos verificam aviso único, nome do produto escapado, preservação de reservas/auditoria e ausência de formulário proibido, no carrinho e no catálogo.
+
+**Restauração documental conferida:** o script original do revisor foi localizado na transcrição local da sessão (`rollout-2026-10-15T09-08-49-01a13f77-0e96-7123-a3a7-f9aaf8088eee.jsonl`). Suas constantes foram extraídas sem executar o script e comparadas aos sete pareceres restaurados; o bloco de provas também foi comparado ao arquivo original em TEMP. Resultado: **E05-01 a E05-07 EXATOS**, com normalização apenas de quebras de linha na leitura. Portanto, os trechos sobre 8728b4b estão como foram deixados pelo revisor. O relato antigo de restauração incompleta ao final da E05-05 descreve o incidente naquela data; foi superado pela restauração conferida nesta revisão.
+
+**Fatia E05-05 APROVADA.** A-1 a A-27 passaram. R05 foi corrigido tanto nos três casos originalmente reproduzidos quanto nas recusas 200 sem formulário. Avisos aparecem uma única vez, com escape de HTML, sem reabrir ações proibidas. Registro Red/Green conferido (7 falhas antes, 51 sucessos depois). Matriz final, controles adicionais e limitações no [parecer consolidado](../E05-01/review.md).
+
+Somente os sete `review.md` foram alterados pelo revisor. Os documentos desta revisão são commitados antes da devolução, conforme AGENTS.md §10. Próximo gate: a entrega seguinte passa por especificação aprovada e implementação TDD próprias.
+
+---
+
 ## Nova revisão independente — correções em 8728b4b
 
 Commit: `8728b4b3f459d97bf9c1ce1c74407bbaa2a8655e` (`main`, PR #66), revisto em 2026-10-18. Este parecer substitui o estado de aprovação anterior, cujo histórico permanece abaixo.
