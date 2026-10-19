@@ -12,6 +12,7 @@
         <h2>{{ grupo.fornecedor.nome }}</h2>
         {% if grupo.rodada %}
           <p>Etapa: {{ grupo.rodada.get_etapa_display }}</p>
+          {% if entrada.prazo %}<p>{{ entrada.prazo }}</p>{% endif %}
           {% include "interesses/_progresso.html" with percentual=grupo.percentual atingido=grupo.atingido %}
         {% else %}
           <p>Sem rodada ativa.</p>

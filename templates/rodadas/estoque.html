@@ -30,6 +30,43 @@
     </table>
   {% endif %}
 
+  {% if fechamento %}
+    <h2>Fechamento</h2>
+    {% if fechamento.tipo == "iniciar" %}
+      <form method="post" action="{% url 'rodadas_fechamento_iniciar' pk=rodada.pk %}">
+        {% csrf_token %}
+        <button type="submit">Iniciar fechamento</button>
+        <p>O prazo será de 24 horas a partir do início.</p>
+      </form>
+    {% elif fechamento.tipo == "aguardando_minimo" %}
+      <p>O fechamento pode ser iniciado quando o mínimo elegível for atingido.</p>
+    {% elif fechamento.tipo == "prorrogar" %}
+      <p>Prazo do fechamento: {{ fechamento.prazo }} (horário de Brasília)</p>
+      <form method="post" action="{% url 'rodadas_fechamento_prorrogar' pk=rodada.pk %}">
+        {% csrf_token %}
+        <label for="termino">Novo prazo (horário de Brasília)</label>
+        <input type="datetime-local" id="termino" name="termino" value="{{ fechamento.termino }}">
+        <button type="submit">Prorrogar fechamento</button>
+        {% if fechamento.erro_do_termino %}<p role="alert">{{ fechamento.erro_do_termino }}</p>{% endif %}
+      </form>
+    {% elif fechamento.tipo == "vencido" %}
+      <p>Prazo do fechamento encerrado em {{ fechamento.prazo }}. O encerramento será processado automaticamente.</p>
+    {% elif fechamento.tipo == "encerrado" %}
+      <p>Fechamento encerrado em {{ fechamento.prazo }}. Aguardando a autorização do pagamento.</p>
+    {% endif %}
+    {% if fechamento.historico %}
+      <h3>Histórico de prazos</h3>
+      <table>
+        <thead><tr><th>Origem</th><th>Prazo definido</th><th>Registrado em</th></tr></thead>
+        <tbody>
+          {% for linha in fechamento.historico %}
+            <tr><td>{{ linha.origem }}</td><td>{{ linha.termina_em }}</td><td>{{ linha.registrado_em }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% endif %}
+
   <h2>Produtos na rodada</h2>
   {% if na_rodada %}
     <table>
