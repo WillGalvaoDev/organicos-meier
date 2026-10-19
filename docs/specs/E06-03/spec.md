@@ -123,6 +123,54 @@ O implementador roda a suíte inteira depois da mudança de `aceita_interesses`.
 - **Adição que chega ao fornecedor travado pela tarefa de encerramento:** quando ela obtém a trava, a etapa já é `fechamento_encerrado` (`etapa_bloqueada`) ou o prazo já venceu (`prazo_encerrado`). Nos dois casos, é recusada.
 - **Rodada em `interesse`:** sem prazo e sem mudança de comportamento.
 
+## Correção E06-R01 — retorno ao interesse entre as leituras da página (2026-10-19)
+
+### Diagnóstico
+
+`aceita_interesses` decide a etapa pelo objeto recebido, mas busca o prazo com `prazo_do_fechamento`, que relê a etapa no banco e devolve `None` fora de `fechamento` e `fechamento_encerrado`. As duas leituras não são do mesmo momento:
+
+1. a página (carrinho ou catálogo) lê a rodada em `fechamento`;
+2. o encerramento (E06-05) confirma e, com o mínimo não atingido, devolve a rodada a `interesse` (E06-06);
+3. `aceita_interesses` vê `fechamento` no objeto, `prazo_do_fechamento` vê `interesse` no banco e devolve `None`;
+4. a regra trata o `None` como fechamento sem prazo e levanta `RuntimeError`, e a página responde 500.
+
+A transição é legítima e o histórico de prazos existe. O erro é de coerência entre as leituras, não de dados. O revisor reproduziu o caso nas duas páginas. `interesses_editaveis` tem a mesma sequência (lê a rodada e depois chama a regra) e o mesmo defeito.
+
+Eu não previ esse caso: a spec mandou usar `prazo_do_fechamento` dentro da regra sem dizer de que momento vinha a etapa.
+
+### Regra
+
+**Um único retrato da rodada.** A decisão usa a etapa do objeto recebido e o prazo do ciclo desse objeto, sem reler a etapa:
+
+- **Função nova** em `apps/rodadas/fechamento.py`:
+
+  ```
+  prazo_do_ciclo(rodada) -> datetime | None
+  ```
+
+  Devolve o maior `termina_em` do ciclo vigente da rodada (`ciclo_vigente`, E03-07), sem consultar a etapa. Devolve `None` quando a rodada não tem ciclo ou quando o ciclo não tem linha de prazo.
+- **`aceita_interesses(rodada, instante)`** troca `prazo_do_fechamento` por `prazo_do_ciclo`. O resto não muda:
+  - verdadeiro com `rodada.etapa == interesse`;
+  - com `rodada.etapa == fechamento`, `not prazo_encerrado(instante, prazo_do_ciclo(rodada))`;
+  - com `fechamento` e `prazo_do_ciclo` igual a `None`, continua levantando `RuntimeError`. Esse é o fechamento realmente sem prazo, que nenhum serviço produz;
+  - falso nas demais etapas.
+- **`prazo_da_rodada`** (`apps/interesses/apresentacao.py`), que dá a linha do prazo do carrinho e do catálogo, também passa a usar `prazo_do_ciclo`, com a etapa do objeto. Assim, a linha do prazo e os formulários da mesma página descrevem o mesmo estado.
+
+**Por que isso basta.** As linhas de prazo só recebem inserções (E06-01) e são gravadas na mesma transação que cria o ciclo e põe a rodada em `fechamento`. Quem leu a rodada em `fechamento` encontra o prazo desse ciclo, mesmo que a etapa já tenha mudado depois. Se a rodada entrou num ciclo novo nesse meio-tempo, o ciclo vigente é o novo, também com prazo. O `RuntimeError` só aparece quando a invariante foi de fato violada.
+
+**Efeito na página.** A página mostra o estado que leu. No caso do diagnóstico, ela lê `fechamento` com o prazo vencido, não mostra formulário de quantidade e mostra "Prazo do fechamento encerrado em <data> às <hora>.". A página seguinte já mostra a rodada em `interesse`. Toda gravação continua decidida sob trava (`travar_rodada_para_interesses`), onde o objeto é o travado e o comportamento não muda.
+
+**O que não muda:**
+
+- `prazo_do_fechamento` (E06-01) continua com o mesmo contrato e os mesmos usos: telas do administrador, detalhe do fornecedor, prorrogação e encerramento. Nesses usos não há `RuntimeError` por leitura defasada.
+- `aceita_interesses` continua importada pelo nome em `apps/interesses/consultas.py` e `apresentacao.py`. A prova do revisor substitui esse nome para intercalar o encerramento.
+- Nenhuma exceção é capturada para mascarar o erro: o `RuntimeError` do fechamento sem prazo continua chegando a quem chamou.
+- Os critérios A-1 a A-9.
+
+### TDD
+
+Os critérios A-10 a A-12 seguem Red → Green → Refactor, com as regras de prevenção da correção E05-R04 (E05-01). A prova `test_leitura_durante_retorno_nao_causa_500` do revisor de `2fbf143` (as duas origens) é o Red esperado no código atual (`RuntimeError`) e entra literalmente nos testes.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01-03, E05-01, E05-02, E05-05, E05-07 e E06-01.

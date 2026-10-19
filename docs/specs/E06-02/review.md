@@ -1,3 +1,31 @@
+# E06-02 — Revalidação independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito final da E06: APROVADO sobre `e9434666368c517683020e13fceb8395cb5412e2`.**
+
+Branch examinada: `e06-correcoes-especificacao`. A-1 a A-8: aprovação mantida; regressão dos avisos sem achados.
+
+O [parecer consolidado](../E06-01/review.md) contém a matriz atualizada, encerramento de R01 a R05, análise dos registros de TDD, autorização do tratamento de R05, comandos, resultados e reprodução das mutações. Verificação independente: **1791 testes aprovados**, **15 provas originais aprovadas**, Ruff/formatação/mypy/migrações sem erros. Nenhum achado permanece aberto. A aprovação é desta versão; não declara que a branch foi integrada na main.
+
+Este parecer substitui o veredito anterior para a versão examinada. O histórico abaixo permanece íntegro. Apenas documentos de revisão foram alterados pelo revisor.
+
+---
+
+## Histórico preservado — parecer anterior e registros
+
+# E06-02 — Revisão independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito global da E06: REPROVADO.**
+
+Base: `main`, commit `2fbf143d082b37a1e8333a0736a310008e10e9ad`. A-1 a A-8: avisos do início, canais, destinatários, unicidade e atomicidade verificados. Nenhum achado local aberto.
+
+O [parecer consolidado em E06-01](../E06-01/review.md) registra fontes, matriz das sete fatias, classificação, referências, passos de reprodução, limites e código completo das provas independentes. Suíte completa: **1772 passed**. Provas adicionais: **7 failed, 8 passed** (as falhas confirmam R01 a R04). Ruff, formatação, mypy e verificação de migrações passaram. Não houve alteração de produção nem de testes versionados pelo revisor.
+
+Os registros do implementador abaixo são preservados como evidência histórica; não substituem o veredito independente acima. As correções e o gate de processo R05 exigem nova avaliação antes do encerramento da E06.
+
+---
+
+## Registro anterior preservado
+
 # E06-02 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.

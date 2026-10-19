@@ -18,11 +18,14 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-12 | E02-10, T-25 | negativo | um comprador, uma conta de fornecedor e um anônimo | `POST` nas duas rotas; `GET` nas duas rotas como administrador | comprador e fornecedor: recusa da política; anônimo: redirecionamento para `/entrar/`; `GET`: 405; nada gravado; a varredura de políticas encontra `somente_administrador` nas duas |
 | A-13 | E05-05 A-16 | positivo | carrinho de A com 3 fornecedores em `fechamento`, com 1 e com 10 produtos | conto as consultas de `GET /carrinho/` | o mesmo teto com 1 e com 10 produtos; o acréscimo em relação ao teto da E05-05 é no máximo uma constante por fornecedor |
 | A-14 | Spec da fatia | negativo | uma rodada inexistente | `POST` nas duas rotas como administrador | 404 |
+| A-15 | E06-R02 | negativo | o estado do A-5 | `FormularioProrrogacao` e `POST .../fechamento/prorrogar/` com cada `termino`: `2026-11-04`, `2026-11-04T01:30:59`, `2026-11-04T01:30:00+00:00`, `2026-11-04T01:30-03:00`, `2026-11-04 01:30`, `2026-11-04t01:30`, `2026-11-04T1:30`, `2026-11-31T10:00`, `2026-11-04T24:00` e `٢٠٢٦-11-04T01:30` (dígitos arábicos) | o formulário é inválido em todos; o `POST` responde 200 com "Informe a data e a hora do novo prazo.", com o texto enviado escapado; nenhuma linha `prorrogacao`, nenhuma auditoria `rodada.prorrogar_fechamento`; `prazo_do_fechamento` continua 2026-11-03 13:30 UTC |
+| A-16 | E06-R02 | positivo | o estado do A-5; `TIME_ZONE` ativa trocada para UTC com `timezone.override("UTC")` | `FormularioProrrogacao({"termino": "2026-11-04T01:30"})` e `FormularioProrrogacao({"termino": " 2026-11-04T01:30 "})`; depois `POST .../prorrogar/` com `termino=2026-11-04T01:30` | os dois válidos; o valor limpo é igual a 2026-11-04 04:30 UTC, com fuso, `second` 0 e `microsecond` 0; o `POST` responde 302 e o prazo vigente é 2026-11-04 04:30 UTC |
 
 ## Mapeamento para testes
 
 | Critério | Arquivo e função de teste |
 |---|---|
 | A-1 a A-9, A-14 | `tests/tecnicos/test_rodadas_fechamento_telas.py` |
+| A-15, A-16 | `tests/tecnicos/test_rodadas_fechamento_telas.py`; o A-15 inclui literalmente a prova `test_formato_do_prazo_restrito_ao_contrato` do revisor de `2fbf143` |
 | A-10, A-11, A-13 | `tests/tecnicos/test_interesses_carrinho.py` (acréscimos) |
 | A-12 | `tests/tecnicos/test_permissoes_politica_rotas.py` (teste existente), mais o 405 e as recusas em `test_rodadas_fechamento_telas.py` |

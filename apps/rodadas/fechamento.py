@@ -8,7 +8,7 @@ produto, então nada muda entre a conferência do mínimo e a gravação da etap
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
@@ -125,7 +125,16 @@ def prazo_do_fechamento(rodada: Rodada) -> datetime | None:
     atual = Rodada.objects.filter(
         pk=rodada.pk, etapa__in=(Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO)
     ).first()
-    ciclo = ciclo_vigente(atual) if atual is not None else None
+    return prazo_do_ciclo(atual) if atual is not None else None
+
+
+def prazo_do_ciclo(rodada: Rodada) -> datetime | None:
+    """Maior `termina_em` do ciclo vigente da rodada, sem consultar a etapa (E06-R01).
+
+    Quem já leu a rodada em `fechamento` encontra o prazo desse ciclo mesmo que a etapa tenha
+    mudado depois: as linhas de prazo só recebem inserções. `None` sem ciclo ou sem linha de prazo.
+    """
+    ciclo = ciclo_vigente(rodada)
     if ciclo is None:
         return None
     instante: datetime | None = ciclo.prazos.aggregate(prazo=Max("termina_em"))["prazo"]
@@ -170,8 +179,8 @@ def prorrogar_fechamento(autor: Conta | None, rodada: Rodada, novo_termino: date
             {
                 "rodada": ativa.pk,
                 "ciclo": ciclo.pk,
-                "anterior": prazo.isoformat(),
-                "novo": novo_termino.isoformat(),
+                "anterior": prazo.astimezone(UTC).isoformat(),
+                "novo": novo_termino.astimezone(UTC).isoformat(),
             },
         )
     return novo_termino
@@ -337,7 +346,8 @@ def voltar_para_interesse(
     Não altera o ciclo, o prazo, as condições registradas nem a sequência das parcelas: o ciclo
     é histórico, e o próximo início de fechamento registra outro. Como a fase de interesse
     recomeça e houve estoque liberado, atende a fila de pendentes (E05-02). Avisa os
-    `destinatarios` (por padrão, os compradores com reserva na rodada agora). Exige transação.
+    `destinatarios` (por padrão, os compradores com reserva na chamada, lidos antes de qualquer
+    gravação). Exige transação.
     """
     if not connection.in_atomic_block:
         raise TransactionManagementError("voltar_para_interesse exige uma transação aberta.")
@@ -350,6 +360,8 @@ def voltar_para_interesse(
     ciclo = ciclo_vigente(travada)
     if ciclo is None:
         raise RuntimeError("rodada com fechamento encerrado sem ciclo")
+    if destinatarios is None:  # quem tem reserva na chamada, antes de a fila atender a outros
+        destinatarios = compradores_com_reserva(travada)
     travada.etapa = Etapa.INTERESSE
     travada.save(update_fields=["etapa"])
     registrar_auditoria(
@@ -359,6 +371,5 @@ def voltar_para_interesse(
         {"rodada": travada.pk, "ciclo": ciclo.pk, "motivo": motivo},
     )
     alocar_pendentes(Fornecedor.objects.get(pk=travada.fornecedor_id))
-    contas = compradores_com_reserva(travada) if destinatarios is None else destinatarios
-    avisar_retorno_para_interesse(travada, ciclo, contas)
+    avisar_retorno_para_interesse(travada, ciclo, destinatarios)
     rodada.etapa = Etapa.INTERESSE

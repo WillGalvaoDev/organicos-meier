@@ -16,7 +16,7 @@ from apps.interesses.consultas import carrinho_do_comprador
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
 from apps.rodadas.condicoes import aceita_interesses
-from apps.rodadas.fechamento import prazo_do_fechamento
+from apps.rodadas.fechamento import prazo_do_ciclo
 from apps.rodadas.models import Etapa, Rodada
 
 
@@ -81,7 +81,7 @@ def prazo_da_rodada(rodada: Rodada | None) -> datetime | None:
     """O prazo do fechamento, só para a rodada em fechamento ou com o fechamento encerrado."""
     if rodada is None or rodada.etapa not in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
         return None
-    return prazo_do_fechamento(rodada)
+    return prazo_do_ciclo(rodada)
 
 
 def linha_do_prazo(rodada: Rodada | None, prazo: datetime | None) -> str | None:

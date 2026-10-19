@@ -24,6 +24,7 @@ Salvo indicação:
 | A-10 | E03-07 | positivo | os auxiliares trocados conforme a E06-01 e esta spec | rodo `tests/tecnicos/test_rodadas_ciclos.py` | verde; o diff de `tests/apoio/ciclos.py` nesta fatia mostra só a troca de `simular_volta_para_interesse` |
 | A-11 | Spec da fatia | negativo | o estado do A-2; `emitir_evento_para_varios` levanta `RuntimeError` no aviso de retorno | `encerrar_fechamento` em `T` | a exceção chega a quem chamou; etapa `fechamento`; B continua com 1; nenhuma auditoria nem aviso de excedentes |
 | A-12 | Spec da fatia | concorrência | o estado do A-2 | `encerrar_fechamento` segura as travas em `T`, enquanto `adicionar_interesse(D, P, "12")` espera a trava do fornecedor | depois do encerramento, a adição é aceita na rodada já em `interesse`; D tem 12; total reservado coerente |
+| A-13 | E06-R04 | positivo e negativo | mínimo R$ 100,00; `P` a R$ 10,00 com limite 20; A com 10 reservados; fechamento iniciado; B com uma parcela `pendente` de 2 (por fábrica); a rodada posta em `fechamento_encerrado` por `update()` | numa transação, `voltar_para_interesse(rodada, motivo="minimo_nao_atingido")`; noutro caso igual, com `destinatarios=[A]` | nos dois, B fica com 2 reservados; os avisos `retorno_para_interesse` vão só para A, nos dois casos |
 
 ## Mapeamento para testes
 
@@ -32,4 +33,5 @@ Salvo indicação:
 | A-1 a A-9, A-11 | `tests/tecnicos/test_rodadas_fechamento_retorno.py` |
 | A-1, A-2, A-4 e A-5 | também marcados `acceptance`, com os comentários `cenário 9 (suficiente)`, `cenário 9 (insuficiente)`, `cenário 5` e `cenário 73` |
 | A-10 | `tests/tecnicos/test_rodadas_ciclos.py` (arquivo existente) |
+| A-13 | `tests/tecnicos/test_rodadas_fechamento_retorno.py`; inclui literalmente a prova `test_destinatarios_do_retorno_antes_da_alocacao` do revisor de `2fbf143` |
 | A-12 | `tests/tecnicos/test_rodadas_fechamento_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |

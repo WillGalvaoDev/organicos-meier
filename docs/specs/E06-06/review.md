@@ -1,3 +1,31 @@
+# E06-06 — Revalidação independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito final da E06: APROVADO sobre `e9434666368c517683020e13fceb8395cb5412e2`.**
+
+Branch examinada: `e06-correcoes-especificacao`. A-1 a A-13: R04 corrigido; destinatários padrão materializados antes da alocação. Lista explícita e caminho principal preservados.
+
+O [parecer consolidado](../E06-01/review.md) contém a matriz atualizada, encerramento de R01 a R05, análise dos registros de TDD, autorização do tratamento de R05, comandos, resultados e reprodução das mutações. Verificação independente: **1791 testes aprovados**, **15 provas originais aprovadas**, Ruff/formatação/mypy/migrações sem erros. Nenhum achado permanece aberto. A aprovação é desta versão; não declara que a branch foi integrada na main.
+
+Este parecer substitui o veredito anterior para a versão examinada. O histórico abaixo permanece íntegro. Apenas documentos de revisão foram alterados pelo revisor.
+
+---
+
+## Histórico preservado — parecer anterior e registros
+
+# E06-06 — Revisão independente — 2026-10-19
+
+**Veredito desta fatia: REPROVADO. Veredito global da E06: REPROVADO.**
+
+Base: `main`, commit `2fbf143d082b37a1e8333a0736a310008e10e9ad`. A-1 a A-12 examinados. R04 (importante): com destinatarios omitido, o conjunto é calculado depois de alocar pendentes, incluindo quem não tinha reserva na chamada. A chamada principal por encerrar_fechamento, com destinatários explícitos, passou e não apresenta esse defeito.
+
+O [parecer consolidado em E06-01](../E06-01/review.md) registra fontes, matriz das sete fatias, classificação, referências, passos de reprodução, limites e código completo das provas independentes. Suíte completa: **1772 passed**. Provas adicionais: **7 failed, 8 passed** (as falhas confirmam R01 a R04). Ruff, formatação, mypy e verificação de migrações passaram. Não houve alteração de produção nem de testes versionados pelo revisor.
+
+Os registros do implementador abaixo são preservados como evidência histórica; não substituem o veredito independente acima. As correções e o gate de processo R05 exigem nova avaliação antes do encerramento da E06.
+
+---
+
+## Registro anterior preservado
+
 # E06-06 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
@@ -52,3 +80,31 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§4.4, 5.1, 5.2,
 ## Limites da verificação
 
 Postgres real, sem navegador. O retorno por pagamentos insuficientes (E11), a abertura do pagamento (E08) e as telas (E06-07) são de outras fatias. Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R04 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R04", A-13) e a prova `test_destinatarios_do_retorno_antes_da_alocacao`.
+
+**Arquivos:** `apps/rodadas/fechamento.py` (`voltar_para_interesse`), `tests/tecnicos/test_rodadas_fechamento_retorno.py`. Sem andaime e sem migração.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_retorno.py tests/tecnicos/test_rodadas_fechamento_concorrencia.py tests/tecnicos/test_rodadas_ciclos.py -q`: **1 failed, 43 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-13 (destinatários omitidos) | `test_destinatarios_do_retorno_sao_lidos_antes_da_fila[omitidos]` | falhou por asserção: `assert avisos_de(b) == []` (B, só com pendência na entrada, recebeu o aviso) |
+| A-13 (destinatários explícitos) | `...[explicitos]` | **passou no Red**: a lista recebida já era avisada como veio; o caso protege o comportamento que não muda |
+| A-1 a A-12 | testes existentes dos três arquivos | passaram |
+
+### Green
+
+Os três arquivos mais `test_rodadas_fechamento_encerramento.py`: **58 passed**. `ruff check`, `ruff format --check` e `mypy .` sem erros. O conjunto padrão é lido depois das travas e da conferência da etapa e antes de qualquer gravação; o passo 7 avisa esse conjunto sem recalculá-lo. A ordem dos passos 4 a 7 e o caminho de `encerrar_fechamento` (destinatários explícitos) não mudaram.
+
+### Limites
+
+Postgres real. Nenhuma mutação aplicada nesta correção.

@@ -1,3 +1,31 @@
+# E06-07 — Revalidação independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito final da E06: APROVADO sobre `e9434666368c517683020e13fceb8395cb5412e2`.**
+
+Branch examinada: `e06-correcoes-especificacao`. A-1 a A-16: R01 e R02 corrigidos. Formato integral, calendário, dígitos ASCII, fuso da operação e respostas do POST verificados.
+
+O [parecer consolidado](../E06-01/review.md) contém a matriz atualizada, encerramento de R01 a R05, análise dos registros de TDD, autorização do tratamento de R05, comandos, resultados e reprodução das mutações. Verificação independente: **1791 testes aprovados**, **15 provas originais aprovadas**, Ruff/formatação/mypy/migrações sem erros. Nenhum achado permanece aberto. A aprovação é desta versão; não declara que a branch foi integrada na main.
+
+Este parecer substitui o veredito anterior para a versão examinada. O histórico abaixo permanece íntegro. Apenas documentos de revisão foram alterados pelo revisor.
+
+---
+
+## Histórico preservado — parecer anterior e registros
+
+# E06-07 — Revisão independente — 2026-10-19
+
+**Veredito desta fatia: REPROVADO. Veredito global da E06: REPROVADO.**
+
+Base: `main`, commit `2fbf143d082b37a1e8333a0736a310008e10e9ad`. A-1 a A-14 examinados. R01 (bloqueador): carrinho e catálogo falham com retorno ao interesse entre leituras. R02 (importante): formulário aceita data sem hora, segundos não zero e offset explícito, contrariando o formato local especificado. Permissões e demais respostas passaram na suíte existente.
+
+O [parecer consolidado em E06-01](../E06-01/review.md) registra fontes, matriz das sete fatias, classificação, referências, passos de reprodução, limites e código completo das provas independentes. Suíte completa: **1772 passed**. Provas adicionais: **7 failed, 8 passed** (as falhas confirmam R01 a R04). Ruff, formatação, mypy e verificação de migrações passaram. Não houve alteração de produção nem de testes versionados pelo revisor.
+
+Os registros do implementador abaixo são preservados como evidência histórica; não substituem o veredito independente acima. As correções e o gate de processo R05 exigem nova avaliação antes do encerramento da E06.
+
+---
+
+## Registro anterior preservado
+
 # E06-07 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
@@ -49,3 +77,41 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§5, 13, 15), in
 ## Limites da verificação
 
 Cliente HTTP do Django, sem navegador (o campo `datetime-local` não foi exercitado num navegador). O painel geral e os alertas (E15), o pagamento (E08) e o portal do fornecedor (E13) são de outras fatias. Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R02 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R02", A-15 e A-16) e a prova `test_formato_do_prazo_restrito_ao_contrato`.
+
+**Arquivos:** `apps/rodadas/forms.py` (`CampoDoPrazo`, `FORMATO_DO_PRAZO`; `FormularioProrrogacao` usa o campo), `tests/tecnicos/test_rodadas_fechamento_telas.py`. Sem andaime e sem migração. A view não mudou.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_telas.py tests/tecnicos/test_permissoes_politica_rotas.py -q`: **9 failed, 34 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-15 `2026-11-04` | `test_formato_do_prazo_restrito_ao_contrato[...]` | falhou por asserção: `assert not form.is_valid()` (aceita só a data) |
+| A-15 `2026-11-04T01:30:59` | idem | falhou (segundos aceitos) |
+| A-15 `2026-11-04T01:30:00+00:00` | idem | falhou (deslocamento aceito) |
+| A-15 `2026-11-04T01:30-03:00` | idem | falhou |
+| A-15 `2026-11-04 01:30` | idem | falhou (separador espaço aceito pelo leitor ISO) |
+| A-15 `2026-11-04t01:30` | idem | falhou (`t` minúsculo) |
+| A-15 `2026-11-04T1:30` | idem | falhou (hora de um dígito) |
+| A-15 dígitos arábicos | idem | falhou |
+| A-15 `2026-11-31T10:00` e `2026-11-04T24:00` | idem | **passaram no Red**: o formato antigo já recusava data e hora inexistentes; os dois casos protegem essa recusa contra regressão |
+| A-16 | `test_o_prazo_digitado_vale_no_horario_de_brasilia` | falhou por asserção: com `TIME_ZONE` ativo UTC, `01:30` virou 01:30 UTC e não 04:30 UTC |
+| A-1 a A-14 | testes existentes | passaram |
+
+### Green
+
+Os dois arquivos: **43 passed**. Suíte completa: **1791 passed** (eram 1772; +19 testes das correções). `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
+
+`CampoDoPrazo` (campo de texto): retira os espaços das pontas, exige `fullmatch` de `[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}` com `re.ASCII` (cobre dígitos de outros alfabetos, `T` minúsculo, um dígito na hora, espaço e deslocamento), confere o calendário com `strptime` e fixa o fuso America/Sao_Paulo (`FUSO_DA_OPERACAO`), com segundos e microssegundos zero. O formulário continua se chamando `FormularioProrrogacao`, com o campo `termino` e valor limpo `datetime` com fuso. A rota devolve 200 com a mensagem e o texto escapado, como antes.
+
+### Limites
+
+Cliente HTTP do Django, sem navegador (o campo `datetime-local` do navegador envia `AAAA-MM-DDTHH:MM`; não foi exercitado num navegador real). Nenhuma mutação aplicada nesta correção.

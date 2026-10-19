@@ -166,7 +166,52 @@ A tarefa `encerrar_fechamentos_vencidos` roda a cada minuto (`@app.periodic(cron
 - **Prorrogação confirmada antes da tarefa obter a trava:** o serviço relê o prazo novo e devolve `None`.
 - **Encerramento em paralelo com alteração de preço ou com suspensão:** as notificações pedem só `FOR KEY SHARE` nas contas (E05-R03), e as transações terminam sem deadlock.
 
+## Correção E06-R05 — três critérios sem Red observado (2026-10-19)
+
+### Diagnóstico
+
+O registro do implementador (`review.md` desta fatia, "Ciclo TDD") declara:
+
+- o Red foi rodado contra o andaime com um filtro `-k` que, "por acidente nos nomes", deixou de fora os testes de A-8 (encerramento uma vez só e só no prazo), A-12 (falha no aviso desfaz o encerramento) e A-13 (prorrogação adia o encerramento);
+- depois do Green, o implementador recriou o andaime e viu os três falharem. Ele mesmo registrou que essa leitura "não é um Red histórico".
+
+O registro é honesto e deve ser preservado como está. A falha nos três depois do código prova que os testes são sensíveis à ausência do encerramento inteiro. Ela não prova a ordem exigida pelo AGENTS.md, e nenhuma execução feita agora pode reconstituí-la.
+
+### Causas
+
+1. **Seleção por nome no Red.** O Red rodou um subconjunto escolhido por `-k`, e não os arquivos de teste inteiros da fatia. Três testes com nomes fora do padrão do filtro ficaram de fora sem aviso.
+2. **Ninguém conferiu o Red contra o mapeamento dos critérios.** O registro mostra "11 failed, 3 passed entre os selecionados", mas não compara os testes selecionados com os 16 critérios do `acceptance.md`. A ausência de três critérios só apareceu depois do Green.
+3. **A diferença em relação à E05-R04.** Na E05, o implementador classificou critérios como exceção ao Red. Aqui não houve exceção declarada: houve um erro de execução não detectado. As regras de prevenção da E05-R04 continuam válidas, mas não cobrem esse caso, porque não exigem conferir a cobertura do Red.
+
+### Prevenção
+
+Estas regras se somam às da correção E05-R04 (E05-01) e valem para esta correção e para as próximas etapas:
+
+- **Red sem seleção por nome.** O Red de uma fatia roda os arquivos de teste inteiros do mapeamento do `acceptance.md`, sem `-k` e sem escolher funções pelo nome. Um teste que já passa no Red (porque depende de ausência, como E06-01 A-4) é registrado com essa justificativa.
+- **Conferência da cobertura antes do Green.** O registro do Red tem uma tabela critério → teste → resultado no Red. Cada critério do `acceptance.md` aparece nela, com a falha por asserção ou com a justificativa de já passar. Sem essa tabela completa, não se escreve código de produção.
+- **Red tardio.** Se um critério for descoberto sem Red depois do Green, o implementador para, registra o fato e pede orientação (AGENTS.md §2 e §9) antes de seguir. Não roda o teste contra um andaime recriado como substituto.
+
+### Tratamento
+
+**Aprovado pelo responsável pelo projeto em 2026-10-19.** É a mesma solução escolhida para a E05-R04 em 2026-10-18 (opção (a)):
+
+1. **Registro da não conformidade.** No `review.md` desta fatia, o implementador acrescenta uma seção "Não conformidade de TDD":
+   - os critérios A-8, A-12 e A-13;
+   - o que aconteceu: "teste escrito antes do código, mas excluído do Red por um filtro `-k`; sem Red observado antes do código de produção";
+   - o tratamento aplicado.
+
+   O registro atual é mantido sem edição, e nenhum texto pode dar a entender que houve Red nesses critérios.
+2. **Prova de sensibilidade por mutação,** uma por critério, com o título "sensibilidade (mutação), não Red". A mutação retira só a proteção que o critério descreve, e não o encerramento inteiro:
+   - **A-8:** retirar de `encerrar_fechamento` a releitura sob trava (a recusa da rodada que já saiu de `fechamento`), ou a conferência do prazo vencido;
+   - **A-12:** emitir os avisos de excedentes fora da transação do encerramento (por exemplo, em `transaction.on_commit`) ou capturar a exceção do aviso;
+   - **A-13:** ler o prazo da linha `inicio` em vez do maior `termina_em` do ciclo.
+
+   Para cada um: o trecho mudado, o comando, a falha por asserção (tempo esgotado ou erro de infraestrutura não servem), a mutação desfeita e o teste verde. Se uma mutação razoável não fizer o teste falhar, o implementador registra isso como limite do teste e propõe o reforço.
+3. **Correções com Red real.** Os critérios novos das correções E06-R01 a E06-R04 seguem Red → Green → Refactor com as regras de prevenção acima, e o registro de cada um tem a tabela de cobertura do Red.
+
+Os passos 1 e 2 são o tratamento definitivo de A-8, A-12 e A-13. Refazer esses testes agora não recriaria um Red histórico.
+
 ## Dependências e decisões em aberto
 
 - Depende de E04-01 a E04-03, E05-01, E05-04, E06-01 e E06-03.
-- Sem decisões em aberto.
+- Sem decisões em aberto. O tratamento da correção E06-R05, encaminhado pelo revisor ao responsável pelo projeto, foi aprovado em 2026-10-19.

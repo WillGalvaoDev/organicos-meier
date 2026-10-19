@@ -1,3 +1,31 @@
+# E06-04 — Revalidação independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito final da E06: APROVADO sobre `e9434666368c517683020e13fceb8395cb5412e2`.**
+
+Branch examinada: `e06-correcoes-especificacao`. A-1 a A-12: R03 corrigido; anterior e novo são auditados em UTC, preservando o instante.
+
+O [parecer consolidado](../E06-01/review.md) contém a matriz atualizada, encerramento de R01 a R05, análise dos registros de TDD, autorização do tratamento de R05, comandos, resultados e reprodução das mutações. Verificação independente: **1791 testes aprovados**, **15 provas originais aprovadas**, Ruff/formatação/mypy/migrações sem erros. Nenhum achado permanece aberto. A aprovação é desta versão; não declara que a branch foi integrada na main.
+
+Este parecer substitui o veredito anterior para a versão examinada. O histórico abaixo permanece íntegro. Apenas documentos de revisão foram alterados pelo revisor.
+
+---
+
+## Histórico preservado — parecer anterior e registros
+
+# E06-04 — Revisão independente — 2026-10-19
+
+**Veredito desta fatia: APROVADO. Veredito global da E06: REPROVADO.**
+
+Base: `main`, commit `2fbf143d082b37a1e8333a0736a310008e10e9ad`. A-1 a A-11 examinados. R03 (melhoria): normalizar em UTC o campo novo da auditoria de prorrogação. O instante registrado é equivalente; autorização, transições e prazo passaram.
+
+O [parecer consolidado em E06-01](../E06-01/review.md) registra fontes, matriz das sete fatias, classificação, referências, passos de reprodução, limites e código completo das provas independentes. Suíte completa: **1772 passed**. Provas adicionais: **7 failed, 8 passed** (as falhas confirmam R01 a R04). Ruff, formatação, mypy e verificação de migrações passaram. Não houve alteração de produção nem de testes versionados pelo revisor.
+
+Os registros do implementador abaixo são preservados como evidência histórica; não substituem o veredito independente acima. As correções e o gate de processo R05 exigem nova avaliação antes do encerramento da E06.
+
+---
+
+## Registro anterior preservado
+
 # E06-04 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
@@ -42,3 +70,33 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§7, 13), infrae
 ## Limites da verificação
 
 Postgres real, sem navegador. O formulário e o botão são da E06-07; não há aviso de prorrogação (a §12 não o define). Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R03 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R03", A-12) e o achado R03 do parecer consolidado em `E06-01/review.md`.
+
+**Arquivos:** `apps/rodadas/fechamento.py` (`prorrogar_fechamento`), `tests/tecnicos/test_rodadas_fechamento_prorrogacao.py`. Sem andaime e sem migração.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_prorrogacao.py tests/tecnicos/test_rodadas_fechamento_concorrencia.py -q`: **2 failed, 29 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-12 (`-03:00`) | `test_a_auditoria_grava_os_instantes_em_utc[brasilia]` | falhou por asserção sobre `alteracoes["novo"]` (gravava o texto no fuso recebido) |
+| A-12 (`+05:30`) | `test_a_auditoria_grava_os_instantes_em_utc[mais-05-30]` | falhou: `'2026-11-04T10:00:00+05:30' == '2026-11-04T04:30:00+00:00'` |
+| A-1 a A-11 | testes existentes dos dois arquivos | passaram (29) |
+
+O teste também confere `anterior`, o valor devolvido pelo serviço (o mesmo instante) e o prazo vigente.
+
+### Green
+
+Os dois arquivos mais `test_rodadas_fechamento_inicio.py`: **47 passed**. `ruff check`, `ruff format --check` e `mypy .` sem erros. A auditoria grava `anterior` e `novo` por `astimezone(UTC).isoformat()`; o valor devolvido e a linha de prazo não mudaram.
+
+### Limites
+
+Postgres real. A auditoria `rodada.iniciar_fechamento` não mudou (já vinha em UTC). Nenhuma mutação aplicada nesta correção.
