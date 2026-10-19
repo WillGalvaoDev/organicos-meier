@@ -12,6 +12,7 @@ from django.db import transaction
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
+from apps.pagamentos.consulta import consultar_antes_de_decidir
 from apps.pagamentos.models import (
     AvisoRecebido,
     ChamadaAoProvedor,
@@ -230,3 +231,23 @@ def test_cinco_avisos_diferentes_do_mesmo_pagamento(
     processar_chamadas()
     assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
     assert len(sinais.recebidos) == 1
+
+
+def test_consulta_antes_de_decidir_durante_o_processamento_do_aviso(
+    simulador_pagamentos: Any, sinais: _Sinais
+) -> None:  # A-10
+    id_externo = _cobranca_pendente()
+    _sincronizar(id_externo)
+    simulador_pagamentos.aprovar(id_externo)
+    with transaction.atomic():
+        agendar_chamada("consultar_pagamento", id_externo, parametros={"origem": "aviso"})
+    resultados = executar_em_paralelo(
+        segurando(processar_chamadas),
+        esperando(lambda: consultar_antes_de_decidir("ref-1")),
+    )
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[0].valor == 1
+    assert [p.situacao for p in resultados[1].valor] == ["aprovado"]
+    assert PagamentoNoProvedor.objects.get().situacao == "aprovado"
+    assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
+    assert sinais.recebidos == [(SituacaoNoProvedor.PENDENTE, SituacaoNoProvedor.APROVADO)]
