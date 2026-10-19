@@ -30,6 +30,10 @@ CANAL_WHATSAPP = env("CANAL_WHATSAPP", default="desligado")
 if CANAL_WHATSAPP not in ("desligado", "simulado"):
     raise ImproperlyConfigured("CANAL_WHATSAPP deve ser 'desligado' ou 'simulado'.")
 
+# Segredo com que o simulador de pagamentos assina os avisos (E07-01). Sem valor padrão aqui: só
+# dev.py e test.py o definem; o simulador recusa operar sem ele.
+SEGREDO_AVISOS_SIMULADOR = env("SEGREDO_AVISOS_SIMULADOR", default="")
+
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA", default="http://localhost:8000")
 
 INSTALLED_APPS = [
@@ -54,6 +58,8 @@ INSTALLED_APPS = [
     "apps.catalogo",
     "apps.interesses",
     "apps.notificacoes",
+    "apps.pagamentos",
+    "apps.simulador_pagamentos",
 ]
 
 AUTH_USER_MODEL = "contas.Conta"

@@ -96,3 +96,14 @@ def simulador_whatsapp() -> Iterator[Any]:
     SIMULADOR.reiniciar()
     yield SIMULADOR
     SIMULADOR.reiniciar()
+
+
+@pytest.fixture
+def simulador_pagamentos() -> Iterator[Any]:
+    """O controle do simulador de pagamentos (E07-01); o plano de falhas é reiniciado antes e
+    depois de cada teste."""
+    from apps.simulador_pagamentos import controle
+
+    controle.reiniciar()
+    yield controle
+    controle.reiniciar()

@@ -19,6 +19,8 @@ INSTALLED_APPS = [*_APPS_BASE, "tests.apoio"]
 
 CANAL_WHATSAPP = "simulado"
 
+SEGREDO_AVISOS_SIMULADOR = "segredo-do-simulador-de-teste"
+
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 DEFAULT_FROM_EMAIL = "contato@organicosmeier.test"
 
