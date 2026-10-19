@@ -1,0 +1,30 @@
+# E07-03 — Critérios de aceitação
+
+Cada critério precisa de um teste automatizado escrito antes do código, com a falha da asserção observada (Red). Valem as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Salvo indicação, o relógio está em 2026-11-02 13:00 UTC, a fixture `simulador_pagamentos` está ativa, existe uma cobrança simulada pendente `P` (referência `"ref-1"`, valor 45,90, criada às 12:00 UTC), e `consulta()` é `obter_provedor().consultar_pagamento(<id de P>)`. As chamadas a `sincronizar_pagamento` ocorrem dentro de `transaction.atomic()`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-1 | Infra 4.1, 4.2 | positivo | `P` pendente | `sincronizar_pagamento(consulta(), origem="tarefa")` | um `PagamentoNoProvedor` com `provedor` `simulador`, `ambiente` `testes`, o `id_externo`, a referência, o valor 45.90, `situacao` `pendente`, `criado_no_provedor_em` 12:00, `aprovado_no_provedor_em` nulo, `primeira_consulta_em` e `ultima_consulta_em` 13:00; uma `ConsultaDoPagamento` com `aplicada` verdadeiro; nenhuma auditoria; nenhum sinal |
+| A-2 | Infra 4.2, Spec §14 | positivo | o registro do A-1; `aprovar(P, em=13:05)`; o relógio em 13:20 | `sincronizar_pagamento(consulta(), origem="aviso", aviso_recebido_em=13:19)` | `situacao` `aprovado`; `aprovado_no_provedor_em` 13:05; `primeiro_aviso_em` 13:19; `ultima_consulta_em` 13:20; uma auditoria `pagamento.situacao` com `anterior` `pendente`, `atual` `aprovado`, `aprovado_em` `"2026-11-02T13:05:00+00:00"` e `origem` `aviso`; um sinal com os mesmos `anterior` e `atual` |
+| A-3 | Cenário 17 | positivo | o estado do A-2 | `sincronizar_pagamento(consulta(), origem="tarefa")` mais duas vezes, com `aviso_recebido_em` 13:40 na última | nenhuma auditoria nova; nenhum sinal novo; `primeiro_aviso_em` continua 13:19; o histórico tem quatro linhas, as duas novas com `aplicada` falso |
+| A-4 | Spec da fatia | positivo | `P` aprovado no simulador antes de qualquer sincronização | `sincronizar_pagamento(consulta(), origem="busca")` | o registro nasce `aprovado`, com uma auditoria (`anterior` nulo) e um sinal (`anterior` `None`) |
+| A-5 | L-6 | negativo | o estado do A-2; `atrasar_consistencia(P, consultas=1)` | `sincronizar_pagamento(consulta(), origem="tarefa")` | a resposta vem `pendente`; o registro continua `aprovado`; a linha do histórico tem `situacao` `pendente` e `aplicada` falso; nenhuma auditoria nem sinal |
+| A-6 | L-2 | positivo | `P` sincronizado `cancelado`; depois `aprovar(P, em=13:30)` | `sincronizar_pagamento(consulta(), origem="tarefa")` | `cancelado` → `aprovado` aplicado, com auditoria e sinal; `aprovado_no_provedor_em` 13:30 |
+| A-7 | Infra 4.2 | negativo | o registro aprovado do A-2; um `PagamentoConsultado` construído com o mesmo `id_externo` e, em cada caso, outra referência, outro valor, outro `criado_em` ou outro `aprovado_em` | `sincronizar_pagamento(<resposta>, origem="tarefa")` | o registro mantém referência, valor, criação e aprovação originais; o histórico registra a resposta com `divergencia` igual a `referencia`, `valor`, `criacao` e `aprovacao`; o log tem "divergência em <campo>" sem os valores; nenhuma auditoria |
+| A-8 | Infra 5 | negativo | uma `ConsultaDoPagamento` gravada | `save()` de novo, `delete()`, `update()` em lote e `UPDATE` e `DELETE` por SQL direto | todos recusados (`RegistroImutavel` e erro do banco) |
+| A-9 | Infra 5 | negativo | o registro do A-1 | `PagamentoNoProvedor.objects.create` com o mesmo provedor e `id_externo`; com `valor` 0; com `situacao` `"paga"` | `IntegrityError` nos três |
+| A-10 | Spec da fatia | negativo | — | `sincronizar_pagamento` fora de transação; com `origem="manual"` | `TransactionManagementError`; `ValueError`; nada gravado |
+| A-11 | Spec da fatia | negativo | um receptor do sinal que levanta `RuntimeError`; `P` aprovado | `sincronizar_pagamento(consulta(), origem="tarefa")` | a exceção chega a quem chamou; nenhum registro, histórico ou auditoria fica gravado; sem o receptor, a repetição aplica normalmente |
+| A-12 | Cenário 37, Infra 4.1 | negativo | — | varro `apps/` em busca de `create`, `get_or_create`, `update_or_create`, `bulk_create`, `save`, `update` e `delete` sobre `PagamentoNoProvedor` e `ConsultaDoPagamento`; varro as rotas de `config.urls`; confiro `INSTALLED_APPS` e os comandos de `manage.py` dos apps | só `apps/pagamentos/sincronizacao.py` chama métodos de escrita sobre esses modelos ou suas instâncias; os outros módulos de `apps/` que os importam são só de leitura e estão listados no `review.md`; nenhuma rota além de `pagamentos_avisos` (E07-05) pertence a `apps.pagamentos`; `django.contrib.admin` não está instalado; nenhum comando de `apps.pagamentos` ou `apps.simulador_pagamentos` |
+| A-13 | Cenário 17, Spec §8.3 | concorrência | `P` aprovado no simulador e já sincronizado como `pendente` | cinco threads chamam `sincronizar_pagamento(consulta(), origem="aviso")` ao mesmo tempo; a primeira segura a trava da linha até as outras aparecerem esperando (prazo de espera com falha por asserção) | um registro `aprovado`; uma auditoria; um sinal; seis linhas no histórico (a pendente e as cinco) |
+| A-14 | Spec da fatia | concorrência | nenhum registro de `P`; `P` aprovado | duas threads sincronizam a primeira consulta ao mesmo tempo | um registro; uma auditoria com `anterior` nulo; um sinal; nenhuma `IntegrityError` chega a quem chamou |
+| A-15 | Spec §14, Infra 5 | negativo | — | inspeciono os campos dos dois modelos e o log dos critérios A-1 a A-7 | nenhum campo de nome, e-mail, documento ou dados para pagar; o log não contém `45.90`, `ref-1` nem `SIMULADO-` |
+
+## Mapeamento para testes
+
+| Critério | Arquivo e função de teste |
+|---|---|
+| A-1 a A-11, A-15 | `tests/tecnicos/test_pagamentos_sincronizacao.py` |
+| A-3 | também marcado `acceptance`, com o comentário `cenário 17 (pagamento)` |
+| A-12 | `tests/tecnicos/test_pagamentos_fronteiras.py`, marcado `acceptance`, com o comentário `cenário 37` |
+| A-13, A-14 | `tests/tecnicos/test_pagamentos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |

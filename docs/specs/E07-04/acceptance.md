@@ -1,0 +1,29 @@
+# E07-04 — Critérios de aceitação
+
+Cada critério precisa de um teste automatizado escrito antes do código, com a falha da asserção observada (Red). Valem as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Salvo indicação, o relógio está em 2026-11-02 13:00 UTC (`time-machine`), a fixture `simulador_pagamentos` está ativa e existe uma cobrança simulada `P`, pendente.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-1 | Infra 4.2 | positivo | — | numa transação, `agendar_chamada("consultar_pagamento", <id de P>)` | uma `ChamadaAoProvedor` `pendente`, com `tentativas` 0, `proxima_em` 13:00, `provedor` `simulador`, `ambiente` `testes` e chave de 32 caracteres hexadecimais; nenhuma chamada ao simulador |
+| A-2 | Infra 4.2 | positivo | a chamada do A-1 | `agendar_chamada` com a mesma operação e o mesmo alvo, três vezes | devolve a mesma chamada; uma linha só; a chave e o `proxima_em` não mudam |
+| A-3 | Spec da fatia | negativo | — | `agendar_chamada` fora de transação; com operação `"nao_existe"` | `TransactionManagementError`; `ValueError`; nada gravado |
+| A-4 | Infra 4.2 | positivo | a chamada do A-1; `P` aprovado no simulador | `processar_chamadas()` | devolve 1; a chamada fica `concluida`, com `tentativas` 1 e `concluida_em` 13:00; existe o `PagamentoNoProvedor` de `P`, `aprovado`, com uma `ConsultaDoPagamento` de origem `tarefa` |
+| A-5 | Infra 4.2, Spec §15 | positivo | a chamada do A-1; `indisponivel()` | `processar_chamadas()` às 13:00, 13:01, 13:06, 13:21, 14:21 e 15:21, e uma vez às 13:03 | cada execução nos instantes listados faz uma tentativa; a das 13:03 não faz nenhuma; `proxima_em` passa por 13:01, 13:06, 13:21, 14:21, 15:21 e 16:21; `ultimo_erro` `indisponivel`; a chamada continua `pendente` |
+| A-6 | Spec da fatia | positivo | o estado final do A-5; `normalizar()` | `processar_chamadas()` às 16:21 | a chamada fica `concluida`, com `tentativas` 7 |
+| A-7 | Infra 4.2, Spec §15 | positivo | a operação de teste `criar_cobranca_de_teste` agendada com a chave `"k-teste"`; `falhar_proximas(1, operacao="criar_cobranca", depois_de_executar=True)` | `processar_chamadas()` às 13:00 e às 13:01 | a primeira deixa a chamada `pendente`, com a `CobrancaSimulada` já criada com a chave `"k-teste"`; a segunda conclui; uma única `CobrancaSimulada` com essa chave; a tabela de apoio tem o mesmo `id_externo` |
+| A-8 | Spec da fatia | negativo | uma chamada de `criar_cobranca_de_teste` cujo provedor recusa com `RecusaDoProvedor("expiracao_invalida")`; a operação com `falhou` registrando o código numa tabela de apoio | `processar_chamadas()`; depois de novo, uma hora mais tarde | a chamada fica `falhou`, com `ultimo_erro` `expiracao_invalida` e `concluida_em`; `falhou` foi chamado uma vez; a segunda execução não tenta nada |
+| A-9 | L-6 | positivo e negativo | `consultar_pagamento` agendada para `"sim-999"`, que não existe | `processar_chamadas()` às 13:00 e nos instantes seguintes da tabela de intervalos, até passar de 2026-11-03 13:00 | antes de 24 horas, a chamada continua `pendente`, com `ultimo_erro` `nao_encontrado`; na primeira execução a partir de 2026-11-03 13:00, fica `falhou`, com `ultimo_erro` `nao_encontrado` |
+| A-10 | E06-05 | negativo | três chamadas vencidas; o `concluir` da segunda levanta `RuntimeError` por `monkeypatch` | `processar_chamadas()` | devolve 3; a primeira e a terceira ficam `concluida`; a segunda continua `pendente`, com `tentativas` e `proxima_em` inalterados e nenhuma consulta gravada; o log tem o id da chamada, a operação e `RuntimeError`, sem o alvo; sem a falha, a próxima execução conclui a segunda |
+| A-11 | Spec da fatia | positivo | 5 chamadas vencidas | `processar_chamadas(limite=2)` | devolve 2; as duas de menor `proxima_em` e `id` concluídas; as outras três `pendente` |
+| A-12 | Infra 5 | negativo | uma chamada | criar outra com a mesma `chave_idempotencia`; criar duas `pendente` com a mesma operação e alvo diretamente pelo ORM; `situacao` `"perdida"` | `IntegrityError` nos três |
+| A-13 | E04-03 | positivo | — | inspeciono o registro de tarefas do Procrastinate | `processar_chamadas_ao_provedor` existe, é periódica a cada minuto e tem `queueing_lock` |
+| A-14 | Spec da fatia | concorrência | uma chamada vencida | duas threads executam `processar_chamadas()`; a primeira segura a trava da chamada dentro de `executar` até a segunda terminar (prazo de espera com falha por asserção) | a segunda devolve 0, sem chamar o simulador; a primeira conclui; o simulador recebeu uma única consulta |
+| A-15 | Infra 4.2 | concorrência | — | duas threads agendam `consultar_pagamento` para o mesmo alvo ao mesmo tempo, com a primeira segurando a transação depois de inserir até a segunda aparecer esperando | uma única chamada `pendente`; as duas devolvem a mesma; nenhuma `IntegrityError` chega a quem chamou |
+| A-16 | Spec §15 | negativo | o log dos critérios A-4 a A-10 | inspeciono as mensagens | nenhuma contém os parâmetros, a chave de idempotência nem dados da cobrança; as mensagens têm o id da chamada e a operação |
+
+## Mapeamento para testes
+
+| Critério | Arquivo e função de teste |
+|---|---|
+| A-1 a A-13, A-16 | `tests/tecnicos/test_pagamentos_chamadas.py` |
+| A-14, A-15 | `tests/tecnicos/test_pagamentos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |

@@ -1,0 +1,29 @@
+# E07-05 — Critérios de aceitação
+
+Cada critério precisa de um teste automatizado escrito antes do código, com a falha da asserção observada (Red). Valem as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Salvo indicação, o relógio está em 2026-11-02 13:00 UTC (`time-machine`), a fixture `simulador_pagamentos` está ativa, existe uma cobrança simulada `P`, aprovada às 12:58 UTC, e `aviso` é o aviso simulado dessa aprovação, com corpo e cabeçalhos de `corpo_e_cabecalhos(aviso)`. Os `POST` usam o cliente HTTP do Django com `content_type="application/json"` e os cabeçalhos do aviso.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-1 | Infra 4.2 | positivo | — | `POST /pagamentos/avisos/` anônimo com o corpo e os cabeçalhos | 200 com corpo vazio; um `AvisoRecebido` com `provedor` `simulador`, o `id_evento`, `tipo` `pagamento`, o `id_externo` de `P` e `recebido_em` 13:00; uma `ChamadaAoProvedor` `consultar_pagamento` `pendente` para `P`, com `parametros` `{"origem": "aviso", "aviso_recebido_em": "2026-11-02T13:00:00+00:00"}`; nenhum `PagamentoNoProvedor` ainda; o simulador não recebeu consulta |
+| A-2 | Infra 4.2 | positivo | o estado do A-1; o relógio em 13:01 | `processar_chamadas()` | o `PagamentoNoProvedor` de `P` `aprovado`, com `aprovado_no_provedor_em` 12:58 e `primeiro_aviso_em` 13:00; a consulta com origem `aviso`; uma auditoria e um sinal |
+| A-3 | Cenário 17 | positivo | o estado do A-2 | o mesmo `POST` mais quatro vezes; depois `processar_chamadas()` | 200 nas quatro; um único `AvisoRecebido`; nenhuma chamada nova; nenhuma auditoria nem sinal novos |
+| A-4 | Spec §15, L-11 | negativo | — | `POST` sem o cabeçalho de assinatura; com a assinatura de outro corpo; com o corpo alterado em um byte; com corpo que não é JSON | 401 em todos; nenhum `AvisoRecebido` nem chamada; o log tem "Aviso de pagamento recusado" e não contém o corpo nem a assinatura |
+| A-5 | Spec da fatia | negativo | — | `POST` com corpo de 64 KiB + 1 byte, assinado corretamente; `GET`, `PUT` e `DELETE` na rota | 400 no primeiro, sem gravar nada; 405 nos outros |
+| A-6 | Spec da fatia | positivo | um aviso assinado com `tipo` `"teste_desconhecido"` | o `POST` | 200; um `AvisoRecebido` com esse tipo; nenhuma chamada |
+| A-7 | Infra 4.2 | positivo | `P` pendente; `expirar(P)` gera o aviso `a1` e `aprovar(P)` gera `a2`, os dois ainda não entregues | `entregar_avisos([a1, a1, a2])` às 13:00; depois `processar_chamadas()` às 13:01 | dois `AvisoRecebido` de `P`; uma chamada só para `P`, concluída; `primeiro_aviso_em` 13:00; a situação gravada é `aprovado` |
+| A-8 | Infra 4.2 | positivo | o mesmo arranjo do A-7 | `entregar_avisos([a2])` e `processar_chamadas()`; depois `entregar_avisos([a1])` e `processar_chamadas()` | a situação final é `aprovado`, a mesma da ordem certa; o histórico tem duas consultas, as duas `aprovado`; uma única auditoria de mudança (`anterior` nulo) |
+| A-9 | Spec §8.3, P-6 | positivo | `P` aprovado com `em` = 13:00; o aviso entregue só às 15:00 | o `POST` às 15:00 e `processar_chamadas()` às 15:01 | `aprovado_no_provedor_em` 13:00; `primeiro_aviso_em` 15:00; `ultima_consulta_em` 15:01; os três instantes distintos |
+| A-10 | E02-10 | positivo | — | rodo a varredura de políticas | `pagamentos_avisos` tem a política `publica`; nenhuma rota sem política |
+| A-11 | Spec da fatia | positivo | o estado do A-2, com a chamada concluída | um novo aviso de `P`, com outro `id_evento`, e `processar_chamadas()` | uma chamada nova, concluída; uma consulta a mais no histórico; nenhuma auditoria nem sinal novos |
+| A-12 | T-6, Cenário 17 | concorrência | — | cinco threads fazem o mesmo `POST` ao mesmo tempo, com a primeira segurando a transação depois de inserir o `AvisoRecebido` até as outras aparecerem esperando (prazo de espera com falha por asserção); depois, `processar_chamadas()` | 200 nas cinco; um `AvisoRecebido`; uma chamada; o simulador recebeu uma consulta; um `PagamentoNoProvedor` `aprovado`; uma auditoria `pagamento.situacao`; um sinal |
+| A-13 | T-6 | concorrência | cinco avisos diferentes do mesmo `P`: o da aprovação e quatro de `reemitir_aviso(P)` | cinco threads entregam um aviso cada, ao mesmo tempo; depois, `processar_chamadas()` | cinco `AvisoRecebido`; uma chamada `consultar_pagamento` para `P`; um reconhecimento da aprovação (uma auditoria, um sinal) |
+| A-14 | Infra 5 | negativo | um `AvisoRecebido` | `save()` de novo, `delete()`, `update()` em lote e SQL direto; outro com o mesmo provedor e `id_evento` pelo ORM | recusados (`RegistroImutavel`, erro do banco, `IntegrityError`) |
+
+## Mapeamento para testes
+
+| Critério | Arquivo e função de teste |
+|---|---|
+| A-1 a A-9, A-11, A-14 | `tests/tecnicos/test_pagamentos_avisos.py` |
+| A-3 | também marcado `acceptance`, com o comentário `cenário 17 (pagamento)` |
+| A-10 | `tests/tecnicos/test_permissoes_politica_rotas.py` (teste existente) |
+| A-12, A-13 | `tests/tecnicos/test_pagamentos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`); o A-12 também marcado `acceptance`, com o comentário `T-6` |
