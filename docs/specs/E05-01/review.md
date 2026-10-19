@@ -1,5 +1,89 @@
 # E05-01 — Revisão independente
 
+## Veredito final da E05 — 2026-10-19
+
+**E05 APROVADA** sobre `9ec351a3a364c0089af2c2e35745ece11ab84926` (main). Correção R05: `4559b57`, PR #67. Este veredito substitui os estados anteriores, preservados abaixo como histórico.
+
+R01 a R03 permanecem resolvidos conforme o contrato aprovado; o tratamento excepcional de R04 permanece aceito, sem alegação de TDD retroativo. **R05 está encerrado. Nenhum achado aberto permanece na E05.**
+
+Validação independente nesta revisão:
+
+- `uv run pytest -q`: **1666 passed em 142,80 s**, incluindo E05-05 A-25 a A-27 e regressões de todas as fatias.
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: **217 arquivos** conformes.
+- `uv run mypy .`: **251 arquivos**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- `uv run pytest -c pyproject.toml $env:TEMP/test_review_e05_9ec351a.py -q --tb=short`: **26 passed em 3,04 s**. As 20 provas da revisão de 8728b4b foram reexecutadas sem alteração; as três falhas de R05 agora passam. Outros seis casos verificam aviso único, nome do produto escapado, preservação de reservas/auditoria e ausência de formulário proibido, no carrinho e no catálogo.
+
+**Restauração documental conferida:** o script original do revisor foi localizado na transcrição local da sessão (`rollout-2026-10-15T09-08-49-01a13f77-0e96-7123-a3a7-f9aaf8088eee.jsonl`). Suas constantes foram extraídas sem executar o script e comparadas aos sete pareceres restaurados; o bloco de provas também foi comparado ao arquivo original em TEMP. Resultado: **E05-01 a E05-07 EXATOS**, com normalização apenas de quebras de linha na leitura. Portanto, os trechos sobre 8728b4b estão como foram deixados pelo revisor. O relato antigo de restauração incompleta ao final da E05-05 descreve o incidente naquela data; foi superado pela restauração conferida nesta revisão.
+
+### Encerramento de R05
+
+Fontes lidas antes do código: E05-05/spec.md, correção E05-R05; acceptance.md A-25 a A-27; registro Red/Green ao final do review.md; AGENTS.md, incluindo §10. O diff de produção desde 8728b4b restringe-se ao contexto de apresentação, preenchimento do nome do produto nas recusas e aos dois templates.
+
+O destino da mensagem usa o mesmo `mostrar` dos formulários. Se o formulário da ação/produto recebe a mensagem, não há aviso adicional no topo; se ele não existe ou não pode ser desenhado, o topo mostra `<produto>: <mensagem>` em `role="alert"`. A correção não cria linhas, botões ou formulários para alojar mensagens, não altera os serviços e mantém o status e as regras de gravação.
+
+| Critério | Revalidação | Resultado |
+|---|---|---|
+| A-25 | Item removido em outra aba: carrinho vazio com aviso no topo; catálogo com aviso dentro do formulário e estado zero | APROVADO |
+| A-26 | Reenvio de remoção total de pendentes, com e sem reservas; 409, aviso único no topo, sem formulário de pendentes nem nova auditoria | APROVADO |
+| A-27 | Recusas 200 sem formulário aplicável: remoção sem pendência e quantidade inválida de produto sem linha | APROVADO |
+
+TDD: conferido o registro de **7 failed, 44 passed** antes da correção e **51 passed** depois, com falhas por ausência da mensagem/contagem de alertas, comandos e testes identificados. As provas originais do revisor foram incorporadas sem enfraquecimento. A execução histórica Red é evidência documental do implementador; o Green e a reprodução dos defeitos anteriormente encontrados foram verificados independentemente. Não se afirma que o revisor presenciou o Red histórico.
+
+### Matriz final
+
+| Fatia | Critérios | Veredito |
+|---|---|---|
+| E05-01 | A-1 a A-21 | APROVADO |
+| E05-02 | A-1 a A-17 | APROVADO |
+| E05-03 | A-1 a A-9, mais esperado/travas em E05-01 | APROVADO |
+| E05-04 | A-1 a A-15 | APROVADO |
+| E05-05 | A-1 a A-27 | APROVADO |
+| E05-06 | A-1 a A-9, mais concorrência em E05-01/E05-07 | APROVADO |
+| E05-07 | A-1 a A-16 | APROVADO |
+
+### Limites e rastreabilidade
+
+Cliente HTTP Django, serviços e PostgreSQL reais; sem inspeção visual em navegador ou integração externa real. Permanecem os limites históricos de sensibilidade por mutação descritos no tratamento aprovado de R04, sem novos bloqueios. A aprovação é da E05 no escopo documentado, não uma autorização de produção ou de fases futuras.
+
+Na retomada, o banco local estava parado; foi iniciado com `docker compose up -d db`. A primeira tentativa de probes não produziu resultado e foi interrompida antes da reexecução. Nos seis controles novos, a primeira execução concluída teve 24 sucessos e duas falhas de premissa do teste: `abc` é validado pelo serviço somente após a etapa, portanto em pagamento a recusa correta é 409 de etapa, não 200 de formulário. O controle foi corrigido para quantidade acima de 30 caracteres, efetivamente recusada pelo formulário antes do serviço; nenhuma asserção foi removida. A execução definitiva teve 26 sucessos. Nenhum teste versionado foi alterado.
+
+Logs: `%TEMP%/om_e05_9ec351a_suite.log` e `%TEMP%/om_e05_9ec351a_probes.log`. O arquivo de probes mantém integralmente o bloco de 20 casos da revisão anterior incorporado abaixo e acrescenta os seis controles a seguir. Para reproduzir, salvar o bloco anterior e este acréscimo no arquivo TEMP indicado e executar o comando registrado acima.
+
+```python
+@pytest.mark.django_db
+@pytest.mark.parametrize('origem',['carrinho','catalogo'])
+@pytest.mark.parametrize('recusa',['ausente','quantidade','estado'])
+def test_recusa_sem_edicao_visivel_uma_vez_e_escapada(origem,recusa):
+    from apps.rodadas.models import Etapa
+    from apps.nucleo.auditoria import EntradaAuditoria
+    _,p,_=cenario('10',etapa=Etapa.PAGAMENTO,nome='<b>P</b>')
+    a=ContaFactory.create()
+    reservada(a,p,4)
+    c=Client(); c.force_login(a)
+    corpo={'produto':p.pk,'origem':origem}
+    if recusa=='quantidade': corpo['quantidade']='x'*31  # erro do formulario antes do servico
+    if recusa=='estado': corpo.update(quantidade='3',reservado_atual='abc',pendente_atual='0')
+    antes=EntradaAuditoria.objects.count()
+    resposta=c.post('/interesses/',corpo)
+    assert resposta.status_code==(409 if recusa=='estado' else 200)
+    html=resposta.content.decode()
+    import re
+    alertas=re.findall(r'<p role="alert">(.*?)</p>',html,re.S)
+    assert len(alertas)==1,alertas
+    assert alertas[0].startswith('&lt;b&gt;P&lt;/b&gt;: ')
+    assert '<b>P</b>' not in html
+    assert 'action="/interesses/"' not in html
+    assert EntradaAuditoria.objects.count()==antes
+    from apps.interesses.servicos import interesse_do_comprador
+    assert interesse_do_comprador(a,p).reservado==D(4)
+
+```
+
+Somente os sete `review.md` foram alterados pelo revisor. Os documentos desta revisão são commitados antes da devolução, conforme AGENTS.md §10. Próximo gate: a entrega seguinte passa por especificação aprovada e implementação TDD próprias.
+
+---
+
 ## Nova revisão independente — correções em 8728b4b
 
 Commit: `8728b4b3f459d97bf9c1ce1c74407bbaa2a8655e` (`main`, PR #66), revisto em 2026-10-18. Este parecer substitui o estado de aprovação anterior, cujo histórico permanece abaixo.
