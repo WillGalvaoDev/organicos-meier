@@ -1,5 +1,6 @@
 """E07-01: criação concorrente da mesma cobrança (acceptance A-15)."""
 
+import threading
 from collections.abc import Iterator
 from datetime import timedelta
 from decimal import Decimal
@@ -10,7 +11,8 @@ from django.db import transaction
 
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.tempo import agora
-from apps.pagamentos.models import ConsultaDoPagamento, PagamentoNoProvedor
+from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor, ConsultaDoPagamento, PagamentoNoProvedor
 from apps.pagamentos.provedor import NovaCobranca, SituacaoNoProvedor, obter_provedor
 from apps.pagamentos.sinais import situacao_do_pagamento_mudou
 from apps.pagamentos.sincronizacao import sincronizar_pagamento
@@ -108,3 +110,48 @@ def test_primeira_consulta_concorrente_cria_um_registro_so(
     assert entradas[0].alteracoes["anterior"] is None
     assert sinais.recebidos == [(None, SituacaoNoProvedor.APROVADO)]
     assert ConsultaDoPagamento.objects.count() == 2
+
+
+def test_duas_execucoes_nao_tentam_a_mesma_chamada(
+    simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-14
+    id_externo = _cobranca_pendente()
+    with transaction.atomic():
+        agendar_chamada("consultar_pagamento", id_externo)
+    entrou, terminou = threading.Event(), threading.Event()
+    consultas: list[str] = []
+    original = OPERACOES["consultar_pagamento"]
+
+    def lenta(provedor: Any, chamada: Any) -> Any:
+        entrou.set()
+        assert terminou.wait(20), "a segunda execução não terminou"
+        consultas.append(chamada.alvo)
+        return original.executar(provedor, chamada)
+
+    monkeypatch.setitem(OPERACOES, "consultar_pagamento", Operacao(lenta, original.concluir))
+
+    def segunda(barreira: Any) -> int:
+        assert entrou.wait(20), "a primeira execução não chegou a chamar o provedor"
+        try:
+            return processar_chamadas()
+        finally:
+            terminou.set()
+
+    resultados = executar_em_paralelo(lambda barreira: processar_chamadas(), segunda)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert [r.valor for r in resultados] == [1, 0]
+    assert consultas == [id_externo]
+    assert ChamadaAoProvedor.objects.get().situacao == "concluida"
+
+
+def test_agendamentos_concorrentes_do_mesmo_alvo(simulador_pagamentos: Any) -> None:  # A-15
+    id_externo = _cobranca_pendente()
+
+    def agendar() -> Any:
+        with transaction.atomic():
+            return agendar_chamada("consultar_pagamento", id_externo)
+
+    resultados = executar_em_paralelo(segurando(agendar), esperando(agendar))
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert ChamadaAoProvedor.objects.filter(situacao="pendente").count() == 1
+    assert len({r.valor.pk for r in resultados}) == 1

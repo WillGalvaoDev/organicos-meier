@@ -79,3 +79,46 @@ class ConsultaDoPagamento(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"consulta {self.pk}"
+
+
+class SituacaoDaChamada(models.TextChoices):
+    PENDENTE = "pendente", "Pendente"
+    CONCLUIDA = "concluida", "Concluída"
+    FALHOU = "falhou", "Falhou"
+
+
+class ChamadaAoProvedor(models.Model):
+    """Uma chamada ao provedor registrada junto da mudança de estado e executada por tarefa
+    (E07-04). A chave de idempotência é gravada antes da chamada e reaproveitada em toda nova
+    tentativa. Os parâmetros não levam dados pessoais."""
+
+    operacao = models.CharField(max_length=40)
+    alvo = models.CharField(max_length=64)
+    parametros = models.JSONField(default=dict, blank=True)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    provedor = models.CharField(max_length=30)
+    ambiente = models.CharField(max_length=20)
+    situacao = models.CharField(
+        max_length=10, choices=SituacaoDaChamada.choices, default=SituacaoDaChamada.PENDENTE
+    )
+    tentativas = models.PositiveIntegerField(default=0)
+    proxima_em = models.DateTimeField(default=agora)
+    criada_em = models.DateTimeField(default=agora)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+    ultimo_erro = models.CharField(max_length=40, blank=True, default="")
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["operacao", "alvo"],
+                condition=models.Q(situacao="pendente"),
+                name="chamada_pendente_unica",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(situacao__in=SituacaoDaChamada.values),
+                name="chamada_situacao_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"chamada {self.pk}"
