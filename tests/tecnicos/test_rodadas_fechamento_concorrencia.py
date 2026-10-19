@@ -14,9 +14,14 @@ from apps.fornecedores.servicos import alterar_minimo
 from apps.interesses import servicos
 from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador, reduzir_interesse
 from apps.notificacoes.models import Notificacao
-from apps.rodadas import condicoes
+from apps.rodadas import condicoes, fechamento
 from apps.rodadas.condicoes import CondicoesCongeladas, InteressesBloqueados
-from apps.rodadas.fechamento import TransicaoRecusada, iniciar_fechamento, prazo_do_fechamento
+from apps.rodadas.fechamento import (
+    TransicaoRecusada,
+    iniciar_fechamento,
+    prazo_do_fechamento,
+    prorrogar_fechamento,
+)
 from apps.rodadas.models import Ciclo, Etapa, PrazoDoFechamento, Rodada
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.interesses import cenario, reservada
@@ -171,3 +176,54 @@ def test_o_prazo_e_lido_depois_de_obter_as_travas(
     assert resultados[1].excecao.codigo == "prazo_encerrado"
     assert interesse_do_comprador(b, produto).reservado == D("1")
     assert interesse_do_comprador(c, produto).reservado == D("0")
+
+
+def _fechamento_iniciado(relogio: RelogioControlado) -> tuple[Rodada, datetime]:
+    """Rodada em fechamento (iniciada às 13:30 de 02/11); devolve a rodada e o prazo `T`."""
+    relogio.congelar(datetime(2026, 11, 2, 13, 30, tzinfo=UTC))
+    rodada, produto, _ = cenario("20", preco=D("10.00"))
+    reservada(ContaFactory.create(), produto, 10)
+    iniciar_fechamento(admin(), rodada)
+    relogio.parar()
+    prazo = prazo_do_fechamento(rodada)
+    assert prazo is not None
+    return rodada, prazo
+
+
+def test_duas_prorrogacoes_valem_na_ordem_de_confirmacao(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-04 A-10
+    rodada, prazo = _fechamento_iniciado(relogio)
+    monkeypatch.setattr(fechamento, "agora", lambda: prazo - timedelta(hours=2))
+    resultados = executar_em_paralelo(
+        segurando(lambda: prorrogar_fechamento(admin(), rodada, prazo + timedelta(hours=24))),
+        esperando(lambda: prorrogar_fechamento(admin(), rodada, prazo + timedelta(hours=12))),
+    )
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, TransicaoRecusada), resultados[1].excecao
+    assert resultados[1].excecao.codigo == "prazo_nao_posterior"
+    assert prazo_do_fechamento(rodada) == prazo + timedelta(hours=24)
+
+
+def test_o_prazo_da_prorrogacao_e_lido_depois_das_travas(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-04 A-11
+    rodada, prazo = _fechamento_iniciado(relogio)
+    compartilhado = {"agora": prazo - timedelta(milliseconds=10)}
+    monkeypatch.setattr(fechamento, "agora", lambda: compartilhado["agora"])
+
+    def segura_o_fornecedor(barreira: Any) -> None:
+        with transaction.atomic():
+            Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
+            barreira.wait(timeout=10)
+            esperar_outra_conexao_na_trava()
+            compartilhado["agora"] = prazo + timedelta(seconds=1)  # o prazo passa antes de soltar
+
+    resultados = executar_em_paralelo(
+        segura_o_fornecedor,
+        esperando(lambda: prorrogar_fechamento(admin(), rodada, prazo + timedelta(hours=24))),
+    )
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, TransicaoRecusada), resultados[1].excecao
+    assert resultados[1].excecao.codigo == "prazo_encerrado"
+    assert not PrazoDoFechamento.objects.filter(origem="prorrogacao").exists()
