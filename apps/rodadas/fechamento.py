@@ -12,13 +12,15 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Max
+from django.db.transaction import TransactionManagementError
 
 from apps.catalogo.models import Produto
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import travar_parcelas
+from apps.interesses.fila import alocar_pendentes
 from apps.interesses.models import SituacaoParcela
 from apps.interesses.progresso import progresso_da_rodada
 from apps.interesses.servicos import interesse_do_comprador
@@ -28,6 +30,8 @@ from apps.rodadas.avisos import (
     ExcedenteRemovido,
     avisar_excedentes_removidos,
     avisar_fechamento_iniciado,
+    avisar_retorno_para_interesse,
+    compradores_com_reserva,
 )
 from apps.rodadas.ciclos import ciclo_vigente, registrar_condicoes_do_ciclo
 from apps.rodadas.condicoes import CondicoesCongeladas
@@ -52,7 +56,12 @@ MENSAGENS = {
     "fora_de_fechamento": "Só um fechamento em andamento pode ser prorrogado.",
     "prazo_encerrado": "O prazo deste fechamento já terminou e não pode mais ser prorrogado.",
     "prazo_nao_posterior": "O novo prazo precisa ser posterior ao prazo atual, {prazo}.",
+    "fora_de_fechamento_encerrado": (
+        "Só uma rodada com o fechamento encerrado pode voltar para interesse."
+    ),
 }
+
+MOTIVOS_DE_RETORNO = ("minimo_nao_atingido",)
 
 
 class TransicaoRecusada(Exception):
@@ -242,7 +251,8 @@ def encerrar_fechamento(rodada: Rodada) -> ResultadoDoEncerramento | None:
 
     A etapa e o prazo são relidos sob as travas (fornecedor e rodada); sem fechamento vencido,
     não faz nada e devolve `None`. Tudo acontece numa transação: uma falha desfaz o encerramento
-    e a próxima execução da tarefa o refaz. A verificação do mínimo é da E06-06.
+    e a próxima execução da tarefa o refaz. Depois de tirar os excedentes, verifica o mínimo com os
+    valores que ficaram: não atingido volta a rodada para interesse (E06-06).
     """
     with transaction.atomic():
         Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
@@ -257,7 +267,19 @@ def encerrar_fechamento(rodada: Rodada) -> ResultadoDoEncerramento | None:
             return None
         travada.etapa = Etapa.FECHAMENTO_ENCERRADO
         travada.save(update_fields=["etapa"])
+        participantes = compradores_com_reserva(travada)  # antes de tirar os excedentes
         saidas = _divisao_dos_excedentes(travada)
+        avisar_excedentes_removidos(travada, ciclo, _por_comprador_e_produto(saidas))
+        progresso = progresso_da_rodada(
+            Rodada.objects.select_related("fornecedor").get(pk=travada.pk)
+        )
+        if progresso.atingido:
+            resultado = "aguardando_pagamento"
+        else:
+            resultado = "retorno_para_interesse"
+            voltar_para_interesse(
+                travada, motivo="minimo_nao_atingido", destinatarios=participantes
+            )
         registrar_auditoria(
             SISTEMA,
             "rodada.encerrar_fechamento",
@@ -267,15 +289,20 @@ def encerrar_fechamento(rodada: Rodada) -> ResultadoDoEncerramento | None:
                 "ciclo": ciclo.pk,
                 "prazo": prazo.isoformat(),
                 "removidas": [[s.parcela_id, s.produto.pk, str(s.removida)] for s in saidas],
+                "valor_elegivel": str(progresso.valor_elegivel),
+                "minimo": str(progresso.minimo),
+                "resultado": resultado,
             },
         )
-        avisar_excedentes_removidos(travada, ciclo, _por_comprador_e_produto(saidas))
         removidas: dict[int, Decimal] = {}
         for saida in saidas:
             anterior = removidas.get(saida.produto.pk, Decimal("0"))
             removidas[saida.produto.pk] = anterior + saida.removida
-    rodada.etapa = Etapa.FECHAMENTO_ENCERRADO
-    return ResultadoDoEncerramento(rodada, ciclo, removidas, Etapa.FECHAMENTO_ENCERRADO)
+    etapa_final = (
+        Etapa.FECHAMENTO_ENCERRADO if resultado == "aguardando_pagamento" else Etapa.INTERESSE
+    )
+    rodada.etapa = etapa_final
+    return ResultadoDoEncerramento(rodada, ciclo, removidas, etapa_final)
 
 
 def encerrar_fechamentos_vencidos() -> int:
@@ -300,3 +327,38 @@ def encerrar_fechamentos_vencidos() -> int:
         if resultado is not None:
             encerradas += 1
     return encerradas
+
+
+def voltar_para_interesse(
+    rodada: Rodada, *, motivo: str, destinatarios: list[Conta] | None = None
+) -> None:
+    """Devolve à fase de interesse a rodada com o fechamento encerrado (E06-06).
+
+    Não altera o ciclo, o prazo, as condições registradas nem a sequência das parcelas: o ciclo
+    é histórico, e o próximo início de fechamento registra outro. Como a fase de interesse
+    recomeça e houve estoque liberado, atende a fila de pendentes (E05-02). Avisa os
+    `destinatarios` (por padrão, os compradores com reserva na rodada agora). Exige transação.
+    """
+    if not connection.in_atomic_block:
+        raise TransactionManagementError("voltar_para_interesse exige uma transação aberta.")
+    if motivo not in MOTIVOS_DE_RETORNO:
+        raise ValueError(f"motivo desconhecido: {motivo!r}")
+    Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
+    travada = Rodada.objects.select_for_update().filter(pk=rodada.pk).first()
+    if travada is None or travada.etapa != Etapa.FECHAMENTO_ENCERRADO:
+        raise TransicaoRecusada("fora_de_fechamento_encerrado")
+    ciclo = ciclo_vigente(travada)
+    if ciclo is None:
+        raise RuntimeError("rodada com fechamento encerrado sem ciclo")
+    travada.etapa = Etapa.INTERESSE
+    travada.save(update_fields=["etapa"])
+    registrar_auditoria(
+        SISTEMA,
+        "rodada.voltar_para_interesse",
+        travada,
+        {"rodada": travada.pk, "ciclo": ciclo.pk, "motivo": motivo},
+    )
+    alocar_pendentes(Fornecedor.objects.get(pk=travada.fornecedor_id))
+    contas = compradores_com_reserva(travada) if destinatarios is None else destinatarios
+    avisar_retorno_para_interesse(travada, ciclo, contas)
+    rodada.etapa = Etapa.INTERESSE

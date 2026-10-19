@@ -241,6 +241,7 @@ def test_uma_rodada_com_falha_nao_impede_as_outras(
     tres = []
     for _ in range(3):
         rodada, produto, _ = cenario("20", etapa=Etapa.FECHAMENTO, preco=D("10.00"))
+        sem_minimo(rodada)  # a spec parte de fornecedor sem mínimo; o retorno é da E06-06
         tres.append(rodada)
         reservada(ContaFactory.create(email_normalizado=f"sigilo{rodada.pk}@x.com"), produto, 5)
     relogio.congelar(T + timedelta(minutes=1))

@@ -20,7 +20,7 @@ from apps.rodadas.models import Ciclo, Rodada
 MAIOR_TITULO = 150
 
 
-def _compradores_com_reserva(rodada: Rodada) -> list[Conta]:
+def compradores_com_reserva(rodada: Rodada) -> list[Conta]:
     """Compradores com parcela `ativa` e reserva num produto do estoque da rodada, por id."""
     ids = (
         ParcelaDeInteresse.objects.filter(
@@ -36,7 +36,7 @@ def _compradores_com_reserva(rodada: Rodada) -> list[Conta]:
 
 
 def avisar_fechamento_iniciado(rodada: Rodada, ciclo: Ciclo, termina_em: datetime) -> None:
-    contas = _compradores_com_reserva(rodada)
+    contas = compradores_com_reserva(rodada)
     if not contas:
         return
     nome = rodada.fornecedor.nome
@@ -91,3 +91,26 @@ def avisar_excedentes_removidos(
             link="/carrinho/",
             chave=f"excedentes_removidos:{ciclo.pk}:{produto.pk}:{remocao.comprador_id}",
         )
+
+
+def avisar_retorno_para_interesse(rodada: Rodada, ciclo: Ciclo, contas: list[Conta]) -> None:
+    """Aviso `retorno_para_interesse` por mínimo não atingido (E06-06), igual para todos.
+
+    O mínimo do fornecedor nunca aparece para o comprador. Sem destinatários, nada é emitido.
+    """
+    if not contas:
+        return
+    nome = rodada.fornecedor.nome
+    corpo = (
+        f"A rodada de {nome} voltou para a fase de interesse porque o mínimo do fornecedor não "
+        "foi atingido no fim do fechamento. Os interesses que continuam reservados seguem na "
+        "rodada, e você pode alterá-los. Nada foi cobrado neste ciclo, então não há estornos."
+    )
+    emitir_evento_para_varios(
+        Evento.RETORNO_PARA_INTERESSE,
+        contas,
+        titulo=f"Rodada de volta ao interesse: {nome}"[:MAIOR_TITULO],
+        corpo=corpo,
+        link="/carrinho/",
+        chave_base=f"retorno_para_interesse:{ciclo.pk}",
+    )
