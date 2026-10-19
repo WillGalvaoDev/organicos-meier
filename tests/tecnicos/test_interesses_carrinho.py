@@ -743,3 +743,68 @@ def test_recusas_de_quantidade_sem_formulario_de_destino_vao_para_o_topo() -> No
     assert "<h3>Q</h3>" not in html
     assert interesse_do_comprador(a, p).reservado == D("4")
     assert not ParcelaDeInteresse.objects.filter(produto=q).exists()
+
+
+# --- E06-07 (critérios A-10, A-11 e A-13): o prazo do fechamento no carrinho e no catálogo ---
+
+
+def _comprador_em_fechamento(relogio: Any) -> tuple[Any, Any, Conta]:
+    from datetime import UTC, datetime
+
+    from apps.rodadas.fechamento import iniciar_fechamento
+
+    relogio.congelar(datetime(2026, 11, 2, 13, 30, tzinfo=UTC))
+    rodada, produto, _ = cenario(None, nome="Ovos", preco=D("10.00"))
+    # mínimo diferente de qualquer valor mostrado ao comprador (o total de A é R$ 100,00)
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("87.65"))
+    a = ContaFactory.create()
+    reservada(a, produto, 10)
+    iniciar_fechamento(Conta.objects.get(papel="administrador"), rodada)
+    return rodada, produto, a
+
+
+def test_o_prazo_do_fechamento_aparece_no_carrinho_e_no_catalogo(relogio: Any) -> None:
+    # E06-07 A-10
+    rodada, produto, a = _comprador_em_fechamento(relogio)
+    cliente = entrar(a)
+    for url in ("/carrinho/", f"/catalogo/{rodada.fornecedor_id}/"):
+        html = pagina(cliente, url)
+        assert "Prazo do fechamento: 03/11/2026 às 10:30 (horário de Brasília)" in html, url
+        assert len(formularios(html, produto)) == 1, url
+        assert "87,65" not in html, url
+        assert "87.65" not in html, url
+
+
+def test_depois_do_prazo_o_aviso_muda_e_os_formularios_somem(relogio: Any) -> None:
+    # E06-07 A-11
+    from datetime import UTC, datetime
+
+    rodada, produto, a = _comprador_em_fechamento(relogio)
+    relogio.congelar(datetime(2026, 11, 3, 13, 31, tzinfo=UTC))
+    cliente = entrar(a)
+    for url in ("/carrinho/", f"/catalogo/{rodada.fornecedor_id}/"):
+        html = pagina(cliente, url)
+        assert "Prazo do fechamento encerrado em 03/11/2026 às 10:30." in html, url
+        assert formularios(html, produto) == [], url
+
+
+def _carrinho_com_fornecedores_em_fechamento(
+    fornecedores: int, produtos: int, etapa: str
+) -> Client:
+    comprador = ContaFactory.create()
+    for _ in range(fornecedores):
+        rodada, primeiro, _ = cenario(None, etapa=etapa, preco=D("10.00"))
+        reservada(comprador, primeiro, 1)
+        for _ in range(produtos - 1):
+            outro = ProdutoFactory.create(fornecedor=rodada.fornecedor, unidade=Unidade.UNIDADE)
+            EstoqueDaRodadaFactory.create(rodada=rodada, produto=outro, limite=None)
+            reservada(comprador, outro, 1)
+    return entrar(comprador)
+
+
+def test_numero_de_consultas_com_fornecedores_em_fechamento() -> None:  # E06-07 A-13
+    um = _consultas(_carrinho_com_fornecedores_em_fechamento(3, 1, Etapa.FECHAMENTO))
+    dez = _consultas(_carrinho_com_fornecedores_em_fechamento(3, 10, Etapa.FECHAMENTO))
+    assert um == dez
+    em_interesse = _consultas(_carrinho_com_fornecedores_em_fechamento(3, 1, Etapa.INTERESSE))
+    assert 0 <= um - em_interesse <= 3 * 6  # no máximo uma constante por fornecedor (6)

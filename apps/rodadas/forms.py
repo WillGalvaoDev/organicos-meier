@@ -15,3 +15,12 @@ class FormularioLimite(forms.Form):
 
 class FormularioInclusao(FormularioLimite):
     produto = forms.IntegerField(min_value=1, max_value=MAIOR_ID)
+
+
+class FormularioProrrogacao(forms.Form):
+    """Novo prazo digitado como `AAAA-MM-DDTHH:MM`, no horário de Brasília (E06-07).
+
+    `TIME_ZONE` é America/Sao_Paulo, então o valor limpo já é um instante com fuso.
+    """
+
+    termino = forms.DateTimeField(input_formats=["%Y-%m-%dT%H:%M"])

@@ -4,6 +4,7 @@
 {% block conteudo %}
   <h1>{{ rodada.fornecedor.nome }}</h1>
   <p>Etapa: {{ rodada.get_etapa_display }}</p>
+  {% if prazo %}<p>{{ prazo }}</p>{% endif %}
   {% if retorno and retorno.topo %}<p role="alert">{{ retorno.topo }}</p>{% endif %}
   {% if retorno_sem_destino %}<p role="alert">{{ retorno_sem_destino }}</p>{% endif %}
   {% include "interesses/_progresso.html" %}

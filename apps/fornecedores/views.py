@@ -16,7 +16,9 @@ from apps.fornecedores.forms import (
 )
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo, criar_fornecedor, editar_fornecedor
+from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas, condicoes_editaveis
+from apps.rodadas.fechamento import prazo_do_fechamento
 from apps.rodadas.models import ETAPAS_ATIVAS, Rodada
 
 
@@ -58,6 +60,7 @@ def detalhe(request: HttpRequest, pk: int) -> HttpResponse:
     fornecedor = get_object_or_404(Fornecedor, pk=pk)
     contas = Conta.objects.filter(fornecedor=fornecedor).order_by("nome", "pk")
     rodada = Rodada.objects.filter(fornecedor=fornecedor, etapa__in=ETAPAS_ATIVAS).first()
+    prazo = prazo_do_fechamento(rodada) if rodada is not None else None
     return render(
         request,
         "fornecedores/detalhe.html",
@@ -65,6 +68,11 @@ def detalhe(request: HttpRequest, pk: int) -> HttpResponse:
             "fornecedor": fornecedor,
             "contas": contas,
             "rodada": rodada,
+            "prazo": prazo,
+            "prazo_texto": None
+            if prazo is None
+            else f"{no_fuso_da_operacao(prazo):%d/%m/%Y %H:%M}",
+            "prazo_encerrado": prazo is not None and prazo_encerrado(agora(), prazo),
             "produtos": Produto.objects.filter(fornecedor=fornecedor).order_by("nome", "pk"),
         },
     )

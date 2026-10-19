@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -14,6 +15,8 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
 from apps.interesses.progresso import progresso_da_rodada
+from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
+from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
     EstoqueAbaixoDoReservado,
@@ -21,8 +24,14 @@ from apps.rodadas.estoque import (
     estoque_livre,
     incluir_produto_na_rodada,
 )
-from apps.rodadas.forms import FormularioInclusao, FormularioLimite
-from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
+from apps.rodadas.fechamento import (
+    TransicaoRecusada,
+    iniciar_fechamento,
+    prazo_do_fechamento,
+    prorrogar_fechamento,
+)
+from apps.rodadas.forms import FormularioInclusao, FormularioLimite, FormularioProrrogacao
+from apps.rodadas.models import EstoqueDaRodada, Etapa, OrigemDoPrazo, PrazoDoFechamento, Rodada
 from apps.rodadas.servicos import RodadaAtivaExistente, abrir_rodada
 
 
@@ -62,6 +71,7 @@ def _pagina_do_estoque(
     erro: str | None = None,
     status: int = 200,
     submetido: Submetido | None = None,
+    termino: tuple[str, str | None] | None = None,
 ) -> HttpResponse:
     """Um erro que tem linha correspondente aparece no formulário dela, com o valor digitado;
     os demais ficam no aviso do topo."""
@@ -99,12 +109,17 @@ def _pagina_do_estoque(
             }
         )
     editavel = status != 409 and rodada.etapa == Etapa.INTERESSE
+    progresso = progresso_da_rodada(rodada)
+    bloco = _bloco_do_fechamento(rodada, progresso.atingido, termino)
+    if termino is not None and (bloco is None or bloco["tipo"] != "prorrogar"):
+        erro = f"Prorrogar fechamento: {termino[1]}"  # sem formulário para receber a mensagem
     contexto = {
         "rodada": rodada,
         "na_rodada": na_rodada,
         "fora_da_rodada": fora_da_rodada,
         "editavel": editavel,
-        "progresso": progresso_da_rodada(rodada),
+        "progresso": progresso,
+        "fechamento": bloco,
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
@@ -174,3 +189,89 @@ def estoque_alterar(request: HttpRequest, pk: int) -> HttpResponse:
 def _erros(form: Form) -> str:
     erros = form.errors.as_data().values()
     return " ".join(m for lista in erros for erro in lista for m in erro.messages)
+
+
+def _data_hora(instante: datetime) -> str:
+    return f"{no_fuso_da_operacao(instante):%d/%m/%Y %H:%M}"
+
+
+def _bloco_do_fechamento(
+    rodada: Rodada, atingido: bool, termino: tuple[str, str | None] | None
+) -> dict[str, object] | None:
+    """O que a página de estoque mostra do fechamento, conforme a etapa e o prazo (E06-07)."""
+    historico: list[dict[str, str]] = []
+    ciclo = ciclo_vigente(rodada)
+    if ciclo is not None:
+        for prazo in PrazoDoFechamento.objects.filter(ciclo=ciclo).order_by("pk"):
+            historico.append(
+                {
+                    "origem": "Início" if prazo.origem == OrigemDoPrazo.INICIO else "Prorrogação",
+                    "termina_em": _data_hora(prazo.termina_em),
+                    "registrado_em": _data_hora(prazo.registrado_em),
+                }
+            )
+    bloco: dict[str, object] = {"historico": historico, "tipo": None}
+    if rodada.etapa == Etapa.INTERESSE:
+        bloco["tipo"] = "iniciar" if atingido else "aguardando_minimo"
+        return bloco
+    if rodada.etapa not in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
+        return bloco if historico else None
+    prazo = prazo_do_fechamento(rodada)
+    if prazo is None:
+        return bloco if historico else None
+    bloco["prazo"] = _data_hora(prazo)
+    bloco["prazo_campo"] = f"{no_fuso_da_operacao(prazo):%Y-%m-%dT%H:%M}"
+    if rodada.etapa == Etapa.FECHAMENTO_ENCERRADO:
+        bloco["tipo"] = "encerrado"
+    elif prazo_encerrado(agora(), prazo):
+        bloco["tipo"] = "vencido"
+    else:
+        bloco["tipo"] = "prorrogar"
+        bloco["termino"] = termino[0] if termino else bloco["prazo_campo"]
+        bloco["erro_do_termino"] = termino[1] if termino else None
+    return bloco
+
+
+@somente_administrador
+@require_POST
+def fechamento_iniciar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        iniciar_fechamento(autor, rodada)
+    except TransicaoRecusada as erro:
+        atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+        return _pagina_do_estoque(request, atual, erro.mensagem, status=409)
+    prazo = prazo_do_fechamento(rodada)
+    if prazo is not None:
+        local = no_fuso_da_operacao(prazo)
+        messages.success(
+            request,
+            f"Fechamento iniciado. Prazo: {local:%d/%m/%Y} às {local:%H:%M} (horário de Brasília).",
+        )
+    return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+@somente_administrador
+@require_POST
+def fechamento_prorrogar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    form = FormularioProrrogacao(request.POST)
+    if not form.is_valid():
+        texto = request.POST.get("termino", "")[:40]
+        return _pagina_do_estoque(
+            request, rodada, termino=(texto, "Informe a data e a hora do novo prazo.")
+        )
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        novo = prorrogar_fechamento(autor, rodada, form.cleaned_data["termino"])
+    except TransicaoRecusada as erro:
+        atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+        return _pagina_do_estoque(request, atual, erro.mensagem, status=409)
+    local = no_fuso_da_operacao(novo)
+    messages.success(
+        request,
+        "Prazo do fechamento prorrogado para "
+        f"{local:%d/%m/%Y} às {local:%H:%M} (horário de Brasília).",
+    )
+    return redirect("rodadas_estoque", pk=rodada.pk)

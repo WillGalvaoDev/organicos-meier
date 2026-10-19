@@ -5,6 +5,7 @@ a própria participação; o mínimo, o valor elegível e o que falta em reais n
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -13,9 +14,10 @@ from apps.catalogo.quantidades import formatar_quantidade
 from apps.contas.models import Conta
 from apps.interesses.consultas import carrinho_do_comprador
 from apps.interesses.progresso import progresso_da_rodada
-from apps.nucleo.tempo import agora
+from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
 from apps.rodadas.condicoes import aceita_interesses
-from apps.rodadas.models import Rodada
+from apps.rodadas.fechamento import prazo_do_fechamento
+from apps.rodadas.models import Etapa, Rodada
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,23 @@ def _mensagem_sem_destino(retorno: Retorno | None, formularios: list[dict[str, A
     return prefixo + retorno.mensagem
 
 
+def prazo_da_rodada(rodada: Rodada | None) -> datetime | None:
+    """O prazo do fechamento, só para a rodada em fechamento ou com o fechamento encerrado."""
+    if rodada is None or rodada.etapa not in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
+        return None
+    return prazo_do_fechamento(rodada)
+
+
+def linha_do_prazo(rodada: Rodada | None, prazo: datetime | None) -> str | None:
+    """A linha do prazo do fechamento que o comprador vê; nada sem prazo gravado (E06-07)."""
+    if rodada is None or prazo is None:
+        return None
+    local = no_fuso_da_operacao(prazo)
+    if rodada.etapa == Etapa.FECHAMENTO and not prazo_encerrado(agora(), prazo):
+        return f"Prazo do fechamento: {local:%d/%m/%Y} às {local:%H:%M} (horário de Brasília)"
+    return f"Prazo do fechamento encerrado em {local:%d/%m/%Y} às {local:%H:%M}."
+
+
 def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[str, Any]:
     ativa = conta.pode_adicionar_interesse
     grupos: list[dict[str, Any]] = []
@@ -101,7 +120,13 @@ def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[s
             }
             for linha in grupo.linhas
         ]
-        grupos.append({"grupo": grupo, "linhas": linhas})
+        grupos.append(
+            {
+                "grupo": grupo,
+                "linhas": linhas,
+                "prazo": linha_do_prazo(grupo.rodada, prazo_da_rodada(grupo.rodada)),
+            }
+        )
     desenhados = [
         f for g in grupos for item in g["linhas"] for f in (item["quantidade"], item["pendentes"])
     ]
@@ -145,6 +170,7 @@ def contexto_do_catalogo(
         "itens": [linha["item"] for linha in linhas],
         "percentual": progresso.percentual,
         "atingido": progresso.atingido,
+        "prazo": linha_do_prazo(rodada, prazo_da_rodada(rodada)),
         "retorno": retorno,
         "retorno_sem_destino": _mensagem_sem_destino(
             retorno, [linha["quantidade"] for linha in linhas]

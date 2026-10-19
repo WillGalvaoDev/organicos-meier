@@ -142,6 +142,16 @@ urlpatterns: list[URLPattern | URLResolver] = [
     ),
     path("administracao/rodadas/<int:pk>/estoque/", rodadas_views.estoque, name="rodadas_estoque"),
     path(
+        "administracao/rodadas/<int:pk>/fechamento/iniciar/",
+        rodadas_views.fechamento_iniciar,
+        name="rodadas_fechamento_iniciar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/fechamento/prorrogar/",
+        rodadas_views.fechamento_prorrogar,
+        name="rodadas_fechamento_prorrogar",
+    ),
+    path(
         "administracao/rodadas/<int:pk>/estoque/incluir/",
         rodadas_views.estoque_incluir,
         name="rodadas_estoque_incluir",
