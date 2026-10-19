@@ -104,3 +104,37 @@ class CondicaoDoProdutoNoCiclo(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"condição {self.pk}"
+
+
+class OrigemDoPrazo(models.TextChoices):
+    INICIO = "inicio", "Início do fechamento"
+    PRORROGACAO = "prorrogacao", "Prorrogação"
+
+
+class PrazoDoFechamento(RegistroSoInsercao):
+    """Uma definição do prazo do fechamento do ciclo (E06-01): o início e cada prorrogação.
+
+    O prazo vigente é o maior `termina_em` do ciclo. Só aceita inserção.
+    """
+
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, related_name="prazos")
+    termina_em = models.DateTimeField()
+    origem = models.CharField(max_length=12, choices=OrigemDoPrazo.choices)
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrado_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["ciclo"],
+                condition=models.Q(origem="inicio"),
+                name="prazo_inicio_unico_por_ciclo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(origem__in=OrigemDoPrazo.values),
+                name="prazo_origem_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"prazo {self.pk}"

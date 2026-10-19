@@ -9,6 +9,7 @@ from django.db.transaction import TransactionManagementError
 
 from apps.catalogo.servicos import alterar_incremento, alterar_multiplo
 from apps.contas.models import Conta
+from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.so_insercao import RegistroImutavel
@@ -21,6 +22,7 @@ from tests.fabricas import (
     ContaFactory,
     EstoqueDaRodadaFactory,
     FornecedorFactory,
+    ParcelaFactory,
     ProdutoFactory,
     RodadaFactory,
 )
@@ -40,6 +42,13 @@ def _cenario() -> dict[str, Any]:
     r = ProdutoFactory.create(fornecedor=fornecedor, incremento=D("0.250"))
     estoque_p = EstoqueDaRodadaFactory.create(rodada=rodada, produto=p, limite=D("10"))
     EstoqueDaRodadaFactory.create(rodada=rodada, produto=q, limite=None)
+    # E06-01: o fechamento real exige o mínimo elegível; 30 de Q a R$ 10,00 dão R$ 300,00
+    ParcelaFactory.create(
+        comprador=ContaFactory.create(),
+        produto=q,
+        quantidade_original=D("30"),
+        quantidade_reservada=D("30"),
+    )
     return {
         "admin": admin,
         "fornecedor": fornecedor,
@@ -255,6 +264,13 @@ def test_banco_recusa_numero_zero_e_condicao_repetida() -> None:
 
 def test_rodada_sem_produtos_registra_ciclo_sem_condicoes() -> None:
     rodada = RodadaFactory.create()
+    # E06-01: o fechamento real exige o mínimo; sem produtos, só com mínimo zero (o banco o
+    # recusa, então a restrição sai só neste teste e volta com o rollback da transação)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE fornecedores_fornecedor DROP CONSTRAINT fornecedor_minimo_positivo"
+        )
+    Fornecedor.objects.filter(pk=rodada.fornecedor_id).update(minimo=D("0.00"))
     ciclo = simular_inicio_do_fechamento(rodada)
     assert ciclo.numero == 1
     assert CondicaoDoProdutoNoCiclo.objects.filter(ciclo=ciclo).count() == 0
@@ -266,4 +282,6 @@ def test_ciclos_de_outra_rodada_do_mesmo_fornecedor_tem_numeracao_propria() -> N
     simular_inicio_do_fechamento(c["rodada"])
     Rodada.objects.filter(pk=c["rodada"].pk).update(etapa=Etapa.DISPONIVEL_PARA_RETIRADA)
     nova = RodadaFactory.create(fornecedor=c["fornecedor"])
+    # E06-01: Q (R$ 300,00 reservados) entra na nova rodada para o mínimo ser atingido
+    EstoqueDaRodadaFactory.create(rodada=nova, produto=c["q"], limite=None)
     assert simular_inicio_do_fechamento(nova).numero == 1
