@@ -69,3 +69,28 @@ Passaram já no Red os testes que dependem de ausência ou do estado já existen
 ## Limites da verificação
 
 Postgres real, sem navegador; o worker do Procrastinate não foi executado como processo (a tarefa é conferida no registro e a rotina é chamada direto, como na E04-03). Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Não conformidade de TDD — tratamento da E06-R05 (implementador, 2026-10-19)
+
+Tratamento aprovado pelo responsável pelo projeto em 2026-10-19 (spec desta fatia, "Correção E06-R05"). O registro do implementador acima fica sem edição.
+
+**Critérios afetados:** A-8, A-12 e A-13.
+
+**O que aconteceu:** teste escrito antes do código, mas excluído do Red por um filtro `-k`; sem Red observado antes do código de produção. A leitura feita depois do Green, com o andaime recriado, não é Red histórico e não é apresentada como tal.
+
+**Tratamento aplicado:** uma prova de sensibilidade por critério, abaixo. Isto é **sensibilidade (mutação), não Red**: ela mostra que o teste detecta a retirada da proteção, não que o teste falhou antes do código.
+
+Método: cópia de `apps/rodadas/fechamento.py`, mutação de um trecho, `uv run pytest tests/tecnicos/test_rodadas_fechamento_encerramento.py -q` (arquivo inteiro, sem `-k`), restauração da cópia. Depois das quatro mutações, `git status` limpo. Script em arquivo temporário da sessão, fora do repositório.
+
+| Critério | Mutação (só a proteção do critério) | Teste que falhou | Falha por asserção |
+|---|---|---|---|
+| A-8 (releitura sob trava) | `if travada is None or travada.etapa != Etapa.FECHAMENTO: return None` vira `if travada is None: return None` | `test_o_encerramento_acontece_uma_unica_vez_e_so_no_prazo` | `assert ResultadoDoEncerramento(...) is None` na terceira chamada (reencerrou) |
+| A-8 (prazo vencido) | removida a linha `if not prazo_encerrado(agora(), prazo): return None` | o mesmo teste | `assert ResultadoDoEncerramento(...) is None` na chamada em `T − 1 ms` (encerrou antes do prazo) |
+| A-12 (aviso na transação) | `avisar_excedentes_removidos(...)` envolvido em `try/except Exception: pass` | `test_falha_no_aviso_desfaz_o_encerramento` | `Failed: DID NOT RAISE RuntimeError` |
+| A-13 (maior prazo do ciclo) | em `prazo_do_fechamento`, `Max("termina_em")` passa a filtrar `origem=INICIO` | `test_a_prorrogacao_adia_o_encerramento` | `assert 1 == 0` em `encerrar_fechamentos_vencidos()` (encerrou apesar da prorrogação) |
+
+Cada mutação deixou os outros 13 testes do arquivo verdes (14 no arquivo, 1 falha por mutação). Em cada caso a falha é por asserção, e não por tempo esgotado ou erro de infraestrutura. Nenhuma mutação deixou o teste passar, então não há limite de teste a registrar nem reforço a propor. As mutações foram desfeitas; o código de produção desta fatia não mudou.
+
+A prevenção da R05 (Red sem `-k`, tabela de cobertura do Red antes do Green, parada diante de Red tardio) vale para as correções R01 a R04 e está aplicada nos registros abaixo.
