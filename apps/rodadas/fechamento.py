@@ -125,7 +125,16 @@ def prazo_do_fechamento(rodada: Rodada) -> datetime | None:
     atual = Rodada.objects.filter(
         pk=rodada.pk, etapa__in=(Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO)
     ).first()
-    ciclo = ciclo_vigente(atual) if atual is not None else None
+    return prazo_do_ciclo(atual) if atual is not None else None
+
+
+def prazo_do_ciclo(rodada: Rodada) -> datetime | None:
+    """Maior `termina_em` do ciclo vigente da rodada, sem consultar a etapa (E06-R01).
+
+    Quem já leu a rodada em `fechamento` encontra o prazo desse ciclo mesmo que a etapa tenha
+    mudado depois: as linhas de prazo só recebem inserções. `None` sem ciclo ou sem linha de prazo.
+    """
+    ciclo = ciclo_vigente(rodada)
     if ciclo is None:
         return None
     instante: datetime | None = ciclo.prazos.aggregate(prazo=Max("termina_em"))["prazo"]

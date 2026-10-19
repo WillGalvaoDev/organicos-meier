@@ -2,14 +2,17 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from django.db import transaction
 from django.test import Client
 
 from apps.catalogo.models import Produto
+from apps.catalogo.servicos import editar_produto
 from apps.contas.models import Conta
 from apps.contas.moderacao import suspender
+from apps.interesses import apresentacao, consultas
 from apps.interesses.consultas import total_reservado
 from apps.interesses.fila import alocar_pendentes
 from apps.interesses.servicos import (
@@ -21,9 +24,15 @@ from apps.interesses.servicos import (
 )
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.tempo import agora
-from apps.rodadas.condicoes import MENSAGEM_INTERESSES, InteressesBloqueados, aceita_interesses
-from apps.rodadas.fechamento import iniciar_fechamento
-from apps.rodadas.models import Etapa, Rodada
+from apps.rodadas import condicoes
+from apps.rodadas.condicoes import (
+    MENSAGEM_INTERESSES,
+    InteressesBloqueados,
+    aceita_interesses,
+    interesses_editaveis,
+)
+from apps.rodadas.fechamento import encerrar_fechamento, iniciar_fechamento, prazo_do_ciclo
+from apps.rodadas.models import Ciclo, Etapa, Rodada
 from tests.apoio.interesses import auditorias, cenario, pendente, reservada
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
@@ -142,3 +151,82 @@ def test_aceita_interesses_por_etapa() -> None:  # A-7
     assert aceita_interesses(Rodada(etapa=Etapa.INTERESSE), T + timedelta(days=400)) is True
     for etapa in (Etapa.FECHAMENTO_ENCERRADO, Etapa.PAGAMENTO, Etapa.AGUARDANDO_FORNECEDOR):
         assert aceita_interesses(Rodada(etapa=etapa), T0) is False
+
+
+def _retorno_ao_interesse_entre_as_leituras(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado, modulo: Any, nome: str
+) -> tuple[Rodada, Produto, Conta]:
+    """E06-R01: A tem 10 a R$ 10,00 (mínimo R$ 100,00); o preço cai para R$ 9,00 durante o
+    fechamento; em `T` a substituta de `aceita_interesses` encerra o fechamento (a rodada volta
+    para `interesse`) antes de chamar a original, como se o encerramento ocorresse entre a leitura
+    da rodada pela página e a decisão."""
+    rodada, produto, a = em_fechamento(relogio)
+    editar_produto(admin(), produto, preco="9.00")
+    relogio.congelar(T)
+    original = getattr(modulo, nome)
+
+    def entre_leituras(rodada_lida: Rodada, instante: datetime) -> bool:
+        encerrar_fechamento(rodada)
+        assert Rodada.objects.get(pk=rodada.pk).etapa == Etapa.INTERESSE
+        return bool(original(rodada_lida, instante))
+
+    monkeypatch.setattr(modulo, nome, entre_leituras)
+    return rodada, produto, a
+
+
+@pytest.mark.parametrize("origem", ["carrinho", "catalogo"])
+def test_leitura_durante_retorno_nao_causa_500(
+    origem: str, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # A-10
+    modulo = consultas if origem == "carrinho" else apresentacao
+    rodada, _, a = _retorno_ao_interesse_entre_as_leituras(
+        monkeypatch, relogio, modulo, "aceita_interesses"
+    )
+    url = "/carrinho/" if origem == "carrinho" else f"/catalogo/{rodada.fornecedor_id}/"
+    cliente = Client()
+    cliente.force_login(a)
+    resposta = cliente.get(url)
+    assert resposta.status_code == 200
+    assert Rodada.objects.get(pk=rodada.pk).etapa == Etapa.INTERESSE
+    html = resposta.content.decode()
+    assert 'action="/interesses/"' not in html
+    assert "Prazo do fechamento encerrado em 03/11/2026 às 10:30." in html
+    monkeypatch.undo()
+    html = cliente.get(url).content.decode()
+    assert 'action="/interesses/"' in html
+    assert "Prazo do fechamento" not in html
+
+
+def test_interesses_editaveis_durante_retorno_nao_causa_erro(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # A-11
+    rodada, _, _ = _retorno_ao_interesse_entre_as_leituras(
+        monkeypatch, relogio, condicoes, "aceita_interesses"
+    )
+    assert interesses_editaveis(rodada.fornecedor) is False
+    monkeypatch.undo()
+    assert interesses_editaveis(rodada.fornecedor) is True
+
+
+def test_fechamento_sem_prazo_continua_sendo_erro(relogio: RelogioControlado) -> None:  # A-12
+    relogio.congelar(T0)
+    sem_ciclo, _, _ = cenario("20", etapa=Etapa.INTERESSE)
+    Rodada.objects.filter(pk=sem_ciclo.pk).update(etapa=Etapa.FECHAMENTO)
+    sem_ciclo.refresh_from_db()
+    assert prazo_do_ciclo(sem_ciclo) is None
+    with pytest.raises(RuntimeError):
+        aceita_interesses(sem_ciclo, agora())
+
+    sem_prazo, produto, _ = cenario("20", etapa=Etapa.INTERESSE)
+    a = ContaFactory.create()
+    reservada(a, produto, 3)
+    Rodada.objects.filter(pk=sem_prazo.pk).update(etapa=Etapa.FECHAMENTO)
+    sem_prazo.refresh_from_db()
+    Ciclo.objects.create(rodada=sem_prazo, numero=1, minimo=D("100.00"))
+    assert prazo_do_ciclo(sem_prazo) is None
+    with pytest.raises(RuntimeError):
+        aceita_interesses(sem_prazo, agora())
+    cliente = Client()
+    cliente.force_login(a)
+    with pytest.raises(RuntimeError):
+        cliente.get("/carrinho/")

@@ -81,9 +81,9 @@ def aceita_interesses(rodada: Rodada, instante: datetime) -> bool:
         return True
     if rodada.etapa != Etapa.FECHAMENTO:
         return False
-    from apps.rodadas.fechamento import prazo_do_fechamento
+    from apps.rodadas.fechamento import prazo_do_ciclo
 
-    prazo = prazo_do_fechamento(rodada)
+    prazo = prazo_do_ciclo(rodada)  # a etapa e o prazo vêm do mesmo retrato da rodada
     if prazo is None:
         raise RuntimeError("rodada em fechamento sem prazo gravado")
     return not prazo_encerrado(instante, prazo)

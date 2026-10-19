@@ -65,3 +65,39 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§5, 7, 15), inf
 ## Limites da verificação
 
 Postgres real, sem navegador. A mudança de etapa no fim do prazo e a remoção dos excedentes são da E06-05; o texto do prazo nas telas, da E06-07. Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R01 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R01", A-10 a A-12), o parecer consolidado em `E06-01/review.md` e a prova `test_leitura_durante_retorno_nao_causa_500`.
+
+**Arquivos:** `apps/rodadas/fechamento.py` (`prazo_do_ciclo`; `prazo_do_fechamento` passou a chamá-la), `apps/rodadas/condicoes.py` (`aceita_interesses` usa `prazo_do_ciclo`), `apps/interesses/apresentacao.py` (`prazo_da_rodada` usa `prazo_do_ciclo`), `tests/tecnicos/test_rodadas_fechamento_prazo.py`. Sem migração.
+
+**Andaime (exceção técnica):** `prazo_do_ciclo` delegando a `prazo_do_fechamento`, sem comportamento novo, só para os testes importarem o nome.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_prazo.py tests/tecnicos/test_rodadas_fechamento_concorrencia.py -q`: **3 failed, 20 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-10 (carrinho) | `test_leitura_durante_retorno_nao_causa_500[carrinho]` | falhou: `RuntimeError: rodada em fechamento sem prazo gravado` em `aceita_interesses`, o defeito reproduzido (a spec fixa essa exceção como o Red esperado) |
+| A-10 (catálogo) | `test_leitura_durante_retorno_nao_causa_500[catalogo]` | falhou, mesmo `RuntimeError` |
+| A-11 | `test_interesses_editaveis_durante_retorno_nao_causa_erro` | falhou, mesmo `RuntimeError` |
+| A-12 | `test_fechamento_sem_prazo_continua_sendo_erro` | **passou no Red**: protege a invariante que já valia (`RuntimeError` sem prazo, `prazo_do_ciclo` devolve `None` sem ciclo e sem linha de prazo, o andaime reproduz o comportamento atual) e não pode regredir com a correção |
+| A-1 a A-9 | testes existentes dos dois arquivos | passaram (o 3 failed, 20 passed inclui os 20 anteriores) |
+
+### Green
+
+Os mesmos dois arquivos mais `test_interesses_carrinho.py`: **77 passed**. `-k "fechamento or carrinho or catalogo"`: **399 passed**. `ruff check`, `ruff format --check` e `mypy .` sem erros.
+
+- `aceita_interesses` e `prazo_da_rodada` usam a etapa do objeto recebido e o prazo do ciclo desse objeto, sem reler a etapa. O `RuntimeError` do fechamento realmente sem prazo continua levantado e não há captura de exceção.
+- Refactor: `prazo_do_fechamento` mantém o contrato (filtra a etapa) e delega o cálculo a `prazo_do_ciclo`, sem duplicar a agregação.
+- Nos testes do A-10/A-11, a substituta de `aceita_interesses` chama o `encerrar_fechamento` real antes da original, como na prova do revisor (`monkeypatch` só no ponto da intercalação).
+
+### Limites
+
+Postgres real, sem navegador. A intercalação é determinística no mesmo processo (como a prova do revisor), não uma corrida de threads; as corridas de gravação continuam cobertas pelos testes de concorrência da fatia, que passam. Nenhuma mutação aplicada nesta correção.
