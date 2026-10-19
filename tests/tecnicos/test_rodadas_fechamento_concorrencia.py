@@ -4,10 +4,14 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.db import transaction
 
 from apps.contas.models import Conta
+from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
-from apps.interesses.servicos import reduzir_interesse
+from apps.interesses import servicos
+from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador, reduzir_interesse
+from apps.notificacoes.models import Notificacao
 from apps.rodadas.condicoes import CondicoesCongeladas
 from apps.rodadas.fechamento import TransicaoRecusada, iniciar_fechamento, prazo_do_fechamento
 from apps.rodadas.models import Ciclo, Etapa, PrazoDoFechamento, Rodada
@@ -87,3 +91,35 @@ def test_dois_inicios_simultaneos_so_um_confirma() -> None:  # A-14
     assert excecoes[0].codigo == "fora_de_interesse"
     assert Ciclo.objects.count() == 1
     assert PrazoDoFechamento.objects.filter(origem="inicio").count() == 1
+
+
+def test_aviso_do_inicio_nao_trava_com_a_conta_do_comprador_segura(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # E06-02 A-8
+    rodada, produto, _ = cenario("20", preco=D("10.00"))
+    a = ContaFactory.create()
+    reservada(a, produto, 10)
+
+    def comprador(barreira: Any) -> Any:
+        original = servicos._travar_conta
+
+        def com_pausa(conta: Conta) -> Conta:
+            travada = original(conta)
+            barreira.wait(timeout=10)  # a conta já está travada pelo serviço do comprador
+            return travada
+
+        monkeypatch.setattr(servicos, "_travar_conta", com_pausa)
+        return adicionar_interesse(a, produto, "1")
+
+    def inicio(barreira: Any) -> Any:
+        with transaction.atomic():
+            Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
+            barreira.wait(timeout=10)
+            return iniciar_fechamento(admin(), rodada)
+
+    resultados = executar_em_paralelo(inicio, comprador)
+    assert all(r.excecao is None for r in resultados), [str(r.excecao) for r in resultados]
+    avisos = Notificacao.objects.filter(conta=a, evento="fechamento_iniciado")
+    assert avisos.count() == 1
+    assert etapa(rodada) == Etapa.FECHAMENTO
+    assert interesse_do_comprador(a, produto).reservado == D("11")

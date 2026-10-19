@@ -16,6 +16,7 @@ from apps.contas.models import Conta, Papel
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import somar_horas
+from apps.rodadas.avisos import avisar_fechamento_iniciado
 from apps.rodadas.ciclos import ciclo_vigente, registrar_condicoes_do_ciclo
 from apps.rodadas.condicoes import CondicoesCongeladas
 from apps.rodadas.models import Ciclo, Etapa, OrigemDoPrazo, PrazoDoFechamento, Rodada
@@ -74,6 +75,7 @@ def iniciar_fechamento(autor: Conta | None, rodada: Rodada) -> Ciclo:
                 "minimo": str(progresso.minimo),
             },
         )
+        avisar_fechamento_iniciado(travada, ciclo, prazo.termina_em)
     rodada.etapa = Etapa.FECHAMENTO
     return ciclo
 
