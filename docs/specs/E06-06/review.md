@@ -66,3 +66,31 @@ Fontes lidas antes de editar: especificação funcional v1.6 (§§4.4, 5.1, 5.2,
 ## Limites da verificação
 
 Postgres real, sem navegador. O retorno por pagamentos insuficientes (E11), a abertura do pagamento (E08) e as telas (E06-07) são de outras fatias. Nenhuma mutação foi aplicada nesta fatia.
+
+---
+
+## Correção E06-R04 — registro do implementador (2026-10-19)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `spec.md` e `acceptance.md` desta fatia (seção "Correção E06-R04", A-13) e a prova `test_destinatarios_do_retorno_antes_da_alocacao`.
+
+**Arquivos:** `apps/rodadas/fechamento.py` (`voltar_para_interesse`), `tests/tecnicos/test_rodadas_fechamento_retorno.py`. Sem andaime e sem migração.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_rodadas_fechamento_retorno.py tests/tecnicos/test_rodadas_fechamento_concorrencia.py tests/tecnicos/test_rodadas_ciclos.py -q`: **1 failed, 43 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-13 (destinatários omitidos) | `test_destinatarios_do_retorno_sao_lidos_antes_da_fila[omitidos]` | falhou por asserção: `assert avisos_de(b) == []` (B, só com pendência na entrada, recebeu o aviso) |
+| A-13 (destinatários explícitos) | `...[explicitos]` | **passou no Red**: a lista recebida já era avisada como veio; o caso protege o comportamento que não muda |
+| A-1 a A-12 | testes existentes dos três arquivos | passaram |
+
+### Green
+
+Os três arquivos mais `test_rodadas_fechamento_encerramento.py`: **58 passed**. `ruff check`, `ruff format --check` e `mypy .` sem erros. O conjunto padrão é lido depois das travas e da conferência da etapa e antes de qualquer gravação; o passo 7 avisa esse conjunto sem recalculá-lo. A ordem dos passos 4 a 7 e o caminho de `encerrar_fechamento` (destinatários explícitos) não mudaram.
+
+### Limites
+
+Postgres real. Nenhuma mutação aplicada nesta correção.

@@ -31,7 +31,7 @@ from apps.rodadas.fechamento import (
     voltar_para_interesse,
 )
 from apps.rodadas.models import Ciclo, CondicaoDoProdutoNoCiclo, Etapa, Rodada
-from tests.apoio.interesses import cenario, parcelas, pendente
+from tests.apoio.interesses import cenario, parcelas, pendente, reservada
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
 
@@ -277,3 +277,23 @@ def test_falha_no_aviso_de_retorno_desfaz_o_encerramento(
     assert interesse_do_comprador(a, produto).reservado == D("15")
     assert EntradaAuditoria.objects.filter(acao="rodada.encerrar_fechamento").count() == 0
     assert Notificacao.objects.filter(evento="excedentes_removidos").count() == 0
+
+
+@pytest.mark.parametrize("explicitos", [False, True], ids=["omitidos", "explicitos"])
+def test_destinatarios_do_retorno_sao_lidos_antes_da_fila(
+    explicitos: bool, relogio: RelogioControlado
+) -> None:  # A-13, E06-R04
+    relogio.congelar(T0)
+    rodada, produto, _ = cenario("20", preco=D("10.00"))
+    a, b = ContaFactory.create(), ContaFactory.create()
+    reservada(a, produto, 10)
+    iniciar_fechamento(admin(), rodada)
+    pendente(b, produto, 2)
+    Rodada.objects.filter(pk=rodada.pk).update(etapa=Etapa.FECHAMENTO_ENCERRADO)
+    with transaction.atomic():
+        voltar_para_interesse(
+            rodada, motivo="minimo_nao_atingido", **({"destinatarios": [a]} if explicitos else {})
+        )
+    assert interesse_do_comprador(b, produto).reservado == D("2")
+    assert len(avisos_de(a)) == 1
+    assert avisos_de(b) == []
