@@ -7,13 +7,17 @@ from typing import Any
 
 import pytest
 from django.test import Client
+from django.utils import timezone
+from django.utils.html import escape
 
 from apps.contas.models import Conta
+from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.fechamento import (
     encerrar_fechamento,
     iniciar_fechamento,
     prazo_do_fechamento,
 )
+from apps.rodadas.forms import FormularioProrrogacao
 from apps.rodadas.models import Ciclo, Etapa, PrazoDoFechamento, Rodada
 from tests.apoio.admin_fluxos import administrador_logado
 from tests.apoio.interesses import cenario, reservada
@@ -231,3 +235,54 @@ def test_rodada_inexistente_da_404(admin_client: Client) -> None:  # A-14
         "/administracao/rodadas/999999/fechamento/prorrogar/", {"termino": "2026-11-05T10:00"}
     )
     assert resposta.status_code == 404
+
+
+TEXTOS_FORA_DO_FORMATO = [
+    "2026-11-04",
+    "2026-11-04T01:30:59",
+    "2026-11-04T01:30:00+00:00",
+    "2026-11-04T01:30-03:00",
+    "2026-11-04 01:30",
+    "2026-11-04t01:30",
+    "2026-11-04T1:30",
+    "2026-11-31T10:00",
+    "2026-11-04T24:00",
+    "٢٠٢٦-11-04T01:30",
+]
+
+
+@pytest.mark.parametrize("texto", TEXTOS_FORA_DO_FORMATO)
+def test_formato_do_prazo_restrito_ao_contrato(
+    texto: str, admin_client: Client, relogio: RelogioControlado
+) -> None:  # A-15, E06-R02
+    rodada = montar(10, relogio)
+    iniciar_fechamento(administrador(), rodada)
+    form = FormularioProrrogacao({"termino": texto})
+    assert not form.is_valid(), form.cleaned_data
+    resposta = admin_client.post(prorrogar_url(rodada), {"termino": texto})
+    assert resposta.status_code == 200
+    html = resposta.content.decode()
+    assert "Informe a data e a hora do novo prazo." in html
+    assert escape(texto) in html
+    assert PrazoDoFechamento.objects.count() == 1
+    assert EntradaAuditoria.objects.filter(acao="rodada.prorrogar_fechamento").count() == 0
+    assert prazo_do_fechamento(rodada) == T
+
+
+def test_o_prazo_digitado_vale_no_horario_de_brasilia(
+    admin_client: Client, relogio: RelogioControlado
+) -> None:  # A-16, E06-R02
+    rodada = montar(10, relogio)
+    iniciar_fechamento(administrador(), rodada)
+    destino = datetime(2026, 11, 4, 4, 30, tzinfo=UTC)
+    with timezone.override("UTC"):
+        for texto in ("2026-11-04T01:30", " 2026-11-04T01:30 "):
+            form = FormularioProrrogacao({"termino": texto})
+            assert form.is_valid(), form.errors
+            limpo = form.cleaned_data["termino"]
+            assert limpo == destino
+            assert limpo.tzinfo is not None
+            assert (limpo.second, limpo.microsecond) == (0, 0)
+        resposta = admin_client.post(prorrogar_url(rodada), {"termino": "2026-11-04T01:30"})
+    assert resposta.status_code == 302
+    assert prazo_do_fechamento(rodada) == destino
