@@ -4,11 +4,15 @@ Roda dentro da transação de `iniciar_fechamento`: uma falha na emissão desfaz
 destinatários recebem o mesmo conteúdo, então a emissão é em lote (`emitir_evento_para_varios`).
 """
 
+from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
+from apps.catalogo.models import Produto, Unidade
+from apps.catalogo.quantidades import formatar_quantidade
 from apps.contas.models import Conta
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
-from apps.notificacoes.emissao import emitir_evento_para_varios
+from apps.notificacoes.emissao import emitir_evento, emitir_evento_para_varios
 from apps.notificacoes.eventos import Evento
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.rodadas.models import Ciclo, Rodada
@@ -51,3 +55,39 @@ def avisar_fechamento_iniciado(rodada: Rodada, ciclo: Ciclo, termina_em: datetim
         link="/carrinho/",
         chave_base=f"fechamento_iniciado:{ciclo.pk}",
     )
+
+
+@dataclass(frozen=True)
+class ExcedenteRemovido:
+    """O que saiu do interesse de um comprador num produto no fim do fechamento."""
+
+    comprador_id: int
+    produto: Produto
+    removida: Decimal
+    mantida: Decimal
+    parcela_id: int | None = None  # só nas saídas por parcela
+
+
+def avisar_excedentes_removidos(
+    rodada: Rodada, ciclo: Ciclo, remocoes: list[ExcedenteRemovido]
+) -> None:
+    """Um aviso por par (comprador, produto) com quantidade removida (E06-05). Mesma transação."""
+    contas = Conta.objects.in_bulk([r.comprador_id for r in remocoes])
+    fornecedor = rodada.fornecedor.nome
+    for remocao in remocoes:
+        produto = remocao.produto
+        rotulo = Unidade(produto.unidade).label
+        corpo = (
+            f"No fim do fechamento da rodada de {fornecedor}, "
+            f"{formatar_quantidade(remocao.removida)} {rotulo} de {produto.nome} não completaram "
+            "caixa e foram removidas do seu interesse. Continuam no seu interesse: "
+            f"{formatar_quantidade(remocao.mantida)} {rotulo}."
+        )
+        emitir_evento(
+            Evento.EXCEDENTES_REMOVIDOS,
+            contas[remocao.comprador_id],
+            titulo=f"Excedentes removidos: {produto.nome}"[:MAIOR_TITULO],
+            corpo=corpo,
+            link="/carrinho/",
+            chave=f"excedentes_removidos:{ciclo.pk}:{produto.pk}:{remocao.comprador_id}",
+        )
