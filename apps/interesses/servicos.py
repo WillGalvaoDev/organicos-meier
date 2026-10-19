@@ -23,11 +23,12 @@ from apps.interesses.consultas import SITUACOES_QUE_RESERVAM, travar_parcelas
 from apps.interesses.fila import _alocar_produto
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
+from apps.nucleo.tempo import agora
 from apps.nucleo.valores import ValorInvalido
 from apps.nucleo.valores import quantidade as converter_quantidade
-from apps.rodadas.condicoes import travar_rodada_para_interesses
+from apps.rodadas.condicoes import aceita_interesses, travar_rodada_para_interesses
 from apps.rodadas.estoque import calcular_livre, travar_estoque
-from apps.rodadas.models import ETAPAS_ATIVAS, EstoqueDaRodada, Etapa, Rodada
+from apps.rodadas.models import ETAPAS_ATIVAS, EstoqueDaRodada, Rodada
 
 _ZERO = Decimal("0.000")
 
@@ -437,7 +438,7 @@ def remover_interesses_do_comprador(conta: Conta, *, motivo: str) -> int:
                 parcela.save(
                     update_fields=["quantidade_reservada", "quantidade_pendente", "situacao"]
                 )
-            aceita = rodada is not None and rodada.etapa in (Etapa.INTERESSE, Etapa.FECHAMENTO)
+            aceita = rodada is not None and aceita_interesses(rodada, agora())
             if liberou and tem_estoque and aceita and rodada is not None:
                 _alocar_produto(rodada, produto)
     if removidas:

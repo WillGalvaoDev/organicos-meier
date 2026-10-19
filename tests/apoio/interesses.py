@@ -8,6 +8,7 @@ from apps.contas.models import Conta
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
+from tests.apoio.ciclos import dar_prazo_de_teste
 from tests.fabricas import EstoqueDaRodadaFactory, ParcelaFactory, ProdutoFactory, RodadaFactory
 
 D = Decimal
@@ -18,6 +19,8 @@ def cenario(
 ) -> tuple[Rodada, Produto, EstoqueDaRodada]:
     """Rodada do fornecedor com um produto em unidade (incremento 1) e o estoque dele."""
     rodada = RodadaFactory.create(etapa=etapa)
+    if etapa in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
+        dar_prazo_de_teste(rodada)  # E06-03: fechamento sem prazo não existe
     campos = {"unidade": Unidade.UNIDADE, **produto}
     item = ProdutoFactory.create(fornecedor=rodada.fornecedor, **campos)
     estoque = EstoqueDaRodadaFactory.create(

@@ -1,5 +1,7 @@
 """E06-01: início do fechamento sob concorrência (acceptance A-12 a A-14)."""
 
+import threading
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,12 +14,14 @@ from apps.fornecedores.servicos import alterar_minimo
 from apps.interesses import servicos
 from apps.interesses.servicos import adicionar_interesse, interesse_do_comprador, reduzir_interesse
 from apps.notificacoes.models import Notificacao
-from apps.rodadas.condicoes import CondicoesCongeladas
+from apps.rodadas import condicoes
+from apps.rodadas.condicoes import CondicoesCongeladas, InteressesBloqueados
 from apps.rodadas.fechamento import TransicaoRecusada, iniciar_fechamento, prazo_do_fechamento
 from apps.rodadas.models import Ciclo, Etapa, PrazoDoFechamento, Rodada
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.interesses import cenario, reservada
-from tests.apoio.trava import esperando, segurando
+from tests.apoio.trava import esperando, esperar_outra_conexao_na_trava, segurando
+from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
@@ -123,3 +127,47 @@ def test_aviso_do_inicio_nao_trava_com_a_conta_do_comprador_segura(
     assert avisos.count() == 1
     assert etapa(rodada) == Etapa.FECHAMENTO
     assert interesse_do_comprador(a, produto).reservado == D("11")
+
+
+def test_o_prazo_e_lido_depois_de_obter_as_travas(
+    monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # E06-03 A-9
+    # `time-machine` não atravessa threads de forma confiável: o relógio compartilhado é um
+    # `monkeypatch` de `agora` em `apps.rodadas.condicoes`, que é onde o prazo é decidido.
+    relogio.congelar(datetime(2026, 11, 2, 13, 30, tzinfo=UTC))
+    rodada, produto, _ = cenario("20", preco=D("10.00"))
+    reservada(ContaFactory.create(), produto, 10)
+    iniciar_fechamento(admin(), rodada)
+    relogio.parar()
+    prazo = prazo_do_fechamento(rodada)
+    assert prazo is not None
+    compartilhado = {"agora": prazo - timedelta(milliseconds=50)}
+    monkeypatch.setattr(condicoes, "agora", lambda: compartilhado["agora"])
+    original = servicos.travar_rodada_para_interesses  # type: ignore[attr-defined]
+    contexto: dict[str, Any] = {}
+
+    def travar_com_pausa(fornecedor: Fornecedor) -> Rodada:
+        travada = original(fornecedor)  # lê `agora()` (antes do prazo) já com as travas
+        if threading.current_thread().name.endswith("-0"):  # só a operação que segura
+            contexto["barreira"].wait(timeout=10)
+            esperar_outra_conexao_na_trava()
+            compartilhado["agora"] = prazo + timedelta(seconds=1)  # o prazo passa antes de soltar
+        return travada
+
+    monkeypatch.setattr(servicos, "travar_rodada_para_interesses", travar_com_pausa)
+    b, c = ContaFactory.create(), ContaFactory.create()
+
+    def adicao_de_b(barreira: Any) -> Any:
+        contexto["barreira"] = barreira
+        return adicionar_interesse(b, produto, "1")
+
+    def adicao_de_c(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return adicionar_interesse(c, produto, "1")
+
+    resultados = executar_em_paralelo(adicao_de_b, adicao_de_c)
+    assert resultados[0].excecao is None, resultados[0].excecao
+    assert isinstance(resultados[1].excecao, InteressesBloqueados), resultados[1].excecao
+    assert resultados[1].excecao.codigo == "prazo_encerrado"
+    assert interesse_do_comprador(b, produto).reservado == D("1")
+    assert interesse_do_comprador(c, produto).reservado == D("0")
