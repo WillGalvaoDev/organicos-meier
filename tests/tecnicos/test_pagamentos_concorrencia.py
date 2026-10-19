@@ -12,11 +12,17 @@ from django.db import transaction
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
-from apps.pagamentos.models import ChamadaAoProvedor, ConsultaDoPagamento, PagamentoNoProvedor
+from apps.pagamentos.models import (
+    AvisoRecebido,
+    ChamadaAoProvedor,
+    ConsultaDoPagamento,
+    PagamentoNoProvedor,
+)
 from apps.pagamentos.provedor import NovaCobranca, SituacaoNoProvedor, obter_provedor
 from apps.pagamentos.sinais import situacao_do_pagamento_mudou
 from apps.pagamentos.sincronizacao import sincronizar_pagamento
-from apps.simulador_pagamentos.models import CobrancaSimulada
+from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
+from apps.simulador_pagamentos.provedor import ProvedorSimulado
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.trava import esperando, segurando
 
@@ -155,3 +161,72 @@ def test_agendamentos_concorrentes_do_mesmo_alvo(simulador_pagamentos: Any) -> N
     assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
     assert ChamadaAoProvedor.objects.filter(situacao="pendente").count() == 1
     assert len({r.valor.pk for r in resultados}) == 1
+
+
+@pytest.fixture
+def consultas_ao_simulador(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    registradas: list[str] = []
+    original = ProvedorSimulado.consultar_pagamento
+
+    def contar(self: ProvedorSimulado, id_externo: str) -> Any:
+        registradas.append(id_externo)
+        return original(self, id_externo)
+
+    monkeypatch.setattr(ProvedorSimulado, "consultar_pagamento", contar)
+    return registradas
+
+
+@pytest.mark.acceptance
+def test_mesmo_aviso_cinco_vezes_em_paralelo_reconhece_o_pagamento_uma_vez(
+    simulador_pagamentos: Any, sinais: _Sinais, consultas_ao_simulador: list[str]
+) -> None:  # A-12, T-6
+    from django.test import Client
+
+    from apps.simulador_pagamentos.controle import corpo_e_cabecalhos
+
+    id_externo = _cobranca_pendente()
+    simulador_pagamentos.aprovar(id_externo)
+    corpo, cabecalhos = corpo_e_cabecalhos(AvisoSimulado.objects.get(id_externo=id_externo))
+
+    def enviar() -> int:
+        resposta = Client().post(
+            "/pagamentos/avisos/", data=corpo, content_type="application/json", headers=cabecalhos
+        )
+        return int(resposta.status_code)
+
+    resultados = executar_em_paralelo(segurando(enviar), *[esperando(enviar) for _ in range(4)])
+    assert [r.valor for r in resultados] == [200] * 5, [r.excecao for r in resultados]
+    assert AvisoRecebido.objects.count() == 1
+    assert ChamadaAoProvedor.objects.count() == 1
+    assert processar_chamadas() == 1
+    assert consultas_ao_simulador == [id_externo]
+    pagamentos = list(PagamentoNoProvedor.objects.all())
+    assert [p.situacao for p in pagamentos] == ["aprovado"]
+    assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
+    assert sinais.recebidos == [(None, SituacaoNoProvedor.APROVADO)]
+
+
+def test_cinco_avisos_diferentes_do_mesmo_pagamento(
+    simulador_pagamentos: Any, sinais: _Sinais
+) -> None:  # A-13, T-6
+    id_externo = _cobranca_pendente()
+    simulador_pagamentos.aprovar(id_externo)
+    for _ in range(4):
+        simulador_pagamentos.reemitir_aviso(id_externo)
+    avisos = list(AvisoSimulado.objects.filter(id_externo=id_externo).order_by("pk"))
+    assert len(avisos) == 5
+
+    def entregar(aviso: AvisoSimulado) -> Any:
+        def operacao(barreira: Any) -> Any:
+            barreira.wait(timeout=10)
+            return simulador_pagamentos.entregar_avisos([aviso])
+
+        return operacao
+
+    resultados = executar_em_paralelo(*[entregar(a) for a in avisos])
+    assert [r.valor for r in resultados] == [[200]] * 5, [r.excecao for r in resultados]
+    assert AvisoRecebido.objects.count() == 5
+    assert ChamadaAoProvedor.objects.filter(operacao="consultar_pagamento").count() == 1
+    processar_chamadas()
+    assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
+    assert len(sinais.recebidos) == 1

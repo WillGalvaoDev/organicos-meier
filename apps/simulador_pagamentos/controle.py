@@ -112,12 +112,16 @@ def entregar_avisos(
 ) -> list[int]:
     """Entrega os avisos na ordem recebida (por padrão, os pendentes), cada um `vezes` vezes.
 
-    Monta o corpo, assina e chama o `receptor` (a função que a rota de avisos chama); devolve
-    os códigos HTTP. Atrasado = não entregar ainda; repetido = `vezes`; fora de ordem = a ordem
-    da lista; perdido = `descartar`.
+    Monta o corpo, assina e chama o `receptor` (por padrão, `receber_aviso`, a função que a rota
+    de avisos chama; os testes podem injetar outro); devolve os códigos HTTP.
+
+    Atrasado = não entregar ainda; repetido = `vezes`; fora de ordem = a ordem da lista; perdido
+    = `descartar`.
     """
     if receptor is None:
-        raise RuntimeError("receptor dos avisos não configurado")
+        from apps.pagamentos.avisos import receber_aviso  # a função que a rota de avisos chama
+
+        receptor = receber_aviso
     codigos: list[int] = []
     for aviso in avisos if avisos is not None else avisos_pendentes():
         for _ in range(vezes):

@@ -122,3 +122,22 @@ class ChamadaAoProvedor(models.Model):
 
     def __str__(self) -> str:
         return f"chamada {self.pk}"
+
+
+class AvisoRecebido(RegistroSoInsercao):
+    """Um aviso do provedor aceito: só o identificador do evento, o tipo e o pagamento citado.
+    Nada do corpo vira estado (E07-05); a situação do pagamento vem da consulta."""
+
+    provedor = models.CharField(max_length=30)
+    id_evento = models.CharField(max_length=64)
+    tipo = models.CharField(max_length=40)
+    id_externo = models.CharField(max_length=64)
+    recebido_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["provedor", "id_evento"], name="aviso_evento_unico"),
+        )
+
+    def __str__(self) -> str:
+        return f"{self.provedor}:{self.id_evento}"
