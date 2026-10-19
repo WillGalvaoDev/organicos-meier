@@ -1,3 +1,103 @@
+# E06 — Revalidação independente — 2026-10-19
+
+**Veredito final: APROVADO sobre `e9434666368c517683020e13fceb8395cb5412e2`.**
+
+Revisada a branch `e06-correcoes-especificacao`, não a `main`. Este parecer substitui o veredito anterior para esta versão. R01, R02, R03 e R04 estão corrigidos; R05 está encerrado pelo tratamento excepcional aprovado pelo responsável e verificado abaixo. Não resta achado aberto da E06. A aprovação não declara integração na main nem autoriza entrada em produção com pagamentos reais.
+
+## Escopo e fontes
+
+Revalidação dos cinco achados de `2fbf143`, com comparação integral do diff desde o parecer `0c49406`, leitura prévia das correções e critérios em spec.md/acceptance.md e conferência dos registros do implementador. Documentos-base e AGENTS.md permanecem os da revisão anterior. Os commits examinados são `751dc4d` (especificações), `8cf8ed2` (aprovação do tratamento de R05), `d905d35` (tratamento), `3e0821c` (R01), `5c19960` (R03), `713e7bf` (R04) e `e943466` (R02). Não houve remoção ou afrouxamento de testes anteriores no diff.
+
+| Fatia | Matriz revalidada | Veredito |
+|---|---|---|
+| E06-01 | A-1 a A-14; regressão do início, ciclo e leitura do prazo | APROVADO |
+| E06-02 | A-1 a A-8; regressão dos avisos | APROVADO |
+| E06-03 | A-1 a A-12; inclui retorno intercalado e invariante sem prazo | APROVADO |
+| E06-04 | A-1 a A-12; inclui auditoria com dois fusos não UTC | APROVADO |
+| E06-05 | A-1 a A-16; tratamento autorizado de TDD e sensibilidade de A-8/A-12/A-13 | APROVADO |
+| E06-06 | A-1 a A-13; destinatários omitidos e explícitos | APROVADO |
+| E06-07 | A-1 a A-16; formato estrito, POST e fuso da operação | APROVADO |
+
+## Encerramento dos achados
+
+- **R01 — corrigido.** `aceita_interesses` e `prazo_da_rodada` usam `prazo_do_ciclo`, sem filtrar novamente a etapa no banco. O retorno legítimo deixa de ser confundido com ausência de prazo. A-10 testa carrinho e catálogo, conteúdo da página durante a intercalação e leitura seguinte; A-11 cobre `interesses_editaveis`; A-12 mantém `RuntimeError` quando realmente faltam ciclo/prazo. O contrato de `prazo_do_fechamento` foi preservado. A decisão de gravação continua sob trava. A implementação segue a especificação corrigida, inclusive a leitura do ciclo vigente; não se presume isolamento de snapshot de toda a página.
+- **R02 — corrigido.** `CampoDoPrazo` valida a string inteira com dígitos ASCII, `T` maiúsculo e largura fixa, valida o calendário e aplica `FUSO_DA_OPERACAO`. O parser ISO permissivo deixou de ser usado. Dez entradas inválidas foram cobertas no formulário e no POST; o POST preserva a mensagem, escapa o texto e não altera prazo/auditoria. Entrada válida, espaços externos, segundos zero e fuso ativo UTC foram verificados.
+- **R03 — corrigido.** `anterior` e `novo` são serializados por `astimezone(UTC).isoformat()`. Os testes cobrem America/Sao_Paulo e +05:30, preservando o mesmo instante no retorno e no banco.
+- **R04 — corrigido.** Os destinatários padrão são materializados em lista depois das travas/conferências e antes da alteração da etapa, auditoria e alocação. Quem só ganhou reserva durante o retorno não entra nesse aviso. O caminho com lista explícita continua correto.
+- **R05 — tratado e encerrado.** A aprovação explícita consta de E06-05/spec.md, seção “Tratamento”, commit `8cf8ed2`, de 2026-10-19. O registro original e a declaração de não conformidade foram preservados: A-8, A-12 e A-13 não tiveram Red observado antes da produção. O encerramento deste achado se apoia no tratamento autorizado, não numa afirmação de TDD histórico regular. As quatro mutações específicas foram reproduzidas pelo revisor e detectadas pelos testes correspondentes, conforme a tabela abaixo.
+
+## Evidências de TDD das correções
+
+Conferidos os comandos, resultados, tabelas de critérios e justificativas para testes já verdes nos registros de cada fatia. R01 registra 3 falhas/20 aprovações antes da correção, R03 registra 2/29, R04 registra 1/43 e R02 registra 9/34, seguidos dos respectivos Greens. Os Reds usam arquivos inteiros sem seleção por nome. As falhas registradas correspondem às causas encontradas no código anterior; os critérios de invariantes preservadas estão identificados como já aprovados. Os testes foram incorporados com adaptação às fábricas/relógio/tipagem do projeto e assertivas adicionais; as 15 provas originais do revisor também foram executadas sem alteração, evitando depender dessa adaptação.
+
+Limite: a revisão confere evidências registradas e sua consistência com os diffs; não observou presencialmente a ordem histórica das execuções do implementador. As mutações executadas agora são provas de sensibilidade, nunca Red histórico. A prevenção aprovada de R05 (arquivos inteiros, cobertura do Red antes do Green e parada diante de Red tardio) permanece exigível nas próximas entregas.
+
+## Verificação independente executada
+
+- `uv run pytest -q`: **1791 passed in 210.30s**. Log local: `%TEMP%/om_e06_e943466_suite.log`.
+- `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e06_2fbf143.py" -q --tb=short`: **15 passed in 5.44s**, com o mesmo arquivo preservado no parecer anterior abaixo (antes: 7 falhas e 8 aprovações).
+- `uv run ruff check .`: **All checks passed!**
+- `uv run ruff format --check .`: **229 files already formatted**.
+- `uv run mypy .`: **Success: no issues found in 265 source files**.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: **No changes detected**.
+
+Houve uma tentativa inicial das provas adicionais simultânea à suíte que não executou os comportamentos: 15 erros de setup por `DuplicateDatabase`/`ObjectInUse` no banco compartilhado de testes. Essa tentativa é inválida como evidência funcional. Depois da suíte, o comando foi reexecutado sozinho e produziu as 15 aprovações acima. Não foi necessária alteração de configuração ou código.
+
+### Sensibilidade de R05 reproduzida pelo revisor
+
+Executadas quatro vezes, em processos separados, todas as 14 funções de `test_rodadas_fechamento_encerramento.py`. A mutação foi aplicada apenas ao código da função em memória durante a coleta do pytest, sem editar arquivos do projeto. Cada processo termina descartando a mutação.
+
+| Variante | Proteção retirada | Teste que detectou | Resultado |
+|---|---|---|---|
+| `etapa` | recusa de etapa diferente de fechamento sob trava | `test_o_encerramento_acontece_uma_unica_vez_e_so_no_prazo` | 1 failed, 13 passed; resultado não nulo no reencerramento |
+| `vencimento` | conferência do prazo vencido | mesmo teste de A-8 | 1 failed, 13 passed; resultado não nulo antes do prazo |
+| `aviso` | propagação da exceção do aviso (capturada e ignorada) | `test_falha_no_aviso_desfaz_o_encerramento` | 1 failed, 13 passed; DID NOT RAISE RuntimeError |
+| `prazo_inicial` | maior prazo incluindo prorrogações (filtrado só início) | `test_a_prorrogacao_adia_o_encerramento` | 1 failed, 13 passed; `assert 1 == 0` |
+
+Depois, sem mutação: `uv run pytest tests/tecnicos/test_rodadas_fechamento_encerramento.py -q`: **14 passed in 3.98s**. Árvore conferida sem alterações de produção/testes. As provas confirmam o tratamento aprovado para cada proteção, sem substituir o encerramento inteiro por andaime.
+
+Para reproduzir, salvar o script abaixo como `$env:TEMP/om_e06_mutacoes_revisor.py` e, da raiz do projeto, executar sequencialmente `uv run python "$env:TEMP/om_e06_mutacoes_revisor.py" <variante>` para cada variante da tabela. Cada execução deve sair com código 1 pela falha deliberada indicada. Não executar em paralelo com outra suíte que use o mesmo banco.
+
+```python
+import inspect
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path.cwd()))
+import pytest
+variant=sys.argv[1]
+class Mutacao:
+    def pytest_collection_modifyitems(self, items):
+        from apps.rodadas import fechamento as f
+        target=f.prazo_do_ciclo if variant=='prazo_inicial' else f.encerrar_fechamento
+        source=inspect.getsource(target)
+        if variant=='etapa':
+            before='if travada is None or travada.etapa != Etapa.FECHAMENTO:'
+            after='if travada is None:'
+        elif variant=='vencimento':
+            before='if not prazo_encerrado(agora(), prazo):'
+            after='if False:'
+        elif variant=='aviso':
+            before='        avisar_excedentes_removidos(travada, ciclo, _por_comprador_e_produto(saidas))'
+            after='        try:\n            avisar_excedentes_removidos(travada, ciclo, _por_comprador_e_produto(saidas))\n        except Exception:\n            pass'
+        else:
+            before='ciclo.prazos.aggregate('
+            after='ciclo.prazos.filter(origem=OrigemDoPrazo.INICIO).aggregate('
+        assert source.count(before)==1
+        namespace=dict(f.__dict__)
+        exec(compile(source.replace(before,after),'<mutacao-revisor-'+variant+'>','exec'),namespace)
+        target.__code__=namespace[target.__name__].__code__
+raise SystemExit(pytest.main(['-c','pyproject.toml','tests/tecnicos/test_rodadas_fechamento_encerramento.py','-q','--tb=short'],plugins=[Mutacao()]))
+
+```
+
+## Limites e entrega
+
+PostgreSQL de testes e cliente HTTP do Django; sem navegador real, sem dinheiro real e sem worker executado como processo separado. A intercalação de R01 é determinística; a suíte completa também cobre as corridas de gravação versionadas. Nenhuma nova falha funcional foi identificada no escopo examinado. Código de produção, testes e especificações não foram alterados pelo revisor. Os sete review.md registram o encerramento, preservando integralmente os pareceres e registros anteriores. Próximo passo: integração desta versão aprovada conforme o fluxo do projeto e continuidade das entregas seguintes.
+
+---
+
+## Histórico preservado — parecer anterior e registros
+
 # E06 — Parecer independente do agente 3 — 2026-10-19
 
 **Veredito global: REPROVADO.** Base examinada: `main`, commit `2fbf143d082b37a1e8333a0736a310008e10e9ad` (PR #76). A aprovação local de uma fatia abaixo não aprova a entrega integrada. R01 é bloqueador; R02, R04 e R05 são importantes e impedem atender ao contrato de pronto; R03 é melhoria de conformidade do registro de auditoria.
