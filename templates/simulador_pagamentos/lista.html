@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Simulador de pagamentos · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Simulador de pagamentos</h1>
+  <p>Ambiente de teste. Nenhum dinheiro real é movimentado.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+
+  <form method="post" action="{% url 'simulador_pagamentos_entregar' %}">
+    {% csrf_token %}
+    <button type="submit">Entregar avisos pendentes ({{ avisos_pendentes }})</button>
+  </form>
+
+  {% if cobrancas %}
+    <table>
+      <thead>
+        <tr><th>Cobrança</th><th>Referência</th><th>Valor</th><th>Situação</th><th>Criada em</th><th>Vence em</th><th>Aprovada em</th><th>Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for linha in cobrancas %}
+          <tr>
+            <td>{{ linha.cobranca.id_externo }}</td>
+            <td>{{ linha.cobranca.referencia_externa }}</td>
+            <td>{{ linha.cobranca.valor|reais }}</td>
+            <td>{{ linha.situacao }}</td>
+            <td>{{ linha.criada_em }}</td>
+            <td>{{ linha.vence_em }}</td>
+            <td>{{ linha.aprovada_em }}</td>
+            <td>
+              {% if linha.pode_aprovar %}
+                <form method="post" action="{% url 'simulador_pagamentos_aprovar' id_externo=linha.cobranca.id_externo %}">
+                  {% csrf_token %}<button type="submit">Aprovar</button>
+                </form>
+              {% endif %}
+              {% if linha.pode_encerrar %}
+                <form method="post" action="{% url 'simulador_pagamentos_recusar' id_externo=linha.cobranca.id_externo %}">
+                  {% csrf_token %}<button type="submit">Recusar</button>
+                </form>
+                <form method="post" action="{% url 'simulador_pagamentos_expirar' id_externo=linha.cobranca.id_externo %}">
+                  {% csrf_token %}<button type="submit">Expirar</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhuma cobrança simulada.</p>
+  {% endif %}
+{% endblock %}
