@@ -14,6 +14,7 @@ Registro central das melhorias apontadas nas revisões que **não impedem** a ap
 | ID | Origem | Onde | Descrição | Sugestão |
 |---|---|---|---|---|
 | M-1 | E07-R08, revisão de `162e9e1` | `tests/apoio/concorrencia.py` (mensagem de `TempoEsgotado`) | A mensagem de `TempoEsgotado` com a limpeza concluída cita só `índice:nome` das operações pendentes. A correção E07-R06 (E01-05, item 7) pede também o alias e a fase, como já faz `LimpezaIncompleta`. A limpeza e a guarda estão corretas; falta só a informação de diagnóstico. | Usar `execucao.descrever(pendentes)` também nesse caminho e acrescentar a asserção da mensagem no teste do A-22 da E01-05, com Red e Green. |
+| M-2 | E08-04 (implementador) | `tests/tecnicos/test_pagamentos_fronteiras.py::test_so_a_sincronizacao_escreve_nos_registros_de_pagamento` | O teste acusa qualquer módulo que cite `PagamentoNoProvedor` ou `ConsultaDoPagamento` e contenha uma chamada de escrita, mesmo quando a escrita é de outro modelo. Os módulos de pedidos evitam citar as classes (constante, função de leitura e `Protocol`) só para passar nessa heurística. | Verificar a escrita nos próprios modelos de pagamento (por exemplo, pela árvore de sintaxe) em vez da coocorrência de texto, e então permitir a citação da classe nos tipos e nas chaves estrangeiras. |
 
 ## Encerradas
 

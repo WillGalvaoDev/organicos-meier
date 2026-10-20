@@ -36,6 +36,7 @@ def _pagina_do_pedido(
         {"item": item, "unidade": Unidade(item.unidade).label}
         for item in pedido.itens.order_by("produto_id")
     ]
+    quitado_em = pedido.estado.quitado_em
     contexto = {
         "pedido": pedido,
         "fornecedor": pedido.abertura.rodada.fornecedor,
@@ -43,6 +44,7 @@ def _pagina_do_pedido(
         "prazo": data_e_hora(prazo_do_pedido(pedido)),
         "situacao": texto_da_situacao(pedido, agora()),
         "pagamento": situacao_do_pagamento(pedido, comprador.situacao == Situacao.ATIVA),
+        "quitado_em": data_e_hora(quitado_em) if quitado_em else None,
         "erro": erro,
     }
     return render(request, "pedidos/detalhe.html", contexto, status=status)

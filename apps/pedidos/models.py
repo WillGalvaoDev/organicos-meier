@@ -17,7 +17,7 @@ from apps.interesses.models import ParcelaDeInteresse
 from apps.nucleo.so_insercao import RegistroSoInsercao, SoInsercaoQuerySet
 from apps.nucleo.tempo import agora
 from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
-from apps.pagamentos.models import PagamentoNoProvedor
+from apps.pagamentos.models import PAGAMENTO_REGISTRADO
 from apps.rodadas.models import Ciclo, Rodada
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ class SituacaoDoPedido(models.Model):
     pedido = models.OneToOneField(Pedido, on_delete=models.PROTECT, related_name="estado")
     situacao = models.CharField(max_length=20, choices=SituacaoDePagamento.choices)
     quitado_por = models.OneToOneField(
-        PagamentoNoProvedor, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+        PAGAMENTO_REGISTRADO, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
     quitado_em = models.DateTimeField(null=True, blank=True)
     cancelado_em = models.DateTimeField(null=True, blank=True)
@@ -268,3 +268,68 @@ class TentativaDePagamento(models.Model):
 
     def __str__(self) -> str:
         return f"tentativa {self.pk}"
+
+
+class DestinoDaDecisao(models.TextChoices):
+    QUITA = "quita", "Quita o pedido"
+    DEVOLUCAO = "devolucao", "Gera devolução"
+    SEM_PEDIDO = "sem_pedido", "Sem pedido"
+
+
+class MotivoDoDestino(models.TextChoices):
+    INICIADO_FORA_DO_PRAZO = "iniciado_fora_do_prazo", "Iniciado fora do prazo"
+    APROVADO_APOS_A_MARGEM = "aprovado_apos_a_margem", "Aprovado depois da margem"
+    DUPLICIDADE = "duplicidade", "Pagamento em duplicidade"
+    PEDIDO_CANCELADO = "pedido_cancelado", "Pedido cancelado"
+    VALOR_DIVERGENTE = "valor_divergente", "Valor diferente do pedido"
+    REFERENCIA_DESCONHECIDA = "referencia_desconhecida", "Referência desconhecida"
+
+
+class DestinoDoPagamento(RegistroSoInsercao):
+    """A decisão comercial sobre um pagamento aprovado, tomada uma única vez (E08-04)."""
+
+    pagamento = models.OneToOneField(
+        PAGAMENTO_REGISTRADO, on_delete=models.PROTECT, related_name="destino"
+    )
+    pedido = models.ForeignKey(
+        Pedido, on_delete=models.PROTECT, null=True, blank=True, related_name="destinos"
+    )
+    destino = models.CharField(max_length=10, choices=DestinoDaDecisao.choices)
+    motivo = models.CharField(
+        max_length=30, choices=MotivoDoDestino.choices, blank=True, default=""
+    )
+    decidido_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pedido"],
+                condition=Q(destino="quita"),
+                name="destino_um_quita_por_pedido",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(destino="quita", pedido__isnull=False, motivo="")
+                    | Q(
+                        destino="devolucao",
+                        pedido__isnull=False,
+                        motivo__in=[
+                            MotivoDoDestino.INICIADO_FORA_DO_PRAZO.value,
+                            MotivoDoDestino.APROVADO_APOS_A_MARGEM.value,
+                            MotivoDoDestino.DUPLICIDADE.value,
+                            MotivoDoDestino.PEDIDO_CANCELADO.value,
+                            MotivoDoDestino.VALOR_DIVERGENTE.value,
+                        ],
+                    )
+                    | Q(
+                        destino="sem_pedido",
+                        pedido__isnull=True,
+                        motivo=MotivoDoDestino.REFERENCIA_DESCONHECIDA.value,
+                    )
+                ),
+                name="destino_coerente",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"destino {self.pk}"

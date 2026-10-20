@@ -5,6 +5,7 @@
   <h1>Pedido da rodada de {{ fornecedor.nome }}</h1>
   {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
   <p>Situação: {{ situacao }}.</p>
+  {% if quitado_em %}<p>Pago em {{ quitado_em }} (horário de Brasília).</p>{% endif %}
 
   <table>
     <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Subtotal</th></tr></thead>

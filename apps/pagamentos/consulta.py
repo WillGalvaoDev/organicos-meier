@@ -73,3 +73,12 @@ def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProve
             provedor=provedor.nome, referencia_externa=referencia_externa
         ).order_by("criado_no_provedor_em", "id_externo")
     )
+
+
+def situacao_registrada(id_externo: str | None) -> str | None:
+    """A situação que o sistema tem do pagamento, ou `None` se ainda não o conhece. Só leitura."""
+    return (
+        PagamentoNoProvedor.objects.filter(id_externo=id_externo)
+        .values_list("situacao", flat=True)
+        .first()
+    )

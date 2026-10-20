@@ -1,8 +1,9 @@
 """E08: concorrência da abertura, das tentativas, da quitação e da moderação.
 
-E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas).
+E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas). E08-04: A-16 e A-17.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 from threading import Event
 from typing import Any
@@ -12,11 +13,13 @@ from django.db import transaction
 
 from apps.catalogo.servicos import editar_produto
 from apps.notificacoes.models import Notificacao
+from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
 from apps.pagamentos.models import ChamadaAoProvedor
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.models import (
     AberturaDoPagamento,
+    DestinoDoPagamento,
     ItemDoPedido,
     Pedido,
     SituacaoDoPedido,
@@ -25,7 +28,15 @@ from apps.pedidos.models import (
 from apps.pedidos.pagamento import agendar_cancelamento, pedir_pagamento
 from apps.rodadas.fechamento import TransicaoRecusada
 from tests.apoio.concorrencia import executar_em_paralelo
-from tests.apoio.pedidos import T0, Arranjo, administrador, montar_arranjo, pedido_aberto
+from tests.apoio.pedidos import (
+    T0,
+    Arranjo,
+    administrador,
+    montar_arranjo,
+    pedido_aberto,
+    sincronizar,
+    tentativa_criada,
+)
 from tests.apoio.trava import esperando, segurando
 from tests.conftest import RelogioControlado
 
@@ -165,3 +176,60 @@ def test_cancelamento_em_execucao_nao_trava_a_moderacao(
         )
     )
     assert alvos == [f"t{tentativa.pk}:prazo", f"t{tentativa.pk}:suspensao"]
+
+
+# --- E08-04: quitação (A-16 e A-17) --------------------------------------------------------
+
+
+def _com_duas_cobrancas_aprovadas(
+    relogio: RelogioControlado, sim: Any
+) -> tuple[Arranjo, Pedido, str, str]:
+    arranjo, x = pedido_aberto(relogio)
+    primeira = tentativa_criada(x).id_externo
+    assert primeira is not None
+    sim.expirar(primeira)
+    sincronizar(primeira)
+    relogio.congelar(T0 + timedelta(hours=1, minutes=10))
+    segunda = tentativa_criada(x).id_externo
+    assert segunda is not None
+    relogio.congelar(T0 + timedelta(hours=2))
+    sim.aprovar(primeira, em=T0 + timedelta(minutes=110))
+    sim.aprovar(segunda, em=T0 + timedelta(minutes=115))
+    return arranjo, x, primeira, segunda
+
+
+def test_dois_pagamentos_ao_mesmo_tempo_um_quita_e_o_outro_duplica(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-16, T-7
+    arranjo, x, primeira, segunda = _com_duas_cobrancas_aprovadas(relogio, simulador_pagamentos)
+    resultados = executar_em_paralelo(
+        segurando(lambda: sincronizar(primeira)),
+        esperando(lambda: sincronizar(segunda)),
+    )
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    destinos = {d.pagamento.id_externo: d for d in DestinoDoPagamento.objects.all()}
+    assert sorted(d.destino for d in destinos.values()) == ["devolucao", "quita"]
+    assert [d.motivo for d in destinos.values() if d.destino == "devolucao"] == ["duplicidade"]
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
+    avisos = Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado")
+    assert avisos.count() == 1
+
+
+def test_aviso_e_tarefa_ao_mesmo_tempo_decidem_uma_vez(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-17, T-6
+    arranjo, x = pedido_aberto(relogio)
+    p = tentativa_criada(x).id_externo
+    assert p is not None
+    relogio.congelar(T0 + timedelta(hours=2))
+    simulador_pagamentos.aprovar(p, em=T0 + timedelta(minutes=110))
+    resultados = executar_em_paralelo(
+        segurando(lambda: sincronizar(p, "aviso")),
+        esperando(lambda: sincronizar(p, "tarefa")),
+    )
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert DestinoDoPagamento.objects.count() == 1
+    assert EntradaAuditoria.objects.filter(acao="pedido.quitar").count() == 1
+    avisos = Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado")
+    assert avisos.count() == 1
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"

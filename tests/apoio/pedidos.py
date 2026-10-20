@@ -11,12 +11,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from django.db import transaction
+
 from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
+from apps.pagamentos.chamadas import processar_chamadas
 from apps.pagamentos.models import PagamentoNoProvedor
+from apps.pagamentos.provedor import obter_provedor
+from apps.pagamentos.sincronizacao import sincronizar_pagamento
 from apps.pedidos.abertura import ResultadoDaAbertura, abrir_pagamento
-from apps.pedidos.models import AberturaDoPagamento, Pedido, SituacaoDoPedido
+from apps.pedidos.models import AberturaDoPagamento, Pedido, SituacaoDoPedido, TentativaDePagamento
+from apps.pedidos.pagamento import pedir_pagamento
 from apps.rodadas.models import Ciclo, Etapa, Rodada
 from tests.apoio.ciclos import dar_prazo_de_teste
 from tests.conftest import RelogioControlado
@@ -166,3 +172,19 @@ def pedido_avulso(comprador: Conta, nome: str = "G", total: str = "50.00") -> Pe
     )
     SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
     return pedido
+
+
+def tentativa_criada(pedido: Pedido) -> TentativaDePagamento:
+    """O comprador pede para pagar e a tarefa cria a cobrança (no relógio corrente)."""
+    pedir_pagamento(pedido.comprador, pedido)
+    processar_chamadas()
+    tentativa = TentativaDePagamento.objects.filter(pedido=pedido).order_by("-numero").first()
+    assert tentativa is not None
+    assert tentativa.situacao == "criada", tentativa.situacao
+    return tentativa
+
+
+def sincronizar(id_externo: str, origem: str = "tarefa") -> None:
+    """Consulta o pagamento no provedor e o sincroniza, numa transação."""
+    with transaction.atomic():
+        sincronizar_pagamento(obter_provedor().consultar_pagamento(id_externo), origem=origem)

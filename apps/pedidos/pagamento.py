@@ -5,7 +5,7 @@ idempotência e agenda a criação da cobrança no provedor, na mesma transaçã
 máximo uma tentativa aberta por pedido, e nada é criado a partir de `T0 + 24h`, mesmo que a
 tarefa de bloqueio esteja atrasada.
 
-Ordem das travas: `PagamentoNoProvedor` → `SituacaoDoPedido` → `TentativaDePagamento`. Este
+Ordem das travas: o pagamento do provedor → `SituacaoDoPedido` → `TentativaDePagamento`. Este
 módulo trava a situação e as tentativas, e nunca um pagamento.
 """
 
@@ -20,7 +20,8 @@ from apps.contas.models import Conta, Papel, Situacao
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
 from apps.pagamentos.chamadas import agendar_chamada
-from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.consulta import situacao_registrada
+from apps.pagamentos.models import ChamadaAoProvedor
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.pedidos.models import (
     Pedido,
@@ -65,11 +66,7 @@ def _aberta(tentativa: TentativaDePagamento) -> bool:
         return True
     if tentativa.situacao != SituacaoDaTentativa.CRIADA:
         return False
-    situacao = (
-        PagamentoNoProvedor.objects.filter(id_externo=tentativa.id_externo)
-        .values_list("situacao", flat=True)
-        .first()
-    )
+    situacao = situacao_registrada(tentativa.id_externo)
     return situacao in (None, SituacaoNoProvedor.PENDENTE.value)
 
 
