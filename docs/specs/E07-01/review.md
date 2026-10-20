@@ -1,3 +1,253 @@
+# E07 — Revalidação independente do agente 3 — 2026-10-20
+
+**Veredito global: REPROVADO sobre `636a94cacde2764e297967189c5904b58f72dde6`, branch `e07-implementacao`.** R01 a R05 encerrados nesta revalidação. Permanece uma regressão nova, R06 (IMPORTANTE): a limpeza de timeout não abrange a conexão própria introduzida para o simulador. R07 registra uma não conformidade de processo, classificada como melhoria, sem evidência de critério excluído do Red.
+
+## Escopo e matriz revalidada
+
+Requisitos e critérios corrigidos lidos antes do código: E07-01 A-19 a A-22 e ajuste de A-4; E07-04 A-17 a A-22; E07-05 A-15 a A-18. Mantidas as fontes e a análise da revisão anterior, preservada integralmente abaixo. Conferidos os diffs desde `6dbf619`, as seis matrizes, registros de TDD, código, testes e integração com as garantias de E01-05. A revisão cobre os commits `a2225f1`, `fea7146`, `c404db3` e `636a94c`. Não é uma afirmação de integração em main.
+
+| Fatia | Matriz | Parecer | Resultado |
+|---|---|---|---|
+| E07-01 | A-1 a A-22 | REPROVADO na integração | R03/R04/R05 corrigidos; A-4 alinhado à preparação válida. A conexão própria preserva o estado do provedor, mas introduz R06 no apoio de concorrência. |
+| E07-02 | A-1 a A-10 | APROVADO no escopo local | Configuração e bloqueio do simulador em produção preservados; alias e roteador conferidos. |
+| E07-03 | A-1 a A-15 | APROVADO no escopo local | Integridade, imutabilidade e sincronização preservadas; transporte do primeiro aviso corrigido na integração. |
+| E07-04 | A-1 a A-22 | REPROVADO na integração | R01/R02/R03 corrigidos; regressão R06 afeta o isolamento dos testes concorrentes que usam o simulador. |
+| E07-05 | A-1 a A-18 | APROVADO no escopo local | R01/R02/R05 corrigidos; corrida, horário, validação e limites cobertos. |
+| E07-06 | A-1 a A-10 | APROVADO no escopo local | Consulta antes de decisões, falhas e preservação de sincronizações continuam verdes. |
+
+São 97 critérios nas seis matrizes. Não se atribui a R06 uma falha inexistente em teste versionado: a regressão foi demonstrada por prova adicional do revisor, exigida pelo critério de pronto de não haver regressão conhecida. Aprovação local não aprova a entrega integrada.
+
+## Encerramento dos achados anteriores
+
+- **R01 — corrigido.** O agendamento trava a chamada pendente; se o worker já está executando, espera e reavalia o estado confirmado. A aprovação recebida depois da resposta pendente gera nova consulta. Conferidos também skip_locked no agendamento, falha temporária e coalescência.
+- **R02 — corrigido.** A combinação dos parâmetros conserva o menor instante válido de aviso e a origem de aviso, inclusive quando já havia consulta de tarefa. O espelho recebe o horário original.
+- **R03 — corrigido.** O alias do simulador usa outra conexão no mesmo banco e transações próprias. O rollback local deixa a cobrança aceita intacta; a repetição usa a mesma chave e recupera o mesmo identificador. Conferidos roteamento, migrações em default e teste de BaseException.
+- **R04 — corrigido.** O tipo de resposta normaliza os quatro instantes para UTC e recusa instante sem fuso. As duas provas anteriores (criar/cancelar com America/Sao_Paulo) passam.
+- **R05 — corrigido.** O tipo de aviso valida texto não vazio, ausência de NUL e limites compartilhados com o modelo. Corpos assinados inválidos são recusados antes da persistência; limites exatos e caracteres acentuados são aceitos.
+
+## Verificação independente executada
+
+- `uv run pytest -q`: **1937 passed in 175.77s**. Log local: `%TEMP%/om_e07_636a94c_suite.log`.
+- `uv run ruff check .`: **All checks passed!**
+- `uv run ruff format --check .`: **257 files already formatted**.
+- `uv run mypy .`: **Success: no issues found in 300 source files**.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: **No changes detected**.
+- `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e07_636a94c.py" -q --tb=short`: **1 failed, 10 passed in 5.85s**. As dez provas dos achados anteriores passam; a falha é exclusivamente a prova nova de R06. Log: `%TEMP%/om_e07_636a94c_probes.log`. Código completo abaixo, para reprodução sem depender do arquivo temporário.
+
+Na retomada, o PostgreSQL local estava parado; a tentativa de provas aguardando conexão foi interrompida, o serviço existente foi iniciado com `docker compose up -d db`, e as provas foram executadas após ficar saudável. A tentativa sem banco não conta como resultado funcional. Suíte e provas não foram executadas simultaneamente no banco de testes.
+
+**Adaptações das provas anteriores:** marcadores autorizam os dois aliases; R01 observa o bloqueio do PID do aviso pelo PID do worker antes de liberar a resposta. A prova antiga exigia que o aviso terminasse enquanto o worker mantinha a trava, o que conflita com a correção expressamente aprovada em E07-04. A assertiva final de aprovação foi preservada e acrescentou-se a confirmação da espera. As demais provas mantêm as verificações anteriores. O teste de R06 libera sua trava e espera a thread encerrar antes de falhar, deixando limpa a própria reprodução.
+
+## R06 — IMPORTANTE — Timeout declara limpeza enquanto o simulador segue com conexão e escrita ativa
+
+**Referências:** AGENTS.md §§6 e 8; E01-05/spec.md, correção R05, projeto obrigatório itens 2, 4 e 6 (wrapper controlado, zero sessões, guarda entre testes); integração da correção E07-R03. Introdução da conexão: `config/settings/base.py:114` e `apps/simulador_pagamentos/roteador.py:21`. Lacuna: `tests/apoio/concorrencia.py:221` instrumenta somente default; `_encerrar_e_confirmar` em `:101` procura apenas os application_name registrados.
+
+**Reprodução:** criar cobrança pendente; manter uma trava de linha na conexão do simulador; executar uma operação paralela que tenta aprová-la; esgotar o prazo de execução e permitir a limpeza; consultar o PID real do simulador antes de liberar a trava; liberar a trava e esperar a operação encerrar.
+
+Resultado observado após `TempoEsgotado`:
+
+```text
+{'sessoes_apos_timeout': 1, 'guarda': 0, 'situacao_depois': 'aprovado'}
+1 failed, 10 passed in 5.85s
+```
+
+A conexão default é encerrada, mas a sessão do simulador continua bloqueada e não é registrada na guarda. Quando a trava é liberada, ela grava a aprovação depois de o helper ter informado timeout com limpeza concluída. O `close_all()` no finally só age quando a operação termina; não garante a limpeza no retorno do helper. O limite reconhecido pelo implementador deixa de ser apenas limitação de observação: há sessão herdada e escrita tardia reproduzíveis. Isso compromete isolamento e confiabilidade dos testes concorrentes seguintes. A prova não demonstra movimentação financeira real nem defeito do provedor externo.
+
+**Correção exigida:** estender o controle de conexão, identificação de sessões, estado de abertura, expiração e guarda aos aliases usados pelas operações, inclusive o simulador. Preservar as garantias de E01-05: nenhuma abertura/escrita posterior à expiração, confirmação de zero sessões ou LimpezaIncompleta com pendência registrada. Acrescentar Red/Green para alias ativo, abertura em andamento e tentativa de abertura após timeout, preservando os casos de default. Não basta fechar conexões somente no finally nem remover o isolamento transacional necessário para R03.
+
+## TDD e R07 — MELHORIA — Comando Red com filtro proibido pela prevenção vigente
+
+Os registros das correções apresentam tabelas por critério, justificativas dos controles já verdes e resultados compatíveis com os diffs: R04/R05 **15 failed, 51 passed**; R01/R02 **6 failed, 49 passed**; R03 **5 failed, 141 passed**. As justificativas de andaime (alias/roteador ainda sem roteamento), ajuste da trava de A-15 e preparação temporal de A-21 foram conferidas. A revisão não presenciou a sequência histórica; as provas atuais não substituem Red histórico.
+
+O registro de R03 em E07-01 traz `uv run pytest tests/tecnicos -k pagamentos -q`, apesar do título “arquivos inteiros, sem -k”. Isso contraria literalmente E06-05/spec.md, Prevenção, incorporada por E07-01/04/05: “sem -k e sem escolher funções pelo nome”. A tabela registra os critérios novos e os nomes dos arquivos de pagamentos permitem selecioná-los integralmente; não foi encontrada evidência de critério novo omitido do Red, nem se afirma repetição do Red tardio da E06. Por isso a classificação é melhoria de processo, separada do impedimento técnico R06.
+
+**Ação:** reconhecer a divergência no registro, preservar o comando histórico verdadeiro e usar caminhos explícitos de arquivos inteiros nos próximos ciclos, inclusive na correção de R06. Não reescrever o histórico para afirmar um comando que não ocorreu. Esta observação não dispensa a regra vigente.
+
+## Entrega e próximo gate
+
+Somente os seis review.md foram alterados pelo revisor. Código de produção e testes versionados não foram corrigidos. Os conteúdos anteriores, incluindo parecer original e registros do implementador, foram preservados integralmente como sufixo. Próximo gate: correção e nova revisão de R06, com revalidação dos aliases e regressões de E01-05; reconhecer R07 no registro. E07 permanece REPROVADA até a resolução da regressão.
+
+## Provas independentes completas
+
+```python
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from zoneinfo import ZoneInfo
+import hashlib
+import hmac
+import json
+import threading
+import time
+from django.db import connection, connections
+import pytest
+import time_machine
+from django.conf import settings
+from django.db import transaction
+from django.test import Client
+from apps.nucleo.tempo import agora
+from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
+from apps.pagamentos.models import AvisoRecebido, ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.provedor import NovaCobranca, obter_provedor
+from apps.simulador_pagamentos import controle as sim
+from apps.simulador_pagamentos.models import CobrancaSimulada
+from tests.apoio.concorrencia import executar_em_paralelo
+from tests.apoio.chamadas import operacao_de_teste, NOME
+
+T = datetime(2026,11,2,13,tzinfo=UTC)
+
+@pytest.fixture(autouse=True)
+def resetar():
+    sim.reiniciar()
+    yield
+    sim.reiniciar()
+
+def criar(expira=None):
+    return obter_provedor().criar_cobranca(NovaCobranca('probe','ref-probe',Decimal('45.90'),'Teste',expira or agora()+timedelta(days=1))).pagamento
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_aviso_durante_consulta_nao_e_perdido(monkeypatch):
+    p=criar()
+    with transaction.atomic(): agendar_chamada('consultar_pagamento',p.id_externo)
+    consultou,notificou=threading.Event(),threading.Event()
+    ids={}
+    esperou=[]
+    original=OPERACOES['consultar_pagamento']
+    def pausar(provedor,chamada):
+        resposta=original.executar(provedor,chamada)
+        consultou.set()
+        limite=time.monotonic()+10
+        while not notificou.is_set():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid(), pg_blocking_pids(%s)", [ids.get('aviso',0)])
+                dono,bloqueadores=cursor.fetchone()
+            if dono in bloqueadores:
+                esperou.append(True)
+                break
+            assert time.monotonic()<limite, 'aviso nao terminou nem esperou a tarefa'
+            time.sleep(0.01)
+        return resposta
+    monkeypatch.setitem(OPERACOES,'consultar_pagamento',Operacao(pausar,original.concluir))
+    def avisar(barreira):
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT pg_backend_pid()')
+            ids['aviso']=cursor.fetchone()[0]
+        assert consultou.wait(20), 'consulta nao ocorreu'
+        try:
+            sim.aprovar(p.id_externo)
+            return sim.entregar_avisos()
+        finally: notificou.set()
+    resultados=executar_em_paralelo(lambda barreira: processar_chamadas(),avisar)
+    assert all(r.excecao is None for r in resultados),[r.excecao for r in resultados]
+    assert resultados[1].valor==[200]
+    assert esperou==[True]
+    monkeypatch.setitem(OPERACOES,'consultar_pagamento',original)
+    processar_chamadas()
+    assert obter_provedor().consultar_pagamento(p.id_externo).situacao=='aprovado'
+    assert PagamentoNoProvedor.objects.get().situacao=='aprovado',list(ChamadaAoProvedor.objects.values('situacao','parametros'))
+
+@pytest.mark.django_db(databases=["default", "simulador_pagamentos"])
+@pytest.mark.parametrize('pre_agendada',[False,True])
+def test_primeiro_aviso_preservado_com_consulta_ja_agendada(pre_agendada):
+    with time_machine.travel(T,tick=False):
+        p=criar()
+        if pre_agendada:
+            with transaction.atomic(): agendar_chamada('consultar_pagamento',p.id_externo)
+        sim.aprovar(p.id_externo)
+        assert sim.entregar_avisos()==[200]
+        assert processar_chamadas()==1
+        assert PagamentoNoProvedor.objects.get().primeiro_aviso_em==T
+
+@pytest.mark.django_db(databases=["default", "simulador_pagamentos"])
+def test_falha_local_nao_apaga_cobranca_aceita(monkeypatch):
+    with time_machine.travel(T,tick=False),operacao_de_teste(),monkeypatch.context() as patch:
+        with transaction.atomic():
+            agendar_chamada(NOME,'ref-probe',parametros={'valor':'45.90','expira_em':(T+timedelta(days=1)).isoformat()},chave_idempotencia='probe-falha')
+        original=OPERACOES[NOME]
+        vistos=[]
+        def falhar(chamada,resultado):
+            vistos.append(resultado.pagamento.id_externo)
+            raise RuntimeError('falha local depois da resposta')
+        patch.setitem(OPERACOES,NOME,Operacao(original.executar,falhar))
+        assert processar_chamadas()==1
+        assert len(vistos)==1
+        assert ChamadaAoProvedor.objects.get().situacao=='pendente'
+        preservada = CobrancaSimulada.objects.filter(chave_idempotencia='probe-falha').exists()
+        patch.setitem(OPERACOES,NOME,original)
+        assert processar_chamadas()==1
+        atual = CobrancaSimulada.objects.get().id_externo
+        assert preservada and atual==vistos[0], {'preservada':preservada,'primeiro_id':vistos[0],'repeticao_id':atual}
+
+@pytest.mark.django_db(databases=["default", "simulador_pagamentos"])
+@pytest.mark.parametrize('campo,tamanho',[('id_evento',65),('tipo',41),('id_externo',65)])
+def test_aviso_assinado_fora_dos_limites_nao_causa_500(campo,tamanho):
+    dados={'id_evento':'ev-probe','tipo':'pagamento','id_externo':'sim-999'}
+    dados[campo]='x'*tamanho
+    corpo=json.dumps(dados).encode()
+    assinatura=hmac.new(settings.SEGREDO_AVISOS_SIMULADOR.encode(),corpo,hashlib.sha256).hexdigest()
+    cliente=Client(raise_request_exception=False)
+    resposta=cliente.post('/pagamentos/avisos/',data=corpo,content_type='application/json',headers={'X-Simulador-Assinatura':'sha256='+assinatura})
+    assert resposta.status_code==401
+    assert not AvisoRecebido.objects.exists()
+    assert not ChamadaAoProvedor.objects.exists()
+
+@pytest.mark.django_db(databases=["default", "simulador_pagamentos"])
+@pytest.mark.parametrize('operacao',['criar','cancelar'])
+def test_resposta_do_simulador_normaliza_utc(operacao):
+    with time_machine.travel(T,tick=False):
+        local=ZoneInfo('America/Sao_Paulo')
+        p=criar((T+timedelta(days=1)).astimezone(local))
+        if operacao=='cancelar':
+            sim.aprovar_no_cancelamento(p.id_externo,em=T.astimezone(local))
+            p=obter_provedor().cancelar_cobranca(p.id_externo)
+            assert p.aprovado_em.utcoffset()==timedelta(0)
+        assert p.expira_em.utcoffset()==timedelta(0)
+
+@pytest.mark.django_db(databases=["default", "simulador_pagamentos"])
+def test_aviso_apos_consulta_concluida_atualiza():
+    p=criar()
+    with transaction.atomic(): agendar_chamada('consultar_pagamento',p.id_externo)
+    assert processar_chamadas()==1
+    sim.aprovar(p.id_externo)
+    assert sim.entregar_avisos()==[200]
+    assert processar_chamadas()==1
+    assert PagamentoNoProvedor.objects.get().situacao=='aprovado'
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_timeout_limpa_tambem_a_conexao_do_simulador():
+    from tests.apoio.concorrencia import TempoEsgotado, limpezas_pendentes
+    p=criar()
+    terminou=threading.Event()
+    ids={}
+    def bloqueada(barreira):
+        try:
+            with connections['simulador_pagamentos'].cursor() as cursor:
+                cursor.execute('SELECT pg_backend_pid()')
+                ids['simulador']=cursor.fetchone()[0]
+            sim.aprovar(p.id_externo)
+        finally:
+            connections.close_all()
+            terminou.set()
+    with transaction.atomic(using='simulador_pagamentos'):
+        CobrancaSimulada.objects.select_for_update().get(chave_idempotencia='probe')
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(bloqueada,tempo_limite=1,tempo_limite_limpeza=2)
+        assert 'simulador' in ids
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT count(*) FROM pg_stat_activity WHERE pid=%s', [ids['simulador']])
+            restantes=cursor.fetchone()[0]
+        pendencias=limpezas_pendentes()
+    # Liberar a trava e esperar o encerramento garante limpeza da propria prova.
+    assert terminou.wait(5), 'thread da prova nao terminou apos liberar a trava'
+    situacao=obter_provedor().consultar_pagamento(p.id_externo).situacao
+    assert restantes==0 and situacao=='pendente', {'sessoes_apos_timeout':restantes,'guarda':pendencias,'situacao_depois':str(situacao)}
+
+```
+
+---
+
+## Histórico integral preservado
+
 # E07 — Revisão independente do agente 3 — 2026-10-20
 
 **Veredito global: REPROVADO sobre `d6e4d2095ac8f1128b1a315fd81e5ab579488aa3`, branch `e07-implementacao`.** R01 é bloqueador; R02, R03 e R05 são importantes; R04 é melhoria. A suíte verde não cobre as falhas de integração reproduzidas abaixo. A aprovação local de uma fatia não aprova a entrega integrada.
