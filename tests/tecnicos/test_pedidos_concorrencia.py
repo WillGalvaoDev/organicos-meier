@@ -1,6 +1,7 @@
 """E08: concorrência da abertura, das tentativas, da quitação e da moderação.
 
-E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas). E08-04: A-16 e A-17. E08-05: A-20 e A-21.
+E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas). E08-04: A-16 e A-17.
+E08-05: A-20 e A-21. E08-06: A-11 e A-12.
 """
 
 from datetime import timedelta
@@ -12,6 +13,7 @@ import pytest
 from django.db import transaction
 
 from apps.catalogo.servicos import editar_produto
+from apps.contas.moderacao import suspender
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
@@ -25,7 +27,7 @@ from apps.pedidos.models import (
     SituacaoDoPedido,
     TentativaDePagamento,
 )
-from apps.pedidos.pagamento import agendar_cancelamento, pedir_pagamento
+from apps.pedidos.pagamento import PagamentoRecusado, agendar_cancelamento, pedir_pagamento
 from apps.pedidos.tarefas import bloquear_tentativas_vencidas_agora
 from apps.rodadas.fechamento import TransicaoRecusada
 from tests.apoio.concorrencia import executar_em_paralelo
@@ -328,3 +330,90 @@ def test_bloqueio_e_aviso_de_outra_mudanca_ao_mesmo_tempo(
     assert PagamentoNoProvedor.objects.get(id_externo=p).situacao == "cancelado"
     assert SituacaoDoPedido.objects.get(pedido=x).situacao == "aguardando_pagamento"
     assert DestinoDoPagamento.objects.count() == 0
+
+
+# --- E08-06: moderação (A-11 e A-12) -------------------------------------------------------
+
+
+@pytest.mark.parametrize("ordem", ["pagamento_antes", "suspensao_antes"])
+def test_suspensao_e_pagamento_ao_mesmo_tempo(
+    relogio: RelogioControlado, simulador_pagamentos: Any, ordem: str
+) -> None:  # A-11
+    arranjo, x = pedido_aberto(relogio)
+    administrador_ = administrador()
+
+    def pagar_e_criar() -> None:
+        pedir_pagamento(arranjo.a, x)
+        processar_chamadas()  # a cobrança nasce antes de a suspensão chegar
+
+    if ordem == "pagamento_antes":
+        resultados = executar_em_paralelo(
+            segurando(pagar_e_criar),
+            esperando(lambda: suspender(administrador_, arranjo.a)),
+        )
+        assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+        tentativa = TentativaDePagamento.objects.get(pedido=x)
+        alvos = list(
+            ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca").values_list(
+                "alvo", flat=True
+            )
+        )
+        assert alvos == [f"t{tentativa.pk}:suspensao"]
+    else:
+        resultados = executar_em_paralelo(
+            segurando(lambda: suspender(administrador_, arranjo.a)),
+            esperando(lambda: pedir_pagamento(arranjo.a, x)),
+        )
+        assert resultados[0].excecao is None, resultados[0].excecao
+        assert isinstance(resultados[1].excecao, PagamentoRecusado), resultados[1].excecao
+        assert resultados[1].excecao.codigo in ("pedido_cancelado", "conta_inativa")
+        assert TentativaDePagamento.objects.filter(pedido=x).count() == 0
+        assert ChamadaAoProvedor.objects.count() == 0
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "cancelado"
+
+
+def test_a_suspensao_nao_espera_o_cancelamento_em_andamento(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-12, correção E07-R01
+    arranjo, x = pedido_aberto(relogio)
+    tentativa = tentativa_criada(x)
+    with transaction.atomic():
+        agendar_cancelamento(tentativa, "prazo")
+    original = OPERACOES["cancelar_cobranca"]
+    entrou, liberar, primeira_terminou = Event(), Event(), Event()
+
+    def parada(provedor: Any, chamada: ChamadaAoProvedor) -> Any:
+        entrou.set()
+        assert liberar.wait(20), "a suspensão esperou a chamada em andamento"
+        return original.executar(provedor, chamada)
+
+    monkeypatch.setitem(
+        OPERACOES, "cancelar_cobranca", Operacao(parada, original.concluir, original.falhou)
+    )
+    administrador_ = administrador()
+
+    def executa_a_chamada(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        try:
+            return processar_chamadas()
+        finally:
+            primeira_terminou.set()
+
+    def suspende(barreira: Any) -> bool:
+        barreira.wait(timeout=10)
+        assert entrou.wait(10), "a chamada não entrou em execução"
+        suspender(administrador_, arranjo.a)
+        terminou_antes = not primeira_terminou.is_set()
+        liberar.set()
+        return terminou_antes
+
+    resultados = executar_em_paralelo(executa_a_chamada, suspende)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor is True
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "cancelado"
+    alvos = sorted(
+        ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca").values_list(
+            "alvo", flat=True
+        )
+    )
+    assert alvos == [f"t{tentativa.pk}:prazo", f"t{tentativa.pk}:suspensao"]
