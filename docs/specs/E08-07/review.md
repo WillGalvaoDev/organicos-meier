@@ -37,6 +37,12 @@ Nenhum: a rota e a view não existiam, então o Red foi de rota ausente (404).
 - `test_simulador_pagamentos_tela.py`: **8 passed**. Conjunto `-k "pagamentos or simulador or permissoes"`: **209 passed, 1 failed** (o conflito abaixo).
 - `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
 
+## Verificação final da milestone E08 (as sete fatias)
+
+- `uv run pytest -q`, com o teste do conflito abaixo desmarcado (`--deselect`): **2129 passed** em 176,77 s (a suíte tinha 1945 ao fim da E07). Com ele, a suíte tem **1 teste vermelho**.
+- `ruff check`, `ruff format --check`, `mypy .` (338 arquivos) e `makemigrations --check --dry-run` sem erros.
+- A varredura de `float` (E08-01 A-11) cobre os módulos de dinheiro e quantidade, inclusive `apps/pedidos`.
+
 ## Conflito de testes em aberto (decisão necessária)
 
 `tests/tecnicos/test_pagamentos_fronteiras.py::test_nenhuma_rota_comando_ou_admin_registra_pagamento` (E07-01, A-12, cenário 37) exige que **toda rota cujo módulo comece por `apps.pagamentos` ou `apps.simulador_pagamentos` se chame `pagamentos_avisos`**. A E08-07 manda colocar as views da tela em `apps/simulador_pagamentos/views.py` e dá cinco nomes novos (`simulador_pagamentos_*`). Os dois textos não podem valer juntos.
