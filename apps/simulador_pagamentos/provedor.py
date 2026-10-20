@@ -143,12 +143,11 @@ class ProvedorSimulado:
                 dados: Any = json.loads(corpo)
             except ValueError:
                 raise AvisoInvalido("corpo malformado") from None
-            campos = ("id_evento", "tipo", "id_externo")
-            if not isinstance(dados, dict) or not all(
-                isinstance(dados.get(campo), str) for campo in campos
-            ):
+            if not isinstance(dados, dict):
                 raise AvisoInvalido("corpo malformado")
-            return AvisoDoProvedor(dados["id_evento"], dados["tipo"], dados["id_externo"])
+            return AvisoDoProvedor(
+                dados.get("id_evento", ""), dados.get("tipo", ""), dados.get("id_externo", "")
+            )
 
         return _executar("verificar_aviso", verificar)
 

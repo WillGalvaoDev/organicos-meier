@@ -3,13 +3,17 @@
 # A spec fixa `ValueError` sem mensagem nos controles; o tipo é o contrato.
 # ruff: noqa: PT011
 
+import hashlib
+import hmac
 import json
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.nucleo.tempo import InstanteSemFuso
@@ -17,6 +21,7 @@ from apps.pagamentos.provedor import (
     AvisoDoProvedor,
     AvisoInvalido,
     NovaCobranca,
+    PagamentoConsultado,
     PagamentoNaoEncontrado,
     ProvedorIndisponivel,
     RecusaDoProvedor,
@@ -432,3 +437,95 @@ def test_producao_recusa_o_simulador_em_obter_provedor(settings: Any) -> None:  
         obter_provedor()
     settings.AMBIENTE = "homologacao"
     assert obter_provedor().nome == "simulador"
+
+
+SP = ZoneInfo("America/Sao_Paulo")
+
+
+def em_sp(instante: datetime) -> datetime:
+    return instante.astimezone(SP)
+
+
+def confere_utc(pagamento: Any, expira_em: datetime = AMANHA) -> None:
+    assert pagamento.criado_em.tzinfo is UTC
+    assert pagamento.expira_em.tzinfo is UTC
+    assert pagamento.consultado_em.tzinfo is UTC
+    assert pagamento.expira_em == expira_em
+    if pagamento.aprovado_em is not None:
+        assert pagamento.aprovado_em.tzinfo is UTC
+
+
+def test_toda_resposta_do_simulador_vem_em_utc(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # A-21, E07-R04
+    provedor = obter_provedor()
+    local = nova(expira_em=em_sp(AMANHA))
+    assert local.expira_em.utcoffset() != timedelta(0)
+    criada = provedor.criar_cobranca(local).pagamento
+    confere_utc(criada)
+
+    segunda = criar(chave_idempotencia="k2", expira_em=em_sp(AMANHA))
+    sim.aprovar_no_cancelamento(segunda, em=em_sp(T))
+    cancelada = provedor.cancelar_cobranca(segunda)
+    assert cancelada.situacao == SituacaoNoProvedor.APROVADO
+    confere_utc(cancelada)
+    assert cancelada.aprovado_em == T
+
+    relogio.congelar(T - timedelta(minutes=10))  # a aprovação informada é anterior a T
+    terceira = criar(chave_idempotencia="k3", expira_em=em_sp(AMANHA))
+    relogio.congelar(T)
+    sim.atrasar_consistencia(terceira, consultas=1)
+    sim.aprovar(terceira, em=em_sp(T - timedelta(minutes=1)))
+    atrasada = provedor.consultar_pagamento(terceira)
+    assert atrasada.situacao == SituacaoNoProvedor.PENDENTE
+    confere_utc(atrasada)
+    normal = provedor.consultar_pagamento(terceira)
+    assert normal.situacao == SituacaoNoProvedor.APROVADO
+    confere_utc(normal)
+    assert normal.aprovado_em == T - timedelta(minutes=1)
+    for achado in provedor.buscar_por_referencia("ref-1"):
+        confere_utc(achado)
+
+
+def test_pagamento_consultado_recusa_instante_sem_fuso() -> None:  # A-21
+    agora_sem_fuso = datetime(2026, 11, 2, 13, 0)  # noqa: DTZ001
+    with pytest.raises(InstanteSemFuso):
+        PagamentoConsultado(
+            "simulador",
+            "sim-1",
+            "ref-1",
+            D("45.90"),
+            SituacaoNoProvedor.PENDENTE,
+            agora_sem_fuso,
+            None,
+            AMANHA,
+            T,
+        )
+
+
+AVISO_OK: dict[str, Any] = {"id_evento": "sim-ev-1", "tipo": "pagamento", "id_externo": "sim-1"}
+
+
+@pytest.mark.parametrize("campo", ["id_evento", "tipo", "id_externo"])
+def test_aviso_fora_do_esquema_e_invalido(campo: str) -> None:  # A-22, E07-R05
+    limite = {"id_evento": 64, "tipo": 40, "id_externo": 64}[campo]
+    invalidos = ["x" * (limite + 1), "", "a\x00b", 5]
+    for valor in invalidos:
+        with pytest.raises(AvisoInvalido):
+            AvisoDoProvedor(**{**AVISO_OK, campo: valor})
+    no_limite = AvisoDoProvedor(**{**AVISO_OK, campo: "x" * limite})
+    assert getattr(no_limite, campo) == "x" * limite
+
+
+def test_aviso_no_limite_com_caracteres_acentuados() -> None:  # A-22
+    aviso = AvisoDoProvedor(**{**AVISO_OK, "id_evento": "é" * 64})
+    assert aviso.id_evento == "é" * 64
+
+
+def test_verificar_aviso_recusa_corpo_assinado_fora_do_limite(sim: Any) -> None:  # A-22
+    corpo = json.dumps({**AVISO_OK, "id_evento": "x" * 65}).encode()
+    assinatura = hmac.new(
+        settings.SEGREDO_AVISOS_SIMULADOR.encode(), corpo, hashlib.sha256
+    ).hexdigest()
+    with pytest.raises(AvisoInvalido):
+        obter_provedor().verificar_aviso(corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"})

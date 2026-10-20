@@ -11,7 +11,12 @@ from django.db import models
 from apps.nucleo.so_insercao import RegistroSoInsercao
 from apps.nucleo.tempo import agora
 from apps.nucleo.valores import CampoDinheiro
-from apps.pagamentos.provedor import SituacaoNoProvedor
+from apps.pagamentos.provedor import (
+    LIMITE_ID_EVENTO,
+    LIMITE_ID_EXTERNO,
+    LIMITE_TIPO,
+    SituacaoNoProvedor,
+)
 
 SITUACOES = [situacao.value for situacao in SituacaoNoProvedor]
 SITUACOES_ESCOLHAS = [(valor, valor) for valor in SITUACOES]
@@ -129,9 +134,9 @@ class AvisoRecebido(RegistroSoInsercao):
     Nada do corpo vira estado (E07-05); a situação do pagamento vem da consulta."""
 
     provedor = models.CharField(max_length=30)
-    id_evento = models.CharField(max_length=64)
-    tipo = models.CharField(max_length=40)
-    id_externo = models.CharField(max_length=64)
+    id_evento = models.CharField(max_length=LIMITE_ID_EVENTO)
+    tipo = models.CharField(max_length=LIMITE_TIPO)
+    id_externo = models.CharField(max_length=LIMITE_ID_EXTERNO)
     recebido_em = models.DateTimeField(default=agora)
 
     class Meta:

@@ -344,3 +344,65 @@ def test_o_aviso_recebido_so_aceita_insercao(p: str, aviso: AvisoSimulado) -> No
             id_externo=p,
         )
     assert unico(AvisoRecebido.objects.all()).tipo == "pagamento"
+
+
+def enviar_sem_levantar(corpo: bytes, cabecalhos: dict[str, str]) -> Any:
+    return Client(raise_request_exception=False).post(
+        URL, data=corpo, content_type="application/json", headers=cabecalhos
+    )
+
+
+def aviso_assinado(**campos: Any) -> bytes:
+    base: dict[str, Any] = {"id_evento": "sim-ev-900", "tipo": "pagamento", "id_externo": "sim-1"}
+    return json.dumps({**base, **campos}).encode()
+
+
+@pytest.mark.parametrize(
+    "campos",
+    [
+        {"id_evento": "x" * 65},
+        {"tipo": "t" * 41},
+        {"id_externo": "x" * 65},
+        {"id_evento": ""},
+        {"tipo": ""},
+        {"id_externo": ""},
+        {"id_evento": "a\u0000b"},
+        {"id_externo": "a\u0000b"},
+        {"tipo": "a\u0000b"},
+        {"id_evento": 12},
+        {"id_externo": 12},
+    ],
+    ids=lambda c: "-".join(f"{k}={str(v)[:8]!r}" for k, v in c.items()),
+)
+def test_aviso_assinado_fora_dos_limites_nao_causa_500(
+    campos: dict[str, Any], sim: Any, caplog: pytest.LogCaptureFixture
+) -> None:  # A-17, E07-R05
+    corpo = aviso_assinado(**campos)
+    assert len(corpo) < TAMANHO_MAXIMO_DO_AVISO
+    caplog.set_level(logging.DEBUG)
+    resposta = enviar_sem_levantar(corpo, assinar(corpo))
+    assert resposta.status_code == 401
+    assert AvisoRecebido.objects.count() == 0
+    assert ChamadaAoProvedor.objects.count() == 0
+    mensagens = [r.getMessage() for r in caplog.records if r.name.startswith("apps.pagamentos")]
+    assert any("Aviso de pagamento recusado" in m for m in mensagens)
+    assert all(corpo.decode() not in m for m in mensagens)
+
+
+def test_avisos_no_limite_exato_sao_aceitos(sim: Any) -> None:  # A-18
+    longo = "x" * 64
+    acentuado = "é" * 64
+    desconhecido = "t" * 40
+    casos = [
+        aviso_assinado(id_evento=acentuado, tipo=desconhecido, id_externo="sim-1"),
+        aviso_assinado(id_evento=longo, tipo="pagamento", id_externo=longo),
+    ]
+    for corpo in casos:
+        assert enviar(corpo, assinar(corpo)).status_code == 200
+    recebidos = {a.id_evento: a for a in AvisoRecebido.objects.all()}
+    assert set(recebidos) == {acentuado, longo}
+    assert recebidos[acentuado].tipo == desconhecido
+    assert recebidos[longo].id_externo == longo
+    chamada = uma_chamada()
+    assert chamada.alvo == longo
+    assert len(chamada.alvo) == 64

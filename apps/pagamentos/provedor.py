@@ -17,6 +17,9 @@ from typing import Protocol
 from apps.nucleo.tempo import somar_horas
 from apps.nucleo.valores import ValorInvalido, dinheiro
 
+LIMITE_ID_EVENTO = 64
+LIMITE_TIPO = 40
+LIMITE_ID_EXTERNO = 64
 TAMANHO_MAXIMO_DA_CHAVE = 64
 TAMANHO_MAXIMO_DA_DESCRICAO = 120
 
@@ -70,6 +73,14 @@ class PagamentoConsultado:
     expira_em: datetime
     consultado_em: datetime
 
+    def __post_init__(self) -> None:
+        """Todos os instantes em UTC, com fuso, qualquer que seja o caminho da resposta (R04).
+        O instante é o mesmo; muda só a representação. Sem fuso: `InstanteSemFuso`."""
+        for campo in ("criado_em", "aprovado_em", "expira_em", "consultado_em"):
+            instante = getattr(self, campo)
+            if instante is not None:
+                object.__setattr__(self, campo, somar_horas(instante, 0))
+
 
 @dataclass(frozen=True)
 class CobrancaCriada:
@@ -82,6 +93,19 @@ class AvisoDoProvedor:
     id_evento: str
     tipo: str
     id_externo: str
+
+    def __post_init__(self) -> None:
+        """O esquema do aviso, para qualquer implementação do provedor (R05): textos não vazios,
+        sem o caractere nulo e dentro dos limites das colunas de `AvisoRecebido`."""
+        limites = (
+            ("id_evento", LIMITE_ID_EVENTO),
+            ("tipo", LIMITE_TIPO),
+            ("id_externo", LIMITE_ID_EXTERNO),
+        )
+        for campo, limite in limites:
+            valor = getattr(self, campo)
+            if not isinstance(valor, str) or not 1 <= len(valor) <= limite or "\x00" in valor:
+                raise AvisoInvalido("corpo malformado")
 
 
 class ProvedorIndisponivel(Exception):
