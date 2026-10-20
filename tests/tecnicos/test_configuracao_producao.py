@@ -17,6 +17,8 @@ _AMBIENTE_MINIMO = {
     "ORIGEM_PUBLICA": "https://organicosmeier.exemplo.com.br",
     "GOOGLE_CLIENT_ID": "id-de-cliente-de-teste",
     "GOOGLE_CLIENT_SECRET": "segredo-de-teste",
+    "AMBIENTE": "homologacao",
+    "SEGREDO_AVISOS_SIMULADOR": "segredo-de-teste",
 }
 
 

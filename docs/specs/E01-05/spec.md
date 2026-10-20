@@ -211,6 +211,73 @@ O revisor encerrou o R05 no commit `b709ce3` e apontou o R06. A falha é da espe
 
 Nenhuma outra mudança no utilitário. R01 a R05 estão encerrados e não são reabertos.
 
+## Correção E07-R06 — limpeza em todos os aliases (2026-10-20)
+
+Origem: revalidação da E07 sobre `636a94c` (`docs/specs/E07-01/review.md`, R06). A correção R03 da E07 deu ao simulador de pagamentos uma conexão própria, o alias `simulador_pagamentos`. O utilitário desta fatia só controla a conexão `default`. As garantias das correções R05 e R06 acima continuam valendo e passam a valer para todo alias.
+
+### Diagnóstico
+
+O utilitário instala o `connect` controlado, o `application_name` exclusivo e o `connect_timeout` só no wrapper `connections["default"]` de cada thread. A fase da operação descreve só essa conexão. Uma operação que usa o simulador abre uma segunda sessão, que fica fora de tudo isso:
+
+- a sessão não tem nome exclusivo, e o encerramento e a confirmação em `pg_stat_activity` não a encontram;
+- a abertura dela não passa pelo controle, e uma abertura depois do tempo esgotado não é recusada;
+- a fase não registra essa sessão, e a guarda não tem como resolvê-la.
+
+O revisor reproduziu o caso: a operação ficou bloqueada numa trava de linha do simulador, o utilitário levantou `TempoEsgotado` dizendo que a limpeza estava concluída, e a sessão do simulador continuou viva. Quando a trava foi liberada, ela gravou a aprovação depois do retorno.
+
+Eu introduzi o alias na E07 sem estender a garantia desta fatia. A spec da E01-05 tinha sido escrita com uma conexão por thread.
+
+### Garantia exigida
+
+A garantia da correção R05 passa a valer **por operação e por alias**. Quando `executar_em_paralelo` levanta `TempoEsgotado`, cada conexão de cada operação pendente, em qualquer alias de `settings.DATABASES`, fica numa das três situações da correção R05:
+
+- nunca abriu e já não pode abrir;
+- abriu, e a sessão foi encerrada no servidor;
+- estava abrindo, terminou dentro do prazo de limpeza e foi fechada sem executar a operação.
+
+A confirmação de zero sessões no servidor cobre todas as sessões das operações pendentes, em todos os aliases. Se isso não for possível, o utilitário levanta `LimpezaIncompleta`, e a pendência fica na guarda, como antes.
+
+### Projeto obrigatório (complementa os itens 1 a 6 da correção R05)
+
+1. **Aliases cobertos:** todos os de `settings.DATABASES`, e não só os que a operação vai usar. O utilitário não precisa saber quais aliases a operação usa.
+2. **Mesmo servidor.**
+   - Antes de iniciar qualquer thread, o utilitário confere que todo alias tem `HOST`, `PORT` e `USER` iguais aos de `default`. Assim, `pg_stat_activity` e `pg_terminate_backend`, executados pela conexão `default` do chamador, alcançam todas as sessões. `NAME` pode ser diferente.
+   - Se algum alias não cumprir isso, o utilitário levanta `ValueError` com o nome do alias, sem iniciar nenhuma thread.
+3. **Nome exclusivo por operação e por alias:** `application_name = <prefixo>-<indice>-<alias>`, com o mesmo `connect_timeout` fixo (`CONNECT_TIMEOUT_DAS_THREADS`) em todos.
+4. **`connect` controlado em cada wrapper.**
+   - A thread instala o `connect` controlado do item 2 da correção R05 no wrapper de **cada** alias, antes de qualquer abertura.
+   - A conexão `default` continua aberta antes da barreira de início, como hoje. Os outros aliases abrem só quando a operação os usar, sempre pelo `connect` controlado.
+   - Uma abertura depois de `expirado` levanta `TempoEsgotado` sem abrir nada, como no item 2.1.
+5. **Fase por alias.**
+   - Cada operação guarda uma fase por alias (`ANTES`, `ABRINDO`, `ABERTA` ou `SEM_CONEXAO`), sob o mesmo `threading.Condition` da chamada.
+   - A operação está "abrindo" se qualquer alias dela estiver em `ABRINDO`.
+   - No `finally`, a thread fecha todas as conexões (`connections.close_all()`) e passa todos os aliases para `SEM_CONEXAO`.
+6. **Tempo esgotado.** Os passos do item 4 da correção R05 valem sobre o conjunto de nomes de todas as operações pendentes em todos os aliases:
+   - encerrar as sessões abertas;
+   - esperar a saída de `ABRINDO` em qualquer alias, com prazo;
+   - encerrar o que restar e confirmar zero sessões;
+   - levantar `TempoEsgotado` ou `LimpezaIncompleta`.
+7. **Descrição das pendências.** As mensagens de `TempoEsgotado` e `LimpezaIncompleta`, e o registro da guarda, citam a operação, o alias e a fase. Por exemplo: `0:bloqueada (default SEM_CONEXAO, simulador_pagamentos ABRINDO)`.
+8. **Guarda entre testes:** sem mudança de interface. `aguardar_limpezas_pendentes` usa os nomes de todos os aliases da pendência.
+
+### O que não fazer
+
+- Não fechar conexões só no `finally` da thread como forma de limpeza: o `finally` só roda quando a operação termina, e a thread pode estar bloqueada no banco.
+- Não juntar o simulador à conexão `default`, nem remover o isolamento transacional da correção R03 da E07.
+- Não limitar a cobertura a uma lista fixa de aliases dentro do utilitário.
+- Não alterar, afrouxar nem remover os critérios A-1 a A-18 nem os testes já versionados. Eles continuam valendo para `default`.
+
+### Interfaces
+
+Nenhuma interface nova. `executar_em_paralelo`, `TempoEsgotado`, `LimpezaIncompleta`, `limpezas_pendentes`, `aguardar_limpezas_pendentes` e as constantes continuam com o mesmo contrato. Muda só o alcance da garantia.
+
+### TDD
+
+- **Critérios:** A-19 a A-23 seguem Red → Green → Refactor, com as regras de prevenção da correção E06-R05 (E06-05).
+- **Comandos do Red:** sempre com caminhos explícitos de arquivos inteiros, sem `-k` e sem escolher funções pelo nome, por exemplo `uv run pytest tests/tecnicos/test_apoio_concorrencia.py -q` (ver R07 na E07-01).
+- **Prova do revisor:** `test_timeout_limpa_tambem_a_conexao_do_simulador` (revalidação `636a94c`) entra **sem alteração** no A-19. No código atual, ela falha pela asserção final: `sessoes_apos_timeout` 1 e `situacao_depois` `aprovado`.
+- **Mudança de interface:** nenhuma, então não há andaime.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01-01 (CI, com Postgres real).

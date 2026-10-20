@@ -1,5 +1,6 @@
 """E01-05: utilitário de testes de concorrência (acceptance A-1 a A-7)."""
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -658,3 +659,269 @@ def test_r05_connect_timeout_das_threads_e_uma_constante_fixa_coerente() -> None
     assert CONNECT_TIMEOUT_DAS_THREADS > 0
     assert CONNECT_TIMEOUT_DAS_THREADS < TEMPO_LIMITE_LIMPEZA_PADRAO
     assert CONNECT_TIMEOUT_DAS_THREADS < PRAZO_PADRAO_DA_GUARDA
+
+
+# --- Correção E07-R06: critérios A-19 a A-23 (spec.md, "Correção E07-R06") -------------------
+
+BANCOS = ["default", "simulador_pagamentos"]
+ALIAS_DO_SIMULADOR = "simulador_pagamentos"
+
+
+def _criar_cobranca_pendente() -> Any:
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from apps.nucleo.tempo import agora
+    from apps.pagamentos.provedor import NovaCobranca, obter_provedor
+
+    return (
+        obter_provedor()
+        .criar_cobranca(
+            NovaCobranca(
+                "probe", "ref-probe", Decimal("45.90"), "Teste", agora() + timedelta(days=1)
+            )
+        )
+        .pagamento
+    )
+
+
+def _situacao_no_provedor(id_externo: str) -> Any:
+    from apps.pagamentos.provedor import obter_provedor
+
+    return obter_provedor().consultar_pagamento(id_externo).situacao
+
+
+def _aprovar_pelo_simulador(id_externo: str) -> None:
+    from apps.simulador_pagamentos import controle
+
+    controle.aprovar(id_externo)
+
+
+def _sessoes_com_nome_parecido(padrao: str) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE %s", [padrao]
+        )
+        (total,) = cursor.fetchone()
+    return int(total)
+
+
+def _e_do_utilitario() -> bool:
+    return threading.current_thread().name.startswith("concorrencia-")
+
+
+@pytest.mark.usefixtures("simulador_pagamentos")
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+def test_e07_r06_timeout_limpa_tambem_a_conexao_do_simulador():  # type: ignore[no-untyped-def]  # A-19
+    # Prova do revisor, copiada sem alteração (revalidação 636a94c da E07).
+    # Nome original: test_timeout_limpa_tambem_a_conexao_do_simulador
+    from apps.pagamentos.provedor import obter_provedor
+    from apps.simulador_pagamentos import controle as sim
+    from apps.simulador_pagamentos.models import CobrancaSimulada
+
+    p = _criar_cobranca_pendente()
+    terminou = threading.Event()
+    ids = {}
+
+    def bloqueada(barreira):  # type: ignore[no-untyped-def]
+        try:
+            with connections["simulador_pagamentos"].cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid()")
+                ids["simulador"] = cursor.fetchone()[0]
+            sim.aprovar(p.id_externo)
+        finally:
+            connections.close_all()
+            terminou.set()
+
+    with transaction.atomic(using="simulador_pagamentos"):
+        CobrancaSimulada.objects.select_for_update().get(chave_idempotencia="probe")
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(bloqueada, tempo_limite=1, tempo_limite_limpeza=2)
+        assert "simulador" in ids
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s", [ids["simulador"]])
+            restantes = cursor.fetchone()[0]
+        pendencias = limpezas_pendentes()
+    # Liberar a trava e esperar o encerramento garante limpeza da própria prova.
+    assert terminou.wait(5), "thread da prova nao terminou apos liberar a trava"
+    situacao = obter_provedor().consultar_pagamento(p.id_externo).situacao
+    assert restantes == 0 and situacao == "pendente", {  # noqa: PT018 (prova do revisor, literal)
+        "sessoes_apos_timeout": restantes,
+        "guarda": pendencias,
+        "situacao_depois": str(situacao),
+    }
+
+
+def _pausar_abertura_do_simulador(
+    monkeypatch: pytest.MonkeyPatch, liberar: threading.Event, registro: dict[str, Any]
+) -> None:
+    """Pausa só a abertura do wrapper do simulador, nas threads do utilitário, e registra os
+    nomes de todas as aberturas dessas threads."""
+    original = DatabaseWrapper.get_new_connection
+    registro["nomes"] = []
+    registro["aberturas_do_simulador"] = 0
+    registro["entrou"] = threading.Event()
+
+    def abertura(self: Any, params: Any) -> Any:
+        if not _e_do_utilitario():
+            return original(self, params)
+        registro["nomes"].append(params.get("application_name"))
+        if self.alias != ALIAS_DO_SIMULADOR:
+            return original(self, params)
+        registro["aberturas_do_simulador"] += 1
+        registro["thread"] = threading.current_thread()
+        registro["entrou"].set()
+        liberar.wait(10)
+        return original(self, params)
+
+    monkeypatch.setattr(DatabaseWrapper, "get_new_connection", abertura)
+
+
+@pytest.mark.usefixtures("simulador_pagamentos")
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+def test_e07_r06_abertura_do_simulador_terminando_no_prazo_nao_executa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-20
+    p = _criar_cobranca_pendente()
+    liberar = threading.Event()
+    registro: dict[str, Any] = {}
+    _pausar_abertura_do_simulador(monkeypatch, liberar, registro)
+    temporizador = threading.Timer(0.5, liberar.set)
+    temporizador.start()
+    inicio = time.monotonic()
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(
+                lambda _b: _aprovar_pelo_simulador(p.id_externo),
+                tempo_limite=0.2,
+                tempo_limite_limpeza=10,
+            )
+        decorrido = time.monotonic() - inicio
+        assert registro["entrou"].is_set()
+        assert decorrido >= 0.5
+        assert _sessoes_com_nome_parecido("concorrencia-%") == 0
+        assert _situacao_no_provedor(p.id_externo) == "pendente"
+    finally:
+        temporizador.cancel()
+        liberar.set()
+        if "thread" in registro:
+            registro["thread"].join(5)
+            assert not registro["thread"].is_alive()
+    assert _situacao_no_provedor(p.id_externo) == "pendente"
+
+
+@pytest.mark.usefixtures("simulador_pagamentos")
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+def test_e07_r06_abertura_do_simulador_alem_do_prazo_vira_limpeza_incompleta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-21
+    p = _criar_cobranca_pendente()
+    liberar = threading.Event()
+    registro: dict[str, Any] = {}
+    _pausar_abertura_do_simulador(monkeypatch, liberar, registro)
+
+    def aprovar_pelo_simulador(_barreira: threading.Barrier) -> None:
+        _aprovar_pelo_simulador(p.id_externo)
+
+    try:
+        with pytest.raises(LimpezaIncompleta) as erro:  # e não TempoEsgotado
+            executar_em_paralelo(aprovar_pelo_simulador, tempo_limite=0.2, tempo_limite_limpeza=0.5)
+        mensagem = str(erro.value)
+        assert not isinstance(erro.value, TempoEsgotado)
+        assert "aprovar_pelo_simulador" in mensagem
+        assert ALIAS_DO_SIMULADOR in mensagem
+        assert "ABRINDO" in mensagem
+        assert limpezas_pendentes() == 1
+
+        liberar.set()
+        aguardar_limpezas_pendentes(30)
+        registro["thread"].join(5)
+        assert not registro["thread"].is_alive()
+        nomes = [nome for nome in registro["nomes"] if nome]
+        assert len(nomes) == 2  # default e simulador
+        for nome in nomes:
+            assert _sessoes_por_nome(nome) == 0
+        assert limpezas_pendentes() == 0
+        assert _situacao_no_provedor(p.id_externo) == "pendente"
+    finally:
+        liberar.set()
+        monkeypatch.undo()
+        aguardar_limpezas_pendentes(10)
+
+
+@pytest.mark.usefixtures("simulador_pagamentos")
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+def test_e07_r06_abertura_do_simulador_depois_do_tempo_esgotado_e_recusada(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-22
+    p = _criar_cobranca_pendente()
+    liberar = threading.Event()
+    registro: dict[str, Any] = {}
+    _pausar_abertura_do_simulador(monkeypatch, liberar, registro)
+    espera = threading.Event()
+    terminou = threading.Event()
+    erros: list[BaseException] = []
+
+    def abre_depois(_barreira: threading.Barrier) -> None:
+        try:
+            espera.wait(10)
+            try:
+                _aprovar_pelo_simulador(p.id_externo)
+            except BaseException as erro:
+                erros.append(erro)
+        finally:
+            terminou.set()
+
+    try:
+        with pytest.raises(TempoEsgotado):
+            executar_em_paralelo(abre_depois, tempo_limite=0.2, tempo_limite_limpeza=5)
+        espera.set()
+        liberar.set()  # no código antigo a abertura pausada seguiria; aqui ela não pode ocorrer
+        assert terminou.wait(5)
+        assert len(erros) == 1
+        assert isinstance(erros[0], TempoEsgotado)
+        assert registro["aberturas_do_simulador"] == 0
+        assert _sessoes_com_nome_parecido("concorrencia-%-simulador_pagamentos") == 0
+        assert _situacao_no_provedor(p.id_externo) == "pendente"
+    finally:
+        espera.set()
+        liberar.set()
+
+
+def _descrever_os_dois_aliases(_barreira: threading.Barrier) -> dict[str, tuple[str, Any]]:
+    descricao = {}
+    for alias in BANCOS:
+        with connections[alias].cursor() as cursor:
+            cursor.execute("SHOW application_name")
+            (nome,) = cursor.fetchone()
+        descricao[alias] = (nome, connections[alias].get_connection_params()["connect_timeout"])
+    return descricao
+
+
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+def test_e07_r06_cada_alias_tem_nome_exclusivo_e_connect_timeout_fixo() -> None:  # A-23 (i)
+    r1, r2 = executar_em_paralelo(_descrever_os_dois_aliases, _descrever_os_dois_aliases)
+    assert r1.excecao is None
+    assert r2.excecao is None
+    nomes = []
+    for indice, resultado in enumerate((r1, r2)):
+        for alias in BANCOS:
+            nome, tempo = resultado.valor[alias]
+            assert re.fullmatch(rf"concorrencia-[0-9a-f]{{12}}-{indice}-{alias}", nome), nome
+            assert tempo == CONNECT_TIMEOUT_DAS_THREADS
+            nomes.append(nome)
+    assert len(set(nomes)) == 4
+    assert len({nome.rsplit("-", 2)[0] for nome in nomes}) == 1  # mesmo prefixo da chamada
+
+
+@pytest.mark.django_db(transaction=True, databases=BANCOS)
+@pytest.mark.parametrize("campo", ["HOST", "PORT", "USER"])
+def test_e07_r06_alias_em_outro_servidor_e_recusado_antes_de_iniciar(
+    monkeypatch: pytest.MonkeyPatch, campo: str
+) -> None:  # A-23 (ii)
+    executou = threading.Event()
+    monkeypatch.setitem(connections.settings[ALIAS_DO_SIMULADOR], campo, "outro")
+    with pytest.raises(ValueError, match=ALIAS_DO_SIMULADOR):
+        executar_em_paralelo(lambda _b: executou.set(), lambda _b: executou.set())
+    assert not executou.is_set()
+    assert not [t for t in threading.enumerate() if t.name.startswith("concorrencia-")]

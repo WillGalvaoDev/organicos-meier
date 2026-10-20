@@ -12,26 +12,33 @@ from typing import Any
 from django.db import connection, transaction
 
 
-def esperar_outra_conexao_na_trava(segundos: float = 15) -> None:
+def outra_conexao_esperando() -> bool:
+    """Alguma outra conexão do banco de testes está esperando por trava neste instante?"""
     with connection.cursor() as cursor:
-        limite = time.monotonic() + segundos
-        while time.monotonic() < limite:
-            cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE wait_event_type = 'Lock' AND datname = current_database()"
-            )
-            (esperando,) = cursor.fetchone()
-            if esperando:
-                return
-            time.sleep(0.05)
+        cursor.execute(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+        )
+        (esperando,) = cursor.fetchone()
+    return bool(esperando)
+
+
+def esperar_outra_conexao_na_trava(segundos: float = 15) -> None:
+    limite = time.monotonic() + segundos
+    while time.monotonic() < limite:
+        if outra_conexao_esperando():
+            return
+        time.sleep(0.05)
     raise AssertionError("a outra conexão não ficou esperando pela trava")
 
 
-def segurando(operacao: Callable[[], Any]) -> Callable[[Any], Any]:
-    """Executa a operação e mantém as travas dela até a outra conexão esperar."""
+def segurando(operacao: Callable[[], Any], *, using: str = "default") -> Callable[[Any], Any]:
+    """Executa a operação e mantém as travas dela até a outra conexão esperar.
+
+    `using` é o banco cuja transação segura as travas (o simulador de pagamentos tem o seu)."""
 
     def segura(barreira: Any) -> Any:
-        with transaction.atomic():
+        with transaction.atomic(using=using):
             resultado = operacao()
             barreira.wait(timeout=10)
             esperar_outra_conexao_na_trava()

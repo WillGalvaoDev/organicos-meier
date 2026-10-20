@@ -4,6 +4,7 @@ Apps de negócio e bibliotecas com comportamento (django-allauth, Procrastinate)
 entram aqui só junto com a fatia que as usa, com testes escritos antes (AGENTS.md).
 """
 
+import copy
 from pathlib import Path
 
 import environ
@@ -30,6 +31,16 @@ CANAL_WHATSAPP = env("CANAL_WHATSAPP", default="desligado")
 if CANAL_WHATSAPP not in ("desligado", "simulado"):
     raise ImproperlyConfigured("CANAL_WHATSAPP deve ser 'desligado' ou 'simulado'.")
 
+# Provedor de pagamentos (E07-02). Na fase 1 só existe o simulador; o valor é exato (sem caixa
+# nem espaços). O Mercado Pago entra na fase 2a. Qualquer outro valor impede o carregamento.
+PROVEDOR_PAGAMENTOS = env("PROVEDOR_PAGAMENTOS", default="simulador")
+if PROVEDOR_PAGAMENTOS != "simulador":
+    raise ImproperlyConfigured("PROVEDOR_PAGAMENTOS deve ser 'simulador' na fase 1.")
+
+# Segredo com que o simulador de pagamentos assina os avisos (E07-01). Sem valor padrão aqui: só
+# dev.py e test.py o definem; o simulador recusa operar sem ele.
+SEGREDO_AVISOS_SIMULADOR = env("SEGREDO_AVISOS_SIMULADOR", default="")
+
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA", default="http://localhost:8000")
 
 INSTALLED_APPS = [
@@ -54,6 +65,8 @@ INSTALLED_APPS = [
     "apps.catalogo",
     "apps.interesses",
     "apps.notificacoes",
+    "apps.pagamentos",
+    "apps.simulador_pagamentos",
 ]
 
 AUTH_USER_MODEL = "contas.Conta"
@@ -96,6 +109,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
+# O simulador de pagamentos faz o papel de um serviço externo (E07-R03): fala com o mesmo banco
+# por uma conexão própria, para que nada que ele aceitou se desfaça com a transação do sistema.
+DATABASES["simulador_pagamentos"] = copy.deepcopy(DATABASES["default"])
+DATABASE_ROUTERS = ["apps.simulador_pagamentos.roteador.RoteadorDoSimulador"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

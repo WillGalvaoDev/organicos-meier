@@ -1,6 +1,7 @@
 """E01-02: campos de modelo de dinheiro e quantidade (acceptance A-16, A-17, A-19, A-20)."""
 
 import importlib
+import sys
 from decimal import Decimal
 
 import pytest
@@ -49,8 +50,13 @@ def test_campos_aceitam_decimal_valido() -> None:
     ModeloValores(preco=D("7.99"), peso=D("0.25")).full_clean()
 
 
-def test_app_de_testes_fora_da_producao() -> None:  # A-20
+def test_app_de_testes_fora_da_producao(monkeypatch: pytest.MonkeyPatch) -> None:  # A-20
+    monkeypatch.setenv("AMBIENTE", "homologacao")  # obrigatórios em prod.py (E07-02)
+    monkeypatch.setenv("SEGREDO_AVISOS_SIMULADOR", "segredo-de-teste")
     for modulo in ("config.settings.base", "config.settings.prod"):
+        ja_importado = modulo in sys.modules
         configuracao = importlib.import_module(modulo)
+        if ja_importado:
+            configuracao = importlib.reload(configuracao)
         assert "apoio_testes" not in configuracao.INSTALLED_APPS
         assert not any("apoio" in app for app in configuracao.INSTALLED_APPS)

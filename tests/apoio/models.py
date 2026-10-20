@@ -33,3 +33,21 @@ class ModeloContador(models.Model):
 
     def __str__(self) -> str:
         return str(self.valor)
+
+
+class CobrancaDeTeste(models.Model):
+    """Resultado da operação de teste `criar_cobranca_de_teste` (E07-04)."""
+
+    id_externo = models.CharField(max_length=64)
+
+    def __str__(self) -> str:
+        return self.id_externo
+
+
+class FalhaDeTeste(models.Model):
+    """Código recebido pelo gancho `falhou` da operação de teste (E07-04)."""
+
+    codigo = models.CharField(max_length=40)
+
+    def __str__(self) -> str:
+        return self.codigo

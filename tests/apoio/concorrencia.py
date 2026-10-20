@@ -4,11 +4,12 @@ Uso: o teste precisa de `django_db(transaction=True)` e do marcador `concorrenci
 Cada operação recebe uma barreira interna (`threading.Barrier`) para forçar um ponto de
 encontro definido pelo teste, por exemplo depois de ler e antes de gravar.
 
-Tempo esgotado (spec.md, "Correção R05"): cada operação pendente fica numa de três situações,
-nunca abriu conexão e já não pode abrir, abriu e teve a sessão encerrada no Postgres, ou estava
-abrindo, terminou dentro do prazo de limpeza e fechou a conexão sem executar a operação. Quando
-isso não pode ser cumprido, levanta `LimpezaIncompleta` e a guarda entre testes
-(`tests/conftest.py`) impede que a suíte siga com conexão herdada.
+Tempo esgotado (spec.md, "Correção R05"): cada conexão de cada operação pendente fica numa de
+três situações, nunca abriu e já não pode abrir, abriu e teve a sessão encerrada no Postgres, ou
+estava abrindo, terminou dentro do prazo de limpeza e fechou a conexão sem executar a operação.
+Isso vale por operação e por alias de `settings.DATABASES` (spec.md, "Correção E07-R06"). Quando
+não pode ser cumprido, levanta `LimpezaIncompleta` e a guarda entre testes (`tests/conftest.py`)
+impede que a suíte siga com conexão herdada.
 """
 
 import threading
@@ -21,6 +22,8 @@ from typing import Any
 
 from django.db import connections
 from django.db.backends.base.base import BaseDatabaseWrapper
+
+ALIAS_PADRAO = "default"
 
 TEMPO_LIMITE_PADRAO = 30.0
 TEMPO_LIMITE_LIMPEZA_PADRAO = 30.0
@@ -61,10 +64,18 @@ class Fase(Enum):
 
 @dataclass
 class _Operacao:
+    """Uma operação e, por alias, o `application_name` e a fase da conexão dela."""
+
     indice: int
     nome: str
-    aplicacao: str
-    fase: Fase = Fase.ANTES
+    aplicacoes: dict[str, str]
+    fases: dict[str, Fase] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.fases = {alias: Fase.ANTES for alias in self.aplicacoes}
+
+    def descrever_fases(self) -> str:
+        return ", ".join(f"{alias} {fase.value}" for alias, fase in self.fases.items())
 
 
 @dataclass
@@ -77,11 +88,11 @@ class _Execucao:
     pendentes: list[_Operacao] = field(default_factory=list)
 
     def abrindo(self, operacoes: list[_Operacao]) -> bool:
-        return any(op.fase is Fase.ABRINDO for op in operacoes)
+        return any(fase is Fase.ABRINDO for op in operacoes for fase in op.fases.values())
 
     def descrever(self, operacoes: list[_Operacao]) -> str:
         with self.condicao:
-            return ", ".join(f"{op.indice}:{op.nome} ({op.fase.value})" for op in operacoes)
+            return ", ".join(f"{op.indice}:{op.nome} ({op.descrever_fases()})" for op in operacoes)
 
 
 _PENDENCIAS: list[_Execucao] = []
@@ -131,7 +142,7 @@ def _encerrar_e_confirmar(nomes: list[str], limite: float) -> bool:
 def _limpar(execucao: _Execucao, limite: float) -> bool:
     """Espera as aberturas em andamento (com prazo) e confirma zero sessões no servidor."""
     pendentes = execucao.pendentes
-    nomes = [op.aplicacao for op in pendentes]
+    nomes = [nome for op in pendentes for nome in op.aplicacoes.values()]
     _encerrar_e_confirmar(nomes, limite)  # sessões já ABERTAS saem sem esperar a abertura
     with execucao.condicao:
         sem_abertura = execucao.condicao.wait_for(
@@ -159,6 +170,18 @@ def aguardar_limpezas_pendentes(prazo: float) -> None:
         raise LimpezaIncompleta(f"limpeza pendente de execução anterior: {detalhes}")
 
 
+def _conferir_mesmo_servidor() -> None:
+    """Todo alias tem de estar no servidor de `default`: a limpeza roda por essa conexão."""
+    referencia = connections.settings[ALIAS_PADRAO]
+    for alias, configuracao in connections.settings.items():
+        for campo in ("HOST", "PORT", "USER"):
+            if configuracao.get(campo) != referencia.get(campo):
+                raise ValueError(
+                    f"o alias {alias} tem {campo} diferente de {ALIAS_PADRAO}: "
+                    "a limpeza não alcançaria as sessões dele"
+                )
+
+
 def executar_em_paralelo(
     *operacoes: Operacao,
     tempo_limite: float = TEMPO_LIMITE_PADRAO,
@@ -174,10 +197,13 @@ def executar_em_paralelo(
     total = len(operacoes)
     if total == 0:
         return []
+    _conferir_mesmo_servidor()
     prefixo = f"concorrencia-{uuid.uuid4().hex[:12]}"
+    aliases = list(connections.settings)
     execucao = _Execucao(
         operacoes=[
-            _Operacao(i, _nome(operacao), f"{prefixo}-{i}") for i, operacao in enumerate(operacoes)
+            _Operacao(i, _nome(operacao), {alias: f"{prefixo}-{i}-{alias}" for alias in aliases})
+            for i, operacao in enumerate(operacoes)
         ]
     )
     condicao = execucao.condicao
@@ -185,48 +211,52 @@ def executar_em_paralelo(
     interna = threading.Barrier(total)
     resultados = [Resultado() for _ in operacoes]
 
-    def mudar_fase(op: _Operacao, fase: Fase) -> None:
+    def mudar_fase(op: _Operacao, alias: str, fase: Fase) -> None:
         with condicao:
-            op.fase = fase
+            op.fases[alias] = fase
             condicao.notify_all()
 
-    def instalar_connect_controlado(op: _Operacao, conexao: BaseDatabaseWrapper) -> None:
+    def instalar_connect_controlado(
+        op: _Operacao, alias: str, conexao: BaseDatabaseWrapper
+    ) -> None:
         original = conexao.connect
 
         def connect_controlado() -> None:
             with condicao:
                 if execucao.expirado:
                     raise TempoEsgotado("operação expirada: não pode abrir conexão")
-                op.fase = Fase.ABRINDO
+                op.fases[alias] = Fase.ABRINDO
             try:
                 original()
             except BaseException:
-                mudar_fase(op, Fase.SEM_CONEXAO)
+                mudar_fase(op, alias, Fase.SEM_CONEXAO)
                 raise
             with condicao:
                 if not execucao.expirado:
-                    op.fase = Fase.ABERTA
+                    op.fases[alias] = Fase.ABERTA
                     condicao.notify_all()
                     return
             try:  # expirou durante a abertura: a própria thread fecha, sem executar a operação
                 conexao.close()
             finally:
-                mudar_fase(op, Fase.SEM_CONEXAO)
+                mudar_fase(op, alias, Fase.SEM_CONEXAO)
             raise TempoEsgotado("operação expirada durante a abertura da conexão")
 
         conexao.connect = connect_controlado  # type: ignore[method-assign]
 
     def executar(op: _Operacao) -> None:
         try:
-            conexao = connections["default"]
-            opcoes = {
-                **conexao.settings_dict.get("OPTIONS", {}),
-                "application_name": op.aplicacao,
-                "connect_timeout": CONNECT_TIMEOUT_DAS_THREADS,
-            }
-            conexao.settings_dict = {**conexao.settings_dict, "OPTIONS": opcoes}
-            instalar_connect_controlado(op, conexao)
-            conexao.ensure_connection()  # todas abertas antes do início: pids distintos
+            for alias, aplicacao in op.aplicacoes.items():
+                conexao = connections[alias]
+                opcoes = {
+                    **conexao.settings_dict.get("OPTIONS", {}),
+                    "application_name": aplicacao,
+                    "connect_timeout": CONNECT_TIMEOUT_DAS_THREADS,
+                }
+                conexao.settings_dict = {**conexao.settings_dict, "OPTIONS": opcoes}
+                instalar_connect_controlado(op, alias, conexao)
+            # só `default` abre antes do início (pids distintos); os outros abrem no uso
+            connections[ALIAS_PADRAO].ensure_connection()
             inicio.wait(timeout=tempo_limite)
             resultados[op.indice].valor = operacoes[op.indice](interna)
         except BaseException as erro:
@@ -236,7 +266,10 @@ def executar_em_paralelo(
                 connections.close_all()
             except Exception:  # noqa: S110
                 pass
-            mudar_fase(op, Fase.SEM_CONEXAO)
+            with condicao:
+                for alias in op.fases:
+                    op.fases[alias] = Fase.SEM_CONEXAO
+                condicao.notify_all()
 
     threads = [
         threading.Thread(target=executar, args=(op,), name=f"concorrencia-{op.indice}", daemon=True)

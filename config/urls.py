@@ -8,6 +8,7 @@ from apps.contas import views as contas_views
 from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
+from apps.pagamentos import views as pagamentos_views
 from apps.rodadas import views as rodadas_views
 
 # Cada rota entra com a fatia que a especifica e testa. Só as rotas do allauth usadas aqui
@@ -89,6 +90,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
         notificacoes_views.envio_detalhe,
         name="envio_detalhe",
     ),
+    path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
     path("perfil/", contas_views.perfil, name="perfil"),
     path("perfil/avatar/<int:pk>/", contas_views.avatar, name="avatar"),
     path("administracao/", contas_views.painel_administracao, name="painel_administracao"),
