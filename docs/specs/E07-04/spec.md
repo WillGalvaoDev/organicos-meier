@@ -137,6 +137,72 @@ O instante de `agora()` é lido depois da trava.
 - **Provedor fora do ar por horas:** a chamada continua `pendente`, com as tentativas e o próximo instante gravados; volta a funcionar quando o provedor volta.
 - **Erro inesperado no `concluir`:** nada da chamada é gravado, e as outras chamadas do lote são processadas.
 
+## Correção E07-R01, R02 e R03 (2026-10-20)
+
+Parecer: `docs/specs/E07-01/review.md`, sobre `d6e4d20`.
+
+### R01 — aviso absorvido por uma consulta em andamento
+
+**Diagnóstico.** A tarefa trava a chamada pendente e consulta o provedor. Até a tarefa confirmar, a linha continua `pendente` para as outras conexões. Um aviso que chega nesse intervalo chama `agendar_chamada`, que lê a pendente sem trava e a devolve. A tarefa conclui com a resposta obtida antes do aviso, e o aviso fica sem nenhuma consulta posterior.
+
+O revisor reproduziu o caso: o provedor está `aprovado`, o registro continua `pendente` e a única chamada está concluída. Eu especifiquei a coalescência ("devolve a pendente existente") sem distinguir a chamada que ainda não começou da que já está em execução.
+
+**Regra.** A coalescência só acontece com uma chamada que ainda vai consultar o provedor depois de quem agendou:
+
+1. `agendar_chamada` trava a chamada pendente do par com `select_for_update()`, **sem** `skip_locked` e sem `nowait`. Se uma execução da tarefa está com a linha travada, o agendamento espera essa execução terminar.
+2. Depois da espera, a condição `situacao = 'pendente'` é conferida na versão nova da linha. É o comportamento do Postgres em `READ COMMITTED`.
+   - Se a chamada foi concluída ou falhou, não há pendente, e o agendamento cria uma chamada nova, que vai consultar depois.
+   - Se a chamada continua pendente (falha temporária, ou erro inesperado desfeito), o agendamento a devolve, e ela ainda vai consultar depois.
+3. Quando encontra a pendente, quem agendou fica com a trava até o fim da própria transação. Nesse tempo, `processar_chamadas` pula a chamada (`skip_locked`) e a tenta numa execução seguinte. Assim, a consulta sempre acontece depois que o agendamento terminou.
+4. O conflito da restrição única na criação continua tratado com releitura, agora também com `select_for_update()`.
+
+A restrição `UNIQUE (operacao, alvo) WHERE situacao = 'pendente'` e a idempotência continuam iguais, e os critérios A-1 a A-16 continuam valendo.
+
+**Invariante nova.** Nenhum agendamento é absorvido por uma execução que já consultou o provedor. A chamada que `agendar_chamada` devolve só executa `executar` depois que a transação de quem agendou termina.
+
+**Custo e limites.**
+
+- **Espera.** O agendamento pode esperar a execução em andamento da mesma chamada. No simulador, essa execução termina logo. Com o provedor real (fase 2a), o tempo máximo da chamada ao provedor limita a espera, e esse tempo é definido junto com a integração real.
+- **Ordem das travas.** A execução trava a chamada e, dentro de `concluir`, as linhas que a operação usa. Quem agenda o mesmo par (operação, alvo) dentro de uma transação que já trava essas mesmas linhas pode entrar em impasse com uma execução em andamento. O Postgres detecta o impasse e desfaz uma das transações, sem efeito duplicado. Mesmo assim, as operações da E08 e da E10 devem evitá-lo: ou agendam antes de travar as linhas que o `concluir` trava, ou usam um alvo próprio por tentativa.
+- Nesta fatia, `consultar_pagamento` não tem esse risco. O aviso (E07-05) só grava o próprio `AvisoRecebido`, que o `concluir` não toca.
+
+**Alternativa descartada.** Não esperar, e criar uma segunda chamada pendente para o mesmo par quando a primeira está em execução. Isso exigiria trocar a restrição única e os critérios A-12 e A-15, além de uma regra nova para escolher entre duas pendentes.
+
+### R02 — o horário do aviso se perde na coalescência
+
+**Diagnóstico.** O horário do recebimento do aviso só viaja nos parâmetros da chamada. Quando já existe uma chamada pendente, por exemplo agendada pela tarefa e sem parâmetros, `agendar_chamada` a devolve "sem alterá-la", e o horário do aviso se perde. O `primeiro_aviso_em` fica nulo, embora o `AvisoRecebido` tenha o horário. A spec da E07-05 supunha que cada aviso criaria a própria chamada.
+
+**Regra.**
+
+- `Operacao` ganha um campo opcional: `combinar(atuais: dict, novos: dict) -> dict`.
+- Quando `agendar_chamada` devolve uma pendente (com a trava do R01) e recebeu `parametros`, ela grava `parametros = combinar(atuais, novos)`. Isso só acontece se a operação tiver `combinar` e o resultado for diferente do atual.
+  - Só `parametros` muda. `chave_idempotencia`, `proxima_em`, `tentativas` e `criada_em` continuam iguais, e o A-2 continua valendo.
+  - Se a operação não tem `combinar`, os parâmetros não mudam.
+- `combinar` de `consultar_pagamento`:
+  - `aviso_recebido_em`: o mais antigo dos dois, comparado como instante e gravado em ISO 8601 UTC. Se nenhum dos dois tem o campo, ele continua ausente;
+  - `origem`: `aviso`, se qualquer um dos dois for `aviso`; senão, a atual.
+- Com o R01, todo aviso de pagamento entrega o seu horário a uma consulta que acontece depois dele. Ou o horário é combinado numa pendente que ainda não começou, ou vai numa chamada nova.
+- `sincronizar_pagamento` (E07-03) não muda: só grava `primeiro_aviso_em` quando ele está nulo.
+
+### R03 — falha local depois de o provedor aceitar
+
+**Diagnóstico.** Ver a correção R03 da E07-01: o simulador gravava na conexão do sistema, e o rollback da chamada desfazia a cobrança já aceita. Os critérios desta fatia só cobriam a falha temporária depois de aceitar (A-7), que não desfaz nada.
+
+**Regra.** `processar_chamadas` não muda. O rollback continua desfazendo só o que o sistema gravou: a chamada e os efeitos de `concluir`. Com a conexão própria do simulador, o que ele aceitou continua gravado, e a repetição com a mesma chave devolve a mesma cobrança. Com isso, o comentário de `_tentar` passa a ser verdadeiro.
+
+### TDD
+
+Os critérios A-17 a A-22 seguem Red → Green → Refactor, com as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Sobre a prova do revisor em `d6e4d20`:
+
+- `test_falha_local_nao_apaga_cobranca_aceita` (R03) entra nos testes, com o alias do simulador no marcador.
+- `test_aviso_durante_consulta_nao_e_perdido` (R01) não entra literalmente:
+  - a prova espera que o aviso termine enquanto a tarefa está parada com a trava;
+  - com a regra acima, é o aviso que espera a tarefa, e a prova ficaria parada até o prazo de 20 segundos.
+
+  O A-17 desta fatia e o A-15 da E07-05 reproduzem a mesma intercalação. Neles, a tarefa fica parada até a outra thread terminar ou aparecer esperando a trava, o que vier primeiro.
+  - No código atual, o aviso termina sem esperar, e o teste falha pela situação final (`pendente` em vez de `aprovado`). Esse é o Red esperado.
+  - Com a correção, o aviso aparece esperando, e o teste segue até o fim.
+
 ## Dependências e decisões em aberto
 
 - Depende de E04-03 (padrão da tarefa), E07-01, E07-02 e E07-03.

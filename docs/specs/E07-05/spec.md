@@ -109,6 +109,51 @@ receber_aviso(corpo: bytes, cabecalhos: Mapping[str, str]) -> int
 - **Aviso de um pagamento já consultado e concluído:** agenda uma nova consulta, porque a chamada anterior não está mais `pendente`. Se nada mudou, a consulta só acrescenta o histórico (E07-03).
 - **Aprovação na margem com aviso depois de `T0 + 48h`:** o aviso chega tarde, mas `aprovado_no_provedor_em` vem do provedor. A E08 decide pelo horário do provedor.
 
+## Correção E07-R01, R02 e R05 (2026-10-20)
+
+Parecer: `docs/specs/E07-01/review.md`, sobre `d6e4d20`.
+
+### R01 e R02 — aviso durante uma consulta e aviso com consulta já agendada
+
+**Diagnóstico.** Esta fatia supunha que cada aviso novo criaria a própria chamada, com o próprio horário nos parâmetros. Isso falha em dois casos:
+
+- **R01.** O aviso chega enquanto a tarefa já consultou o provedor e ainda não confirmou. O aviso é absorvido pela chamada em andamento, e nenhuma consulta posterior acontece.
+- **R02.** Já existe uma consulta pendente agendada pela tarefa. O horário do aviso não chega ao registro, e `primeiro_aviso_em` fica nulo.
+
+As duas causas estão no agendamento, e a regra corrigida está na E07-04 (correção R01 e R02).
+
+**Regra.** O passo 3 das Regras continua chamando `agendar_chamada` com os mesmos parâmetros, que agora segue a regra corrigida da E07-04:
+
+- **Consulta pendente que ainda não começou:** o aviso combina o seu horário nela. Fica o mais antigo dos horários, e a origem passa a ser `aviso`.
+- **Consulta em execução:** o recebimento espera essa execução terminar e agenda uma chamada nova.
+
+Nenhuma parte desta fatia supõe mais que cada aviso cria a própria chamada.
+
+**Casos-limite acrescentados.**
+
+- **Aviso durante a consulta em andamento:** a resposta da rota pode esperar a execução da consulta daquele mesmo pagamento. Depois, uma consulta nova reconhece a mudança. A rota continua sem chamar o provedor.
+- **Aviso com consulta da tarefa já agendada:** fica uma chamada só, com origem `aviso` e o horário do aviso. O `primeiro_aviso_em` fica com esse horário.
+
+### R05 — aviso assinado fora do esquema
+
+**Diagnóstico.** Um aviso assinado com um campo maior que o limite da tabela passava pela verificação e quebrava a gravação, e a rota respondia 500. Esta fatia definiu os limites em `AvisoRecebido`, mas não exigiu que a verificação os conferisse.
+
+**Regra.**
+
+- O passo 2 das Regras passa a cobrir também os campos fora do esquema. `verificar_aviso` levanta `AvisoInvalido` pelo tipo `AvisoDoProvedor` (correção R05 da E07-01), e a rota responde 401, sem gravar nada.
+- Nenhum erro de banco é capturado para virar 401: o 500 continua reservado para erro inesperado do banco.
+- Um tipo desconhecido, dentro do esquema, continua com 200. O corpo acima de 64 KiB continua com 400.
+
+### TDD
+
+Os critérios A-15 a A-18 seguem Red → Green → Refactor, com as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Da prova do revisor sobre `d6e4d20`, entram nos testes, com o alias do simulador no marcador quando ele é usado:
+
+- `test_primeiro_aviso_preservado_com_consulta_ja_agendada`, nos dois casos;
+- `test_aviso_assinado_fora_dos_limites_nao_causa_500`;
+- `test_aviso_apos_consulta_concluida_atualiza`, como controle.
+
+O A-15 adapta `test_aviso_durante_consulta_nao_e_perdido`, pelo motivo registrado na correção da E07-04.
+
 ## Dependências e decisões em aberto
 
 - Depende de E02-10, E07-01, E07-03 e E07-04.

@@ -183,6 +183,68 @@ verificar_aviso(corpo: bytes, cabecalhos: Mapping[str, str]) -> AvisoDoProvedor
 - **Aprovação depois do vencimento:** `aprovar` sobre uma cobrança `expirado` é aceito, com o `em` informado.
 - **Dois pagamentos aprovados para a mesma referência:** duas cobranças com chaves diferentes e a mesma referência, as duas aprovadas, e `buscar_por_referencia` devolve as duas.
 
+## Correção E07-R03, R04 e R05 e ajuste do A-4 (2026-10-20)
+
+Parecer: `docs/specs/E07-01/review.md`, sobre `d6e4d20`. Esta seção corrige a interface e o simulador. A parte das chamadas está na E07-04 e a parte da rota, na E07-05.
+
+### R03 — o estado do simulador não pode depender da transação do sistema
+
+**Diagnóstico.** O simulador grava cobranças e avisos pela mesma conexão do sistema. Quando a tarefa (E07-04) desfaz a transação de uma chamada por um erro inesperado em `concluir`, desfaz junto a cobrança que o simulador acabou de aceitar. A repetição com a mesma chave cria outra cobrança, com outro `id_externo`, e um provedor real teria guardado a primeira. A decisão "Estado do simulador no banco" disse onde guardar, mas não disse que esse estado é independente da transação do sistema. Só especifiquei a falha depois de aceitar pelo caminho de `ProvedorIndisponivel`, que não desfaz nada.
+
+**Regra.**
+
+- **Conexão própria.** O simulador usa o alias de banco `simulador_pagamentos`, que aponta para o mesmo banco de `default`. Em `config/settings/base.py`, ele é uma cópia das configurações de `default`, e por isso existe em todos os ambientes, inclusive na homologação. Com isso, o simulador se comporta como um serviço externo: cada operação e cada controle confirma o que gravou na própria conexão. Nenhum rollback, savepoint ou queda do processo do lado do sistema desfaz o que o simulador aceitou.
+- **Roteador** `apps/simulador_pagamentos/roteador.py`, em `DATABASE_ROUTERS`:
+  - a leitura e a escrita dos modelos do app `simulador_pagamentos` vão para `simulador_pagamentos`. Para os outros apps, o roteador devolve `None`;
+  - as migrações do simulador rodam só em `default`, porque o banco é o mesmo. No alias `simulador_pagamentos`, nenhuma migração roda;
+  - não há relação entre os modelos do simulador e os do sistema.
+- **Transações do simulador.** Toda operação com mais de uma instrução, ou com `select_for_update`, usa `transaction.atomic(using="simulador_pagamentos")`. Nenhum código do simulador depende da transação de `default`.
+- **Testes.** Nos testes sem `transaction=True`, cada alias fica na sua própria transação de teste, em conexões separadas. O que o simulador grava não aparece pela conexão `default`, e o contrário também vale. Por isso, nenhum código lê tabelas do simulador pela conexão `default`, e o roteador garante isso.
+  - Os testes que usam o simulador declaram os dois bancos: `django_db(databases=["default", "simulador_pagamentos"])`.
+  - Ajuste autorizado nos testes existentes da E07: acrescentar esse alias aos marcadores, um a um ou por um gancho central em `tests/conftest.py`, sem mudar nenhuma asserção. O `review.md` registra o meio usado.
+- **O que não muda:**
+  - as tabelas e a migração existente;
+  - os identificadores e a idempotência por chave;
+  - o A-15;
+  - o plano de falhas, que continua no processo.
+
+**Alternativas descartadas.**
+
+- Deixar o simulador na conexão do sistema e capturar o erro de `concluir` dentro da transação resolveria o erro inesperado, mas não a queda do processo, em que a conexão desfaz tudo.
+- Confirmar a transação da tarefa antes de `concluir` mudaria o modelo aprovado da E07-04 por causa do simulador.
+
+### R04 — instantes em UTC em toda resposta
+
+**Diagnóstico.** A spec manda `PagamentoConsultado` ter "todos os instantes em UTC, com fuso". Mas o simulador monta a resposta com os valores do objeto em memória. Na criação e no cancelamento, `expira_em` e `aprovado_em` voltam no fuso de quem informou, por exemplo -03:00. A leitura do banco já vem em UTC, então a interface responde de jeitos diferentes conforme o caminho. Eu não disse onde a normalização acontece.
+
+**Regra.** A interface normaliza. Ao ser construído, `PagamentoConsultado` converte para UTC os instantes `criado_em`, `aprovado_em` (quando houver), `expira_em` e `consultado_em`, com `astimezone(UTC)`, e o `tzinfo` fica igual a `datetime.UTC`. Um instante sem fuso levanta `InstanteSemFuso` (E01-03). O instante continua o mesmo; muda só a representação. A regra vale para qualquer implementação, inclusive a da fase 2a.
+
+### R05 — esquema do aviso validado antes de gravar
+
+**Diagnóstico.** `verificar_aviso` confere a assinatura, o JSON e se os três campos são textos, mas não confere os limites. Um aviso assinado com `id_evento` de 65 caracteres, `tipo` de 41 ou `id_externo` de 65 passa na verificação, quebra a gravação de `AvisoRecebido`, e a rota responde 500. Eu defini os limites só no modelo da E07-05, e não no tipo que a verificação devolve.
+
+**Regra.** Ao ser construído, `AvisoDoProvedor` valida os três campos e levanta `AvisoInvalido("corpo malformado")` quando um campo:
+
+- não é texto;
+- é vazio;
+- passa do limite, contado em caracteres como no banco: `id_evento` até 64, `tipo` até 40 e `id_externo` até 64;
+- contém o caractere nulo (`"\x00"`), que o Postgres não grava em texto.
+
+Os limites viram constantes de `apps/pagamentos/provedor.py` (`LIMITE_ID_EVENTO`, `LIMITE_TIPO` e `LIMITE_ID_EXTERNO`), e os campos de `AvisoRecebido` passam a usá-las. Os valores são os mesmos, então não há migração nova. Como a validação fica no tipo da interface, ela vale para o simulador e para a implementação da fase 2a. A resposta HTTP é tratada na E07-05.
+
+### Ajuste do A-4
+
+O A-4 aprovava "a cobrança do A-1", criada às 13:00, com `em` igual a 12:59:30. A regra de `aprovar` recusa esse caso, porque `em` é anterior a `criado_em` (A-5). O implementador registrou o conflito e criou a cobrança às 12:50, e o A-4 passa a dizer isso. Nenhuma regra muda.
+
+### TDD
+
+Os critérios A-19 a A-22 seguem Red → Green → Refactor, com as regras de prevenção das correções E05-R04 (E05-01) e E06-R05 (E06-05). Da prova do revisor sobre `d6e4d20`:
+
+- `test_resposta_do_simulador_normaliza_utc` (R04) é o Red esperado e entra nos testes, com o alias do simulador no marcador;
+- `test_aviso_assinado_fora_dos_limites_nao_causa_500` (R05) também é o Red esperado e entra nos testes da E07-05 (A-17).
+
+O A-4 ajustado não precisa de Red, porque o teste já faz o que o critério passa a dizer.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01 (tempo, decimais, auditoria, CI).
