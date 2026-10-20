@@ -188,3 +188,20 @@ def sincronizar(id_externo: str, origem: str = "tarefa") -> None:
     """Consulta o pagamento no provedor e o sincroniza, numa transação."""
     with transaction.atomic():
         sincronizar_pagamento(obter_provedor().consultar_pagamento(id_externo), origem=origem)
+
+
+def pedido_na_abertura(
+    abertura: AberturaDoPagamento, comprador: Conta, total: str = "50.00"
+) -> Pedido:
+    """Mais um pedido de `comprador` na mesma abertura, gravado direto."""
+    valor = D(total)
+    pedido = Pedido.objects.create(
+        abertura=abertura,
+        comprador=comprador,
+        produtos=valor,
+        servico=D("0.00"),
+        frete=D("0.00"),
+        total=valor,
+    )
+    SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
+    return pedido

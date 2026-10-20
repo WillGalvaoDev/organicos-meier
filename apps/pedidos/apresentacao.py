@@ -3,18 +3,19 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
+from apps.nucleo.tempo import agora, no_fuso_da_operacao
 from apps.pedidos.models import (
     Pedido,
     SituacaoDaTentativa,
     SituacaoDePagamento,
     TentativaDePagamento,
 )
-from apps.pedidos.pagamento import HORAS_DO_PRAZO_DE_PAGAMENTO, tentativa_aberta
+from apps.pedidos.pagamento import tentativa_aberta
+from apps.pedidos.prazos import aceita_tentativas, prazo_de_pagamento
 
 
 def prazo_do_pedido(pedido: Pedido) -> datetime:
-    return somar_horas(pedido.abertura.t0, HORAS_DO_PRAZO_DE_PAGAMENTO)
+    return prazo_de_pagamento(pedido.abertura)
 
 
 def data_e_hora(instante: datetime) -> str:
@@ -28,10 +29,9 @@ def texto_da_situacao(pedido: Pedido, instante: datetime) -> str:
         return "Pago"
     if situacao == SituacaoDePagamento.CANCELADO:
         return "Cancelado"
-    prazo = prazo_do_pedido(pedido)
-    if prazo_encerrado(instante, prazo):
+    if not aceita_tentativas(pedido.abertura, instante):
         return "Prazo encerrado"
-    return f"Aguardando pagamento até {data_e_hora(prazo)}"
+    return f"Aguardando pagamento até {data_e_hora(prazo_do_pedido(pedido))}"
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ def situacao_do_pagamento(pedido: Pedido, comprador_ativo: bool) -> Pagamento:
         and ultima.situacao == SituacaoDaTentativa.NAO_CRIADA
         and ultima.codigo_da_falha == "prazo_encerrado"
     )
-    dentro_do_prazo = not prazo_encerrado(agora(), prazo_do_pedido(pedido))
+    dentro_do_prazo = aceita_tentativas(pedido.abertura, agora())
     return Pagamento(
         codigo_pix=codigo,
         gerando=aberta is not None and aberta.situacao == SituacaoDaTentativa.SOLICITADA,

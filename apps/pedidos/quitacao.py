@@ -22,7 +22,7 @@ from apps.catalogo.templatetags.catalogo import reais
 from apps.notificacoes.emissao import emitir_evento
 from apps.notificacoes.eventos import Evento
 from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
-from apps.nucleo.tempo import agora, ate_o_limite, prazo_encerrado, somar_horas
+from apps.nucleo.tempo import agora, ate_o_limite
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.pedidos.models import (
     DestinoDaDecisao,
@@ -32,11 +32,10 @@ from apps.pedidos.models import (
     SituacaoDePagamento,
     SituacaoDoPedido,
 )
+from apps.pedidos.prazos import aceita_tentativas, fim_da_margem, prazo_de_pagamento
 
 logger = logging.getLogger(__name__)
 
-HORAS_DO_PRAZO_DE_PAGAMENTO = 24
-HORAS_DA_MARGEM = 48
 MAIOR_TITULO = 150
 MOTIVOS_DE_DEVOLUCAO = (
     MotivoDoDestino.INICIADO_FORA_DO_PRAZO,
@@ -110,11 +109,10 @@ def _motivo_da_devolucao(
 ) -> str | None:
     """O motivo pelo qual o pagamento não quita o pedido, ou `None` se ele quita."""
     abertura = pedido.abertura
-    prazo = somar_horas(abertura.t0, HORAS_DO_PRAZO_DE_PAGAMENTO)
-    limite = somar_horas(abertura.t0, HORAS_DA_MARGEM)
+    limite = fim_da_margem(abertura)
     if pagamento.valor != pedido.total:
         return MotivoDoDestino.VALOR_DIVERGENTE
-    if prazo_encerrado(pagamento.criado_no_provedor_em, prazo):
+    if not aceita_tentativas(abertura, pagamento.criado_no_provedor_em):
         return MotivoDoDestino.INICIADO_FORA_DO_PRAZO
     if not ate_o_limite(aprovado, limite):
         return MotivoDoDestino.APROVADO_APOS_A_MARGEM
@@ -131,7 +129,7 @@ def _motivo_da_devolucao(
 def _quitar(
     pagamento: PagamentoDoProvedor, aprovado: datetime, pedido: Pedido, situacao: SituacaoDoPedido
 ) -> DestinoDoPagamento:
-    prazo = somar_horas(pedido.abertura.t0, HORAS_DO_PRAZO_DE_PAGAMENTO)
+    prazo = prazo_de_pagamento(pedido.abertura)
     cancelamento_sem_efeito = situacao.motivo_do_cancelamento or None
     destino = _gravar_destino(pagamento, pedido, DestinoDaDecisao.QUITA, "")
     situacao.situacao = SituacaoDePagamento.PAGO

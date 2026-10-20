@@ -16,10 +16,12 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
 from apps.interesses.progresso import progresso_da_rodada
-from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
+from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
 from apps.nucleo.valores import ValorInvalido, cabe_em_dinheiro, ler_decimal_digitado
 from apps.pedidos.abertura import abrir_pagamento
+from apps.pedidos.acompanhamento import devolucoes_devidas, situacao_dos_pedidos
 from apps.pedidos.models import AberturaDoPagamento
+from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
@@ -200,6 +202,11 @@ def _data_hora(instante: datetime) -> str:
     return f"{no_fuso_da_operacao(instante):%d/%m/%Y %H:%M}"
 
 
+def _data_e_hora(instante: datetime) -> str:
+    local = no_fuso_da_operacao(instante)
+    return f"{local:%d/%m/%Y} às {local:%H:%M}"
+
+
 def _bloco_do_fechamento(
     rodada: Rodada,
     atingido: bool,
@@ -226,9 +233,11 @@ def _bloco_do_fechamento(
         abertura = AberturaDoPagamento.objects.filter(rodada=rodada).order_by("-pk").first()
         if abertura is not None:
             bloco["tipo"] = "pagamento"
-            bloco["t0"] = _data_hora(abertura.t0)
-            bloco["prazo_de_pagamento"] = _data_hora(somar_horas(abertura.t0, 24))
-            bloco["fim_da_margem"] = _data_hora(somar_horas(abertura.t0, 48))
+            bloco["t0"] = _data_e_hora(abertura.t0)
+            bloco["prazo_de_pagamento"] = _data_e_hora(prazo_de_pagamento(abertura))
+            bloco["fim_da_margem"] = _data_e_hora(fim_da_margem(abertura))
+            bloco["pedidos"] = situacao_dos_pedidos(abertura)
+            bloco["devolucoes"] = devolucoes_devidas(abertura)
         return bloco
     if rodada.etapa not in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
         return bloco if historico else None
@@ -327,7 +336,7 @@ def pagamento_abrir(request: HttpRequest, pk: int) -> HttpResponse:
             "A rodada voltou para a fase de interesse.",
         )
     else:
-        prazo = no_fuso_da_operacao(somar_horas(resultado.abertura.t0, 24))
+        prazo = no_fuso_da_operacao(prazo_de_pagamento(resultado.abertura))
         messages.success(
             request,
             f"Pagamento aberto. Prazo: {prazo:%d/%m/%Y} às {prazo:%H:%M} (horário de Brasília).",

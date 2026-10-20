@@ -7,7 +7,7 @@ sincronização travou o pagamento (a ordem das travas é pagamento, situação 
 
 from typing import Any
 
-from apps.nucleo.tempo import agora, prazo_encerrado, somar_horas
+from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import (
     FalhaDefinitiva,
     Operacao,
@@ -18,8 +18,7 @@ from apps.pagamentos.models import ChamadaAoProvedor
 from apps.pagamentos.provedor import NovaCobranca, PagamentoNaoEncontrado, Provedor
 from apps.pagamentos.sincronizacao import sincronizar_pagamento
 from apps.pedidos.models import SituacaoDaTentativa, TentativaDePagamento
-
-HORAS_DO_PRAZO_DE_PAGAMENTO = 24
+from apps.pedidos.prazos import aceita_tentativas, prazo_de_pagamento
 
 
 def _executar_criacao(provedor: Provedor, chamada: ChamadaAoProvedor) -> Any:
@@ -27,8 +26,9 @@ def _executar_criacao(provedor: Provedor, chamada: ChamadaAoProvedor) -> Any:
         pk=chamada.parametros["tentativa"]
     )
     pedido = tentativa.pedido
-    prazo = somar_horas(pedido.abertura.t0, HORAS_DO_PRAZO_DE_PAGAMENTO)
-    if prazo_encerrado(agora(), prazo):  # uma cobrança criada depois do prazo não seria aceita
+    if not aceita_tentativas(
+        pedido.abertura, agora()
+    ):  # uma cobrança criada depois do prazo não seria aceita
         raise FalhaDefinitiva("prazo_encerrado")
     return provedor.criar_cobranca(
         NovaCobranca(
@@ -36,7 +36,7 @@ def _executar_criacao(provedor: Provedor, chamada: ChamadaAoProvedor) -> Any:
             referencia_externa=tentativa.referencia_externa,
             valor=pedido.total,
             descricao=f"Orgânicos Méier — pedido {pedido.pk}",
-            expira_em=prazo,
+            expira_em=prazo_de_pagamento(pedido.abertura),
             meio="pix",
         )
     )

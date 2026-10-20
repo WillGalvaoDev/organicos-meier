@@ -18,7 +18,7 @@ from procrastinate.exceptions import AlreadyEnqueued
 
 from apps.contas.models import Conta, Papel, Situacao
 from apps.nucleo.auditoria import registrar_auditoria
-from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado, somar_horas
+from apps.nucleo.tempo import agora, no_fuso_da_operacao
 from apps.pagamentos.chamadas import agendar_chamada
 from apps.pagamentos.consulta import situacao_registrada
 from apps.pagamentos.models import ChamadaAoProvedor
@@ -30,10 +30,9 @@ from apps.pedidos.models import (
     SituacaoDoPedido,
     TentativaDePagamento,
 )
+from apps.pedidos.prazos import aceita_tentativas, prazo_de_pagamento
 
 logger = logging.getLogger(__name__)
-
-HORAS_DO_PRAZO_DE_PAGAMENTO = 24
 
 MENSAGENS = {
     "nao_e_seu": "Este pedido não é seu.",
@@ -101,12 +100,13 @@ def pedir_pagamento(comprador: Conta, pedido: Pedido) -> TentativaDePagamento:
         )
         instante = agora()  # lido depois das travas
         travado = situacao.pedido
-        prazo = somar_horas(travado.abertura.t0, HORAS_DO_PRAZO_DE_PAGAMENTO)
         atual = Conta.objects.get(pk=comprador.pk)
         if travado.comprador_id != comprador.pk:
             raise PagamentoRecusado("nao_e_seu")
-        if prazo_encerrado(instante, prazo):
-            raise PagamentoRecusado("prazo_encerrado", no_fuso_da_operacao(prazo))
+        if not aceita_tentativas(travado.abertura, instante):
+            raise PagamentoRecusado(
+                "prazo_encerrado", no_fuso_da_operacao(prazo_de_pagamento(travado.abertura))
+            )
         if situacao.situacao == SituacaoDePagamento.PAGO:
             raise PagamentoRecusado("pedido_pago")
         if situacao.situacao == SituacaoDePagamento.CANCELADO:

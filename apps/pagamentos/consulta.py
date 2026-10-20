@@ -82,3 +82,18 @@ def situacao_registrada(id_externo: str | None) -> str | None:
         .values_list("situacao", flat=True)
         .first()
     )
+
+
+def aprovados_da_referencia(referencia_externa: str) -> list[PagamentoNoProvedor]:
+    """Os pagamentos aprovados da referência, por criação e id. Só leitura."""
+    return list(
+        PagamentoNoProvedor.objects.filter(
+            referencia_externa=referencia_externa, situacao="aprovado"
+        ).order_by("criado_no_provedor_em", "id_externo")
+    )
+
+
+def travar_pagamento(pk: int) -> PagamentoNoProvedor:
+    """Relê o pagamento com a linha travada (exige transação). É o primeiro item da ordem das
+    travas: pagamento, situação do pedido, tentativa."""
+    return PagamentoNoProvedor.objects.select_for_update().get(pk=pk)

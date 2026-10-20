@@ -1,6 +1,6 @@
 """E08: concorrência da abertura, das tentativas, da quitação e da moderação.
 
-E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas). E08-04: A-16 e A-17.
+E08-02: A-20 e A-21. E08-03: A-19 e A-20 (tentativas). E08-04: A-16 e A-17. E08-05: A-20 e A-21.
 """
 
 from datetime import timedelta
@@ -15,7 +15,7 @@ from apps.catalogo.servicos import editar_produto
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
-from apps.pagamentos.models import ChamadaAoProvedor
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.models import (
     AberturaDoPagamento,
@@ -26,6 +26,7 @@ from apps.pedidos.models import (
     TentativaDePagamento,
 )
 from apps.pedidos.pagamento import agendar_cancelamento, pedir_pagamento
+from apps.pedidos.tarefas import bloquear_tentativas_vencidas_agora
 from apps.rodadas.fechamento import TransicaoRecusada
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.pedidos import (
@@ -233,3 +234,97 @@ def test_aviso_e_tarefa_ao_mesmo_tempo_decidem_uma_vez(
     avisos = Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado")
     assert avisos.count() == 1
     assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
+
+
+# --- E08-05: prazo, bloqueio e margem (A-20 e A-21) ----------------------------------------
+
+
+def _aprovada_as_23h59(relogio: RelogioControlado, sim: Any) -> tuple[Arranjo, Pedido, str]:
+    arranjo, x = pedido_aberto(relogio)
+    p = tentativa_criada(x).id_externo
+    assert p is not None
+    relogio.congelar(T0 + timedelta(hours=23, minutes=59))
+    sim.aprovar(p)
+    relogio.congelar(T0 + timedelta(hours=24))
+    return arranjo, x, p
+
+
+def _bloquear_e_processar() -> None:
+    bloquear_tentativas_vencidas_agora()
+    processar_chamadas()
+
+
+def _aviso_e_processar(sim: Any) -> None:
+    sim.entregar_avisos()
+    processar_chamadas()
+
+
+def _confere_quitado(arranjo: Arranjo, x: Pedido) -> None:
+    situacao = SituacaoDoPedido.objects.get(pedido=x)
+    assert (situacao.situacao, situacao.quitado_em) == (
+        "pago",
+        T0 + timedelta(hours=23, minutes=59),
+    )
+    assert DestinoDoPagamento.objects.filter(pedido=x, destino="quita").count() == 1
+    assert DestinoDoPagamento.objects.exclude(destino="quita").count() == 0
+    assert Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado").count() == 1
+
+
+@pytest.mark.acceptance
+@pytest.mark.parametrize("ordem", ["bloqueio_e_depois_aviso", "aviso_e_depois_bloqueio"])
+def test_bloqueio_e_aviso_em_qualquer_ordem_quitam_uma_vez(
+    relogio: RelogioControlado, simulador_pagamentos: Any, ordem: str
+) -> None:  # A-20 (i) e (ii), T-7
+    arranjo, x, _ = _aprovada_as_23h59(relogio, simulador_pagamentos)
+    if ordem == "bloqueio_e_depois_aviso":
+        _bloquear_e_processar()
+        _aviso_e_processar(simulador_pagamentos)
+    else:
+        _aviso_e_processar(simulador_pagamentos)
+        _bloquear_e_processar()
+    _confere_quitado(arranjo, x)
+
+
+@pytest.mark.acceptance
+def test_bloqueio_e_aviso_ao_mesmo_tempo_quitam_uma_vez(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-20 (iii), T-7
+    arranjo, x, _ = _aprovada_as_23h59(relogio, simulador_pagamentos)
+
+    def bloqueia(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        _bloquear_e_processar()
+
+    def avisa(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        _aviso_e_processar(simulador_pagamentos)
+
+    resultados = executar_em_paralelo(bloqueia, avisa)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    processar_chamadas()  # o que a corrida deixou pendente, na próxima execução da tarefa
+    _confere_quitado(arranjo, x)
+
+
+def test_bloqueio_e_aviso_de_outra_mudanca_ao_mesmo_tempo(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-21, T-7
+    _, x = pedido_aberto(relogio)
+    p = tentativa_criada(x).id_externo
+    assert p is not None
+    simulador_pagamentos.reemitir_aviso(p)
+    relogio.congelar(T0 + timedelta(hours=24))
+
+    def bloqueia(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        _bloquear_e_processar()
+
+    def avisa(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        _aviso_e_processar(simulador_pagamentos)
+
+    resultados = executar_em_paralelo(bloqueia, avisa)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    processar_chamadas()
+    assert PagamentoNoProvedor.objects.get(id_externo=p).situacao == "cancelado"
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "aguardando_pagamento"
+    assert DestinoDoPagamento.objects.count() == 0

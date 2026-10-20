@@ -88,9 +88,9 @@ def test_em_pagamento_mostra_t0_prazo_e_margem_sem_formulario(
 ) -> None:  # A-18 (parte 4)
     abrir(arranjo)
     html = admin_client.get(estoque_url(arranjo)).content.decode()
-    assert "02/11/2026 10:00" in html  # T0 em Brasília
-    assert "03/11/2026 10:00" in html  # fim do prazo de pagamento
-    assert "04/11/2026 10:00" in html  # fim da margem
+    assert "02/11/2026 às 10:00" in html  # T0 em Brasília
+    assert "03/11/2026 às 10:00" in html  # fim do prazo de pagamento
+    assert "04/11/2026 às 10:00" in html  # fim da margem
     assert abrir_url(arranjo) not in html
     assert "Frete total (R$)" not in html
 
