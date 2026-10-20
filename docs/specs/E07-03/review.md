@@ -1,3 +1,17 @@
+# E07-03 — Revisão independente — 2026-10-20
+
+**Veredito desta fatia: APROVADO no escopo local. Veredito global da E07: REPROVADO.**
+
+Base: `d6e4d2095ac8f1128b1a315fd81e5ab579488aa3`, branch `e07-implementacao`. A-1 a A-15: sincronização, unicidade, histórico imutável, divergências, sinal/rollback e concorrência conferidos. R02 afeta o transporte do horário na integração com chamadas/avisos; o serviço local preenche corretamente quando recebe o argumento.
+
+O [parecer consolidado em E07-01](../E07-01/review.md) contém fontes, matriz das seis fatias, análise dos registros de TDD, classificação e reprodução de R01 a R05, comandos e limitações. Verificação independente: **1902 testes aprovados** na suíte; provas adicionais: **8 falhas e 2 aprovações**. Ruff, formatação, mypy e verificação de migrações passaram. A suíte verde não cobre as lacunas reproduzidas. Nenhum arquivo de produção ou teste versionado foi alterado pelo revisor.
+
+O registro anterior abaixo foi preservado integralmente e não substitui o veredito independente. A entrega integrada requer correção e nova revisão antes do encerramento.
+
+---
+
+## Registro do implementador preservado
+
 # E07-03 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.

@@ -1,3 +1,17 @@
+# E07-02 — Revisão independente — 2026-10-20
+
+**Veredito desta fatia: APROVADO. Veredito global da E07: REPROVADO.**
+
+Base: `d6e4d2095ac8f1128b1a315fd81e5ab579488aa3`, branch `e07-implementacao`. A-1 a A-10: configuração, bloqueio de produção com simulador, segredo e ajustes autorizados dos testes conferidos; nenhum achado local aberto.
+
+O [parecer consolidado em E07-01](../E07-01/review.md) contém fontes, matriz das seis fatias, análise dos registros de TDD, classificação e reprodução de R01 a R05, comandos e limitações. Verificação independente: **1902 testes aprovados** na suíte; provas adicionais: **8 falhas e 2 aprovações**. Ruff, formatação, mypy e verificação de migrações passaram. A suíte verde não cobre as lacunas reproduzidas. Nenhum arquivo de produção ou teste versionado foi alterado pelo revisor.
+
+O registro anterior abaixo foi preservado integralmente e não substitui o veredito independente. A entrega integrada requer correção e nova revisão antes do encerramento.
+
+---
+
+## Registro do implementador preservado
+
 # E07-02 — Registro do implementador (aguardando revisão independente)
 
 Status: implementação concluída; **aguardando o agente 3**. Nada aqui é aprovação.
