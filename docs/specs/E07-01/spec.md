@@ -245,6 +245,26 @@ Os critérios A-19 a A-22 seguem Red → Green → Refactor, com as regras de pr
 
 O A-4 ajustado não precisa de Red, porque o teste já faz o que o critério passa a dizer.
 
+## Correção E07-R06 e R07 (2026-10-20)
+
+Revalidação: `docs/specs/E07-01/review.md`, sobre `636a94c`. A revalidação encerrou os achados R01 a R05.
+
+### R06 — a conexão própria do simulador fica fora da limpeza do utilitário de concorrência
+
+**Diagnóstico.** A correção R03 deu ao simulador o alias `simulador_pagamentos`. O utilitário `executar_em_paralelo` (E01-05) só nomeia, controla e limpa a conexão `default`. Quando o tempo esgota, a sessão do simulador pode continuar viva e gravar depois do retorno. Eu criei o alias sem estender as garantias da E01-05 a ele.
+
+**Regra.** A correção fica no utilitário, que é da E01-05: ver `docs/specs/E01-05/spec.md`, "Correção E07-R06", e os critérios A-19 a A-23 da E01-05. Nada muda no simulador nem no roteador: a conexão própria e o isolamento da R03 continuam como estão.
+
+### R07 — comando do Red com `-k`
+
+**Diagnóstico.** O registro do Red da R03, nesta fatia, traz `uv run pytest tests/tecnicos -k pagamentos -q`, embora o título diga "arquivos inteiros, sem -k". A prevenção da correção E06-R05 proíbe `-k` e a escolha de funções pelo nome. O revisor não achou nenhum critério que tenha ficado fora do Red e classificou o achado como melhoria.
+
+**Regra.**
+
+- **Reconhecer no registro:** o implementador acrescenta, ao registro desta fatia no `review.md`, uma nota com a divergência. A nota mantém o comando que de fato rodou e não reescreve o histórico para mostrar um comando que não rodou.
+- **Próximos ciclos:** os comandos de Red e de Green usam caminhos explícitos de arquivos inteiros, inclusive na correção da R06. Exemplo: `uv run pytest tests/tecnicos/test_apoio_concorrencia.py tests/tecnicos/test_pagamentos_concorrencia.py -q`.
+- **Em todos os ciclos:** a tabela de cobertura do Red continua obrigatória antes do Green.
+
 ## Dependências e decisões em aberto
 
 - Depende de E01 (tempo, decimais, auditoria, CI).
