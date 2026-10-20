@@ -1,5 +1,21 @@
 # E07-05 — Revalidação independente — 2026-10-20
 
+**APROVADO sobre `162e9e19bd9384d67c5e70d47b3fd062cc41e1b6`, branch `e07-implementacao`. E07 global: APROVADO, com melhoria não impeditiva R08.**
+
+Matriz: **A-1 a A-18**. Revisão incremental desde `93b4a6a`; a implementação funcional desta fatia não mudou. R06 foi corrigido no apoio de concorrência da E01-05, encerrando a regressão integrada. R07 foi reconhecido no registro e os novos ciclos usam arquivos inteiros. R01 a R05 permanecem encerrados.
+
+Verificação independente: **1945 passed in 216.94s (0:03:36)** na suíte completa; **47 testes passaram em cada uma de cinco execuções consecutivas** dos módulos de apoio/concorrência de pagamentos; **11 passed in 5.46s** nas provas preservadas de R01–R06. Lint, formatação (257 arquivos), tipos (300 arquivos) e migrações passaram.
+
+O [parecer consolidado](../E07-01/review.md) contém a análise, os comandos, durações, matriz A-19 a A-24 da E01-05, limites de verificação histórica do TDD e R08: a mensagem de TempoEsgotado omite alias/fase, sem afetar a limpeza nem a guarda. Não há achado bloqueador ou importante aberto. A aprovação refere-se à fase 1 com simulador e não autoriza dinheiro real.
+
+Somente pareceres foram alterados pelo revisor. Histórico integral preservado abaixo.
+
+---
+
+## Histórico integral preservado
+
+# E07-05 — Revalidação independente — 2026-10-20
+
 **Parecer da fatia: APROVADO no escopo local, sobre `636a94cacde2764e297967189c5904b58f72dde6`, branch `e07-implementacao`. E07 global: REPROVADO por R06 (IMPORTANTE).**
 
 Matriz revalidada: **A-1 a A-18**. R01, R02 e R05 encerrados: corrida, primeiro horário e validação de corpos assinados corrigidos. A aprovação local não aprova a entrega integrada.

@@ -1,5 +1,85 @@
 # E07 — Revalidação independente do agente 3 — 2026-10-20
 
+**Veredito: APROVADO sobre `162e9e19bd9384d67c5e70d47b3fd062cc41e1b6`, branch `e07-implementacao`, com melhoria não impeditiva R08.** R06 corrigido e R07 tratado. R01 a R05 permanecem encerrados. A aprovação é da implementação revisada, sem afirmar integração em main ou autorização para pagamentos reais.
+
+## Escopo, fontes e critérios
+
+Revisão incremental desde `93b4a6a`, sobre as especificações de `ccdef58` e a implementação de `162e9e1`. Lidos antes do código: AGENTS.md, alterações de E01-05/spec.md e acceptance.md (correção E07-R06, A-19 a A-24), E07-01/spec.md (R06/R07) e registro do implementador. Mantidas as fontes funcionais, de infraestrutura e a análise das seis fatias documentadas nas revisões anteriores, preservadas integralmente abaixo.
+
+O diff modifica somente o utilitário de concorrência, acrescenta testes e atualiza documentação. O simulador, seu roteador e a implementação funcional da E07 não mudaram desde a revalidação anterior. A comparação por AST confirmou que as 27 funções/classes anteriores de `test_apoio_concorrencia.py` permaneceram intactas. Não houve afrouxamento de testes anteriores.
+
+| Fatia | Matriz | Parecer |
+|---|---|---|
+| E07-01 | A-1 a A-22, mais correção E07-R06 na E01-05 | APROVADO; R03 a R06 encerrados, R07 tratado; R08 não impeditivo |
+| E07-02 | A-1 a A-10 | APROVADO, conclusão anterior preservada e regressão verde |
+| E07-03 | A-1 a A-15 | APROVADO, conclusão anterior preservada e regressão verde |
+| E07-04 | A-1 a A-22 | APROVADO; R01/R02/R03 e regressão integrada R06 encerrados |
+| E07-05 | A-1 a A-18 | APROVADO; correções R01/R02/R05 preservadas |
+| E07-06 | A-1 a A-10 | APROVADO, conclusão anterior preservada e regressão verde |
+
+Os 97 critérios das matrizes da E07 mantêm a rastreabilidade anterior. A correção adicional foi confrontada com os seis critérios novos da E01-05:
+
+| Critério | Conferência independente |
+|---|---|
+| A-19 | Prova original do revisor reexecutada sem alteração: sessão do simulador encerrada após timeout e cobrança permanece pendente; também coberta pelo teste incorporado. |
+| A-20 | Abertura do simulador terminando durante a limpeza: espera a abertura, fecha sem executar aprovação e confirma zero sessões. |
+| A-21 | Abertura além do prazo: LimpezaIncompleta com operação/alias/fase, pendência registrada, guarda esvaziada após liberação e nenhuma aprovação. |
+| A-22 | Tentativa de abertura depois de expirar: TempoEsgotado antes do driver, sem sessão nem aprovação tardia. |
+| A-23 | Nomes exclusivos e limite fixo nos dois aliases; divergência de HOST, PORT ou USER recusada antes das threads. Código enumera os aliases da configuração, sem lista fixa. |
+| A-24 | Testes anteriores preservados; os dois arquivos executados cinco vezes consecutivas e suíte completa verde, conforme resultados abaixo. |
+
+## Encerramento de R06 e R07
+
+**R06 — corrigido.** Cada operação mantém fases e nomes por alias sob o mesmo Condition. Antes de abrir default, a thread instala o controle de connect em todos os wrappers configurados. Os demais aliases abrem no uso; depois da expiração, não podem abrir. A limpeza termina e confirma as sessões de todos os nomes, espera qualquer alias em ABRINDO e registra pendência quando não consegue concluir dentro do prazo. A guarda usa esse mesmo conjunto. O isolamento transacional necessário para R03 permanece intacto. A prova que antes deixava uma sessão ativa e gravava a aprovação depois do timeout agora passa.
+
+**R07 — tratado.** O implementador reconheceu explicitamente o uso histórico de `-k` em R03 e a divergência com a prevenção vigente; preservou o registro original. Nesta correção, Red e Green usam caminhos explícitos dos dois arquivos inteiros. Não se declara que o comando antigo foi diferente nem se transforma reexecução atual em Red histórico.
+
+## TDD
+
+Registro conferido: `uv run pytest tests/tecnicos/test_apoio_concorrencia.py tests/tecnicos/test_pagamentos_concorrencia.py -q`, **8 failed, 39 passed** antes da correção, seguido de **47 passed**. Tabela A-19 a A-23 registra asserções/motivos compatíveis com a versão anterior; A-24 é a regressão repetida. Sem andaime ou alteração de interface. O ajuste de preparação de A-22 libera a abertura para observar a falha anterior e não remove a exigência de impedir abertura posterior. O corpo incorporado de A-19 mantém a prova e suas assertivas, com adaptação de imports, fábrica equivalente e formatação; a versão original completa também foi executada separadamente.
+
+Limite: o revisor verifica o relato, mapeamento e consistência com os diffs; não presenciou a execução histórica do implementador. Não houve necessidade de reconstruir Red nem de alterar código auditado.
+
+## Verificações independentes
+
+- `uv run pytest -q`: **1945 passed in 216.94s (0:03:36)**.
+- `uv run pytest tests/tecnicos/test_apoio_concorrencia.py tests/tecnicos/test_pagamentos_concorrencia.py -q`, cinco vezes consecutivas:
+
+| Execução | Resultado |
+|---|---|
+| 1 | 47 passed in 77.84s (0:01:17) |
+| 2 | 47 passed in 54.23s |
+| 3 | 47 passed in 54.49s |
+| 4 | 47 passed in 54.51s |
+| 5 | 47 passed in 54.37s |
+
+- `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e07_162e9e1.py" -q --tb=short`: **11 passed in 5.46s**. Inclui as dez provas de R01–R05 e a prova original de R06.
+- `uv run ruff check .`: **All checks passed!**
+- `uv run ruff format --check .`: **257 files already formatted**.
+- `uv run mypy .`: **Success: no issues found in 300 source files**.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: **No changes detected**.
+
+
+Logs locais: `%TEMP%/om_e07_162e9e1_suite.log`, `%TEMP%/om_e07_162e9e1_repeticao_1.log` a `_5.log` e `%TEMP%/om_e07_162e9e1_probes.log`. As onze provas foram extraídas integralmente do primeiro bloco Python de “Provas independentes completas” do parecer anterior, preservado abaixo, para `%TEMP%/test_review_e07_162e9e1.py`. Todos os comandos de banco foram sequenciais, usando PostgreSQL 17 local saudável.
+
+## R08 — MELHORIA, não impeditiva — Mensagem de TempoEsgotado omite alias e fase
+
+Referência: E01-05/spec.md, correção E07-R06, projeto obrigatório item 7. Esse item pede operação, alias e fase tanto em TempoEsgotado como em LimpezaIncompleta. O caminho de limpeza incompleta usa `execucao.descrever(pendentes)` corretamente, mas `tests/apoio/concorrencia.py:298-299` ainda monta apenas `indice:nome` para o timeout com limpeza concluída.
+
+Evidência por inspeção do código; roteiro de reprodução: provocar o timeout de uma operação que espera em Event, como A-22, e inspecionar `str(erro.value)`; a mensagem do chamador é `operações pendentes após <prazo>s: 0:<nome>`, sem aliases/fases. As fases existem e são controladas internamente; a omissão afeta a informação diagnóstica, não a limpeza ou a guarda. Não reabre R06 nem impede a aprovação da E07.
+
+Melhoria solicitada: usar a descrição por alias/fase também nesse caminho e acrescentar assertiva de mensagem no teste correspondente, seguindo o ciclo TDD. A aprovação não declara esse detalhe textual conforme ao item 7.
+
+## Entrega e limites
+
+Nenhum achado bloqueador ou importante permanece aberto. Foram atualizados os seis review.md da E07 e o review.md da E01-05, com histórico integral preservado; nenhum código ou teste versionado foi editado pelo revisor. Aprovação limitada à fase 1 com simulador, PostgreSQL e threads reais. Não foram exercitados provedor real, dinheiro real, navegador nem worker como processo separado. Próximo gate: integração da entrega aprovada; R08 pode ser tratado como melhoria de diagnóstico.
+
+---
+
+## Histórico integral preservado
+
+# E07 — Revalidação independente do agente 3 — 2026-10-20
+
 **Veredito global: REPROVADO sobre `636a94cacde2764e297967189c5904b58f72dde6`, branch `e07-implementacao`.** R01 a R05 encerrados nesta revalidação. Permanece uma regressão nova, R06 (IMPORTANTE): a limpeza de timeout não abrange a conexão própria introduzida para o simulador. R07 registra uma não conformidade de processo, classificada como melhoria, sem evidência de critério excluído do Red.
 
 ## Escopo e matriz revalidada

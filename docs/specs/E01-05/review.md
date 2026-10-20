@@ -1,3 +1,21 @@
+# E01-05 — Revalidação da correção E07-R06 — 2026-10-20
+
+**APROVADO sobre `162e9e19bd9384d67c5e70d47b3fd062cc41e1b6`, com melhoria não impeditiva E07-R08.** A ampliação do utilitário aos aliases resolve a regressão E07-R06. Critérios A-19 a A-24 verificados; A-1 a A-18 e os testes anteriores preservados.
+
+Conferidos nomes, fases e connect controlado por alias, limite fixo do driver, recusa prévia de configurações em outro servidor/usuário, encerramento e confirmação das sessões, abertura durante/depois da expiração e guarda de limpeza incompleta. Nenhuma mudança na conexão independente do simulador.
+
+Verificação independente: **1945 passed in 216.94s (0:03:36)** na suíte completa; os arquivos `test_apoio_concorrencia.py` e `test_pagamentos_concorrencia.py` passaram **cinco vezes consecutivas**, 47 testes por execução (77.84s (0:01:17); 54.23s; 54.49s; 54.51s; 54.37s). Provas originais de R01–R06 da E07: **11 passed in 5.46s**, incluindo a prova que antes deixava sessão ativa e aprovação tardia. Lint, formatação, tipos e migrações passaram.
+
+Registro TDD conferido: **8 failed, 39 passed**, com arquivos inteiros e tabela A-19 a A-23, seguido de Green. As 27 funções/classes anteriores deste módulo de testes são idênticas por comparação AST. O revisor não presenciou o Red histórico; resultados atuais são revalidação independente.
+
+O [parecer consolidado da E07](../E07-01/review.md) contém comandos, logs, matriz e limites. R08 é uma omissão diagnóstica no timeout com limpeza concluída: o item 7 pede alias/fase na mensagem, mas esse caminho ainda mostra apenas a operação. A limpeza e a guarda estão corretas; a melhoria não impede a aprovação e deve ser acompanhada de teste de mensagem.
+
+Somente documentação foi alterada pelo revisor. Histórico integral preservado abaixo.
+
+---
+
+## Histórico integral preservado
+
 # E01-05 — Revisão
 
 Estado atual: **APROVADO** no commit `06e2faf` (revalidação independente de 2026-10-16 ao final).
