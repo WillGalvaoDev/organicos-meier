@@ -42,7 +42,7 @@ def test_a_mesma_chave_em_duas_conexoes_cria_uma_cobranca_so(simulador_pagamento
         expira_em=agora() + timedelta(days=1),
     )
     resultados = executar_em_paralelo(
-        segurando(lambda: obter_provedor().criar_cobranca(nova)),
+        segurando(lambda: obter_provedor().criar_cobranca(nova), using="simulador_pagamentos"),
         esperando(lambda: obter_provedor().criar_cobranca(nova)),
     )
     assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]

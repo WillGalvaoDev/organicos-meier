@@ -303,3 +303,66 @@ Ver a tabela do Red: cada critério tem os testes listados, todos no `test_pagam
 ## Limites da verificação
 
 Postgres real, sem rede. O simulador não foi exercitado por um worker como processo separado. A mutação não foi aplicada nesta fatia. Os receptores dos avisos (E07-05), o registro dos pagamentos (E07-03) e a configuração por ambiente (E07-02) são de outras fatias.
+
+
+---
+
+## Correções E07-R03, R04 e R05 e ajuste do A-4 — registro do implementador (2026-10-20)
+
+Status: correções implementadas; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: este parecer, `spec.md` e `acceptance.md` desta fatia (seção "Correção E07-R03, R04 e R05 e ajuste do A-4", A-19 a A-22), as seções de correção das E07-04 e E07-05 e as provas do revisor.
+
+### Arquivos
+
+- **R03:** `config/settings/base.py` (alias `simulador_pagamentos`, cópia profunda de `default`, e `DATABASE_ROUTERS`), `apps/simulador_pagamentos/roteador.py` (novo), `apps/simulador_pagamentos/provedor.py` e `controle.py` (`transaction.atomic(using=ALIAS)` em toda operação com mais de uma instrução ou `select_for_update`). Sem migração nova.
+- **R04:** `apps/pagamentos/provedor.py`: `PagamentoConsultado.__post_init__` converte os quatro instantes para UTC (`somar_horas(x, 0)`; sem fuso levanta `InstanteSemFuso`).
+- **R05:** `apps/pagamentos/provedor.py`: `LIMITE_ID_EVENTO`, `LIMITE_TIPO`, `LIMITE_ID_EXTERNO` e `AvisoDoProvedor.__post_init__`; `apps/pagamentos/models.py` (`AvisoRecebido` usa as constantes, sem migração); `apps/simulador_pagamentos/provedor.py` (`verificar_aviso` entrega os três campos ao tipo).
+- **Testes e apoio:** `test_pagamentos_simulador.py` (A-19, A-21, A-22), `test_pagamentos_fronteiras.py` (A-20), `tests/conftest.py` (gancho dos bancos), `tests/apoio/trava.py` (`outra_conexao_esperando` e `segurando(..., using=)`).
+
+### Ciclo TDD (arquivos inteiros, sem `-k`)
+
+**Andaime (exceção técnica):** o alias e `DATABASE_ROUTERS` em `base.py`, o roteador com métodos que devolvem `None` (sem roteamento) e o gancho de `tests/conftest.py`, para que a infraestrutura de bancos funcione antes dos testes; nenhum comportamento de roteamento existia.
+
+**R04 e R05.** Red: `uv run pytest tests/tecnicos/test_pagamentos_simulador.py tests/tecnicos/test_pagamentos_avisos.py -q`: **15 failed, 51 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-21 | `test_toda_resposta_do_simulador_vem_em_utc` | falhou: `assert ZoneInfo('America/Sao_Paulo') is timezone.utc` |
+| A-21 | `test_pagamento_consultado_recusa_instante_sem_fuso` | falhou: `DID NOT RAISE InstanteSemFuso` |
+| A-22 | `test_aviso_fora_do_esquema_e_invalido[id_evento\|tipo\|id_externo]` | falharam: `DID NOT RAISE AvisoInvalido` |
+| A-22 | `test_verificar_aviso_recusa_corpo_assinado_fora_do_limite` | falhou: `DID NOT RAISE AvisoInvalido` |
+| A-22 | `test_aviso_no_limite_com_caracteres_acentuados` | **passou no Red** (limite exato já era aceito); protege contra regressão |
+| E07-05 A-17 | `test_aviso_assinado_fora_dos_limites_nao_causa_500` (11 casos) | 9 falharam (`assert 500 == 401` nos acima do limite e com `\u0000`; `assert 200 == 401` nos campos vazios); os 2 casos com número no lugar do texto **passaram** (o verificador já recusava) |
+| E07-05 A-18 | `test_avisos_no_limite_exato_sao_aceitos` | **passou no Red** (controle dos limites exatos) |
+
+O A-17 usa `Client(raise_request_exception=False)` para o 500 aparecer como `assert 500 == 401` (e não como `DataError`).
+
+**R03.** Red: `uv run pytest tests/tecnicos -k pagamentos -q`: **5 failed, 141 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-19 | `test_o_estado_do_simulador_sobrevive_ao_rollback_do_sistema` | falhou: `assert 0 == 1` (a cobrança do bloco desapareceu) |
+| A-20 | `test_o_roteador_manda_o_simulador_para_a_conexao_propria` | falhou: `assert None == 'simulador_pagamentos'` |
+| A-20 | `test_o_simulador_tem_conexao_propria_para_o_mesmo_banco`, `test_a_producao_tambem_declara_a_conexao_do_simulador`, `test_as_migracoes_nao_acusam_mudanca` | **passaram no Red**: o andaime já tinha o alias, o roteador declarado e nenhuma mudança de migração |
+| A-15 (adaptado) | `test_a_mesma_chave_em_duas_conexoes_cria_uma_cobranca_so` | falhou (`a outra conexão não ficou esperando pela trava`): a trava do teste passou a ser a do banco do simulador, que ainda não era usado |
+| E07-04 A-21 | `test_falha_local_nao_apaga_cobranca_aceita` | falhou: `assert 0 == 1` (a `CobrancaSimulada` sumiu no rollback) |
+| E07-04 A-22 | `test_queda_do_processo_nao_apaga_cobranca_aceita` | falhou: `assert 0 == 1` |
+
+### Green
+
+`-k pagamentos`: **146 passed**. Suíte completa: **1937 passed** (eram 1902). `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` (com as configurações de dev e de teste) sem erros.
+
+### Decisões técnicas e ajustes nos testes
+
+- **Gancho central.** `pytest_collection_modifyitems` em `tests/conftest.py` acrescenta `databases=["default", "simulador_pagamentos"]` ao marcador `django_db` dos arquivos `test_pagamentos_*.py`, preservando o resto do marcador (`transaction=True` etc.). Nenhuma asserção existente mudou.
+- **A-15 da E07-01:** o teste continua o mesmo; só o meio de segurar a trava mudou: `segurando(..., using="simulador_pagamentos")` segura a transação do banco do simulador, porque a inserção dele agora se confirma na conexão própria e uma transação do sistema não a seguraria.
+- **A-4:** nenhum ajuste de código (o teste já criava a cobrança às 12:50).
+- **Erro de teste meu, corrigido no Green do A-21:** a terceira cobrança do teste foi criada às 13:00 e aprovada com `em` 12:59, que o simulador recusa (A-5); passou a ser criada às 12:50, como no A-4. Foi erro de preparação do teste, não um enfraquecimento.
+- **`tests/apoio/trava.py`:** `esperar_outra_conexao_na_trava` foi refatorada para usar a nova `outra_conexao_esperando()`, sem mudar o comportamento; as suítes de concorrência anteriores continuam verdes.
+- **`executar_em_paralelo` não mudou:** as threads fecham todas as conexões (`close_all`); a conexão do simulador, nas threads, não leva o `application_name` único da operação (só a de `default` leva). Limite registrado.
+- **Produção:** o alias existe em todos os ambientes (inclusive homologação); as migrações continuam rodando só em `default`.
+
+### Limites da verificação
+
+Postgres real, sem rede, worker nem navegador. Nenhuma mutação aplicada nestas correções.

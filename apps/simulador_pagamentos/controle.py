@@ -17,6 +17,7 @@ from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.simulador_pagamentos import estado
 from apps.simulador_pagamentos.models import AvisoSimulado
 from apps.simulador_pagamentos.plano import PLANO
+from apps.simulador_pagamentos.roteador import ALIAS
 
 Receptor = Callable[[bytes, dict[str, str]], int]
 
@@ -41,7 +42,7 @@ def aprovar(id_externo: str, *, em: datetime | None = None) -> None:
     passado é uma aprovação que o provedor informa depois.
     """
     instante = _instante(em)
-    with transaction.atomic():
+    with transaction.atomic(using=ALIAS):
         cobranca = estado.obter(id_externo, travar=True)
         if cobranca.situacao not in _APROVAVEIS:
             raise ValueError(f"cobrança {cobranca.situacao} não pode ser aprovada")
@@ -52,7 +53,7 @@ def aprovar(id_externo: str, *, em: datetime | None = None) -> None:
 
 
 def _encerrar_pendente(id_externo: str, situacao: SituacaoNoProvedor, operacao: str) -> None:
-    with transaction.atomic():
+    with transaction.atomic(using=ALIAS):
         cobranca = estado.obter(id_externo, travar=True)
         if cobranca.situacao != SituacaoNoProvedor.PENDENTE:
             raise ValueError(f"só uma cobrança pendente pode ser {situacao.value}")

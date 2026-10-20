@@ -138,8 +138,8 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
     operacao = OPERACOES[chamada.operacao]
     instante = agora()  # lido depois da trava
     try:
-        # O que o provedor guardou é dele, e não se desfaz com a nossa transação (o simulador
-        # grava no mesmo banco, mas faz o papel do provedor); o que `concluir` grava vale tudo
+        # O que o provedor guardou é dele e não se desfaz com a nossa transação (o simulador
+        # confirma o que grava na conexão própria, E07-R03); o que `concluir` grava vale tudo
         # ou nada.
         resultado = operacao.executar(obter_provedor(), chamada)
         with transaction.atomic():

@@ -73,3 +73,49 @@ Uma primeira versão do Green envolvia `executar` e `concluir` num único savepo
 ## Limites da verificação
 
 Postgres real; o worker do Procrastinate não foi executado como processo (a tarefa é conferida no registro e a rotina é chamada direto). A concorrência de A-14 usa um evento para manter a primeira execução dentro de `executar` até a segunda terminar. Criar/cancelar cobrança (E08), estorno (E10) e o alerta de chamada parada (E15) são de outras etapas. Nenhuma mutação aplicada nesta fatia.
+
+
+---
+
+## Correções E07-R01, R02 e R03 — registro do implementador (2026-10-20)
+
+Status: correções implementadas; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `docs/specs/E07-01/review.md` (parecer sobre `d6e4d20`), `spec.md` e `acceptance.md` desta fatia (seção "Correção E07-R01, R02 e R03", A-17 a A-22) e a prova `test_falha_local_nao_apaga_cobranca_aceita`.
+
+### Arquivos
+
+- `apps/pagamentos/chamadas.py`: `_pendente` trava a pendente do par com `select_for_update()` (sem `skip_locked`, sem `nowait`); `_absorver` aplica `Operacao.combinar`; novo campo opcional `combinar` em `Operacao`; `_combinar_consulta` para `consultar_pagamento` (horário mais antigo em ISO UTC; origem `aviso` se qualquer um for aviso).
+- R03: `processar_chamadas` não mudou; o comentário de `_tentar` passou a descrever a conexão própria do simulador (ver a E07-01).
+- Testes: `test_pagamentos_chamadas.py` (A-20, A-21, A-22) e `test_pagamentos_concorrencia.py` (A-17, A-18, A-19). `tests/apoio/trava.py`: `outra_conexao_esperando()`.
+
+### Red (arquivos inteiros, sem `-k`)
+
+R01/R02, `uv run pytest tests/tecnicos/test_pagamentos_chamadas.py tests/tecnicos/test_pagamentos_avisos.py tests/tecnicos/test_pagamentos_concorrencia.py -q`: **6 failed, 49 passed**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-17 | `test_aviso_durante_a_consulta_nao_e_absorvido` | falhou: `assert 49 != 49` (a chamada devolvida foi a mesma da tarefa: o aviso foi absorvido) |
+| A-18 | `test_a_tarefa_pula_a_chamada_que_o_agendamento_segura` | falhou: `assert 1 == 0` (a tarefa consultou com a chamada em poder do agendamento) |
+| A-19 | `test_aviso_que_espera_a_falha_temporaria_combina_o_horario` | falhou: `assert {} == {'origem': 'aviso', ...}` |
+| A-20 | `test_agendar_de_novo_combina_o_horario_do_aviso` | falhou: `assert {} == {...}` |
+| A-20 | `test_operacao_sem_combinar_mantem_os_primeiros_parametros` | **passou no Red** (controle: sem `combinar`, os parâmetros não mudam) |
+| E07-05 A-15 | `test_aviso_durante_a_consulta_espera_e_gera_outra_consulta` | falhou: `assert ['concluida'] == ['concluida', 'concluida']` |
+| E07-05 A-16 | `..._preservado_com_consulta_ja_agendada[tarefa-antes]` | falhou: `assert {} == {...}` |
+| E07-05 A-16 | `..._preservado_com_consulta_ja_agendada[sem-tarefa]` e `test_aviso_apos_consulta_concluida_atualiza` | **passaram no Red** (os controles do revisor: o aviso que cria a própria consulta e o que chega depois da conclusão) |
+
+R03: ver o registro da E07-01 (A-21 e A-22 desta fatia falharam por `assert 0 == 1`; 5 falhas no total do `-k pagamentos`).
+
+### Green
+
+Os três arquivos mais `test_pagamentos_consulta.py`: **64 passed** (R01/R02); `-k pagamentos` com R03: **146 passed**. Suíte completa: **1937 passed**. `ruff check`, `ruff format --check`, `mypy .` e `makemigrations --check --dry-run` sem erros.
+
+### Decisões técnicas
+
+- **Intercalação sem ponto cego.** Os testes A-17 e A-19 usam, para a tarefa parada, a espera "a outra thread terminar ou aparecer esperando a trava, o que vier primeiro" (`_aguardar`), com falha por asserção no prazo de 15 s. No código antigo a outra thread termina primeiro (Red); no corrigido ela aparece esperando a trava (Green).
+- **Quem agenda e encontra a pendente fica com a trava** até o fim da transação dele; `processar_chamadas` pula a chamada (`skip_locked`). O risco de impasse com as operações da E08 e da E10 (agendar antes de travar as linhas que o `concluir` trava, ou um alvo por tentativa) fica registrado para essas etapas; `consultar_pagamento` não o tem.
+- **`combinar`** só roda quando há `parametros` novos e a operação o define; só `parametros` é gravado (`update_fields`), de modo que chave, `proxima_em`, tentativas e criação não mudam.
+
+### Limites da verificação
+
+Postgres real; threads reais; sem o worker como processo. As operações da E08/E10 não existem ainda. Nenhuma mutação aplicada nestas correções.

@@ -107,3 +107,21 @@ def simulador_pagamentos() -> Iterator[Any]:
     controle.reiniciar()
     yield controle
     controle.reiniciar()
+
+
+BANCOS_DO_SIMULADOR = ["default", "simulador_pagamentos"]
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Os testes de pagamentos usam o simulador, que tem conexão própria (E07-R03): declaram
+    os dois bancos sem mudar o resto do marcador `django_db` de cada teste."""
+    for item in items:
+        if not item.path.name.startswith("test_pagamentos_"):
+            continue
+        marcador = item.get_closest_marker("django_db")
+        if marcador is None or marcador.kwargs.get("databases") is not None:
+            continue
+        argumentos = dict(marcador.kwargs)
+        if marcador.args:
+            argumentos.setdefault("transaction", marcador.args[0])
+        item.add_marker(pytest.mark.django_db(databases=BANCOS_DO_SIMULADOR, **argumentos), False)

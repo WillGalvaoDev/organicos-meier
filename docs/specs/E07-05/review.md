@@ -65,3 +65,39 @@ Os arquivos de avisos, concorrência e simulador: **54 passed**. Suíte completa
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django, sem rede e sem o worker como processo. O formato e a assinatura reais do Mercado Pago (L-11) são da fase 2a; o efeito do pagamento no pedido (E08) e o alerta de avisos recusados (E15) são de outras etapas. Nenhuma mutação aplicada nesta fatia.
+
+
+---
+
+## Correções E07-R01, R02 e R05 — registro do implementador (2026-10-20)
+
+Status: correções implementadas; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: `docs/specs/E07-01/review.md`, `spec.md` e `acceptance.md` desta fatia (seção "Correção E07-R01, R02 e R05", A-15 a A-18) e as provas do revisor.
+
+### Arquivos
+
+Nenhum código de produção próprio desta fatia mudou: `receber_aviso` continua chamando `agendar_chamada` com os mesmos parâmetros, e as regras corrigidas estão na E07-04 (R01 e R02) e no tipo `AvisoDoProvedor` da E07-01 (R05). Testes: `test_pagamentos_avisos.py` (A-16, A-17, A-18 e o controle `test_aviso_apos_consulta_concluida_atualiza`) e `test_pagamentos_concorrencia.py` (A-15).
+
+### Red e Green
+
+As tabelas do Red estão nos registros da E07-04 (R01 e R02: A-15 e A-16 desta fatia, **6 falhas** no total) e da E07-01 (R05: A-17, **9 falhas** de 11 casos; A-18 passou no Red como controle). Resumo:
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-15 | `test_aviso_durante_a_consulta_espera_e_gera_outra_consulta` | falhou: `assert ['concluida'] == ['concluida', 'concluida']` |
+| A-16 | `..._preservado_com_consulta_ja_agendada[tarefa-antes]` | falhou: `assert {} == {...}` |
+| A-16 | `..._preservado_com_consulta_ja_agendada[sem-tarefa]` | **passou no Red** (controle: o aviso que cria a própria consulta) |
+| A-17 | `test_aviso_assinado_fora_dos_limites_nao_causa_500` | 9 de 11 falharam (`assert 500 == 401`, `assert 200 == 401`); os 2 casos numéricos já passavam |
+| A-18 | `test_avisos_no_limite_exato_sao_aceitos` | **passou no Red** (controle dos limites exatos, com `é` × 64) |
+
+Green: suíte completa **1937 passed**; lint, formatação, tipos e migrações sem erros.
+
+### Decisões técnicas
+
+- No A-15, a mudança do aviso (`aprovar(P)` e `entregar_avisos()`) acontece na thread 2 depois de a tarefa obter a resposta pendente; o `entregar_avisos()` espera a execução terminar (trava) e devolve `[200]`.
+- O A-17 usa `Client(raise_request_exception=False)` para que o 500 do código antigo apareça como asserção. Nenhum erro de banco é capturado para virar 401: a recusa vem do tipo `AvisoDoProvedor`.
+
+### Limites da verificação
+
+Postgres real, cliente HTTP do Django, threads reais; sem navegador, sem o worker como processo e sem rede. Nenhuma mutação aplicada nestas correções.

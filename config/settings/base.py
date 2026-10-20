@@ -4,6 +4,7 @@ Apps de negócio e bibliotecas com comportamento (django-allauth, Procrastinate)
 entram aqui só junto com a fatia que as usa, com testes escritos antes (AGENTS.md).
 """
 
+import copy
 from pathlib import Path
 
 import environ
@@ -108,6 +109,10 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
+# O simulador de pagamentos faz o papel de um serviço externo (E07-R03): fala com o mesmo banco
+# por uma conexão própria, para que nada que ele aceitou se desfaça com a transação do sistema.
+DATABASES["simulador_pagamentos"] = copy.deepcopy(DATABASES["default"])
+DATABASE_ROUTERS = ["apps.simulador_pagamentos.roteador.RoteadorDoSimulador"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

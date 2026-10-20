@@ -26,6 +26,7 @@ from apps.pagamentos.provedor import (
 from apps.simulador_pagamentos import estado
 from apps.simulador_pagamentos.models import CobrancaSimulada
 from apps.simulador_pagamentos.plano import PLANO
+from apps.simulador_pagamentos.roteador import ALIAS
 
 
 def _executar[R](operacao: str, funcao: Callable[[], R]) -> R:
@@ -73,7 +74,7 @@ class ProvedorSimulado:
             if nova.expira_em <= agora():
                 raise RecusaDoProvedor("expiracao_invalida")
             try:
-                with transaction.atomic():
+                with transaction.atomic(using=ALIAS):
                     cobranca = CobrancaSimulada.objects.create(
                         chave_idempotencia=nova.chave_idempotencia,
                         referencia_externa=nova.referencia_externa,
@@ -113,7 +114,7 @@ class ProvedorSimulado:
 
     def cancelar_cobranca(self, id_externo: str) -> PagamentoConsultado:
         def cancelar() -> PagamentoConsultado:
-            with transaction.atomic():
+            with transaction.atomic(using=ALIAS):
                 cobranca = estado.obter(id_externo, travar=True)
                 if cobranca.situacao == SituacaoNoProvedor.PENDENTE:
                     aprova, em = PLANO.aprovacao_no_cancelamento(cobranca.pk)

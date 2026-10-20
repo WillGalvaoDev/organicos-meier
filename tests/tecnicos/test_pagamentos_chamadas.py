@@ -3,6 +3,7 @@
 import logging
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.db.transaction import TransactionManagementError
 
+from apps.nucleo.tempo import agora
 from apps.pagamentos import chamadas
 from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
 from apps.pagamentos.models import ChamadaAoProvedor, ConsultaDoPagamento, PagamentoNoProvedor
@@ -150,9 +152,10 @@ def test_novas_tentativas_com_intervalos_crescentes(
 
 def criar_de_teste(chave: str = "k-teste", **parametros: str) -> ChamadaAoProvedor:
     padrao = {"valor": "10.00", "expira_em": AMANHA.isoformat()}
-    return agendar_chamada(
-        CRIAR, "ref-teste", parametros={**padrao, **parametros}, chave_idempotencia=chave
-    )
+    with transaction.atomic():
+        return agendar_chamada(
+            CRIAR, "ref-teste", parametros={**padrao, **parametros}, chave_idempotencia=chave
+        )
 
 
 def test_repeticao_depois_de_o_provedor_aceitar_usa_a_mesma_chave(
@@ -348,3 +351,61 @@ def test_operacao_sem_combinar_mantem_os_primeiros_parametros(sim: Any) -> None:
         )
         assert segunda.pk == primeira.pk
         assert unica().parametros["valor"] == "10.00"
+
+
+def _concluir_que_guarda_e_falha(
+    monkeypatch: pytest.MonkeyPatch, erro: BaseException, guardado: dict[str, str]
+) -> Operacao:
+    original = OPERACOES[CRIAR]
+
+    def concluir(chamada: ChamadaAoProvedor, resultado: Any) -> None:
+        guardado["id_externo"] = resultado.pagamento.id_externo
+        raise erro
+
+    monkeypatch.setitem(OPERACOES, CRIAR, replace(original, concluir=concluir))
+    return original
+
+
+def test_falha_local_nao_apaga_cobranca_aceita(
+    sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-21, E07-R03
+    with operacao_de_teste():
+        criar_de_teste()
+        guardado: dict[str, str] = {}
+        original = _concluir_que_guarda_e_falha(monkeypatch, RuntimeError("defeito"), guardado)
+        processar_chamadas()
+        chamada = unica()
+        assert chamada.situacao == "pendente"
+        assert chamada.tentativas == 0
+        assert CobrancaDeTeste.objects.count() == 0
+        assert CobrancaSimulada.objects.filter(chave_idempotencia="k-teste").count() == 1
+        monkeypatch.setitem(OPERACOES, CRIAR, original)
+        processar_chamadas()
+    assert unica().situacao == "concluida"
+    assert CobrancaDeTeste.objects.get().id_externo == guardado["id_externo"]
+    assert CobrancaSimulada.objects.filter(chave_idempotencia="k-teste").count() == 1
+
+
+class QuedaSimulada(BaseException):
+    """Nenhum `except Exception` a captura: representa a queda do processo."""
+
+
+@pytest.mark.django_db(transaction=True)
+def test_queda_do_processo_nao_apaga_cobranca_aceita(
+    simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-22, E07-R03
+    with operacao_de_teste():
+        criar_de_teste(expira_em=(agora() + timedelta(days=1)).isoformat())
+        guardado: dict[str, str] = {}
+        original = _concluir_que_guarda_e_falha(monkeypatch, QuedaSimulada(), guardado)
+        with pytest.raises(QuedaSimulada):
+            processar_chamadas()
+        chamada = unica()
+        assert chamada.situacao == "pendente"
+        assert chamada.tentativas == 0
+        assert CobrancaSimulada.objects.filter(chave_idempotencia="k-teste").count() == 1
+        monkeypatch.setitem(OPERACOES, CRIAR, original)
+        processar_chamadas()
+    assert unica().situacao == "concluida"
+    assert CobrancaDeTeste.objects.get().id_externo == guardado["id_externo"]
+    assert CobrancaSimulada.objects.filter(chave_idempotencia="k-teste").count() == 1

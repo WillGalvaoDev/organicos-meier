@@ -87,3 +87,69 @@ def test_nenhuma_rota_comando_ou_admin_registra_pagamento() -> None:  # A-12, ce
     assert de_pagamentos <= {"pagamentos_avisos"}
     for app in ("pagamentos", "simulador_pagamentos"):
         assert not (APPS / app / "management").exists()
+
+
+CAMPOS_DO_BANCO = ("NAME", "HOST", "PORT", "USER")
+
+
+def test_o_simulador_tem_conexao_propria_para_o_mesmo_banco() -> None:  # A-20, E07-R03
+    from django.conf import settings
+
+    alias = settings.DATABASES["simulador_pagamentos"]
+    padrao = settings.DATABASES["default"]
+    assert {campo: alias[campo] for campo in CAMPOS_DO_BANCO} == {
+        campo: padrao[campo] for campo in CAMPOS_DO_BANCO
+    }
+    assert settings.DATABASE_ROUTERS == ["apps.simulador_pagamentos.roteador.RoteadorDoSimulador"]
+
+
+def test_o_roteador_manda_o_simulador_para_a_conexao_propria() -> None:  # A-20
+    from apps.pagamentos.models import PagamentoNoProvedor
+    from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
+    from apps.simulador_pagamentos.roteador import RoteadorDoSimulador
+
+    roteador = RoteadorDoSimulador()
+    for modelo in (CobrancaSimulada, AvisoSimulado):
+        assert roteador.db_for_read(modelo) == "simulador_pagamentos"
+        assert roteador.db_for_write(modelo) == "simulador_pagamentos"
+    assert roteador.db_for_read(PagamentoNoProvedor) is None
+    assert roteador.db_for_write(PagamentoNoProvedor) is None
+    assert roteador.allow_migrate("default", "simulador_pagamentos") is True
+    assert roteador.allow_migrate("simulador_pagamentos", "simulador_pagamentos") is False
+
+
+def test_a_producao_tambem_declara_a_conexao_do_simulador() -> None:  # A-20
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from tests.tecnicos.test_configuracao_producao import _AMBIENTE_MINIMO
+
+    codigo = (
+        "import json, importlib;"
+        "m = importlib.import_module('config.settings.prod');"
+        "campos = " + repr(list(CAMPOS_DO_BANCO)) + ";"
+        "print(json.dumps({'bancos': {a: {c: str(m.DATABASES[a][c]) for c in campos}"
+        " for a in m.DATABASES}, 'roteadores': m.DATABASE_ROUTERS}))"
+    )
+    base = {k: v for k, v in os.environ.items() if k not in _AMBIENTE_MINIMO}
+    resultado = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", codigo],
+        cwd=RAIZ,
+        env={**base, **_AMBIENTE_MINIMO, "PYTHONPATH": str(RAIZ)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    lido = json.loads(resultado.stdout.strip().splitlines()[-1])
+    assert lido["bancos"]["simulador_pagamentos"] == lido["bancos"]["default"]
+    assert lido["roteadores"] == ["apps.simulador_pagamentos.roteador.RoteadorDoSimulador"]
+
+
+@pytest.mark.django_db
+def test_as_migracoes_nao_acusam_mudanca() -> None:  # A-20
+    from django.core.management import call_command
+
+    call_command("makemigrations", check=True, dry_run=True, verbosity=0)

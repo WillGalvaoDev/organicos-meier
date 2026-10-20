@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.db import transaction
 
 from apps.nucleo.tempo import InstanteSemFuso
 from apps.pagamentos.provedor import (
@@ -529,3 +530,29 @@ def test_verificar_aviso_recusa_corpo_assinado_fora_do_limite(sim: Any) -> None:
     ).hexdigest()
     with pytest.raises(AvisoInvalido):
         obter_provedor().verificar_aviso(corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"})
+
+
+def test_o_estado_do_simulador_sobrevive_ao_rollback_do_sistema(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # A-19, E07-R03
+    segunda = criar(chave_idempotencia="k2")
+    terceira = criar(chave_idempotencia="k3")
+    avisos_antes = AvisoSimulado.objects.count()
+    dentro: list[str] = []
+
+    def bloco_que_falha() -> None:
+        with transaction.atomic():
+            dentro.append(obter_provedor().criar_cobranca(nova()).pagamento.id_externo)
+            sim.aprovar(segunda)
+            obter_provedor().cancelar_cobranca(terceira)
+            raise RuntimeError("desfaz o bloco")
+
+    with pytest.raises(RuntimeError, match="desfaz o bloco"):
+        bloco_que_falha()
+    assert CobrancaSimulada.objects.filter(chave_idempotencia="k1").count() == 1
+    provedor = obter_provedor()
+    assert provedor.consultar_pagamento(segunda).situacao == SituacaoNoProvedor.APROVADO
+    assert provedor.consultar_pagamento(terceira).situacao == SituacaoNoProvedor.CANCELADO
+    assert AvisoSimulado.objects.count() == avisos_antes + 2
+    assert provedor.criar_cobranca(nova()).pagamento.id_externo == dentro[0]
+    assert CobrancaSimulada.objects.filter(chave_idempotencia="k1").count() == 1
