@@ -110,13 +110,14 @@ def simulador_pagamentos() -> Iterator[Any]:
 
 
 BANCOS_DO_SIMULADOR = ["default", "simulador_pagamentos"]
+PREFIXOS_COM_SIMULADOR = ("test_pagamentos_", "test_pedidos_", "test_simulador_pagamentos_")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Os testes de pagamentos usam o simulador, que tem conexão própria (E07-R03): declaram
     os dois bancos sem mudar o resto do marcador `django_db` de cada teste."""
     for item in items:
-        if not item.path.name.startswith("test_pagamentos_"):
+        if not item.path.name.startswith(PREFIXOS_COM_SIMULADOR):
             continue
         marcador = item.get_closest_marker("django_db")
         if marcador is None or marcador.kwargs.get("databases") is not None:

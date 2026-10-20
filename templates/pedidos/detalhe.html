@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Pedido · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Pedido da rodada de {{ fornecedor.nome }}</h1>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <p>Situação: {{ situacao }}.</p>
+
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Subtotal</th></tr></thead>
+    <tbody>
+      {% for linha in itens %}
+        <tr>
+          <td>{{ linha.item.nome }}</td>
+          <td>{{ linha.item.quantidade|quantidade_br }} {{ linha.unidade }}</td>
+          <td>{{ linha.item.preco_unitario|reais }}</td>
+          <td>{{ linha.item.subtotal|reais }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <dl>
+    <dt>Produtos</dt><dd>{{ pedido.produtos|reais }}</dd>
+    <dt>Serviço</dt><dd>{{ pedido.servico|reais }}</dd>
+    <dt>Frete</dt><dd>{{ pedido.frete|reais }}</dd>
+    <dt>Total</dt><dd>{{ pedido.total|reais }}</dd>
+  </dl>
+  <p>Pague até {{ prazo }} (horário de Brasília). Esse prazo de 24 horas não é prorrogado.</p>
+
+  {% if pagamento.codigo_pix %}
+    <h2>Pagamento por Pix</h2>
+    <p>Pague pelo aplicativo do seu banco. A confirmação pode levar alguns minutos.</p>
+    <p>Pix copia e cola:</p>
+    <pre>{{ pagamento.codigo_pix }}</pre>
+  {% elif pagamento.gerando %}
+    <p>Estamos gerando a sua cobrança. Atualize esta página em alguns instantes.</p>
+  {% elif pagamento.falhou_por_prazo %}
+    <p>Não foi possível gerar a cobrança antes do fim do prazo.</p>
+  {% endif %}
+  {% if pagamento.pode_pagar %}
+    <form method="post" action="{% url 'pedidos_pagar' pk=pedido.pk %}">
+      {% csrf_token %}
+      <button type="submit">Pagar com Pix</button>
+    </form>
+  {% endif %}
+  <p><a href="{% url 'pedidos_lista' %}">Voltar para meus pedidos</a></p>
+{% endblock %}

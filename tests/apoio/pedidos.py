@@ -8,16 +8,18 @@ relógio deve estar congelado antes de montar o arranjo.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
+from apps.pagamentos.models import PagamentoNoProvedor
 from apps.pedidos.abertura import ResultadoDaAbertura, abrir_pagamento
-from apps.pedidos.models import AberturaDoPagamento, Pedido
+from apps.pedidos.models import AberturaDoPagamento, Pedido, SituacaoDoPedido
 from apps.rodadas.models import Ciclo, Etapa, Rodada
 from tests.apoio.ciclos import dar_prazo_de_teste
+from tests.conftest import RelogioControlado
 from tests.fabricas import (
     ContaFactory,
     EstoqueDaRodadaFactory,
@@ -97,3 +99,70 @@ def abertura_unica() -> AberturaDoPagamento:
     aberturas: list[AberturaDoPagamento] = list(AberturaDoPagamento.objects.all())
     assert len(aberturas) == 1, f"aberturas: {len(aberturas)}"
     return aberturas[0]
+
+
+def pedido_aberto(relogio: RelogioControlado, frete: str = "22.00") -> tuple[Arranjo, Pedido]:
+    """O arranjo com o pagamento aberto em `T0`; o relógio fica em `T0 + 1h` (14:00 UTC).
+    Devolve o arranjo e o pedido `X` do comprador A (total R$ 94,35)."""
+    relogio.congelar(T0)
+    arranjo = montar_arranjo()
+    abrir(arranjo, frete)
+    relogio.congelar(T0 + timedelta(hours=1))
+    return arranjo, pedido_de(arranjo.a)
+
+
+def marcar_pago(pedido: Pedido, quando: datetime | None = None) -> PagamentoNoProvedor:
+    """Põe o pedido em `pago` direto no banco, com um pagamento aprovado de apoio."""
+    instante = quando or T0 + timedelta(hours=2)
+    pagamento = PagamentoNoProvedor.objects.create(
+        provedor="simulador",
+        ambiente="testes",
+        id_externo=f"apoio-{pedido.pk}",
+        referencia_externa=pedido.referencia_externa,
+        valor=pedido.total,
+        situacao="aprovado",
+        criado_no_provedor_em=instante,
+        expira_em=instante + timedelta(hours=24),
+        aprovado_no_provedor_em=instante,
+    )
+    SituacaoDoPedido.objects.filter(pedido=pedido).update(
+        situacao="pago", quitado_por=pagamento, quitado_em=instante
+    )
+    return pagamento
+
+
+def cancelar_direto(
+    pedido: Pedido, motivo: str = "suspensao", quando: datetime | None = None
+) -> None:
+    """Põe o pedido em `cancelado` direto no banco."""
+    SituacaoDoPedido.objects.filter(pedido=pedido).update(
+        situacao="cancelado",
+        cancelado_em=quando or T0 + timedelta(hours=2),
+        motivo_do_cancelamento=motivo,
+    )
+
+
+def pedido_avulso(comprador: Conta, nome: str = "G", total: str = "50.00") -> Pedido:
+    """Um pedido de `comprador` numa abertura de outro fornecedor, gravado direto."""
+    fornecedor = FornecedorFactory.create(nome=nome)
+    rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.PAGAMENTO)
+    ciclo = dar_prazo_de_teste(rodada).ciclo
+    valor = D(total)
+    abertura = AberturaDoPagamento.objects.create(
+        ciclo=ciclo,
+        rodada=rodada,
+        t0=T0,
+        frete=D("0.00"),
+        total_produtos=valor,
+        autor=administrador(),
+    )
+    pedido = Pedido.objects.create(
+        abertura=abertura,
+        comprador=comprador,
+        produtos=valor,
+        servico=D("0.00"),
+        frete=D("0.00"),
+        total=valor,
+    )
+    SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
+    return pedido

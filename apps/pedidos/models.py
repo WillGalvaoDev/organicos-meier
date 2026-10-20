@@ -15,6 +15,7 @@ from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta
 from apps.interesses.models import ParcelaDeInteresse
 from apps.nucleo.so_insercao import RegistroSoInsercao, SoInsercaoQuerySet
+from apps.nucleo.tempo import agora
 from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 from apps.pagamentos.models import PagamentoNoProvedor
 from apps.rodadas.models import Ciclo, Rodada
@@ -106,6 +107,11 @@ class Pedido(RegistroDoPedido):
             models.CheckConstraint(condition=Q(servico__gte=0), name="pedido_servico_nao_negativo"),
             models.CheckConstraint(condition=Q(frete__gte=0), name="pedido_frete_nao_negativo"),
         )
+
+    @property
+    def referencia_externa(self) -> str:
+        """Identifica o pedido e o ciclo no provedor; é igual em todas as tentativas (E08-03)."""
+        return f"om-c{self.abertura.ciclo_id}-p{self.pk}"
 
     def __str__(self) -> str:
         return f"pedido {self.pk}"
@@ -213,3 +219,52 @@ class SituacaoDoPedido(models.Model):
 
     def __str__(self) -> str:
         return f"situação do pedido {self.pedido_id}"
+
+
+class SituacaoDaTentativa(models.TextChoices):
+    SOLICITADA = "solicitada", "Solicitada"
+    CRIADA = "criada", "Criada"
+    NAO_CRIADA = "nao_criada", "Não criada"
+
+
+class TentativaDePagamento(models.Model):
+    """Uma vez que o comprador pede para pagar (E08-03). Guarda a chave de idempotência da
+    cobrança no provedor e, depois de criada, os dados para pagar, que só o dono do pedido vê."""
+
+    pedido = models.ForeignKey(Pedido, on_delete=models.PROTECT, related_name="tentativas")
+    numero = models.PositiveIntegerField()
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    referencia_externa = models.CharField(max_length=64)
+    situacao = models.CharField(max_length=12, choices=SituacaoDaTentativa.choices)
+    id_externo = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    dados_para_pagar = models.JSONField(default=dict, blank=True)
+    codigo_da_falha = models.CharField(max_length=40, blank=True, default="")
+    solicitada_em = models.DateTimeField(default=agora)
+    criada_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pedido", "numero"], name="tentativa_de_pagamento_numero_unico"
+            ),
+            models.UniqueConstraint(
+                fields=["pedido"],
+                condition=Q(situacao="solicitada"),
+                name="tentativa_de_pagamento_solicitada_unica",
+            ),
+            models.CheckConstraint(
+                condition=~Q(situacao="criada") | Q(id_externo__isnull=False),
+                name="tentativa_de_pagamento_criada_tem_id_externo",
+            ),
+            models.CheckConstraint(
+                condition=~Q(situacao="nao_criada") | ~Q(codigo_da_falha=""),
+                name="tentativa_de_pagamento_nao_criada_tem_codigo",
+            ),
+            models.CheckConstraint(
+                condition=Q(situacao__in=SituacaoDaTentativa.values),
+                name="tentativa_de_pagamento_situacao_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"tentativa {self.pk}"

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Meus pedidos · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Meus pedidos</h1>
+  {% if linhas %}
+    <table>
+      <thead><tr><th>Fornecedor</th><th>Total</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td>{{ linha.fornecedor }}</td>
+            <td>{{ linha.pedido.total|reais }}</td>
+            <td>{{ linha.situacao }}</td>
+            <td><a href="{% url 'pedidos_detalhe' pk=linha.pedido.pk %}">Ver pedido</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Você ainda não tem pedidos.</p>
+  {% endif %}
+{% endblock %}
