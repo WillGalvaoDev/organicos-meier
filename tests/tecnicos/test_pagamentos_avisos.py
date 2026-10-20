@@ -19,7 +19,7 @@ from apps.contas.permissoes import Politica
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.so_insercao import RegistroImutavel
 from apps.pagamentos.avisos import TAMANHO_MAXIMO_DO_AVISO
-from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.chamadas import agendar_chamada, processar_chamadas
 from apps.pagamentos.models import (
     AvisoRecebido,
     ChamadaAoProvedor,
@@ -406,3 +406,45 @@ def test_avisos_no_limite_exato_sao_aceitos(sim: Any) -> None:  # A-18
     chamada = uma_chamada()
     assert chamada.alvo == longo
     assert len(chamada.alvo) == 64
+
+
+@pytest.mark.parametrize(
+    "com_consulta_da_tarefa", [True, False], ids=["tarefa-antes", "sem-tarefa"]
+)
+def test_primeiro_aviso_preservado_com_consulta_ja_agendada(
+    com_consulta_da_tarefa: bool, sim: Any, relogio: RelogioControlado
+) -> None:  # A-16, E07-R02
+    p = criar_cobranca(relogio)
+    if com_consulta_da_tarefa:
+        agendar_chamada("consultar_pagamento", p)
+    sim.aprovar(p, em=T)
+    assert sim.entregar_avisos() == [200]
+    relogio.congelar(T + 5 * MIN)
+    outro = sim.reemitir_aviso(p)
+    assert sim.entregar_avisos([outro]) == [200]
+    relogio.congelar(T + 6 * MIN)
+    processar_chamadas()
+    assert AvisoRecebido.objects.filter(id_externo=p).count() == 2
+    chamada = uma_chamada()
+    assert chamada.situacao == "concluida"
+    assert chamada.parametros == {
+        "origem": "aviso",
+        "aviso_recebido_em": "2026-11-02T13:00:00+00:00",
+    }
+    assert unico(PagamentoNoProvedor.objects.all()).primeiro_aviso_em == T
+    assert unico(ConsultaDoPagamento.objects.all()).origem == "aviso"
+
+
+def test_aviso_apos_consulta_concluida_atualiza(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # E07-05 controle do revisor
+    p = criar_cobranca(relogio)
+    sim.aprovar(p, em=T)
+    sim.entregar_avisos()
+    processar_chamadas()
+    outro = sim.reemitir_aviso(p)
+    sim.entregar_avisos([outro])
+    relogio.congelar(T + MIN)
+    processar_chamadas()
+    assert ChamadaAoProvedor.objects.count() == 2
+    assert ConsultaDoPagamento.objects.count() == 2

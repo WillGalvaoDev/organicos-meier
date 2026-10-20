@@ -1,8 +1,10 @@
 """E07-01: criação concorrente da mesma cobrança (acceptance A-15)."""
 
 import threading
+import time
 from collections.abc import Iterator
-from datetime import timedelta
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -25,7 +27,7 @@ from apps.pagamentos.sincronizacao import sincronizar_pagamento
 from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
 from apps.simulador_pagamentos.provedor import ProvedorSimulado
 from tests.apoio.concorrencia import executar_em_paralelo
-from tests.apoio.trava import esperando, segurando
+from tests.apoio.trava import esperando, outra_conexao_esperando, segurando
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
 
@@ -251,3 +253,172 @@ def test_consulta_antes_de_decidir_durante_o_processamento_do_aviso(
     assert PagamentoNoProvedor.objects.get().situacao == "aprovado"
     assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
     assert sinais.recebidos == [(SituacaoNoProvedor.PENDENTE, SituacaoNoProvedor.APROVADO)]
+
+
+def _aguardar(terminou: threading.Event, segundos: float = 15) -> None:
+    """Fica parado até a outra thread terminar ou aparecer esperando a trava, o que vier
+    primeiro; se nenhum dos dois acontecer no prazo, a falha é uma asserção."""
+    limite = time.monotonic() + segundos
+    while time.monotonic() < limite:
+        if terminou.is_set() or outra_conexao_esperando():
+            return
+        time.sleep(0.05)
+    raise AssertionError("a outra thread não terminou nem apareceu esperando a trava")
+
+
+def _parar_executar(
+    monkeypatch: pytest.MonkeyPatch, terminou: threading.Event, *, antes: bool
+) -> threading.Event:
+    """Faz a consulta da tarefa parar antes (ou depois) de falar com o provedor."""
+    entrou = threading.Event()
+    original = OPERACOES["consultar_pagamento"]
+
+    def executar(provedor: Any, chamada: Any) -> Any:
+        if antes:
+            entrou.set()
+            _aguardar(terminou)
+            return original.executar(provedor, chamada)
+        resposta = original.executar(provedor, chamada)
+        entrou.set()
+        _aguardar(terminou)
+        return resposta
+
+    monkeypatch.setitem(OPERACOES, "consultar_pagamento", replace(original, executar=executar))
+    return entrou
+
+
+AVISO_DAS_13 = {"origem": "aviso", "aviso_recebido_em": "2026-11-02T13:00:00+00:00"}
+
+
+def _agendar_consulta(id_externo: str, parametros: dict[str, Any] | None = None) -> Any:
+    with transaction.atomic():
+        return agendar_chamada("consultar_pagamento", id_externo, parametros=parametros)
+
+
+def test_aviso_durante_a_consulta_nao_e_absorvido(
+    simulador_pagamentos: Any, sinais: _Sinais, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-17 (E07-04), E07-R01
+    id_externo = _cobranca_pendente()
+    primeira = _agendar_consulta(id_externo)
+    terminou = threading.Event()
+    entrou = _parar_executar(monkeypatch, terminou, antes=False)
+
+    def tarefa(barreira: Any) -> int:
+        return processar_chamadas()
+
+    def aviso(barreira: Any) -> Any:
+        assert entrou.wait(20), "a tarefa não obteve a resposta do provedor"
+        try:
+            simulador_pagamentos.aprovar(id_externo)
+            return _agendar_consulta(id_externo, AVISO_DAS_13)
+        finally:
+            terminou.set()
+
+    resultados = executar_em_paralelo(tarefa, aviso)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor.pk != primeira.pk
+    monkeypatch.undo()
+    processar_chamadas()
+    chamadas = list(ChamadaAoProvedor.objects.order_by("pk"))
+    assert [c.situacao for c in chamadas] == ["concluida", "concluida"]
+    pagamentos = list(PagamentoNoProvedor.objects.all())
+    assert [p.situacao for p in pagamentos] == ["aprovado"]
+    assert pagamentos[0].primeiro_aviso_em == datetime(2026, 11, 2, 13, 0, tzinfo=UTC)
+    assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
+    assert len(sinais.recebidos) == 1
+
+
+def test_a_tarefa_pula_a_chamada_que_o_agendamento_segura(
+    simulador_pagamentos: Any, consultas_ao_simulador: list[str]
+) -> None:  # A-18 (E07-04), E07-R01
+    id_externo = _cobranca_pendente()
+    _agendar_consulta(id_externo)
+    agendou, terminou = threading.Event(), threading.Event()
+
+    def agendamento(barreira: Any) -> Any:
+        with transaction.atomic():
+            chamada = agendar_chamada("consultar_pagamento", id_externo)
+            agendou.set()
+            assert terminou.wait(20), "a tarefa não terminou"
+        return chamada
+
+    def tarefa(barreira: Any) -> int:
+        assert agendou.wait(20), "o agendamento não aconteceu"
+        try:
+            return processar_chamadas()
+        finally:
+            terminou.set()
+
+    resultados = executar_em_paralelo(agendamento, tarefa)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor == 0
+    assert consultas_ao_simulador == []
+    assert processar_chamadas() == 1
+    assert consultas_ao_simulador == [id_externo]
+    assert ChamadaAoProvedor.objects.count() == 1
+
+
+def test_aviso_que_espera_a_falha_temporaria_combina_o_horario(
+    simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-19 (E07-04), E07-R01 e R02
+    id_externo = _cobranca_pendente()
+    original = _agendar_consulta(id_externo)
+    simulador_pagamentos.indisponivel()
+    terminou = threading.Event()
+    entrou = _parar_executar(monkeypatch, terminou, antes=True)
+
+    def tarefa(barreira: Any) -> int:
+        return processar_chamadas()
+
+    def aviso(barreira: Any) -> Any:
+        assert entrou.wait(20), "a tarefa não chegou a executar"
+        try:
+            return _agendar_consulta(id_externo, AVISO_DAS_13)
+        finally:
+            terminou.set()
+
+    resultados = executar_em_paralelo(tarefa, aviso)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    devolvida = resultados[1].valor
+    gravada = ChamadaAoProvedor.objects.get()
+    assert devolvida.pk == gravada.pk == original.pk
+    assert gravada.situacao == "pendente"
+    assert gravada.tentativas == 1
+    assert gravada.ultimo_erro == "indisponivel"
+    assert gravada.chave_idempotencia == original.chave_idempotencia
+    assert gravada.proxima_em > original.proxima_em
+    assert gravada.parametros == AVISO_DAS_13
+
+
+def test_aviso_durante_a_consulta_espera_e_gera_outra_consulta(
+    simulador_pagamentos: Any, sinais: _Sinais, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-15 (E07-05), E07-R01
+    id_externo = _cobranca_pendente()
+    _agendar_consulta(id_externo)
+    terminou = threading.Event()
+    entrou = _parar_executar(monkeypatch, terminou, antes=False)
+
+    def tarefa(barreira: Any) -> int:
+        return processar_chamadas()
+
+    def aviso(barreira: Any) -> list[int]:
+        assert entrou.wait(20), "a tarefa não obteve a resposta do provedor"
+        try:
+            simulador_pagamentos.aprovar(id_externo)
+            return list(simulador_pagamentos.entregar_avisos())
+        finally:
+            terminou.set()
+
+    resultados = executar_em_paralelo(tarefa, aviso)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor == [200]
+    monkeypatch.undo()
+    processar_chamadas()
+    chamadas = list(ChamadaAoProvedor.objects.order_by("pk"))
+    assert [c.situacao for c in chamadas] == ["concluida", "concluida"]
+    recebido = AvisoRecebido.objects.get()
+    pagamentos = list(PagamentoNoProvedor.objects.all())
+    assert [p.situacao for p in pagamentos] == ["aprovado"]
+    assert pagamentos[0].primeiro_aviso_em == recebido.recebido_em
+    assert EntradaAuditoria.objects.filter(acao="pagamento.situacao").count() == 1
+    assert len(sinais.recebidos) == 1

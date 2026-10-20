@@ -317,3 +317,34 @@ def test_o_registro_de_operacoes_comeca_com_a_consulta() -> None:
 def _operacao_de_teste_fora_do_registro() -> Iterator[None]:
     yield
     OPERACOES.pop(CRIAR, None)
+
+
+def test_agendar_de_novo_combina_o_horario_do_aviso(p: str) -> None:  # A-20, E07-R02
+    primeira = agendar_chamada(CONSULTAR, p)
+    das_13 = {"origem": "aviso", "aviso_recebido_em": "2026-11-02T13:00:00+00:00"}
+    fixos = ("chave_idempotencia", "proxima_em", "tentativas", "criada_em")
+    antes = {campo: getattr(primeira, campo) for campo in fixos}
+
+    def agendar(parametros: dict[str, Any]) -> ChamadaAoProvedor:
+        chamada = agendar_chamada(CONSULTAR, p, parametros=parametros)
+        assert chamada.pk == primeira.pk
+        gravada = unica()
+        assert {campo: getattr(gravada, campo) for campo in fixos} == antes
+        return gravada
+
+    assert agendar(das_13).parametros == das_13
+    assert (
+        agendar({**das_13, "aviso_recebido_em": "2026-11-02T13:05:00+00:00"}).parametros == das_13
+    )
+    mais_antigo = agendar({**das_13, "aviso_recebido_em": "2026-11-02T09:55:00-03:00"})
+    assert mais_antigo.parametros == {**das_13, "aviso_recebido_em": "2026-11-02T12:55:00+00:00"}
+
+
+def test_operacao_sem_combinar_mantem_os_primeiros_parametros(sim: Any) -> None:  # A-20
+    with operacao_de_teste():
+        primeira = criar_de_teste(valor="10.00")
+        segunda = agendar_chamada(
+            CRIAR, "ref-teste", parametros={"valor": "99.00", "expira_em": AMANHA.isoformat()}
+        )
+        assert segunda.pk == primeira.pk
+        assert unica().parametros["valor"] == "10.00"

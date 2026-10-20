@@ -10,7 +10,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from django.conf import settings
@@ -52,6 +52,8 @@ class Operacao:
     executar: Callable[[Provedor, ChamadaAoProvedor], Any]
     concluir: Callable[[ChamadaAoProvedor, Any], None]
     falhou: Callable[[ChamadaAoProvedor, Exception], None] | None = None
+    # Junta os parâmetros de um novo agendamento aos da chamada pendente que o absorve (R02).
+    combinar: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
 
 
 OPERACOES: dict[str, Operacao] = {}
@@ -62,9 +64,31 @@ def registrar_operacao(nome: str, operacao: Operacao) -> None:
 
 
 def _pendente(operacao: str, alvo: str) -> ChamadaAoProvedor | None:
-    return ChamadaAoProvedor.objects.filter(
-        operacao=operacao, alvo=alvo, situacao=SituacaoDaChamada.PENDENTE
-    ).first()
+    """A chamada pendente do par, travada até o fim da transação de quem agenda (E07-R01).
+
+    Sem `skip_locked` e sem `nowait`: se uma execução da tarefa está com a linha, o agendamento
+    espera, e o Postgres reavalia `situacao = 'pendente'` na versão nova da linha. Concluída ou
+    falhou, não há pendente e o agendamento cria outra, que consultará depois dele. Continuando
+    pendente, a execução da tarefa a pula (`skip_locked`) até esta transação terminar, então
+    a consulta sempre acontece depois do agendamento.
+    """
+    return (
+        ChamadaAoProvedor.objects.select_for_update()
+        .filter(operacao=operacao, alvo=alvo, situacao=SituacaoDaChamada.PENDENTE)
+        .first()
+    )
+
+
+def _absorver(existente: ChamadaAoProvedor, parametros: dict[str, Any] | None) -> ChamadaAoProvedor:
+    """Devolve a pendente, combinando os parâmetros novos se a operação souber (R02). Só os
+    `parametros` mudam: chave, `proxima_em`, tentativas e criação ficam como estavam."""
+    combinar = OPERACOES[existente.operacao].combinar
+    if parametros and combinar is not None:
+        combinados = combinar(existente.parametros, parametros)
+        if combinados != existente.parametros:
+            existente.parametros = combinados
+            existente.save(update_fields=["parametros"])
+    return existente
 
 
 def agendar_chamada(
@@ -75,14 +99,14 @@ def agendar_chamada(
     chave_idempotencia: str | None = None,
 ) -> ChamadaAoProvedor:
     """Registra a chamada na transação corrente; já havendo uma pendente do mesmo par
-    (operação, alvo), devolve essa, sem alterá-la."""
+    (operação, alvo), devolve essa (combinando os parâmetros, se a operação souber)."""
     if not connection.in_atomic_block:
         raise TransactionManagementError("agendar_chamada exige uma transação aberta.")
     if operacao not in OPERACOES:
         raise ValueError(f"operação desconhecida: {operacao!r}")
     existente = _pendente(operacao, alvo)
     if existente is not None:
-        return existente
+        return _absorver(existente, parametros)
     instante = agora()
     try:
         with transaction.atomic():
@@ -101,7 +125,7 @@ def agendar_chamada(
         existente = _pendente(operacao, alvo)
         if existente is None:
             raise
-        return existente
+        return _absorver(existente, parametros)
 
 
 def _intervalo(tentativas: int) -> timedelta:
@@ -204,4 +228,22 @@ def _concluir_consulta(chamada: ChamadaAoProvedor, resultado: Any) -> None:
     )
 
 
-registrar_operacao("consultar_pagamento", Operacao(_consultar, _concluir_consulta))
+def _combinar_consulta(atuais: dict[str, Any], novos: dict[str, Any]) -> dict[str, Any]:
+    """O horário do aviso fica com o mais antigo dos dois (em ISO 8601 UTC) e a origem vira
+    `aviso` se qualquer um dos dois for aviso."""
+    resultado = dict(atuais)
+    horarios = [
+        datetime.fromisoformat(p["aviso_recebido_em"])
+        for p in (atuais, novos)
+        if p.get("aviso_recebido_em")
+    ]
+    if horarios:
+        resultado["aviso_recebido_em"] = min(horarios).astimezone(UTC).isoformat()
+    if "aviso" in (atuais.get("origem"), novos.get("origem")):
+        resultado["origem"] = "aviso"
+    return resultado
+
+
+registrar_operacao(
+    "consultar_pagamento", Operacao(_consultar, _concluir_consulta, combinar=_combinar_consulta)
+)
