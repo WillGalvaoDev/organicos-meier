@@ -53,6 +53,16 @@
       <p>Prazo do fechamento encerrado em {{ fechamento.prazo }}. O encerramento será processado automaticamente.</p>
     {% elif fechamento.tipo == "encerrado" %}
       <p>Fechamento encerrado em {{ fechamento.prazo }}. Aguardando a autorização do pagamento.</p>
+      <form method="post" action="{% url 'rodadas_pagamento_abrir' pk=rodada.pk %}">
+        {% csrf_token %}
+        <label for="frete">Frete total (R$)</label>
+        <input type="text" id="frete" name="frete" value="{{ fechamento.frete }}" inputmode="decimal">
+        <button type="submit">Abrir pagamento</button>
+        {% if fechamento.erro_do_frete %}<p role="alert">{{ fechamento.erro_do_frete }}</p>{% endif %}
+      </form>
+    {% elif fechamento.tipo == "pagamento" %}
+      <p>Pagamento aberto em {{ fechamento.t0 }} (horário de Brasília).</p>
+      <p>Prazo de pagamento até {{ fechamento.prazo_de_pagamento }}. Margem até {{ fechamento.fim_da_margem }}.</p>
     {% endif %}
     {% if fechamento.historico %}
       <h3>Histórico de prazos</h3>

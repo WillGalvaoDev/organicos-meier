@@ -59,9 +59,12 @@ MENSAGENS = {
     "fora_de_fechamento_encerrado": (
         "Só uma rodada com o fechamento encerrado pode voltar para interesse."
     ),
+    "fora_de_fechamento_encerrado_para_pagamento": (
+        "Só uma rodada com o fechamento encerrado pode abrir o pagamento."
+    ),
 }
 
-MOTIVOS_DE_RETORNO = ("minimo_nao_atingido",)
+MOTIVOS_DE_RETORNO = ("minimo_nao_atingido", "minimo_nao_atingido_na_abertura")
 
 
 class TransicaoRecusada(Exception):
@@ -371,5 +374,5 @@ def voltar_para_interesse(
         {"rodada": travada.pk, "ciclo": ciclo.pk, "motivo": motivo},
     )
     alocar_pendentes(Fornecedor.objects.get(pk=travada.fornecedor_id))
-    avisar_retorno_para_interesse(travada, ciclo, destinatarios)
+    avisar_retorno_para_interesse(travada, ciclo, destinatarios, motivo)
     rodada.etapa = Etapa.INTERESSE

@@ -68,17 +68,37 @@ class ExcedenteRemovido:
     parcela_id: int | None = None  # só nas saídas por parcela
 
 
+MOMENTO_FIM_DO_FECHAMENTO = "fim_do_fechamento"
+MOMENTO_ABERTURA_DO_PAGAMENTO = "abertura_do_pagamento"
+
+
 def avisar_excedentes_removidos(
-    rodada: Rodada, ciclo: Ciclo, remocoes: list[ExcedenteRemovido]
+    rodada: Rodada,
+    ciclo: Ciclo,
+    remocoes: list[ExcedenteRemovido],
+    momento: str = MOMENTO_FIM_DO_FECHAMENTO,
 ) -> None:
-    """Um aviso por par (comprador, produto) com quantidade removida (E06-05). Mesma transação."""
+    """Um aviso por par (comprador, produto) com quantidade removida (E06-05, E08-02).
+
+    `momento`: o fim do fechamento (texto e chave da E06-05) ou a abertura do pagamento. Mesma
+    transação de quem remove.
+    """
+    if momento not in (MOMENTO_FIM_DO_FECHAMENTO, MOMENTO_ABERTURA_DO_PAGAMENTO):
+        raise ValueError(f"momento desconhecido: {momento!r}")
+    na_abertura = momento == MOMENTO_ABERTURA_DO_PAGAMENTO
+    abertura = "Na abertura do pagamento" if na_abertura else "No fim do fechamento"
+    prefixo = (
+        f"excedentes_removidos:abertura:{ciclo.pk}"
+        if na_abertura
+        else (f"excedentes_removidos:{ciclo.pk}")
+    )
     contas = Conta.objects.in_bulk([r.comprador_id for r in remocoes])
     fornecedor = rodada.fornecedor.nome
     for remocao in remocoes:
         produto = remocao.produto
         rotulo = Unidade(produto.unidade).label
         corpo = (
-            f"No fim do fechamento da rodada de {fornecedor}, "
+            f"{abertura} da rodada de {fornecedor}, "
             f"{formatar_quantidade(remocao.removida)} {rotulo} de {produto.nome} não completaram "
             "caixa e foram removidas do seu interesse. Continuam no seu interesse: "
             f"{formatar_quantidade(remocao.mantida)} {rotulo}."
@@ -89,21 +109,30 @@ def avisar_excedentes_removidos(
             titulo=f"Excedentes removidos: {produto.nome}"[:MAIOR_TITULO],
             corpo=corpo,
             link="/carrinho/",
-            chave=f"excedentes_removidos:{ciclo.pk}:{produto.pk}:{remocao.comprador_id}",
+            chave=f"{prefixo}:{produto.pk}:{remocao.comprador_id}",
         )
 
 
-def avisar_retorno_para_interesse(rodada: Rodada, ciclo: Ciclo, contas: list[Conta]) -> None:
-    """Aviso `retorno_para_interesse` por mínimo não atingido (E06-06), igual para todos.
+_MOTIVO_DO_RETORNO = {
+    "minimo_nao_atingido": "no fim do fechamento",
+    "minimo_nao_atingido_na_abertura": "na abertura do pagamento",
+}
+
+
+def avisar_retorno_para_interesse(
+    rodada: Rodada, ciclo: Ciclo, contas: list[Conta], motivo: str = "minimo_nao_atingido"
+) -> None:
+    """Aviso `retorno_para_interesse` por mínimo não atingido (E06-06, E08-02), igual para todos.
 
     O mínimo do fornecedor nunca aparece para o comprador. Sem destinatários, nada é emitido.
     """
     if not contas:
         return
     nome = rodada.fornecedor.nome
+    momento = _MOTIVO_DO_RETORNO[motivo]
     corpo = (
         f"A rodada de {nome} voltou para a fase de interesse porque o mínimo do fornecedor não "
-        "foi atingido no fim do fechamento. Os interesses que continuam reservados seguem na "
+        f"foi atingido {momento}. Os interesses que continuam reservados seguem na "
         "rodada, e você pode alterá-los. Nada foi cobrado neste ciclo, então não há estornos."
     )
     emitir_evento_para_varios(
