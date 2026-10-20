@@ -616,3 +616,53 @@ O A-17 usa `Client(raise_request_exception=False)` para o 500 aparecer como `ass
 ### Limites da verificação
 
 Postgres real, sem rede, worker nem navegador. Nenhuma mutação aplicada nestas correções.
+
+
+---
+
+## Correção E07-R06 e reconhecimento da R07 — registro do implementador (2026-10-20)
+
+Status: correção implementada; **aguardando o agente 3**. Nada aqui é aprovação.
+
+Fontes lidas antes de editar: este parecer (R06, R07 e a prova `test_timeout_limpa_tambem_a_conexao_do_simulador`), `docs/specs/E01-05/spec.md` ("Correção E07-R06") e `acceptance.md` (A-19 a A-24), `docs/specs/E07-01/spec.md` (R06 e R07) e `tests/apoio/concorrencia.py`.
+
+### R07 — reconhecimento
+
+O registro da R03 acima traz `uv run pytest tests/tecnicos -k pagamentos -q` (**5 failed, 141 passed**), embora o título diga "arquivos inteiros, sem `-k`". O comando que rodou foi esse, com `-k`. Reconheço a divergência com a prevenção da E06-R05 ("sem `-k` e sem escolher funções pelo nome"). O histórico não foi reescrito. O revisor não encontrou critério omitido do Red; eu também não. Nesta correção todos os comandos de Red e de Green usam arquivos inteiros.
+
+### Arquivos
+
+- `tests/apoio/concorrencia.py` (o utilitário da E01-05): `_conferir_mesmo_servidor` (`ValueError` com o alias, antes de qualquer thread); `_Operacao` com `aplicacoes` e `fases` por alias; `application_name = <prefixo>-<indice>-<alias>` e `connect_timeout` fixo em todos os aliases de `connections.settings`; `connect` controlado instalado no wrapper de cada alias; só `default` abre antes da barreira; a limpeza e a descrição (`0:nome (default SEM_CONEXAO, simulador_pagamentos ABRINDO)`) cobrem todos os aliases. Nenhuma interface mudou.
+- `tests/tecnicos/test_apoio_concorrencia.py`: oito testes novos `test_e07_r06_*` (A-19 a A-23). Nenhum teste existente foi alterado.
+- Nenhuma mudança no simulador, no roteador nem em código de produção. Sem andaime: não houve mudança de interface.
+
+### Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_apoio_concorrencia.py tests/tecnicos/test_pagamentos_concorrencia.py -q`: **8 failed, 39 passed** (as 39 são os A-1 a A-18 e a concorrência de pagamentos, intactos).
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-19 | `test_e07_r06_timeout_limpa_tambem_a_conexao_do_simulador` (prova do revisor, corpo literal) | falhou: `{'sessoes_apos_timeout': 1, 'guarda': 0, 'situacao_depois': 'aprovado'}` |
+| A-20 | `..._abertura_do_simulador_terminando_no_prazo_nao_executa` | falhou: `assert 0.23 >= 0.5` (o retorno não esperou a abertura do simulador) |
+| A-21 | `..._abertura_do_simulador_alem_do_prazo_vira_limpeza_incompleta` | falhou: `TempoEsgotado` onde se esperava `LimpezaIncompleta` |
+| A-22 | `..._abertura_do_simulador_depois_do_tempo_esgotado_e_recusada` | falhou: `assert 0 == 1` (a operação abriu o simulador e aprovou; nenhum `TempoEsgotado`) |
+| A-23 (i) | `..._cada_alias_tem_nome_exclusivo_e_connect_timeout_fixo` | falhou: `KeyError('connect_timeout')` no alias do simulador |
+| A-23 (ii) | `..._alias_em_outro_servidor_e_recusado_antes_de_iniciar[HOST\|PORT\|USER]` | 3 falhas: `DID NOT RAISE ValueError` |
+
+Ajuste de preparação do A-22 antes do Green, para o Red falhar por asserção: o teste libera a abertura pausada junto com a operação (no código antigo a abertura seguiria e a aprovação executaria, o que o `assert 0 == 1` mostra). Não afrouxa nada: no código novo a abertura não pode ocorrer.
+
+### Green e regressão (A-24)
+
+- Os dois arquivos: **47 passed**, em **5 execuções seguidas**: 53,63 s, 53,82 s, 54,15 s, 53,55 s e 53,61 s (a primeira de 54,64 s, antes das cinco).
+- Suíte completa: **1945 passed** (eram 1937) em 182,23 s.
+- `ruff check`, `ruff format --check` e `mypy .` (300 arquivos) sem erros. A prova do A-19 leva `# noqa: PT018` para manter o corpo literal do revisor.
+
+### Decisões técnicas
+
+- Os aliases cobertos são todos os de `connections.settings`, sem lista no utilitário. O nome `-<alias>` foi acrescentado ao final; o A-17 antigo (`startswith("concorrencia-")`, nomes distintos) segue verde.
+- Fases por alias sob o mesmo `Condition`; no `finally`, `close_all()` e todos os aliases passam para `SEM_CONEXAO`. O `finally` não é o mecanismo de limpeza: o encerramento no servidor e a confirmação de zero sessões seguem em `_limpar`, e a recusa de abertura depois de `expirado` vale em cada wrapper.
+- O A-20 e o A-21 dependem de a operação chegar à abertura do simulador dentro de 0,2 s (preparação definida pela spec); nas sete execuções dos dois arquivos registradas acima isso ocorreu sempre.
+
+### Limites da verificação
+
+Postgres real e threads reais; sem o worker como processo, navegador ou rede. Nenhuma mutação aplicada. Os aliases são cobertos pelo que existe hoje (`default` e `simulador_pagamentos`).
