@@ -13,7 +13,9 @@ from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 
 _QTD = CampoQuantidade()
 _ZERO = Value(0, output_field=_QTD)
-_PRODUTO = models.DecimalField(max_digits=30, decimal_places=5)
+_PRODUTO: "models.DecimalField[Decimal, Decimal]" = models.DecimalField(
+    max_digits=30, decimal_places=5
+)
 _CUSTO_MINIMO = ExpressionWrapper(F("preco") * F("incremento"), output_field=_PRODUTO)
 _MEIO_CENTAVO = Value(Decimal("0.005"), output_field=_PRODUTO)
 
