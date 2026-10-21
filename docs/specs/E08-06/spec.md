@@ -144,3 +144,40 @@ Além disso, o caso-limite "Suspensão e pagamento ao mesmo tempo" desta especif
 |---|---|
 | O pagamento | A tentativa nasce `solicitada`, e a suspensão cancela o pedido em seguida. Depois, a criação é recusada com `pedido_cancelado`, e nada nasce no provedor. Se a criação já estiver em andamento, o `concluir` agenda o cancelamento. |
 | A suspensão | O pagamento recebe `pedido_cancelado` ou `conta_inativa`, e nenhuma tentativa nasce. |
+
+## Correção E08-R06, segunda revisão — A-11 reescrito sem Red (2026-10-21)
+
+Origem: segunda revisão do agente 3, sobre `584b323`, R06.
+
+### Diagnóstico
+
+O próprio registro do implementador declara que o teste do A-11 reescrito foi escrito depois da proteção e passou na primeira execução.
+
+- A recusa `pedido_cancelado` no `executar` tinha entrado antes, sob o Red do A-13 e do A-21, que são critérios sequenciais.
+- Por isso não houve o ciclo exigido para o critério concorrente: verde funcional sem a proteção, Red da corrida e só então a proteção.
+- A mutação registrada, que retira o ramo `pedido_cancelado`, prova a sensibilidade do teste. Ela não é Red histórico.
+
+A decisão de 2026-10-21 cobria só os critérios antigos e excluía expressamente este A-11.
+
+### Decisão do responsável pelo projeto (2026-10-21)
+
+**O mesmo tratamento dos critérios antigos vale também para o A-11 reescrito.** O registro, a sensibilidade por mutação e a prova concorrente verde encerram o gate deste critério. A decisão não refaz o passado, não autoriza retirar código para produzir um Red novo e não vira dispensa automática para as próximas etapas.
+
+### O que o implementador faz
+
+Acrescenta ao `review.md` desta fatia a seção "Não conformidade de TDD (R06) — A-11 reescrito", sem editar o registro anterior. A seção traz:
+
+1. **O critério e o que aconteceu,** citando a declaração já registrada: "teste escrito depois da proteção, verde na primeira execução; sem Red observado antes do código de produção".
+2. **A referência a esta decisão.**
+3. **A sensibilidade (mutação), não Red.** A mutação já registrada (sem o ramo `pedido_cancelado` em `_motivo_da_recusa`) serve se o registro trouxer:
+   - o trecho mudado e o comando com o arquivo inteiro, sem `-k`;
+   - a falha por asserção;
+   - a restauração e o teste verde depois dela, com o comando.
+
+   Hoje o registro não mostra a execução verde depois da restauração. O implementador repete a mutação com o código atual e registra os três elementos. A repetição é só prova de sensibilidade.
+4. **A prova concorrente verde:** `test_suspensao_e_pagamento_ao_mesmo_tempo`, nas duas ordens, com o arquivo inteiro e o resultado.
+5. **A causa:** o Green de um critério sequencial (A-13 e A-21) também entregou a proteção de um critério concorrente que ainda não tinha teste.
+
+### Prevenção (soma-se às da correção E08-R06)
+
+Antes do Green de um critério sequencial, o implementador confere se a proteção que vai escrever também cobre um critério de concorrência ainda sem Red. Se cobrir, ele escreve antes o teste da corrida e registra as duas linhas desse critério: o verde funcional sem a proteção e o Red da corrida. Só então escreve o Green, que passa a valer para os dois.

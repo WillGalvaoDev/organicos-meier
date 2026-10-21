@@ -298,3 +298,75 @@ Com isso, a moderação e a criação chegam ao mesmo resultado em qualquer orde
 
 - no simulador, a segunda encontra a cobrança já terminal e só sincroniza a mesma situação;
 - no provedor real, o comportamento de cancelar uma cobrança já cancelada não foi validado (L-2). Uma recusa dele deixa só a segunda chamada `falhou`, sem efeito sobre o pagamento.
+
+## Correção E08-R08 — recuperação de vários pagamentos sem inverter as travas (2026-10-21)
+
+Origem: segunda revisão do agente 3, sobre `584b323` (`docs/specs/E08-01/review.md`, R08). É uma correção técnica, sem decisão comercial nova.
+
+### Diagnóstico
+
+O `falhou` da `criar_cobranca` (`apps/pedidos/operacoes.py`, `_criacao_falhou`) roda dentro da transação da chamada, aberta por `processar_chamadas`. Ele sincroniza, um depois do outro, todos os pagamentos que a busca encontrou.
+
+1. A sincronização do primeiro pagamento (P1) trava P1. Se ele está aprovado, o receptor decide o destino e trava também a `SituacaoDoPedido` (S). As duas travas ficam até o fim da transação da chamada.
+2. Ao mesmo tempo, o aviso do segundo pagamento (P2) trava P2 e espera S para decidir o destino.
+3. A recuperação passa para P2 ainda segurando S e espera P2. A ordem fica S → P2, o inverso da ordem global P → S → T.
+4. O PostgreSQL aborta uma das duas com `deadlock detected`.
+
+Repetir depois recupera os dois destinos sem duplicá-los. Mesmo assim, uma sincronização financeira é abortada por uma inversão de travas que a correção R03 introduziu.
+
+Só ordenar os pagamentos não resolve, porque a transação continua segurando S quando vai buscar o pagamento seguinte. Travar todos os pagamentos antes também não serve: um pagamento ainda desconhecido teria de ser inserido fora de `sincronizar_pagamento`, que é o único que grava `PagamentoNoProvedor` (E07-03, cenário 37).
+
+### Decisão técnica: a recuperação agenda uma consulta por pagamento
+
+O `falhou` deixa de sincronizar. Cada pagamento encontrado é entregue à operação `consultar_pagamento` da E07, que roda numa transação própria. Esse é o padrão da E07-06: uma sincronização individual por transação curta.
+
+Assim a recuperação não trava nenhum pagamento e nenhuma situação de pedido, e a ordem P → S → T fica preservada em cada consulta. O dinheiro continua sem ser ignorado: as consultas são gravadas na mesma transação que marca a tentativa, então ou existem todas, ou a chamada inteira volta a `pendente` e é repetida.
+
+### Regras
+
+**1. O `falhou` da `criar_cobranca`,** quando a busca encontrou pagamentos, faz nesta ordem e na transação da chamada:
+
+1. **Agenda uma consulta por pagamento.** Para cada pagamento encontrado, em qualquer situação e na ordem de `(criado_em, id_externo)`, agenda `consultar_pagamento` com alvo igual ao `id_externo` e `parametros={"origem": "busca"}`.
+   - Se o par já tiver uma consulta pendente (de um aviso, por exemplo), ela absorve o agendamento pela regra de combinação da E07-06. A origem resultante segue essa regra.
+2. **Agenda o cancelamento das órfãs.** As cobranças órfãs são as pendentes na resposta da busca e sem tentativa com esse `id_externo`. Cada uma recebe o cancelamento com alvo `t<tentativa>:recuperacao:<n>` e o log `warning`, como na correção R03. A identificação usa só a resposta da busca e as tentativas, sem travar o pagamento.
+3. **Marca a tentativa** como `nao_criada`, com o código.
+
+O `falhou` não chama `sincronizar_pagamento` nem `decidir_destino`. Ele também não trava `PagamentoNoProvedor` nem `SituacaoDoPedido`.
+
+**2. O registro de cada pagamento encontrado** passa a nascer na consulta, com a resposta atual do provedor:
+
+- se o provedor estiver indisponível ou o pagamento ainda não aparecer (L-6), vale a falha temporária da E07;
+- o destino de um aprovado é decidido pela E08-04 dentro dessa consulta.
+
+**3. O que não muda:**
+
+- a recusa no `executar` e a busca, com a ordem `prazo_encerrado`, `pedido_cancelado`, `pedido_pago`;
+- a `RecusaDoProvedor` na busca;
+- o `concluir` da criação, que sincroniza um único pagamento na ordem P → S → T;
+- nenhuma cobrança é criada depois do prazo.
+
+**4. Invariante nova:** nenhuma transação de chamada ao provedor sincroniza mais de um pagamento. Quem precisa sincronizar vários usa uma transação curta por pagamento, como `consultar_antes_de_decidir`, ou agenda uma consulta por pagamento. O implementador confere os outros chamadores de `sincronizar_pagamento` e registra o resultado. Se outro caminho violar a invariante, ele para e devolve ao especificador, sem ampliar o escopo.
+
+### Efeito nos critérios da correção R03
+
+Nos critérios A-23 a A-26, o pagamento encontrado passa a ser registrado pela consulta agendada, e não mais pelo `falhou`. Por isso a observação acontece depois do `processar_chamadas()` que processa essa consulta.
+
+- O comportamento observado fica igual: o registro, o destino, o cancelamento da órfã e nenhuma criação depois do prazo.
+- O único ajuste permitido nos testes existentes é acrescentar a chamada a `processar_chamadas()` necessária, ou mover a asserção para depois dela.
+- O implementador lista cada teste ajustado no registro, com o antes e o depois.
+- No A-26, onde está "o `falhou` sincroniza o pagamento `aprovado`", passa a valer: "a consulta agendada pelo `falhou` sincroniza o pagamento `aprovado`".
+
+### Prova do revisor
+
+A prova R08 do parecer pausa a recuperação dentro de `operacoes.sincronizar_pagamento`. Depois da correção, o `falhou` não chama mais essa função. A pausa nunca acontece, e a thread do aviso falha na espera dela.
+
+A prova fica substituída pelo A-29, que reproduz a mesma corrida com um ponto de pausa que existe antes e depois da correção. O A-29 também serve como Red real.
+
+### Casos-limite
+
+| Caso | Comportamento |
+|---|---|
+| Uma exceção no `falhou` depois de agendar | A transação da chamada é desfeita: nenhuma consulta, nenhum cancelamento, a tentativa continua `solicitada` e a chamada `pendente`. A repetição refaz a recusa e a busca e termina com um destino por pagamento e um cancelamento por órfã. |
+| A busca devolve o mesmo pagamento que um aviso já mandou consultar | Fica uma consulta pendente só para esse `id_externo`, e um destino só. |
+| A órfã é aprovada entre a busca e a consulta | A consulta registra `aprovado` e a E08-04 decide o destino. O cancelamento agendado devolve o estado terminal (E07), e o destino não muda. |
+| A consulta falha por indisponibilidade | A consulta fica `pendente` com nova tentativa. A tentativa já está `nao_criada`, e o dinheiro é reconhecido quando a consulta conseguir. A reconsulta da margem (E08-05) também cobre esse pagamento. |

@@ -71,3 +71,36 @@ O cancelamento com a moderação durante a criação (suspensão e remoção) es
 ## Correção E08-R06
 
 O A-19 desta fatia recebe o tratamento da seção "Correção E08-R06" de `docs/specs/E08-02/spec.md`.
+
+## Correção E08-R08 — recuperação de vários pagamentos sem inverter as travas (2026-10-21)
+
+**Arranjo comum (R):** é o arranjo da prova R08 do parecer.
+
+- A tentativa 1 é criada e expira às `T0`. A tentativa 2 é criada às `T0 + 2h` e também expira. As duas expirações são sincronizadas.
+- A tentativa 3 fica só `solicitada`.
+- Às `T0 + 3h`, as cobranças 1 e 2 são aprovadas no simulador, sem sincronizar.
+- O relógio vai para `T0 + 25h`, dentro da margem.
+- A criação da tentativa 3 é processada: a recusa (`prazo_encerrado`) e a busca devolvem os dois pagamentos aprovados.
+
+**Ponto de pausa (Π):** a recuperação para depois de executar a recusa e antes de terminar a transação da chamada. Por exemplo, um envoltório na marcação da tentativa `nao_criada`. Esse ponto existe antes e depois da correção. A thread da recuperação roda `_tentar` com a linha da chamada travada, numa transação, como `processar_chamadas`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-29 | Correção R08 | concorrência | R, com a recuperação parada em Π | outra thread sincroniza o pagamento 2 como aviso (`sincronizar_pagamento`, origem `aviso`, numa transação que trava o pagamento 2); depois, outra conexão tenta `select_for_update(nowait=True)` no pagamento 1 e na `SituacaoDoPedido`; depois, a recuperação é liberada e `processar_chamadas()` roda | o aviso termina enquanto a recuperação está parada (o evento de término chega antes de a recuperação ser liberada); as duas travas com `nowait` são obtidas; nenhuma thread levanta exceção; ao final, os destinos são `[("devolucao", "duplicidade"), ("quita", "")]`, a tentativa 3 `nao_criada` com `prazo_encerrado` e nenhuma `CobrancaSimulada` com a chave da tentativa 3 |
+| A-30 | Correção R08, E08-05 | concorrência | R, com a recuperação parada em Π | outra thread roda `reconsultar_pagamentos_da_margem_agora()`; depois, a recuperação é liberada e `processar_chamadas()` roda | a reconsulta termina enquanto a recuperação está parada e decide os dois destinos; depois de `processar_chamadas()`, os destinos continuam os mesmos dois, um por pagamento, sem nova `devolucao`, sem segundo `pagamento_confirmado` e sem exceção |
+| A-31 | Correção R08 | positivo | R | `processar_chamadas()`, sem pausa | a chamada `criar_cobranca` `falhou` com `prazo_encerrado`; existe uma chamada `consultar_pagamento` por pagamento encontrado, com alvo igual ao `id_externo`, criadas na ordem de `(criado_em, id_externo)`; cada pagamento tem uma `ConsultaDoPagamento` com origem `busca`; os destinos são os do A-29; a tentativa 3 `nao_criada` |
+| A-32 | Correção R08 | negativo | R; uma exceção local (`RuntimeError` por `monkeypatch`, só uma vez) na marcação da tentativa `nao_criada` | `processar_chamadas()` duas vezes | na primeira: a chamada `criar_cobranca` continua `pendente` com o contador inalterado, a tentativa 3 `solicitada`, nenhuma chamada `consultar_pagamento` ou `cancelar_cobranca` nova e nenhum destino; na segunda: o resultado do A-31, com um destino por pagamento |
+| A-33 | Correção R08, E07-06 | positivo | R; antes da recuperação, chega um aviso novo do pagamento 2, que agenda a consulta dele (ainda não processada) | `processar_chamadas()` | uma única chamada `consultar_pagamento` para o pagamento 2, que absorveu o agendamento da busca; um destino só para o pagamento 2; o resultado final do A-31 |
+| A-34 | Correção R08, AGENTS.md §6 | negativo | R | a busca devolve os pagamentos, mas o provedor fica indisponível (`indisponivel()`) antes das consultas; `processar_chamadas()`; depois `normalizar()`, relógio mais 1 minuto e `processar_chamadas()` | na primeira: a criação `falhou`, a tentativa 3 `nao_criada`, as consultas `pendente` com `indisponivel` e nenhum destino; na segunda: os destinos do A-29 |
+
+O A-29 e o A-30 seguem a regra de prevenção da correção E08-R06, com duas linhas no registro:
+
+- o "verde funcional sem a proteção": é o A-31 contra o código atual, antes da correção, com o comando;
+- o "Red da corrida": é o A-29 e o A-30 contra o código atual. A falha esperada é a asserção de que o aviso (ou a reconsulta) terminou enquanto a recuperação estava parada, ou a das travas com `nowait`. Um `deadlock detected` ou um tempo esgotado da infraestrutura não serve como Red: o envoltório espera com tempo limite e transforma a espera em asserção.
+
+Só depois disso a recuperação muda.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-29, A-30 e A-33 | `tests/tecnicos/test_pedidos_concorrencia.py` |
+| A-31, A-32 e A-34 | `tests/tecnicos/test_pedidos_tentativas.py` |

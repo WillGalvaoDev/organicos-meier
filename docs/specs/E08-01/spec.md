@@ -148,3 +148,21 @@ O parecer consolidado do agente 3 sobre `2714a6a` está no `review.md` desta fat
 6. O registro da R06.
 
 Ao final, o implementador roda a suíte completa sem `--deselect`, as provas do parecer e as corridas relevantes. A prova R04 do parecer fica substituída pelos critérios da E08-02.
+
+## Correções da segunda revisão da E08 (2026-10-21)
+
+A segunda revisão do agente 3, sobre `584b323`, reprovou a E08. R01 a R05 estão encerrados e R07 continua como M-3. Restam:
+
+| Achado | Classificação | Onde está a especificação | Critérios novos ou alterados |
+|---|---|---|---|
+| R06 — A-11 reescrito da E08-06 sem Red | importante; **tratamento decidido pelo responsável em 2026-10-21: o mesmo dos critérios antigos** | E08-06, "Correção E08-R06, segunda revisão"; complemento na seção R06 da E08-02 | sem critério novo: registro, mutação com a restauração verde e prova concorrente |
+| R08 — impasse na recuperação de vários pagamentos | importante | E08-03, "Correção E08-R08" | E08-03 A-29 a A-34; A-23 a A-26 com o ponto de observação ajustado |
+
+A melhoria M-4 (o reforço do teste do E08-04 A-17), registrada pelo revisor em `docs/melhorias.md`, fica para a revisão final.
+
+**Ordem sugerida:**
+
+1. O R08, começando pelo verde funcional (A-31) e pelo Red das corridas (A-29 e A-30) contra o código atual.
+2. O registro do R06 na E08-06.
+
+Ao final, o implementador roda a suíte completa sem `--deselect`, o ruff, o mypy e o `makemigrations --check`. A prova R08 do parecer fica substituída pelo A-29, porque o ponto de pausa dela deixa de existir com a correção.

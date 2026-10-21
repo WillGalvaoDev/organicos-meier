@@ -357,3 +357,7 @@ Os passos 2 e 3 são o tratamento definitivo dos critérios antigos.
 
   A trava só é escrita depois da segunda linha.
 - **Teste corrigido depois do andaime.** Se um teste precisar de correção depois que o andaime foi substituído, o implementador para e registra o fato antes de seguir (Red tardio, E06-R05). Não volta a montar o andaime.
+
+### Complemento da segunda revisão (2026-10-21)
+
+O responsável pelo projeto estendeu este tratamento ao E08-06 A-11 reescrito, que antes estava excluído (passo 3). A regra e a prevenção adicional estão em `docs/specs/E08-06/spec.md`, na seção "Correção E08-R06, segunda revisão".
