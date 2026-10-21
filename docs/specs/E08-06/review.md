@@ -69,3 +69,27 @@ Antes do Red: `cancelar_pedidos_nao_pagos` que devolve 0 e `MOTIVOS_DE_CANCELAME
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django e threads reais; sem navegador, sem o worker como processo e sem rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+### R02 — a cobrança que estava só enfileirada na suspensão ou na remoção
+
+A coordenação está na E08-03 (`executar` recusa com `pedido_cancelado`; `concluir` agenda o cancelamento com o motivo da moderação). `cancelar_pedidos_nao_pagos` não mudou. Os Red e Green estão no registro da E08-03 (A-13 e A-15 em `test_pedidos_moderacao.py`; A-14 em `test_pedidos_concorrencia.py`):
+
+- A-13 (suspensão e remoção, tentativa só `solicitada`): **Red** em `test_pedidos_moderacao.py` (2 falhas por asserção) e Green depois da recusa no `executar`.
+- A-14 (i) e (ii): **Red da corrida** (2 falhas: nenhum cancelamento agendado) antes da proteção no `concluir`; depois, Green.
+- A-15: Red e Green como descritos na E08-03.
+
+**A-11 reescrito (sem andaime).** O teste antigo foi substituído pelo texto novo (`test_suspensao_e_pagamento_ao_mesmo_tempo`, duas ordens), sem remover o critério antigo do histórico: o teste e o texto antigos estão em `git show 2714a6a:tests/tecnicos/test_pedidos_concorrencia.py`.
+
+**Desvio de processo que preciso reportar (Red tardio).** O A-11 reescrito **passou na primeira execução**, porque a recusa no `executar` (que cobre a ordem "pagamento antes") já tinha entrado, sob o Red dos A-13 e A-21, antes de eu escrever o teste de corrida. Não houve, portanto, o Red próprio do A-11 reescrito (verde sem a proteção → Red da corrida → proteção). A prova de que o teste detecta a ausência dessa proteção é a mutação abaixo, que **não é Red**.
+
+**Sensibilidade (mutação), não Red.** `operacoes.py`: sai de `_motivo_da_recusa` o ramo `pedido_cancelado`. `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q`: **1 falhou, 16 passaram**: `test_suspensao_e_pagamento_ao_mesmo_tempo[pagamento_antes]`, `AssertionError: ('criada', '') == ('nao_criada', 'pedido_cancelado')`. Arquivo restaurado por `git checkout -- apps/pedidos/operacoes.py`.
+
+## Não conformidade de TDD (R06) — texto antigo do E08-06 A-11
+
+O A-11 antigo dizia que a tentativa "nasce e logo recebe o cancelamento com alvo `:suspensao`", e o teste antigo executava `pedir_pagamento` e `processar_chamadas()` dentro da transação que segurava a trava, fechando a janela entre a solicitação e a criação. Evidência: `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive-Desktop-AI-Hive-om/eca958a3-5baa-41c1-b7a8-d4c5947c3fdc.jsonl` (registro da sessão, com horário UTC; os números são índices de linha, base 0), Red da linha 14021 (19:49:57Z), **12 falharam e 13 passaram**, contra um serviço que devolvia zero; sem o ciclo verde sem trava → Red da corrida → trava. O critério foi reescrito (R02) e o texto novo segue o ciclo real descrito acima, com o desvio declarado.

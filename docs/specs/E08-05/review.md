@@ -83,3 +83,28 @@ Erro de preparação no primeiro Red: o teste do A-14 chamava `administrador_log
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django, threads reais e a fila do Procrastinate no banco; sem o worker como processo, navegador ou rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+### R01 e R03 (bloqueio)
+
+Arquivos: `apps/pedidos/tarefas.py` (a reconsulta da margem passa a cobrir todos os pedidos das aberturas em margem, inclusive os pagos; `_bloquear_cobrancas_sem_tentativa` agenda `p<pagamento>:prazo` para a cobrança pendente que nenhuma tentativa conhece e que ainda não tem chamada de cancelamento, em qualquer situação) e `apps/pagamentos/consulta.py` (`pendentes_das_referencias`, só leitura).
+
+Red (arquivo inteiro): `uv run pytest tests/tecnicos/test_pedidos_prazos.py -q`: **4 falharam, 22 passaram**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-22 | `test_a_margem_reconsulta_o_pedido_ja_pago_e_devolve_a_duplicidade` | `[('quita', '')] == [('devolucao','duplicidade'), ('quita','')]` |
+| A-23 | `test_a_margem_reconsulta_pagos_aguardando_e_cancelados` | `assert 2 == 3` |
+| A-24 | `test_o_bloqueio_cancela_a_cobranca_orfa_encontrada_na_margem` | `assert 0 == 1` |
+| A-26 | `test_o_bloqueio_cancela_a_orfa_de_pedido_pago_ou_cancelado` | `assert 0 == 2` |
+
+Passaram no Red, com o motivo: **A-25** (as duas variantes: o código antigo nem olhava órfãs, então nada era agendado; passa a ser prova real depois do Green, quando só a regra de pular decide); **A-27** (o cancelamento já vinha da recuperação da E08-03, feita antes; o teste confere que o bloqueio não agenda um segundo); **A-28** (regressão: antes do prazo nada acontece).
+
+Green: `test_pedidos_prazos.py`, `test_pedidos_acompanhamento.py` e `test_pagamentos_fronteiras.py`: 40 aprovados.
+
+Interpretações: no A-27 a spec diz "A pede o pagamento de Y"; o teste usa o pedido `X` de A. Para que o bloqueio realmente enfrente uma órfã que já tem a chamada de recuperação pendente, a segunda execução usa `processar_chamadas(limite=1)`. O A-20 da E08-05 segue como controle já verde, como declarado antes.

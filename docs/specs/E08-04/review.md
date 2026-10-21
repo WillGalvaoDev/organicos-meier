@@ -81,3 +81,26 @@ Antes do Red: o modelo `DestinoDoPagamento` sem base de só inserção, sem `CHE
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django e threads reais; sem navegador, sem o worker como processo e sem rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+Nenhum código novo nesta fatia: a decisão de destino não mudou. A R01 (pagamento a mais que não chegava à decisão) foi corrigida na E08-05, e o caso entra nos testes de lá (A-22).
+
+## Não conformidade de TDD (R06) — E08-04 A-16 e A-17
+
+Evidência procurada em `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive-Desktop-AI-Hive-om/eca958a3-5baa-41c1-b7a8-d4c5947c3fdc.jsonl` (registro da sessão, com horário UTC; os números são índices de linha, base 0): o Red da fatia é a linha 13671 (19:35:52Z), **25 falharam e 42 passaram**, contra o serviço de destino ainda inexistente. Os testes de concorrência A-16 e A-17 estavam entre eles; não há registro de verde funcional sem trava seguido de Red da corrida.
+
+- **O que aconteceu:** Red só pela ausência do serviço; sem o ciclo verde sem trava → Red da corrida → trava.
+- **Causas:** as três confirmadas na seção equivalente da E08-02.
+- **Sensibilidade (mutação), não Red.** Arquivo de teste: `test_pedidos_concorrencia.py` inteiro, `--create-db`.
+
+| Critério | Mutação | Resultado |
+|---|---|---|
+| A-16 | `quitacao.py`: `SituacaoDoPedido.objects.select_for_update().get(pedido=pedido)` vira `.objects.get(pedido=pedido)` | 1 falhou, 16 passaram: `test_dois_pagamentos_ao_mesmo_tempo_um_quita_e_o_outro_duplica`, `[None, IntegrityError('duplicate key … destino_um_quita_por_pedido')]` na asserção `all(r.excecao is None …)` |
+| A-17 | `quitacao.py`: sai `if existente is not None: return existente` | **17 passaram: a mutação não foi detectada** |
+
+**Limite do teste (A-17).** Sem a verificação antecipada, a segunda decisão do mesmo pagamento continua sem produzir um segundo destino nos cenários do arquivo (a restrição única do banco e o fluxo do receptor cobrem). Reforço proposto, sem mudar o critério: um teste que chame `decidir_destino` duas vezes para o mesmo pagamento aprovado na mesma transação e confira que devolve o mesmo destino e que há um só registro. Fica a cargo de quem revisar decidir se entra agora.

@@ -81,3 +81,18 @@ Nenhum: a rota e a view não existiam, então o Red foi de rota ausente (404).
 ## Limites da verificação
 
 Postgres real e cliente HTTP do Django; sem navegador, sem o worker como processo e sem rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+### R05 — teste de fronteira alinhado ao requisito
+
+Só teste: `tests/tecnicos/test_pagamentos_fronteiras.py` e duas urlconfs de apoio (`tests/apoio/urls_rota_extra_simulador.py` e `urls_rota_extra_pagamentos.py`). Nenhum código de produção mudou.
+
+- **Falha de partida (linha 87):** `uv run pytest tests/tecnicos/test_pagamentos_fronteiras.py -q`: **1 falhou, 7 passaram**, `test_nenhuma_rota_comando_ou_admin_registra_pagamento`, com os cinco nomes `simulador_pagamentos_*` no conjunto que só admitia `pagamentos_avisos`.
+- **Teste alinhado:** igualdade exata por app (`apps.pagamentos` = `{pagamentos_avisos}`; `apps.simulador_pagamentos` = as cinco rotas desta fatia), mais "sem admin" e "sem pasta `management`"; o comentário cita E07-03 A-12, cenário 37 e E08-07.
+- **Prova negativa (A-9):** `test_uma_rota_a_mais_em_qualquer_dos_dois_apps_e_recusada[simulador]` e `[pagamentos]`. Cada um usa uma urlconf de teste com uma rota a mais, exige `AssertionError` e confere que o nome da rota aparece na mensagem. **Passaram na primeira execução**, escritas junto com o alinhamento; a sensibilidade vem de a mensagem conter o nome da rota a mais.
+- **Resultado:** `test_pagamentos_fronteiras.py`: **10 aprovados**. `test_so_a_sincronizacao_escreve_nos_registros_de_pagamento` (M-2) não foi tocado.

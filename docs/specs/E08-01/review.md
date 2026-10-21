@@ -283,3 +283,34 @@ Antes do Red: o app `apps.pedidos` (sem comportamento), a assinatura e os tipos 
 ## Limites da verificação
 
 Função pura: sem banco, rede ou navegador. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+Resumo das correções (detalhes e Red/Green no `review.md` de cada fatia):
+
+| Achado | Onde está o registro | Commit |
+|---|---|---|
+| R05 | E08-07 | `3a7bdf6` |
+| R04 | E08-02 | `705a5b5`, `0c94ecf` (anotação de tipo) |
+| R02, R03 (criação) | E08-03 e E08-06 | `9b8d512` |
+| R01, R03 (bloqueio) | E08-05 | `4aebf38` |
+| R06 | E08-02 (A-4, A-11, A-20, A-21), E08-03 (A-19), E08-04 (A-16, A-17), E08-06 (A-11) | registros |
+| R07 | `docs/melhorias.md` (M-3), sem implementação | — |
+
+**Verificação final** (sem `--deselect` e sem filtro):
+
+```
+ruff check: All checks passed!
+ruff format --check: 291 files already formatted
+mypy: Success: no issues found in 342 source files
+makemigrations --check: No changes detected
+pytest: 2160 passed in 247.71s (0:04:07)
+```
+
+Comandos: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy .`, `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` e `uv run pytest -q`.
+
+**Pontos para o revisor:** (1) mutações do A-20 (só a trava da rodada) e do A-17 não foram detectadas pelos testes atuais, com reforço proposto nos registros da E08-02 e da E08-04; (2) o E08-06 A-11 reescrito não teve Red próprio (Red tardio, declarado na E08-06); (3) a prova R04 do parecer foi substituída pelos critérios A-22 a A-27, porque a fábrica de produto agora é recusada pelo `CHECK`; (4) a §4.2 da especificação funcional não foi alterada.

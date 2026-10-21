@@ -89,3 +89,69 @@ Foram duas execuções, por um erro meu na primeira:
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django e threads reais; sem navegador, sem o worker como processo e sem rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+### R04 — pedido de valor zero (decisão do responsável: restringir no cadastro)
+
+Arquivos: `apps/catalogo/models.py` (restrição `produto_menor_quantidade_custa_um_centavo`) e migração `0003_valor_minimo.py`; `apps/catalogo/servicos.py` (`criar_produto`, `editar_produto` e `alterar_incremento`, com o código novo `centavo`). Nenhuma view, template ou rota mudou: as telas já mostram os erros do serviço.
+
+Red (arquivos inteiros, sem `-k`): `uv run pytest tests/tecnicos/test_catalogo_valor_minimo.py tests/tecnicos/test_pedidos_abertura.py -q`: **5 falharam, 24 passaram**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-22 | `test_criar_recusa_a_menor_quantidade_abaixo_de_um_centavo` | `Failed: DID NOT RAISE ValidationError` |
+| A-23 | `test_editar_preco_recusa_e_nada_e_gravado` | `DID NOT RAISE ValidationError` |
+| A-24 | `test_alterar_incremento_recusa_o_que_ficaria_abaixo_de_um_centavo` | `DID NOT RAISE IncrementoIncompativel` |
+| A-25 | `test_o_banco_recusa_a_combinacao_na_criacao_e_no_update` | `DID NOT RAISE IntegrityError` |
+| A-26 | `test_a_menor_combinacao_aceita_abre_sem_pedido_de_valor_zero` | **passou no Red**: é o caso-limite aceito (0,001 kg a R$ 5,00), que o código já tratava; fica como regressão |
+| A-27 | `test_as_telas_mostram_a_mensagem_no_campo_e_nada_e_gravado` | a mensagem não aparece na página |
+
+Green: os cinco passaram (`test_catalogo_valor_minimo.py`); a suíte inteira na época, 2138 aprovados. **Nenhum teste anterior precisou de ajuste de dados.**
+
+Decisões técnicas: comparação em `Decimal` exato, fronteira inclusiva (R$ 5,00 com 0,001 aceita); a restrição do banco usa `ExpressionWrapper(preco * incremento)` com `DecimalField(30, 5)`; no `editar_produto` a recusa vem depois da trava do produto, com o incremento atual, antes de qualquer gravação; no `alterar_incremento` é a última recusa. A §4.2 da especificação funcional não foi alterada (cabe ao responsável).
+
+## Não conformidade de TDD (R06) — E08-02 A-4, A-11, A-20 e A-21
+
+Tratamento decidido pelo responsável em 2026-10-21: o mesmo da E05-R04 e da E06-R05. Os registros anteriores acima ficam sem edição.
+
+### 1. Evidência histórica procurada
+
+Não há commit anterior ao código de produção (os commits da E08 são um por fatia, feitos depois do Green). A única fonte datada é o registro da sessão: `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive-Desktop-AI-Hive-om/eca958a3-5baa-41c1-b7a8-d4c5947c3fdc.jsonl` (registro da sessão, com horário UTC; os números são índices de linha, base 0). O resultado da procura:
+
+| Critério | O que o registro mostra | Conclusão |
+|---|---|---|
+| A-4 e A-11 | Linha 13054 (19:14:42Z): Red de 42 falhas e 1 aprovação contra o andaime vazio. Linhas 13139 a 13166 (19:19:34Z a 19:19:58Z): `abertura.py` e `models.py` escritos. Linha 13185 (19:20:32Z): 1 falha e 57 aprovações; a falha era o A-4, por erro do meu teste (alterei `quantidade_original`, protegida). O teste do A-4 foi corrigido na linha 13193 (19:20:50Z) e o do A-11 na linha 13225 (19:22:11Z), **depois** de o código existir. Só então o andaime foi trocado de volta (linha 13241, 19:22:28Z) e o Red foi refeito (linha 13254). | **Sem Red válido anterior ao código.** O Red comprovado é contra um andaime recriado depois do código. |
+| A-20 e A-21 | O arquivo de concorrência foi criado na linha 13042 (19:14:38Z) e o Red (linha 13054) falhou porque a abertura não existia. As travas entraram junto com o serviço, na linha 13139 (19:19:34Z). | **Sem o ciclo** verde sem trava → Red da corrida → trava. |
+
+### 2. O que aconteceu
+
+- **A-4 e A-11:** Red obtido contra andaime recriado depois do código; sem Red observado antes do código de produção.
+- **A-20 e A-21:** Red só pela ausência do serviço; sem o ciclo verde sem trava → Red da corrida → trava.
+
+Nenhum texto deste registro dá a entender que houve Red válido nesses critérios.
+
+### 3. Causas
+
+Confirmo as três causas prováveis da spec: (1) o Green foi maior que o mínimo, com as travas escritas junto com o comportamento; (2) a tabela de cobertura não separava critério de concorrência de critério funcional; (3) o andaime dependia dos testes, e os testes do A-4 e do A-11 só foram corrigidos depois que o código existia.
+
+### 4. Sensibilidade (mutação), não Red
+
+Cada mutação retira só a proteção do critério. Comandos: `uv run pytest <arquivo inteiro> -q -p no:cacheprovider --create-db`, sem `-k`. Depois de cada uma, o arquivo foi restaurado por `git checkout -- <arquivo>` (o `git diff --ignore-cr-at-eol` estava vazio: só mudou o fim de linha) e a suíte voltou a passar (ver a verificação final).
+
+| Critério | Mutação | Arquivo de teste | Resultado da mutação |
+|---|---|---|---|
+| A-4 | `abertura.py`: `if parcela.quantidade_pendente == 0:` vira `if True:` (parcela inteira como `em_pedido`) | `test_pedidos_abertura.py` | 1 falhou, 23 passaram: `test_parcela_atendida_em_parte_pela_fila_fica_pendente`, `AssertionError: ('em_pedido', …) == (PENDENTE, …)` |
+| A-11, caminho do ORM | `models.py`: `ParcelaNoPedido(RegistroDoPedido)` vira `ParcelaNoPedido(models.Model)` | `test_pedidos_abertura.py` | 1 falhou, 23 passaram: `test_composicao_do_pedido_nao_muda_nem_some`. A falha chega como `IntegrityError` da trigger no lugar do `RegistroImutavel` esperado pelo `pytest.raises`; é falha do critério, mas não por asserção própria |
+| A-11, caminho da trigger | migração `0002`: sai `instalar_protecao_so_insercao("pedidos_parcelanopedido")` | `test_pedidos_abertura.py` | 1 falhou, 23 passaram: `Failed: DID NOT RAISE DatabaseError` |
+| A-20 | `abertura.py`: a rodada relida sem `select_for_update` | `test_pedidos_concorrencia.py` | **17 passaram: a mutação não foi detectada** (limite abaixo) |
+| A-20, complemento | os dois: fornecedor e rodada sem `select_for_update` | `test_pedidos_concorrencia.py` | 1 falhou, 16 passaram: `test_duas_aberturas_ao_mesmo_tempo_abrem_uma_so`, `AssertionError: 'fora_de_fechamento_encerrado' == 'fora_de_fechamento_encerrado_para_pagamento'` |
+| A-21 | `fechamento.py`, `_divisao_dos_excedentes`: sai `travar_estoque` (que trava o produto), único ponto onde a abertura trava os produtos | `test_pedidos_concorrencia.py` | 2 falharam, 15 passaram: `test_preco_gravado_antes_da_abertura_entra_nos_itens` e `test_preco_gravado_depois_da_abertura_nao_muda_os_itens`, `AssertionError: {10.00} == {11.00}` |
+
+**Limite do teste (A-20).** A trava do fornecedor, que vem antes, já serializa as duas aberturas; a trava da rodada, sozinha, é redundante para esse teste. Retirando as duas, o teste falha por asserção. Reforço proposto, sem mudar o critério: um teste que segure só a trava da rodada (outra thread tentando travar a rodada diretamente) e confira que a abertura espera. Fica a cargo de quem revisar decidir se o reforço entra agora.
+
+Observação sobre o A-21: a spec fala em "ler os produtos sem trava na abertura"; no código a trava dos produtos está em `travar_estoque`, chamado pela divisão dos excedentes, e a mutação foi feita ali.

@@ -499,9 +499,10 @@ def test_pedido_quitado_durante_a_criacao_cancela_a_cobranca_nova(
 ) -> None:  # A-27
     arranjo, x = pedido_aberto(relogio)
     primeira = tentativa_criada(x)
-    assert primeira.id_externo is not None
-    simulador_pagamentos.expirar(primeira.id_externo)
-    sincronizar(primeira.id_externo)
+    id_primeira = primeira.id_externo
+    assert id_primeira is not None
+    simulador_pagamentos.expirar(id_primeira)
+    sincronizar(id_primeira)
     segunda = pedir_pagamento(arranjo.a, x)
     entrou, liberar = _criacao_parada_no_provedor(monkeypatch)
     criacao_terminou = Event()
@@ -516,8 +517,8 @@ def test_pedido_quitado_durante_a_criacao_cancela_a_cobranca_nova(
     def quita(barreira: Any) -> bool:
         barreira.wait(timeout=10)
         assert entrou.wait(10), "a criação não entrou em execução"
-        simulador_pagamentos.aprovar(primeira.id_externo)
-        sincronizar(primeira.id_externo)
+        simulador_pagamentos.aprovar(id_primeira)
+        sincronizar(id_primeira)
         terminou_antes = not criacao_terminou.is_set()
         liberar.set()
         return terminou_antes

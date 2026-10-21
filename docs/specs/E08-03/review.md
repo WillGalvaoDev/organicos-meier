@@ -86,3 +86,54 @@ Mais um ciclo, depois do primeiro Green, para as restrições do banco (regra do
 ## Limites da verificação
 
 Postgres real, cliente HTTP do Django, threads reais e a fila do Procrastinate no banco; sem o worker como processo, sem navegador e sem rede. Nenhuma mutação aplicada.
+
+---
+
+## Registro do implementador — correções R01 a R06 (2026-10-21)
+
+Status: implementadas; **aguardando nova revisão do agente 3**. Nada aqui é aprovação. Fontes lidas antes de editar: o parecer em `docs/specs/E08-01/review.md` e as seções de correção de cada `spec.md` e `acceptance.md` (commit `7a1fb49`).
+
+### R02 e R03 — a criação que não pode mais ser paga
+
+Arquivos: `apps/pagamentos/chamadas.py` (`FalhaDefinitiva(codigo, *, encontrados=())`); `apps/pedidos/operacoes.py` (`_motivo_da_recusa`, `_recusar_criacao`, `_concluir_criacao` com a situação travada, `_criacao_falhou` que sincroniza o encontrado e agenda `t<tentativa>:recuperacao:<n>`); `apps/pedidos/apresentacao.py` (a espera só aparece dentro do prazo).
+
+Red (arquivos inteiros): `uv run pytest tests/tecnicos/test_pedidos_tentativas.py tests/tecnicos/test_pedidos_moderacao.py tests/tecnicos/test_pedidos_telas_comprador.py -q`: **11 falharam, 40 passaram**.
+
+| Critério | Teste | Resultado no Red |
+|---|---|---|
+| A-21 | `test_criacao_de_pedido_cancelado_e_recusada_sem_criar_cobranca` | `('concluida', '') == (FALHOU, 'pedido_cancelado')` |
+| A-22 | `test_criacao_de_pedido_pago_e_recusada_e_so_resta_a_cobranca_anterior` | `('concluida', '') == (FALHOU, 'pedido_pago')` |
+| A-23 | `test_resposta_perdida_perto_do_prazo_e_a_orfa_e_cancelada` | `PagamentoNoProvedor.DoesNotExist` (a órfã não é registrada) |
+| A-24 | `test_falha_local_na_conclusao_desfaz_a_chamada_e_a_orfa_ainda_e_cancelada` | `not enough values to unpack` (nenhum cancelamento) |
+| A-25 | `test_busca_indisponivel_repete_e_recusa_da_busca_vai_para_o_log` | `('concluida', 'indisponivel') == (FALHOU, 'pedido_cancelado')` |
+| A-26 | `test_orfa_aprovada_depois_do_prazo_quita_pela_e08_04` | `('aguardando_pagamento', None) == ('pago', …)` |
+| A-28 | `test_pedido_cancelado_nao_mostra_mensagem_de_tentativa` | `'' == 'pedido_cancelado'` (a tentativa ficava `criada`) |
+| regra da tela | `test_a_espera_so_aparece_dentro_do_prazo` | "Estamos gerando a sua cobrança" aparece depois do prazo |
+| E08-06 A-13 (×2) e A-15 | `test_pedidos_moderacao.py` | `1 == 0` cobranças no simulador; `'' == 'pedido_cancelado'` |
+
+Green: 51 aprovados nos três arquivos.
+
+**Concorrência, com as duas linhas do registro (E08-R06).**
+
+| Critério | Verde funcional sem a proteção | Red da corrida |
+|---|---|---|
+| A-27 | os A-21 e A-22 acima (recusa no `executar`) verdes, sem proteção no `concluir` | `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q`: **3 falharam, 14 passaram**. `test_pedido_quitado_durante_a_criacao_cancela_a_cobranca_nova`: `ValueError: not enough values to unpack` (nenhuma chamada de cancelamento agendada) |
+| E08-06 A-14 (suspensão e remoção) | idem | `test_moderacao_durante_a_criacao_nao_espera_e_a_cobranca_e_cancelada[suspensao]` e `[remocao]`: o mesmo `not enough values to unpack` |
+
+Só depois entrou a proteção no `_concluir_criacao` (trava `SituacaoDoPedido`, depois a tentativa, depois `agendar_cancelamento`); com ela, o arquivo passou: **17 aprovados**. A thread da moderação (e a da quitação) termina sem esperar a criação parada, conferido pelo teste.
+
+Desvios e interpretações, para o revisor:
+
+- **A-23 e A-24 ("`processar_chamadas()` duas vezes").** A mesma execução também processa o cancelamento recém-agendado. Para ver o estado intermediário pedido pela spec (pagamento ainda `pendente` depois da recusa), o teste usa `processar_chamadas(limite=1)` na segunda e `processar_chamadas()` na terceira.
+- **A-25 (i).** Para chegar ao reprocessamento depois da indisponibilidade, o relógio avança 2 minutos (o intervalo da primeira repetição é de 1 minuto).
+- **E08-06 A-15** está em dois testes: o estado do A-13 em `test_pedidos_moderacao.py` e a continuação do A-14 (i) em `test_pedidos_concorrencia.py`.
+- **Log da busca recusada.** A mensagem é "Busca na recusa da criação recusada pelo provedor: tentativa <id>, recusa <código>".
+- **A-26.** `quitado_em` ficou igual ao `aprovado_em` do provedor (T0 + 24h00min30s), como pede a spec.
+
+## Não conformidade de TDD (R06) — E08-03 A-19
+
+Evidência procurada em `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive-Desktop-AI-Hive-om/eca958a3-5baa-41c1-b7a8-d4c5947c3fdc.jsonl` (registro da sessão, com horário UTC; os números são índices de linha, base 0): os testes A-19 e A-20 foram acrescentados na linha 13446 (19:28:27Z) e o único Red é o da linha 13467 (19:28:47Z), **28 falharam e 20 passaram**, contra o serviço de tentativas ainda inexistente. Não há registro de verde funcional sem trava seguido de Red da corrida.
+
+- **O que aconteceu:** Red só pela ausência do serviço; sem o ciclo verde sem trava → Red da corrida → trava.
+- **Causas:** as três confirmadas na seção equivalente da E08-02.
+- **Sensibilidade (mutação), não Red.** `pagamento.py`: `SituacaoDoPedido.objects.select_for_update()` vira `SituacaoDoPedido.objects` em `pedir_pagamento`. `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q --create-db`: **3 falharam, 14 passaram**: `test_dois_cliques_em_pagar_geram_uma_tentativa` (`[None, IntegrityError('duplicate key … chave_idempotencia')]`, asserção `all(r.excecao is None …)`) e as duas variantes de `test_suspensao_e_pagamento_ao_mesmo_tempo`. Arquivo restaurado por `git checkout -- apps/pedidos/pagamento.py` e suíte verde de novo.
