@@ -3,9 +3,9 @@
 from decimal import Decimal
 
 from django.db import models
-from django.db.models import F, Value
+from django.db.models import ExpressionWrapper, F, Value
 from django.db.models.functions import Mod, NullIf
-from django.db.models.lookups import Exact
+from django.db.models.lookups import Exact, GreaterThanOrEqual
 
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.tempo import agora
@@ -13,6 +13,9 @@ from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 
 _QTD = CampoQuantidade()
 _ZERO = Value(0, output_field=_QTD)
+_PRODUTO = models.DecimalField(max_digits=30, decimal_places=5)
+_CUSTO_MINIMO = ExpressionWrapper(F("preco") * F("incremento"), output_field=_PRODUTO)
+_MEIO_CENTAVO = Value(Decimal("0.005"), output_field=_PRODUTO)
 
 
 class Unidade(models.TextChoices):
@@ -56,6 +59,12 @@ class Produto(models.Model):
                     )
                 ),
                 name="produto_multiplo_divisivel",
+            ),
+            # §9: cada subtotal é arredondado uma vez; a menor quantidade (o incremento) precisa
+            # custar ao menos R$ 0,01 depois do arredondamento, ou o item valeria zero.
+            models.CheckConstraint(
+                condition=models.Q(GreaterThanOrEqual(_CUSTO_MINIMO, _MEIO_CENTAVO)),
+                name="produto_menor_quantidade_custa_um_centavo",
             ),
         )
 

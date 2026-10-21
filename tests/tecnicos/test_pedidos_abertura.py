@@ -591,3 +591,35 @@ def test_excedente_na_abertura_sai_e_o_pedido_so_leva_caixas_completas(
     assert "3 unidade de P2 não completaram caixa" in removido.corpo
     assert "Continuam no seu interesse: 4 unidade." in removido.corpo
     assert sum(p.quantidade for p in ParcelaNoPedido.objects.filter(item__produto=arranjo.p2)) == 12
+
+
+def test_a_menor_combinacao_aceita_abre_sem_pedido_de_valor_zero(arranjo: Arranjo) -> None:
+    # A-26 (correção R04), §9: 0,001 kg a R$ 5,00/kg arredonda para R$ 0,01
+    p3 = ProdutoFactory.create(
+        fornecedor=arranjo.fornecedor,
+        nome="P3",
+        unidade=Unidade.KG,
+        incremento=D("0.001"),
+        preco=D("5.00"),
+    )
+    EstoqueDaRodadaFactory.create(rodada=arranjo.rodada, produto=p3, limite=None)
+    c = ContaFactory.create(nome="Comprador C")
+    ParcelaFactory.create(
+        comprador=c,
+        produto=p3,
+        quantidade_original=D("0.001"),
+        quantidade_reservada=D("0.001"),
+        quantidade_pendente=D("0"),
+    )
+    abrir(arranjo)
+    assert Pedido.objects.count() == 3
+    pedido_c = pedido_de(c)
+    (item,) = pedido_c.itens.all()
+    assert (item.nome, item.subtotal) == ("P3", D("0.01"))
+    assert (pedido_c.produtos, pedido_c.servico) == (D("0.01"), D("0.00"))
+    a, b = pedido_de(arranjo.a), pedido_de(arranjo.b)
+    assert a.frete + b.frete + pedido_c.frete == D("22.00")
+    assert (a.produtos, a.servico) == (D("80.00"), D("4.00"))
+    assert (b.produtos, b.servico) == (D("90.00"), D("4.50"))
+    assert [i.subtotal for i in a.itens.order_by("pk")] == [D("60.00"), D("20.00")]
+    assert [i.subtotal for i in b.itens.order_by("pk")] == [D("50.00"), D("40.00")]
