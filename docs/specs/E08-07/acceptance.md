@@ -27,3 +27,13 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-1 a A-5, A-7 | `tests/tecnicos/test_simulador_pagamentos_tela.py` |
 | A-6 | o mesmo arquivo e `tests/tecnicos/test_permissoes_politica_rotas.py` (teste existente) |
 | A-8 | `tests/tecnicos/test_pagamentos_fronteiras.py` (teste existente) |
+
+## Correção E08-R05 — teste de fronteira mais restritivo que o requisito (2026-10-21)
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-9 | Correção R05, E07-03 A-12, cenário 37 | positivo e negativo | as rotas de `config/urls.py` | o teste de fronteira alinhado; depois o mesmo teste com uma `ROOT_URLCONF` de teste que acrescenta uma sexta rota ao simulador; depois com outra que acrescenta uma segunda rota a `apps.pagamentos` | o primeiro passa; os dois seguintes falham por asserção, com o nome da rota a mais na mensagem; `uv run pytest -q` completo, sem `--deselect`, passa |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-9 | `tests/tecnicos/test_pagamentos_fronteiras.py` (o teste existente, alinhado, e uma prova negativa parametrizada) |

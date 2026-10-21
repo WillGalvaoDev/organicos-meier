@@ -42,3 +42,26 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-14 | também marcado `acceptance`, com o comentário `T-5, cenário 28` |
 | A-16, A-17 | `tests/tecnicos/test_pedidos_acompanhamento.py` |
 | A-20, A-21 | `tests/tecnicos/test_pedidos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`; A-20 marcado `acceptance`, com o comentário `T-7`) |
+
+## Correção E08-R01 e E08-R03 — reconsulta de todos os pedidos e bloqueio por pagamento (2026-10-21)
+
+Valem as regras de prevenção do início deste arquivo e as da correção E08-R06 (E08-02, `spec.md`). O Red é observável no código atual: as provas R01 e R03 do parecer falham.
+
+**Cobrança órfã de teste:** uma cobrança criada no simulador com `criar_cobranca` (um helper de teste), com a referência do pedido e uma chave que não é de nenhuma tentativa. Ela representa a resposta de criação perdida.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-22 | Correção R01, Infra 4.3, §8.3 | positivo | tentativa 1 de `X` criada, expirada e sincronizada; tentativa 2 criada, aprovada às `T0 + 3h` e sincronizada, o que deixa `X` `pago`; às `T0 + 25h`, a cobrança 1 aprovada no simulador, sem aviso entregue | `reconsultar_pagamentos_da_margem_agora()` às `T0 + 25h` | os destinos de `X` são exatamente `quita` (cobrança 2) e `devolucao` com `duplicidade` (cobrança 1); `X` continua `pago`, com o `quitado_em` original; um `pagamento_confirmado` só |
+| A-23 | Correção R01 | positivo | `X` `pago`, `Y` `aguardando_pagamento` e `V` (de E) `cancelado`, todos da mesma abertura | a função da margem às `T0 + 25h` | devolve 3; o simulador registrou uma `buscar_por_referencia` para cada um dos três |
+| A-24 | Correção R03, Infra 4.3 | positivo | uma cobrança órfã de teste de `Y`, criada às `T0 + 23h` e `pendente` | a função da margem às `T0 + 25h`; depois `bloquear_tentativas_vencidas_agora()`; depois `processar_chamadas()`; depois o bloqueio de novo | a reconsulta registra o pagamento `pendente`; o bloqueio devolve 1 e agenda `cancelar_cobranca` com alvo `p<pagamento>:prazo` e o `id_externo`; o processamento deixa a cobrança `cancelado` no simulador e no registro; o segundo bloqueio devolve 0 |
+| A-25 | Correção R03 | negativo | o A-24 depois da reconsulta, com uma chamada `cancelar_cobranca` já existente para esse `id_externo` com alvo `t<tentativa>:recuperacao:1`: (i) `pendente`; (ii) `falhou` | o bloqueio | nos dois, devolve 0 e não agenda nada |
+| A-26 | Correção R03 | positivo | uma cobrança órfã de teste pendente para `X` (`pago`) e outra para `V` (`cancelado`), registradas pela reconsulta | o bloqueio às `T0 + 25h` e `processar_chamadas()` | as duas são canceladas, com alvos `p<pagamento>:prazo`; `X` continua `pago`; `V` continua `cancelado`; nenhum destino novo |
+| A-27 | Correção R03, prova do parecer | positivo | às `T0 + 23h59min30s`, A pede o pagamento de `Y`; `falhar_proximas(1, operacao="criar_cobranca", depois_de_executar=True)`; `processar_chamadas()` | às `T0 + 24h01min`: `processar_chamadas()`, a função da margem, o bloqueio e `processar_chamadas()` | a cobrança `cancelado` no simulador; a tentativa `nao_criada` com `prazo_encerrado`; o pagamento conhecido; uma única chamada `cancelar_cobranca` para o `id_externo`, a de recuperação; o bloqueio não agendou outra |
+| A-28 | Correção R01, R03 | negativo | o arranjo do A-24, com o relógio em `T0 + 23h59min` | a função da margem e o bloqueio | a margem devolve 0 e nada é consultado; o bloqueio devolve 0 e nada é agendado (fora da margem e antes do prazo) |
+
+## Mapeamento para testes da correção
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-22 a A-28 | `tests/tecnicos/test_pedidos_prazos.py` |
+| A-22 | também marcado `acceptance`, com o comentário `§8.3 duplicidade na margem` |

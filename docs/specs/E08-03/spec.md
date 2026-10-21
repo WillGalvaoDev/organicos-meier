@@ -206,3 +206,95 @@ Nenhuma tela mostra o pedido de outro comprador. O fornecedor e o administrador 
 
 - Depende de E02-10, E07-01 a E07-04 e E08-02.
 - Sem decisões em aberto.
+
+## Correção E08-R02 e E08-R03 — criação de cobrança que não pode mais ser paga (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a` (`docs/specs/E08-01/review.md`, R02 e R03). A parte do bloqueio está na E08-05 e a da moderação na E08-06, cada uma na sua seção de correção.
+
+### Diagnóstico
+
+As duas falhas têm a mesma raiz. A operação `criar_cobranca` só sabe recusar por prazo. Além disso, ela trata a recusa como prova de que nada existe no provedor.
+
+- **R02, pedido cancelado com a tentativa ainda `solicitada`.** A moderação só cancela as tentativas `criada`, e o `executar` não confere a situação do pedido. A cobrança nasce depois do cancelamento e fica `pendente`, sem chamada de cancelamento. O mesmo acontece quando a moderação chega enquanto a chamada ao provedor está em andamento: o `concluir` grava `criada` sem olhar o pedido.
+- **R03, resposta perdida perto de `T0 + 24h`.** O provedor criou a cobrança, mas a resposta se perdeu. Na repetição, depois do prazo, o `executar` recusa antes de chamar o provedor e a tentativa vira `nao_criada`. A cobrança continua `pendente` no provedor e nada a cancela, porque o bloqueio só percorre tentativas `criada`.
+
+### Decisão técnica: a recusa sempre procura o que existe no provedor
+
+O sistema não tem como saber, pelos próprios registros, se uma execução anterior chegou ao provedor.
+
+- **Contador de tentativas.** O contador da chamada não serve como prova. Uma falha local no `concluir` desfaz a transação da chamada inteira, e o contador volta junto, embora o provedor já tenha criado a cobrança.
+- **Solução: perguntar ao provedor.** Toda criação recusada busca a cobrança pela referência do pedido (`buscar_por_referencia`) antes de terminar, e cancela o que achar pendente sem tentativa vinculada. Assim:
+  - se a execução nunca chegou ao provedor, a busca não acha nada e a tentativa só fica `nao_criada`;
+  - se o resultado ficou incerto, a cobrança que existe é encontrada e cancelada.
+- **Nenhuma cobrança nova depois do prazo nem para pedido cancelado.** A proibição continua. A busca só lê, e a recusa nunca chama `criar_cobranca`.
+
+**Cobrança órfã:** um pagamento da referência do pedido que está `pendente` e cujo `id_externo` não é o de nenhuma `TentativaDePagamento`. Ela só aparece quando a resposta da criação se perdeu, porque toda criação concluída vincula o pagamento à tentativa.
+
+### Regras
+
+**`FalhaDefinitiva`** (`apps/pagamentos/chamadas.py`) ganha um argumento opcional, só de palavra-chave: `encontrados: tuple[PagamentoConsultado, ...] = ()`. O tratamento em `_tentar` não muda: a chamada fica `falhou`, com o código, e o `falhou` da operação recebe a exceção.
+
+**`criar_cobranca` — `executar`**, com as leituras sem trava:
+
+1. Lê a tentativa, o pedido, a abertura e a `SituacaoDoPedido`.
+2. Decide o motivo de recusa, nesta ordem:
+
+   | Ordem | Condição | Código |
+   |---|---|---|
+   | 1 | `not aceita_tentativas(abertura, agora())` | `prazo_encerrado` |
+   | 2 | situação `cancelado` | `pedido_cancelado` |
+   | 3 | situação `pago` | `pedido_pago` |
+
+3. **Com motivo de recusa:**
+   - chama `provedor.buscar_por_referencia(tentativa.referencia_externa)`;
+   - levanta `FalhaDefinitiva(codigo, encontrados=tuple(resultado))`.
+
+   Se a busca falhar:
+   - com `ProvedorIndisponivel`, a exceção segue e a chamada é repetida como falha temporária. A tentativa continua `solicitada` até o provedor responder, e nada se perde;
+   - com `RecusaDoProvedor`, levanta `FalhaDefinitiva(codigo)` sem `encontrados` e grava um log `warning` com a tentativa e o código da recusa. A cobrança, se existir, fica para a reconsulta da margem e o bloqueio (E08-05).
+4. **Sem motivo de recusa:** cria a cobrança, como hoje.
+
+**`criar_cobranca` — `falhou`**, na ordem das travas (pagamento → situação do pedido → tentativa):
+
+1. Sincroniza cada pagamento de `encontrados` com `sincronizar_pagamento(..., origem="busca")`. Isso vale também para um pagamento aprovado, porque dinheiro nunca é ignorado (§8.3) e a E08-04 decide o destino pelo receptor do sinal.
+2. Para cada cobrança órfã entre os encontrados, ordenada por `criado_em` e `id_externo` e numerada de 1 a `n`:
+   - agenda `agendar_chamada("cancelar_cobranca", f"t{tentativa.pk}:recuperacao:{n}", parametros={"id_externo": ...})`;
+   - grava um log `warning` "Cobrança sem tentativa encontrada na recusa da criação", com a tentativa, o `id_externo` e o código.
+3. Trava a tentativa e grava `nao_criada`, com o código, como hoje.
+
+O alvo `t<tentativa>:recuperacao:<n>` só é agendado por este `falhou`, que roda uma vez por chamada. Nenhuma outra transação espera essa chamada, então vale a regra contra impasse da correção E07-R01.
+
+**`criar_cobranca` — `concluir`**, para a moderação que chega com a criação em andamento:
+
+1. `sincronizar_pagamento(resultado.pagamento, origem="tarefa")`, como hoje. Isso trava o pagamento.
+2. **Novo:** trava a `SituacaoDoPedido` do pedido.
+3. Trava a tentativa e grava `criada`, como hoje.
+4. **Novo:** se a situação travada é `cancelado`, chama `agendar_cancelamento(tentativa, situacao.motivo_do_cancelamento)`. Se é `pago`, chama `agendar_cancelamento(tentativa, "pedido_pago")`.
+
+O motivo `pedido_pago` entra na lista de motivos do alvo de cancelamento, ao lado de `prazo`, `suspensao` e `remocao_da_conta`.
+
+**Ordem das travas.** O `concluir` segue `PagamentoNoProvedor` → `SituacaoDoPedido` → `TentativaDePagamento`, sem exceção.
+
+**Espera da moderação.** Ela trava a situação do pedido, e o `concluir` só segura essa trava depois que o provedor respondeu. Por isso a moderação nunca espera uma chamada externa.
+
+Com isso, a moderação e a criação chegam ao mesmo resultado em qualquer ordem:
+
+| O que acontece primeiro | Resultado |
+|---|---|
+| A moderação, antes do `executar` | a criação é recusada com `pedido_cancelado` e não chama `criar_cobranca` |
+| O `executar`, com a moderação durante a chamada | o `concluir` vê `cancelado` e agenda o cancelamento |
+| O `concluir`, antes da moderação | a moderação vê a tentativa `criada` e agenda o cancelamento (E08-06) |
+
+**Tela do detalhe.**
+
+- A mensagem "Estamos gerando a sua cobrança…" só aparece quando o pedido está `aguardando_pagamento` e ainda dentro do prazo.
+- Uma tentativa `nao_criada` com o código `pedido_cancelado` ou `pedido_pago` não mostra mensagem de tentativa: a situação do pedido já explica.
+
+### Casos-limite
+
+- **A busca demora a mostrar a cobrança** (atraso de consistência, L-6). A recusa não acha nada e a tentativa fica `nao_criada`. A cobrança é achada depois pela reconsulta da margem, pela referência, e cancelada pelo bloqueio por pagamento (E08-05, correção E08-R03). Ela também vence sozinha em `T0 + 24h` (`expira_em`).
+- **O comprador não consegue pagar a cobrança órfã.** Os dados para pagar se perderam com a resposta e nunca foram mostrados. Se um pagamento aprovado aparecer mesmo assim, a sincronização no `falhou` leva a decisão à E08-04.
+- **Cancelamento repetido.** A recuperação e o bloqueio podem agendar o cancelamento da mesma órfã por alvos diferentes. O bloqueio pula o pagamento que já tem uma chamada de cancelamento (E08-05). Se as duas chegarem a executar:
+
+- no simulador, a segunda encontra a cobrança já terminal e só sincroniza a mesma situação;
+- no provedor real, o comportamento de cancelar uma cobrança já cancelada não foi validado (L-2). Uma recusa dele deixa só a segunda chamada `falhou`, sem efeito sobre o pagamento.

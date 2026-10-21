@@ -227,3 +227,133 @@ Não existe rota, formulário nem tela que altere `T0`, o frete, um pedido ou um
 
 - Depende de E01-04, E04-02, E05-01 a E05-07, E06-05 a E06-07 e E08-01.
 - Sem decisões em aberto.
+
+## Correção E08-R04 — pedido de valor zero (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a` (`docs/specs/E08-01/review.md`, R04).
+
+### Diagnóstico
+
+A §4.2 aceita incrementos de até três casas, e a §9 arredonda cada subtotal uma única vez, com `ROUND_HALF_UP`. Juntas, elas permitem um item de valor zero. Por exemplo, 0,001 kg de um produto de R$ 0,01/kg dá R$ 0,00001, e o subtotal arredondado é R$ 0,00.
+
+- **Um item zero ao lado de outros itens.** O pedido sai com um item de graça.
+- **Todos os itens do comprador zerados.** O pedido fica com `produtos = 0`, e a restrição `pedido_produtos_positivo` derruba a abertura inteira, com `IntegrityError` e resposta 500.
+
+A especificação não dizia como tratar esse caso, e a solução não podia ser deduzida. Por isso o ponto ficou bloqueado por decisão.
+
+### Decisão do responsável pelo projeto (2026-10-21)
+
+**Restringir no cadastro.** Um produto só é aceito se a menor quantidade que o comprador pode escolher já custar pelo menos R$ 0,01 depois do arredondamento:
+
+```
+preco × incremento ≥ R$ 0,005
+```
+
+Como toda quantidade aceita é um múltiplo positivo do incremento (§4.2), nenhum subtotal pode arredondar para zero. Assim, nenhum item e nenhum pedido pode valer zero, e a abertura não precisa de um fluxo para o pedido zero. Fica proibido:
+
+- criar uma cobrança mínima;
+- descartar a quantidade;
+- marcar o pedido como pago.
+
+A regra só existe por causa do arredondamento da §9 e não muda o preço nem o incremento de nenhum produto válido.
+
+### Regras
+
+Valem em `apps/catalogo`. A comparação é feita em `Decimal` exato, e a fronteira é inclusiva: R$ 5,00 com incremento 0,001 dá R$ 0,005 e é aceito.
+
+| Onde | Quando recusa | Erro e mensagem |
+|---|---|---|
+| `criar_produto` | `preco × incremento < 0,005`, depois das validações próprias de preço e incremento | `ValidationError({"preco": [...]})`: "Com este preço e este incremento, a menor quantidade custaria menos de R$ 0,01. Aumente o preço ou o incremento." |
+| `editar_produto` (mudança de preço, em qualquer etapa) | o preço novo, com o incremento atual do produto travado, dá menos de 0,005 | o mesmo `ValidationError`, com a mesma mensagem. Nada é gravado: sem `produto.editar`, sem `produto.alterar_preco` e sem `preco_alterado`. |
+| `alterar_incremento` | o incremento novo, com o preço atual do produto travado, dá menos de 0,005. É a última recusa, depois de fase, valor, quantidades em uso e múltiplo. | `IncrementoIncompativel("centavo")`: "Com este incremento, a menor quantidade custaria menos de R$ 0,01 ao preço atual." |
+| Banco | qualquer gravação que viole a regra | `CHECK (preco * incremento >= 0.005)`, com o nome `produto_menor_quantidade_custa_um_centavo` e a migração correspondente |
+
+Nas telas, as mensagens aparecem nos formulários de produto e de incremento pelo caminho de erro que já existe (`_erros_do_servico` e `form.add_error`), sem rota nova.
+
+A fase 1 não tem dados de produção, então a migração não precisa corrigir registros antigos. Testes antigos cujo arranjo use uma combinação recusada recebem dados válidos. Essa mudança só é permitida quando o teste não trata da regra. O implementador lista cada teste ajustado no registro, com o valor antigo e o novo.
+
+### Efeito na abertura
+
+O caminho da abertura não muda. A restrição `pedido_produtos_positivo` continua como segunda barreira e passa a ser inalcançável com dados aceitos.
+
+A prova R04 do revisor criava o produto pela fábrica, sem passar pelo serviço. Com a decisão, essa criação passa a ser recusada pelo `CHECK`. O cenário é substituído pelos critérios A-22 a A-27. Destes, o A-26 abre o pagamento com a menor combinação aceita e confere a abertura inteira, os outros compradores e o rateio.
+
+### Fora do escopo
+
+- **A §4.2 da especificação funcional.** O especificador não altera documentos de regra de negócio. A decisão fica registrada aqui, e incluí-la na §4.2 cabe ao responsável pelo projeto.
+- **A E03.** Ela não é reaberta: a regra entra nos serviços do catálogo como consequência desta correção.
+
+## Correção E08-R06 — evidência de TDD (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a`, R06. Esta seção vale para toda a E08. Os outros `spec.md` só remetem a ela.
+
+### Diagnóstico
+
+Dois grupos de critérios não têm Red válido comprovado antes do código de produção.
+
+1. **E08-02 A-4 e A-11.** O registro do implementador diz:
+   - o primeiro Red não falhou pelo comportamento;
+   - o Red válido foi obtido depois, com o "andaime trocado de volta", isto é, sem a base de só inserção, sem as restrições, sem a migração `0002` e com o serviço vazio.
+
+   Isso mostra que os testes detectam a ausência dessas proteções. Não mostra que a falha veio antes da implementação.
+2. **Critérios de concorrência:** E08-02 A-20 e A-21, E08-03 A-19, E08-04 A-16 e A-17, e E08-06 A-11.
+   - Os Reds registrados foram contra serviços vazios: o teste falhou porque não havia abertura, tentativa, destino ou cancelamento.
+   - A prevenção da E05-R04 (E05-01) exige outra sequência: o comportamento funcional verde sem a proteção, depois o Red da corrida e só então a trava.
+   - Um Red pela ausência de todo o comportamento não demonstra esse ciclo.
+
+O E08-05 A-20 é um controle já verde sobre a quitação herdada e está corretamente declarado assim. Ele não entra nesta correção.
+
+### Tratamento — decisão do responsável pelo projeto (2026-10-21)
+
+É o mesmo tratamento das correções E05-R04 (2026-10-18) e E06-R05 (2026-10-19), escolhido de novo para a E08. Ele não vira dispensa automática para as próximas etapas.
+
+1. **Procurar a evidência que existe.** Para cada critério dos dois grupos, o implementador procura evidência de um Red válido anterior ao código de produção. Servem:
+   - commits locais;
+   - logs guardados com data;
+   - saídas registradas no momento.
+
+   Se encontrar, registra a referência exata (hash, arquivo de log e trecho), e o critério sai da lista. Não vale uma execução nova, nem um andaime recriado, nem uma inferência sobre a ordem.
+2. **Registrar a não conformidade.** Para os critérios que ficarem, o implementador acrescenta ao `review.md` da fatia uma seção "Não conformidade de TDD" com:
+   - os critérios;
+   - o que aconteceu, por exemplo: "Red obtido contra andaime recriado depois do código; sem Red observado antes do código de produção" ou "Red só pela ausência do serviço; sem o ciclo verde sem trava → Red da corrida → trava";
+   - o tratamento aplicado;
+   - a confirmação ou correção das causas abaixo.
+
+   O registro anterior é preservado sem edição, e nenhum texto pode dar a entender que houve Red nesses critérios.
+3. **Provar a sensibilidade por mutação.** É uma prova por critério, com o título "sensibilidade (mutação), não Red". A mutação retira só a proteção que o critério descreve, e não o comportamento inteiro. Exemplos:
+
+   | Critério | Mutação |
+   |---|---|
+   | E08-02 A-4 | congelar a parcela inteira como `em_pedido`, ignorando a parte pendente |
+   | E08-02 A-11 | duas mutações, uma por caminho: retirar a recusa do ORM (a base de só inserção) de um dos modelos; retirar a trigger de um dos modelos |
+   | E08-02 A-20 | reler a rodada sem `select_for_update` em `abrir_pagamento` |
+   | E08-02 A-21 | ler os produtos sem trava na abertura |
+   | E08-03 A-19 | ler a `SituacaoDoPedido` sem trava em `pedir_pagamento` |
+   | E08-04 A-16 | decidir o destino sem travar a `SituacaoDoPedido` |
+   | E08-04 A-17 | decidir sem reler, sob a trava, se o pagamento já tem destino |
+   | E08-06 A-11 | nenhuma: o critério foi reescrito pela correção E08-R02 e ganha um Red real (E08-06). O texto antigo entra só no registro da não conformidade (passo 2). |
+
+   Para cada mutação, o registro traz:
+   - o trecho mudado e o comando, com arquivos inteiros e sem `-k`;
+   - a falha por asserção (tempo esgotado ou erro de infraestrutura não servem);
+   - a mutação desfeita e o teste verde.
+
+   Se uma mutação razoável não fizer o teste falhar, o implementador registra isso como limite do teste e propõe o reforço do teste, sem mudar o critério.
+4. **Correções com Red real.** Os critérios novos das correções E08-R01 a E08-R05 seguem Red → Green → Refactor com as regras de prevenção. Isso inclui o E08-06 A-11 reescrito.
+
+Os passos 2 e 3 são o tratamento definitivo dos critérios antigos.
+
+### Causas prováveis, a confirmar pelo implementador
+
+1. **O Green foi maior que o mínimo.** As travas entraram junto com o comportamento funcional. Nenhum teste em falha exigia essas travas naquele momento.
+2. **A tabela de cobertura não separava os tipos de critério.** Ela não distinguia o critério de concorrência do funcional, então um Red pela ausência do serviço pareceu suficiente.
+3. **O andaime dependia dos testes.** No A-4 e no A-11, os testes só foram corrigidos depois que o andaime já tinha sido substituído.
+
+### Prevenção (soma-se às da E05-R04 e da E06-R05)
+
+- **Concorrência com duas linhas no registro.** A tabela de cobertura do Red registra cada critério de concorrência em duas linhas:
+  - o "verde funcional sem a proteção", com o comando;
+  - o "Red da corrida", com a falha observada.
+
+  A trava só é escrita depois da segunda linha.
+- **Teste corrigido depois do andaime.** Se um teste precisar de correção depois que o andaime foi substituído, o implementador para e registra o fato antes de seguir (Red tardio, E06-R05). Não volta a montar o andaime.

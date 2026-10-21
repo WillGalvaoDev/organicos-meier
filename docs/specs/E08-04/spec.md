@@ -153,3 +153,12 @@ Exige transação e o pagamento já travado: é o caso do receptor, dentro de `s
 
 - Depende de E04-02, E07-03 e E08-02 a E08-03. O cancelamento usado na regra é da E08-06.
 - Sem decisões em aberto.
+
+## Correção E08-R06 — evidência de TDD (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a`, R06. Os critérios A-16 e A-17 desta fatia recebem o tratamento da seção "Correção E08-R06" de `docs/specs/E08-02/spec.md`:
+
+- a evidência que já existe, ou o registro da não conformidade no `review.md` desta fatia;
+- a prova de sensibilidade por mutação.
+
+A decisão de destino desta fatia não muda. A R01, que impedia o pagamento a mais de chegar a ela, é corrigida na E08-05.

@@ -123,3 +123,28 @@ calcular_cobranca(compradores: Sequence[CompradorACobrar], frete: Decimal) -> li
 
 - Depende de E01-03 e E03-04.
 - Sem decisões em aberto.
+
+## Correções da revisão da E08 (2026-10-21)
+
+O parecer consolidado do agente 3 sobre `2714a6a` está no `review.md` desta fatia e reprovou a E08. Esta fatia foi aprovada no escopo local e não muda. As correções estão nas fatias afetadas:
+
+| Achado | Classificação | Onde está a especificação | Critérios novos ou alterados |
+|---|---|---|---|
+| R01 — pedido pago fora da reconsulta da margem | bloqueador | E08-05, "Correção E08-R01 e E08-R03" | E08-05 A-22, A-23 e A-28 |
+| R02 — cobrança só enfileirada na suspensão ou remoção | importante | E08-03 (criação) e E08-06 (moderação), "Correção E08-R02…" | E08-03 A-21, A-22, A-27 e A-28; E08-06 A-11 (reescrito), A-13 a A-15 |
+| R03 — resposta perdida perto de `T0 + 24h` | importante | E08-03 (recusa com busca) e E08-05 (bloqueio por pagamento) | E08-03 A-23 a A-26; E08-05 A-24 a A-28 |
+| R04 — pedido de valor zero | importante; **decidido pelo responsável em 2026-10-21: restringir no cadastro** | E08-02, "Correção E08-R04" | E08-02 A-22 a A-27 |
+| R05 — teste de fronteira mais restritivo que o requisito | importante | E08-07, "Correção E08-R05" | E08-07 A-9 |
+| R06 — evidência de TDD | importante; **tratamento decidido pelo responsável em 2026-10-21: o mesmo da E05-R04 e da E06-R05** | E08-02, "Correção E08-R06" (vale para toda a E08) | sem critério novo; registro e mutação por critério |
+| R07 — redação de E08-02 A-12 e A-21 | melhoria | `docs/melhorias.md`, M-3 | nenhum: fica para a revisão final das melhorias |
+
+**Ordem sugerida:**
+
+1. R05, que devolve a suíte verde como linha de base.
+2. R04.
+3. R02 e R03, a partir da E08-03.
+4. R01 e o bloqueio da R03, na E08-05.
+5. A moderação, na E08-06.
+6. O registro da R06.
+
+Ao final, o implementador roda a suíte completa sem `--deselect`, as provas do parecer e as corridas relevantes. A prova R04 do parecer fica substituída pelos critérios da E08-02.

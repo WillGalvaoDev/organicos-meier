@@ -157,3 +157,44 @@ A página não tem nenhum campo, botão ou rota para alterar `T0`, os prazos, os
 
 - Depende de E06-04, E07-04, E07-06 e E08-02 a E08-04.
 - Sem decisões em aberto.
+
+## Correção E08-R01 e E08-R03 — reconsulta de todos os pedidos e bloqueio por pagamento (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a` (`docs/specs/E08-01/review.md`, R01 e a parte do bloqueio da R03). A recusa da criação está na E08-03, na seção da mesma correção.
+
+### Diagnóstico
+
+- **R01 (bloqueador).** A reconsulta da margem só percorria os pedidos `aguardando_pagamento` e `cancelado`. A infraestrutura 4.3 manda reconsultar todas as tentativas do ciclo e buscar pela referência.
+  - Um pedido `pago` também pode receber dinheiro: por exemplo, uma tentativa anterior que expirou e depois foi aprovada.
+  - Esse pagamento a mais não era reconhecido durante a margem, e a devolução por duplicidade (E08-04) não acontecia.
+  - A decisão "só aguardando e cancelado" desta fatia contrariava a fonte superior e está revogada.
+- **R03 (bloqueio).** O bloqueio só percorria tentativas `criada`. Uma cobrança pendente sem tentativa vinculada ficava sem cancelamento ativo em `T0 + 24h`, mesmo depois de encontrada pela busca. É a cobrança órfã, definida na E08-03.
+
+### Regras
+
+**Tarefa da margem.** O passo 2 de `reconsultar_pagamentos_da_margem_agora` passa a valer para **todos os pedidos** das aberturas em margem, em qualquer situação (`aguardando_pagamento`, `pago` ou `cancelado`).
+
+- O passo 3, a decisão dos aprovados sem destino, vale para os mesmos pedidos.
+- O valor devolvido continua sendo o número de pedidos reconsultados com sucesso.
+- O resto da tarefa não muda: a consulta fica fora de transação, a falha vai para o log, e a decisão de cada pagamento é feita sob a trava dele.
+
+**Tarefa de bloqueio.** O `_bloquear(abertura)` ganha um segundo passo, na mesma transação da abertura, depois do passo das tentativas `criada`:
+
+1. Seleciona os `PagamentoNoProvedor` `pendente` cuja referência é a de um pedido da abertura e cujo `id_externo` não é o de nenhuma `TentativaDePagamento`. São as cobranças órfãs.
+2. Pula a órfã que já tem alguma chamada `cancelar_cobranca` com `parametros.id_externo` igual ao dela, em qualquer situação. Isso inclui a de recuperação da E08-03. Assim, o cancelamento é agendado uma vez só, e uma chamada que falhou não é reagendada (a regra do A-5).
+3. Para as outras, agenda `agendar_chamada("cancelar_cobranca", f"p{pagamento.pk}:prazo", parametros={"id_externo": pagamento.id_externo})`.
+4. O total devolvido soma esses agendamentos.
+
+O alvo `p<pagamento>:prazo` só é agendado pelo bloqueio, e o bloqueio não trava pedido nem pagamento. Por isso vale a regra contra impasse da correção E07-R01.
+
+**Como a órfã é encontrada.** O bloqueio só vê o que o sistema já registrou. A órfã é registrada:
+
+- pela recusa da criação, na E08-03;
+- ou pela reconsulta da margem, que busca pela referência todos os pedidos a cada 10 minutos.
+
+Com atraso de consistência do provedor (L-6), o cancelamento ativo acontece na primeira passada do bloqueio depois que a reconsulta encontrar a cobrança.
+
+### Invariantes acrescentados
+
+- Durante a margem, todo pagamento da referência de qualquer pedido da abertura é reconsultado, inclusive o de pedido já pago.
+- Toda cobrança pendente conhecida de uma abertura com o prazo vencido recebe um cancelamento ativo, tenha ou não tentativa vinculada.

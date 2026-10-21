@@ -110,3 +110,37 @@ A moderação trava a conta (E02-08) e os fornecedores, a rodada, os produtos e 
 
 - Depende de E02-08, E05-07 e E08-02 a E08-04.
 - Sem decisões em aberto. A dedução sobre a conta removida está registrada nas Decisões técnicas.
+
+## Correção E08-R02 — cobrança só enfileirada na suspensão ou na remoção (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a` (`docs/specs/E08-01/review.md`, R02).
+
+### Diagnóstico
+
+Quando a moderação chega, a tentativa pode estar só `solicitada`. A criação da cobrança ainda está na fila, ou já em andamento no provedor.
+
+- A moderação só agendava cancelamento para tentativas `criada`.
+- O `executar` da criação não conferia o pedido, e o `concluir` também não.
+- Resultado: o pedido ficava `cancelado`, mas uma cobrança nascia `pendente` no provedor, sem cancelamento.
+
+O teste anterior do A-11 rodava `pedir_pagamento` e `processar_chamadas` dentro da transação que segurava a trava. Isso fechava justamente a janela entre a solicitação e a criação, que existe na aplicação. O critério foi reescrito.
+
+Além disso, o caso-limite "Suspensão e pagamento ao mesmo tempo" desta especificação dizia que a tentativa criada antes era cancelada pela suspensão. Na verdade, nesse momento ela ainda está `solicitada`. O texto correto está abaixo.
+
+### Regras
+
+- `cancelar_pedidos_nao_pagos` não muda. Ela continua sem travar pagamento e sem esperar chamada externa.
+- A coordenação fica na operação `criar_cobranca`, na E08-03, seção "Correção E08-R02 e E08-R03":
+  - o `executar` recusa com `pedido_cancelado`, sem chamar `criar_cobranca`;
+  - o `concluir` trava a situação do pedido e, se ela estiver `cancelado`, agenda o cancelamento com o motivo da moderação (`suspensao` ou `remocao_da_conta`);
+  - uma cobrança órfã, criada com a resposta perdida, é encontrada pela busca da recusa e cancelada.
+- O pedido cancelado não é reaberto, e a reativação não o restaura (decisão técnica desta fatia, mantida).
+
+### Caso-limite corrigido
+
+**Suspensão e pagamento ao mesmo tempo.** `pedir_pagamento` e a moderação travam a situação do pedido.
+
+| Quem trava primeiro | O que acontece |
+|---|---|
+| O pagamento | A tentativa nasce `solicitada`, e a suspensão cancela o pedido em seguida. Depois, a criação é recusada com `pedido_cancelado`, e nada nasce no provedor. Se a criação já estiver em andamento, o `concluir` agenda o cancelamento. |
+| A suspensão | O pagamento recebe `pedido_cancelado` ou `conta_inativa`, e nenhuma tentativa nasce. |

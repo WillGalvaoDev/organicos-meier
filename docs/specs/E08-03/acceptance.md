@@ -40,3 +40,34 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-5 | também marcado `acceptance`, com o comentário `T-1` |
 | A-14 a A-17 | `tests/tecnicos/test_pedidos_telas_comprador.py` e `tests/tecnicos/test_permissoes_politica_rotas.py` (teste existente) |
 | A-19, A-20 | `tests/tecnicos/test_pedidos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
+
+## Correção E08-R02 e E08-R03 — criação de cobrança que não pode mais ser paga (2026-10-21)
+
+Valem as regras de prevenção do início deste arquivo e as da correção E08-R06 (E08-02, `spec.md`). Isso inclui as duas linhas por critério de concorrência: o verde funcional sem a proteção e o Red da corrida. O Red é observável no código atual. As provas R02 e R03 do parecer mostram uma cobrança `pendente` sem cancelamento.
+
+Arranjo comum da fatia. "Parar a criação no provedor" quer dizer um envoltório de teste no provedor configurado: ele chama o simulador de verdade e depois segura a thread num `threading.Event`, com prazo de espera e falha por asserção.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-21 | Correção R02 | negativo | o A-1 (tentativa `solicitada`); depois, a situação de `X` passa a `cancelado` pela suspensão de A (E08-06) | `processar_chamadas()` | a chamada `falhou` com `pedido_cancelado`; a tentativa `nao_criada` com `pedido_cancelado`; nenhuma `CobrancaSimulada`; o simulador registrou uma `buscar_por_referencia` e nenhuma `criar_cobranca` |
+| A-22 | Correção R02 | negativo | tentativa 1 criada e expirada; tentativa 2 `solicitada`; depois, a cobrança 1 aprovada no simulador e sincronizada, o que deixa `X` `pago` | `processar_chamadas()` | a chamada da tentativa 2 `falhou` com `pedido_pago`; a tentativa 2 `nao_criada`; uma `CobrancaSimulada` só, a da tentativa 1 |
+| A-23 | Correção R03 | positivo | relógio em `T0 + 23h59min30s`; o A-1; `falhar_proximas(1, operacao="criar_cobranca", depois_de_executar=True)` | `processar_chamadas()`; relógio em `T0 + 24h01min`; `processar_chamadas()` duas vezes | a primeira deixa a cobrança criada no simulador e a chamada `pendente`; na segunda: chamada `falhou` com `prazo_encerrado`, tentativa `nao_criada` com `prazo_encerrado`, o pagamento registrado como `pendente`, uma chamada `cancelar_cobranca` com alvo `t<tentativa>:recuperacao:1` e o `id_externo` da cobrança, e um log `warning` "Cobrança sem tentativa encontrada na recusa da criação"; na terceira: a cobrança `cancelado` no simulador e no registro; uma `CobrancaSimulada` só, nenhuma criada depois do prazo |
+| A-24 | Correção R03 | positivo | o arranjo do A-23, mas a primeira execução falha por exceção local no `concluir` (`RuntimeError` por `monkeypatch`, só uma vez) depois de o simulador criar a cobrança | as mesmas execuções do A-23 | a primeira desfaz a chamada, que fica `pendente` com o contador inalterado; o resto como no A-23: a órfã é encontrada e cancelada |
+| A-25 | Correção R03 | negativo | o A-1, com o pedido cancelado como no A-21 | (i) `indisponivel()` e `processar_chamadas()`; depois `normalizar()` e `processar_chamadas()` um minuto depois; (ii) a busca levanta `RecusaDoProvedor("x")` (falha de teste) | (i) a primeira deixa a chamada `pendente` com `indisponivel` e a tentativa `solicitada`; a segunda termina como o A-21; (ii) a chamada `falhou` com `pedido_cancelado`, a tentativa `nao_criada` e um log `warning` com a tentativa e o código `x` |
+| A-26 | Correção R03, §8.3 | positivo | o arranjo do A-23, com a cobrança órfã aprovada no simulador às `T0 + 24h00min30s`, depois do prazo | a segunda execução do A-23 | o `falhou` sincroniza o pagamento `aprovado`; pela E08-04, criado antes de `T0 + 24h` e aprovado antes de `T0 + 48h`, ele quita: destino `quita`, `X` `pago` com `quitado_em` `T0 + 24h00min30s`, um `pagamento_confirmado`; nenhum cancelamento agendado, porque não há órfã pendente |
+| A-27 | Correção R02 | concorrência | o arranjo do A-22 antes da aprovação: tentativa 1 expirada e tentativa 2 `solicitada`; a criação da tentativa 2 parada no provedor, depois de criar | outra thread aprova a cobrança 1 no simulador e a sincroniza, o que quita `X` (E08-04), e termina; depois a criação é liberada | a outra thread termina sem esperar a criação; a tentativa `criada`; uma chamada `cancelar_cobranca` com alvo `t<tentativa>:pedido_pago`; depois de `processar_chamadas()`, a cobrança `cancelado` |
+| A-28 | Correção R02 | positivo | a tentativa `solicitada` do A-21, antes do processamento; e a `nao_criada` com `pedido_cancelado` depois dele | A abre `/pedidos/<X>/` | a página mostra "Cancelado" e nenhuma das mensagens "Estamos gerando a sua cobrança…" e "Não foi possível gerar a cobrança antes do fim do prazo." |
+
+O cancelamento com a moderação durante a criação (suspensão e remoção) está na E08-06, A-11 reescrito e A-13 a A-15.
+
+## Mapeamento para testes da correção
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-21 a A-26 | `tests/tecnicos/test_pedidos_tentativas.py` |
+| A-27 | `tests/tecnicos/test_pedidos_concorrencia.py` |
+| A-28 | `tests/tecnicos/test_pedidos_telas_comprador.py` |
+
+## Correção E08-R06
+
+O A-19 desta fatia recebe o tratamento da seção "Correção E08-R06" de `docs/specs/E08-02/spec.md`.

@@ -95,3 +95,39 @@ A tela usa os mesmos controles dos testes (E07-01). Ela só existe com o simulad
 
 - Depende de E02-10, E07-01, E07-02, E07-05 e E08-03.
 - Sem decisões em aberto.
+
+## Correção E08-R05 — teste de fronteira mais restritivo que o requisito (2026-10-21)
+
+Origem: parecer do agente 3 sobre `2714a6a` (`docs/specs/E08-01/review.md`, R05).
+
+### Diagnóstico
+
+A suíte completa falha num único teste: `tests/tecnicos/test_pagamentos_fronteiras.py::test_nenhuma_rota_comando_ou_admin_registra_pagamento`, na linha 87.
+
+- **O que o teste faz.** Junta as rotas de `apps.pagamentos` e de `apps.simulador_pagamentos` num só conjunto e só admite `pagamentos_avisos`.
+- **O que o requisito diz.** O requisito do teste é o E07-03 A-12 e o cenário 37 (o comentário do teste diz "A-12", mas a referência correta é E07-03, não E07-01). Ele proíbe que uma rota, um comando ou o admin registre pagamento. Isso quer dizer gravar em `PagamentoNoProvedor` ou `ConsultaDoPagamento` por fora da sincronização.
+- **As rotas desta fatia.** As cinco rotas do simulador foram autorizadas por esta especificação. Elas mudam o estado do provedor simulado pelos controles da E07-01 e não gravam registros de pagamento. A entrada no sistema continua pela consulta e pela sincronização.
+
+O problema está no teste, não no requisito nem nas views. Não é preciso mover as views nem mudar regra de negócio.
+
+### Regras
+
+O teste é alinhado ao requisito sem perder a prova negativa:
+
+1. **As rotas de cada app ficam separadas,** com igualdade exata, não apenas inclusão:
+   - as de `apps.pagamentos` são exatamente `{"pagamentos_avisos"}`;
+   - as de `apps.simulador_pagamentos` são exatamente as cinco desta fatia: `simulador_pagamentos_lista`, `simulador_pagamentos_aprovar`, `simulador_pagamentos_recusar`, `simulador_pagamentos_expirar` e `simulador_pagamentos_entregar`.
+
+   Uma rota a mais em qualquer um dos dois apps faz o teste falhar.
+2. **As outras asserções continuam:** sem `django.contrib.admin` e sem pasta `management` nos dois apps.
+3. **O comentário do teste passa a citar E07-03 A-12, cenário 37 e E08-07.**
+4. **A prova de que as cinco rotas não gravam pagamento continua com o teste existente** `test_so_a_sincronizacao_escreve_nos_registros_de_pagamento`. Ele não muda nesta correção, e a heurística dele já está registrada como M-2.
+5. **Continuam valendo** as políticas (A-6), o 404 sem o simulador configurado (A-7) e a varredura de importações (A-8).
+
+### Evidência
+
+Esta correção não muda código de produção. O registro do implementador traz:
+
+- a falha atual da suíte, com o comando e a linha 87;
+- uma prova de que a igualdade exata recusa rota indevida. Por exemplo, uma rota de teste a mais com `urlpatterns` trocado por `override_settings(ROOT_URLCONF=...)`: o teste alinhado falha, com a saída registrada, e passa sem ela;
+- `uv run pytest -q` completo, **sem `--deselect` nem filtro**, verde.

@@ -49,3 +49,32 @@ A ordem das parcelas de `P2` é: A com 4, B com 6 e B com 2. São 12 unidades e 
 | A-14 | também marcado `acceptance`, com o comentário `cenário 65` |
 | A-16 | `tests/tecnicos/test_notificacoes_falha_isolada.py` ou arquivo próprio, marcado `acceptance`, com o comentário `cenário 24 (abertura real)` |
 | A-20, A-21 | `tests/tecnicos/test_pedidos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
+
+## Correção E08-R04 — pedido de valor zero (2026-10-21)
+
+Valem as regras de prevenção do início deste arquivo e as da correção E08-R06 (`spec.md`). O Red é observável no código atual, porque nenhuma das recusas abaixo existe hoje.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-22 | Correção R04 | positivo e negativo | o administrador | `criar_produto` em kg com incremento 0,001 e preço 4,99; depois com preço 5,00; e com incremento 1 e preço 0,01 | o primeiro levanta `ValidationError` em `preco`, com "Com este preço e este incremento, a menor quantidade custaria menos de R$ 0,01. Aumente o preço ou o incremento.", e nada é criado nem auditado; os outros dois criam o produto |
+| A-23 | Correção R04 | negativo | produto com incremento 0,001 e preço 5,00, com uma parcela `ativa` | `editar_produto(preco="4.99")`; depois `editar_produto(nome="Outro")` | o primeiro levanta o mesmo `ValidationError`; o preço continua 5,00; nenhuma auditoria `produto.editar` nem `produto.alterar_preco`; nenhum `preco_alterado`; o segundo grava só o nome |
+| A-24 | Correção R04 | negativo | produto com incremento 1 e preço 0,01, rodada em `interesse`, sem parcelas | `alterar_incremento` para 0,25; depois para 0,5 | o primeiro levanta `IncrementoIncompativel` com o código `centavo` e "Com este incremento, a menor quantidade custaria menos de R$ 0,01 ao preço atual."; o incremento continua 1; sem auditoria; o segundo é aceito (0,005) |
+| A-25 | Correção R04 | negativo | — | `Produto.objects.create` com incremento 0,001 e preço 0,01; `UPDATE` em SQL direto de um produto válido para preço 0,01 com incremento 0,001 | `IntegrityError` com a restrição `produto_menor_quantidade_custa_um_centavo` nos dois; nada gravado |
+| A-26 | Correção R04, §9 | positivo | o arranjo comum mais o comprador C com 0,001 kg de `P3` (kg, incremento 0,001, preço 5,00, sem múltiplo, sem limite); frete R$ 22,00 | a abertura | três pedidos; o de C tem `P3` com subtotal 0,01, produtos 0,01 e serviço 0,00; a soma do frete dos três é exatamente 22,00, pelo maior resto (E08-01); os pedidos de A e B têm os mesmos itens e subtotais do A-1; nenhum erro |
+| A-27 | Correção R04 | negativo | o administrador | envia o formulário de novo produto com incremento 0,001 e preço 0,01; envia o formulário de incremento de um produto de R$ 0,01 com 0,25 | as duas páginas mostram a mensagem no campo; nada é gravado |
+
+## Correção E08-R06 — evidência de TDD (2026-10-21)
+
+Não há critério novo. Os critérios A-4, A-11, A-20 e A-21 desta fatia recebem o tratamento da seção "Correção E08-R06" do `spec.md`:
+
+- a evidência que já existe, ou o registro da não conformidade;
+- a prova de sensibilidade por mutação.
+
+O revisor confere esse registro no `review.md` da fatia.
+
+## Mapeamento para testes da correção
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-22 a A-25, A-27 | `tests/tecnicos/test_catalogo_valor_minimo.py` (A-27 com o cliente HTTP) |
+| A-26 | `tests/tecnicos/test_pedidos_abertura.py` |

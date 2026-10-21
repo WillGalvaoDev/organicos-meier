@@ -32,3 +32,38 @@ Cada critério precisa de um teste automatizado escrito antes do código, com a 
 | A-1 a A-10 | `tests/tecnicos/test_pedidos_moderacao.py` |
 | A-1 | também marcado `acceptance`, com o comentário `cenário 19 (pedidos)` |
 | A-11, A-12 | `tests/tecnicos/test_pedidos_concorrencia.py` (marcador `concorrencia`, `django_db(transaction=True)`) |
+
+## Correção E08-R02 — cobrança só enfileirada na suspensão ou na remoção (2026-10-21)
+
+Valem as regras de prevenção do início deste arquivo e as da correção E08-R06 (E08-02, `spec.md`), inclusive as duas linhas por critério de concorrência. O Red é observável no código atual: a prova R02 do parecer termina com `{'tentativa': 'criada', 'cobrancas_pendentes': ['sim-…'], 'cancelamentos': []}`.
+
+**A-11 reescrito.** O texto abaixo substitui o A-11 da tabela principal. O teste atual do A-11 é reescrito com Red novo e sem andaime. A prova de sensibilidade do tratamento E08-R06 é feita sobre o texto novo.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-11 | Spec da fatia, correção R02 | concorrência | sem a tentativa do arranjo | uma thread suspende A e outra faz `pedir_pagamento(A, X)`, nas duas ordens, com a primeira segurando a trava da situação até a segunda aparecer esperando (prazo de espera com falha por asserção); `processar_chamadas()` só depois que as duas terminaram, fora de qualquer transação de teste | pagamento antes: a tentativa nasce `solicitada`, e a suspensão cancela `X` sem agendar cancelamento; o processamento recusa a criação com `pedido_cancelado`, a tentativa fica `nao_criada` e não existe `CobrancaSimulada`; suspensão antes: o pagamento recebe `PagamentoRecusado` (`pedido_cancelado` ou `conta_inativa`) e nenhuma tentativa nasce; nas duas ordens, `X` termina `cancelado` e não há cobrança `pendente` no simulador |
+
+**Critérios novos:**
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-13 | Correção R02, prova do parecer | negativo | sem a tentativa do arranjo; `pedir_pagamento(A, X)` deixa a tentativa `solicitada` | parametrizado: (i) `suspender(admin, A)`; (ii) `remover(admin, A)`; depois `processar_chamadas()` duas vezes | nos dois: `X` `cancelado`, com o motivo `suspensao` ou `remocao_da_conta`; a tentativa `nao_criada` com `pedido_cancelado`; nenhuma cobrança `pendente` no simulador; nenhuma chamada `criar_cobranca` ao simulador |
+| A-14 | Correção R02 | concorrência | sem a tentativa do arranjo; a tentativa `solicitada`; a criação parada no provedor depois de criar (envoltório de teste da E08-03) | parametrizado: (i) a suspensão; (ii) a remoção, noutra thread; depois a criação é liberada; depois `processar_chamadas()` | a moderação termina sem esperar a criação parada (falha por asserção se ela aparecer esperando trava); depois da liberação, a tentativa fica `criada` e existe uma chamada `cancelar_cobranca` com alvo `t<tentativa>:suspensao` ou `t<tentativa>:remocao_da_conta`; o processamento deixa a cobrança `cancelado` no simulador e no registro; `X` continua `cancelado`; nenhum destino |
+| A-15 | Correção R02, §2 | positivo | o A-14 (i) concluído | `reativar(admin, A)` e A faz `POST /pedidos/<X>/pagar/` | 409 com "Este pedido foi cancelado e não pode mais ser pago."; nenhuma tentativa nova; nenhuma cobrança nova |
+
+## Mapeamento para testes da correção
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-11, A-14 | `tests/tecnicos/test_pedidos_concorrencia.py` |
+| A-13, A-15 | `tests/tecnicos/test_pedidos_moderacao.py` |
+
+## Correção E08-R06
+
+O A-11 antigo entra no registro da não conformidade da seção "Correção E08-R06" de `docs/specs/E08-02/spec.md`, com o texto e o teste antigos.
+
+O A-11 reescrito não usa prova por mutação. Ele segue o ciclo real:
+
+1. o verde funcional sem a proteção nova da E08-03;
+2. o Red da corrida, que hoje deixa uma cobrança `pendente`;
+3. a proteção.
