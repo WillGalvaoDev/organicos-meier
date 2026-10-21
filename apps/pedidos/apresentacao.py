@@ -62,7 +62,9 @@ def situacao_do_pagamento(pedido: Pedido, comprador_ativo: bool) -> Pagamento:
     dentro_do_prazo = aceita_tentativas(pedido.abertura, agora())
     return Pagamento(
         codigo_pix=codigo,
-        gerando=aberta is not None and aberta.situacao == SituacaoDaTentativa.SOLICITADA,
+        gerando=dentro_do_prazo
+        and aberta is not None
+        and aberta.situacao == SituacaoDaTentativa.SOLICITADA,
         falhou_por_prazo=falhou_por_prazo,
         pode_pagar=aguardando and dentro_do_prazo and aberta is None and comprador_ativo,
     )

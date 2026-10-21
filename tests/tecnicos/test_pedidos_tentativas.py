@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.db.transaction import TransactionManagementError
 
 from apps.contas.models import Situacao
+from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import (
     OPERACOES,
@@ -20,15 +21,24 @@ from apps.pagamentos.chamadas import (
     registrar_operacao,
 )
 from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor, SituacaoDaChamada
-from apps.pedidos.models import Pedido, SituacaoDoPedido, TentativaDePagamento
+from apps.pagamentos.provedor import RecusaDoProvedor
+from apps.pedidos.models import (
+    DestinoDoPagamento,
+    Pedido,
+    SituacaoDoPedido,
+    TentativaDePagamento,
+)
 from apps.pedidos.pagamento import PagamentoRecusado, agendar_cancelamento, pedir_pagamento
 from apps.simulador_pagamentos.models import CobrancaSimulada
+from apps.simulador_pagamentos.provedor import ProvedorSimulado
 from tests.apoio.pedidos import (
     T0,
     Arranjo,
     cancelar_direto,
     marcar_pago,
     pedido_aberto,
+    pedido_avulso,
+    sincronizar,
 )
 from tests.conftest import RelogioControlado
 
@@ -458,3 +468,207 @@ def test_o_banco_recusa_tentativa_incoerente(cenario: tuple[Arranjo, Pedido, Any
             codigo_da_falha="",
         )
     assert TentativaDePagamento.objects.filter(pedido=x).count() == 2
+
+
+# --- Correção E08-R02 e E08-R03: a criação que não pode mais ser paga (A-21 a A-26) -----------
+
+LOG_DO_SIMULADOR = "apps.simulador_pagamentos"
+AVISO_ORFA = "Cobrança sem tentativa encontrada na recusa da criação"
+H = timedelta(hours=1)
+SEGUNDO = timedelta(seconds=1)
+
+
+def _operacoes_do_simulador(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage().split(": ", 1)[1].split()[0]
+        for r in caplog.records
+        if r.name == LOG_DO_SIMULADOR
+    ]
+
+
+def _solicitada(arranjo: Arranjo, pedido: Pedido) -> TentativaDePagamento:
+    tentativa = pedir_pagamento(arranjo.a, pedido)
+    assert tentativa.situacao == "solicitada"
+    return tentativa
+
+
+def _cobranca_orfa_perdida(
+    arranjo: Arranjo, pedido: Pedido, relogio: RelogioControlado, sim: Any
+) -> TentativaDePagamento:
+    """Às `T0 + 23h59min30s` o provedor cria a cobrança e a resposta se perde (A-23)."""
+    relogio.congelar(T0 + 24 * H - 30 * SEGUNDO)
+    tentativa = _solicitada(arranjo, pedido)
+    sim.falhar_proximas(1, operacao="criar_cobranca", depois_de_executar=True)
+    processar_chamadas()
+    assert CobrancaSimulada.objects.count() == 1
+    (chamada,) = _chamadas("criar_cobranca")
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.PENDENTE, "indisponivel")
+    return tentativa
+
+
+def test_criacao_de_pedido_cancelado_e_recusada_sem_criar_cobranca(
+    cenario: tuple[Arranjo, Pedido, Any], caplog: pytest.LogCaptureFixture
+) -> None:  # A-21
+    arranjo, x, _ = cenario
+    tentativa = _solicitada(arranjo, x)
+    cancelar_direto(x, "suspensao", T0 + 90 * MIN)
+    caplog.set_level(logging.INFO, logger=LOG_DO_SIMULADOR)
+    processar_chamadas()
+    (chamada,) = _chamadas("criar_cobranca")
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.FALHOU, "pedido_cancelado")
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "pedido_cancelado")
+    assert CobrancaSimulada.objects.count() == 0
+    assert _operacoes_do_simulador(caplog) == ["buscar_por_referencia"]
+
+
+def test_criacao_de_pedido_pago_e_recusada_e_so_resta_a_cobranca_anterior(
+    cenario: tuple[Arranjo, Pedido, Any],
+) -> None:  # A-22
+    arranjo, x, sim = cenario
+    primeira = _criada(arranjo, x)
+    assert primeira.id_externo is not None
+    sim.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    segunda = _solicitada(arranjo, x)
+    sim.aprovar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
+    processar_chamadas()
+    chamada = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{segunda.pk}")
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.FALHOU, "pedido_pago")
+    segunda.refresh_from_db()
+    assert (segunda.situacao, segunda.codigo_da_falha) == ("nao_criada", "pedido_pago")
+    (so,) = CobrancaSimulada.objects.all()
+    assert so.id_externo == primeira.id_externo
+
+
+def test_resposta_perdida_perto_do_prazo_e_a_orfa_e_cancelada(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-23
+    arranjo, x, sim = cenario
+    tentativa = _cobranca_orfa_perdida(arranjo, x, relogio, sim)
+    (cobranca,) = CobrancaSimulada.objects.all()
+    relogio.congelar(T0 + 24 * H + MIN)
+    caplog.set_level(logging.WARNING)
+    assert processar_chamadas(limite=1) == 1
+    (chamada,) = _chamadas("criar_cobranca")
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.FALHOU, "prazo_encerrado")
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    assert PagamentoNoProvedor.objects.get(id_externo=cobranca.id_externo).situacao == "pendente"
+    (cancelamento,) = _chamadas("cancelar_cobranca")
+    assert cancelamento.alvo == f"t{tentativa.pk}:recuperacao:1"
+    assert cancelamento.parametros == {"id_externo": cobranca.id_externo}
+    avisos = [r for r in caplog.records if r.levelno == logging.WARNING and AVISO_ORFA in r.message]
+    assert len(avisos) == 1
+    assert cobranca.id_externo in avisos[0].getMessage()
+    assert processar_chamadas() == 1
+    cobranca.refresh_from_db()
+    assert cobranca.situacao == "cancelado"
+    assert PagamentoNoProvedor.objects.get(id_externo=cobranca.id_externo).situacao == "cancelado"
+    assert CobrancaSimulada.objects.count() == 1  # nenhuma criada depois do prazo
+
+
+def test_falha_local_na_conclusao_desfaz_a_chamada_e_a_orfa_ainda_e_cancelada(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-24
+    arranjo, x, _ = cenario
+    original = OPERACOES["criar_cobranca"]
+    falhas: list[int] = []
+
+    def concluir_que_falha_uma_vez(chamada: ChamadaAoProvedor, resultado: Any) -> None:
+        if not falhas:
+            falhas.append(1)
+            raise RuntimeError("falha local de teste")
+        original.concluir(chamada, resultado)
+
+    monkeypatch.setitem(
+        OPERACOES,
+        "criar_cobranca",
+        Operacao(original.executar, concluir_que_falha_uma_vez, original.falhou, original.combinar),
+    )
+    relogio.congelar(T0 + 24 * H - 30 * SEGUNDO)
+    tentativa = _solicitada(arranjo, x)
+    processar_chamadas()
+    assert falhas == [1]
+    (chamada,) = _chamadas("criar_cobranca")
+    assert (chamada.situacao, chamada.tentativas) == (SituacaoDaChamada.PENDENTE, 0)
+    (cobranca,) = CobrancaSimulada.objects.all()
+    relogio.congelar(T0 + 24 * H + MIN)
+    assert processar_chamadas(limite=1) == 1
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    (cancelamento,) = _chamadas("cancelar_cobranca")
+    assert cancelamento.alvo == f"t{tentativa.pk}:recuperacao:1"
+    assert processar_chamadas() == 1
+    cobranca.refresh_from_db()
+    assert cobranca.situacao == "cancelado"
+    assert CobrancaSimulada.objects.count() == 1
+
+
+def test_busca_indisponivel_repete_e_recusa_da_busca_vai_para_o_log(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-25
+    arranjo, x, sim = cenario
+    tentativa = _solicitada(arranjo, x)
+    cancelar_direto(x, "suspensao", T0 + 90 * MIN)
+    sim.indisponivel()
+    processar_chamadas()
+    (chamada,) = _chamadas("criar_cobranca")
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.PENDENTE, "indisponivel")
+    tentativa.refresh_from_db()
+    assert tentativa.situacao == "solicitada"
+    sim.normalizar()
+    relogio.congelar(T0 + H + 2 * MIN)
+    processar_chamadas()
+    chamada.refresh_from_db()
+    tentativa.refresh_from_db()
+    assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.FALHOU, "pedido_cancelado")
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "pedido_cancelado")
+
+    # (ii) a própria busca é recusada pelo provedor
+    y = pedido_avulso(arranjo.a, "G", "50.00")
+    outra = _solicitada(arranjo, y)
+    cancelar_direto(y, "suspensao", T0 + 90 * MIN)
+
+    def recusa(self: Any, referencia: str) -> list[Any]:
+        raise RecusaDoProvedor("x")
+
+    monkeypatch.setattr(ProvedorSimulado, "buscar_por_referencia", recusa)
+    caplog.set_level(logging.WARNING)
+    processar_chamadas()
+    segunda = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{outra.pk}")
+    assert (segunda.situacao, segunda.ultimo_erro) == (SituacaoDaChamada.FALHOU, "pedido_cancelado")
+    outra.refresh_from_db()
+    assert (outra.situacao, outra.codigo_da_falha) == ("nao_criada", "pedido_cancelado")
+    avisos = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(str(outra.pk) in m and "x" in m.split() for m in avisos), avisos
+
+
+def test_orfa_aprovada_depois_do_prazo_quita_pela_e08_04(
+    cenario: tuple[Arranjo, Pedido, Any], relogio: RelogioControlado
+) -> None:  # A-26, §8.3
+    arranjo, x, sim = cenario
+    tentativa = _cobranca_orfa_perdida(arranjo, x, relogio, sim)
+    (cobranca,) = CobrancaSimulada.objects.all()
+    aprovada_em = T0 + 24 * H + 30 * SEGUNDO
+    relogio.congelar(aprovada_em)
+    sim.aprovar(cobranca.id_externo, em=aprovada_em)
+    relogio.congelar(T0 + 24 * H + MIN)
+    processar_chamadas()
+    situacao = SituacaoDoPedido.objects.get(pedido=x)
+    assert (situacao.situacao, situacao.quitado_em) == ("pago", aprovada_em)
+    (destino,) = DestinoDoPagamento.objects.filter(pedido=x)
+    assert (destino.destino, destino.motivo) == ("quita", "")
+    assert Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado").count() == 1
+    assert _chamadas("cancelar_cobranca") == []
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")

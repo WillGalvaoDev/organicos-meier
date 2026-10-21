@@ -1,5 +1,6 @@
 """E08-06: pedidos de comprador suspenso ou removido (acceptance A-1 a A-10)."""
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -23,7 +24,9 @@ from apps.pedidos.models import (
     ParcelaNoPedido,
     Pedido,
     SituacaoDoPedido,
+    TentativaDePagamento,
 )
+from apps.pedidos.pagamento import pedir_pagamento
 from apps.simulador_pagamentos.models import CobrancaSimulada
 from tests.apoio.pedidos import (
     T0,
@@ -248,3 +251,50 @@ def test_sem_pedidos_ou_com_pedido_cancelado_nada_muda(cenario: Cenario) -> None
     suspender(c.arranjo.admin, c.arranjo.b)
     assert list(SituacaoDoPedido.objects.filter(pedido=y).values()) == antes
     assert EntradaAuditoria.objects.filter(acao="pedido.cancelar").count() == 0
+
+
+# --- Correção E08-R02: a cobrança que estava só enfileirada (A-13 e A-15) --------------------
+
+
+@pytest.mark.parametrize(
+    ("moderar", "motivo"),
+    [(suspender, "suspensao"), (remover, "remocao_da_conta")],
+    ids=["suspensao", "remocao"],
+)
+def test_tentativa_so_solicitada_nao_deixa_cobranca_pendente(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    caplog: pytest.LogCaptureFixture,
+    moderar: Any,
+    motivo: str,
+) -> None:  # A-13, prova do parecer
+    arranjo, x = pedido_aberto(relogio)
+    tentativa = pedir_pagamento(arranjo.a, x)
+    assert tentativa.situacao == "solicitada"
+    moderar(arranjo.admin, arranjo.a)
+    caplog.set_level(logging.INFO, logger="apps.simulador_pagamentos")
+    processar_chamadas()
+    processar_chamadas()
+    situacao = _situacao(x)
+    assert (situacao.situacao, situacao.motivo_do_cancelamento) == ("cancelado", motivo)
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "pedido_cancelado")
+    assert not CobrancaSimulada.objects.filter(situacao="pendente").exists()
+    assert not any("criar_cobranca" in r.getMessage() for r in caplog.records)
+
+
+def test_reativar_depois_da_criacao_recusada_nao_reabre_o_pedido(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-15 (estado do A-13; a variante concorrente fecha o A-14)
+    arranjo, x = pedido_aberto(relogio)
+    pedir_pagamento(arranjo.a, x)
+    suspender(arranjo.admin, arranjo.a)
+    processar_chamadas()
+    reativar(arranjo.admin, arranjo.a)
+    cliente = Client()
+    cliente.force_login(arranjo.a)
+    resposta = cliente.post(f"/pedidos/{x.pk}/pagar/")
+    assert resposta.status_code == 409
+    assert "Este pedido foi cancelado e não pode mais ser pago." in resposta.content.decode()
+    assert TentativaDePagamento.objects.filter(pedido=x).count() == 1
+    assert CobrancaSimulada.objects.count() == 0

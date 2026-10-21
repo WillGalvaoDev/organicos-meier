@@ -11,9 +11,10 @@ from typing import Any
 
 import pytest
 from django.db import transaction
+from django.test import Client
 
 from apps.catalogo.servicos import editar_produto
-from apps.contas.moderacao import suspender
+from apps.contas.moderacao import reativar, remover, suspender
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
@@ -30,6 +31,7 @@ from apps.pedidos.models import (
 from apps.pedidos.pagamento import PagamentoRecusado, agendar_cancelamento, pedir_pagamento
 from apps.pedidos.tarefas import bloquear_tentativas_vencidas_agora
 from apps.rodadas.fechamento import TransicaoRecusada
+from apps.simulador_pagamentos.models import CobrancaSimulada
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.pedidos import (
     T0,
@@ -338,27 +340,22 @@ def test_bloqueio_e_aviso_de_outra_mudanca_ao_mesmo_tempo(
 @pytest.mark.parametrize("ordem", ["pagamento_antes", "suspensao_antes"])
 def test_suspensao_e_pagamento_ao_mesmo_tempo(
     relogio: RelogioControlado, simulador_pagamentos: Any, ordem: str
-) -> None:  # A-11
+) -> None:  # A-11, reescrito pela correção R02
     arranjo, x = pedido_aberto(relogio)
     administrador_ = administrador()
-
-    def pagar_e_criar() -> None:
-        pedir_pagamento(arranjo.a, x)
-        processar_chamadas()  # a cobrança nasce antes de a suspensão chegar
-
     if ordem == "pagamento_antes":
         resultados = executar_em_paralelo(
-            segurando(pagar_e_criar),
+            segurando(lambda: pedir_pagamento(arranjo.a, x)),
             esperando(lambda: suspender(administrador_, arranjo.a)),
         )
         assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
         tentativa = TentativaDePagamento.objects.get(pedido=x)
-        alvos = list(
-            ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca").values_list(
-                "alvo", flat=True
-            )
-        )
-        assert alvos == [f"t{tentativa.pk}:suspensao"]
+        assert tentativa.situacao == "solicitada"
+        assert ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca").count() == 0
+        processar_chamadas()  # só depois das duas threads, fora de qualquer transação de teste
+        tentativa.refresh_from_db()
+        assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "pedido_cancelado")
+        assert CobrancaSimulada.objects.count() == 0
     else:
         resultados = executar_em_paralelo(
             segurando(lambda: suspender(administrador_, arranjo.a)),
@@ -370,6 +367,81 @@ def test_suspensao_e_pagamento_ao_mesmo_tempo(
         assert TentativaDePagamento.objects.filter(pedido=x).count() == 0
         assert ChamadaAoProvedor.objects.count() == 0
     assert SituacaoDoPedido.objects.get(pedido=x).situacao == "cancelado"
+    assert not CobrancaSimulada.objects.filter(situacao="pendente").exists()
+
+
+def _criacao_parada_no_provedor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Event, Event]:
+    """A criação chama o simulador de verdade e depois fica parada até `liberar` (com prazo)."""
+    original = OPERACOES["criar_cobranca"]
+    entrou, liberar = Event(), Event()
+
+    def parada(provedor: Any, chamada: ChamadaAoProvedor) -> Any:
+        resultado = original.executar(provedor, chamada)
+        entrou.set()
+        assert liberar.wait(20), "a outra thread esperou a criação parada"
+        return resultado
+
+    monkeypatch.setitem(
+        OPERACOES,
+        "criar_cobranca",
+        Operacao(parada, original.concluir, original.falhou, original.combinar),
+    )
+    return entrou, liberar
+
+
+@pytest.mark.parametrize("moderar", [suspender, remover], ids=["suspensao", "remocao"])
+def test_moderacao_durante_a_criacao_nao_espera_e_a_cobranca_e_cancelada(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    moderar: Any,
+) -> None:  # A-14 (i) e (ii), correção R02
+    arranjo, x = pedido_aberto(relogio)
+    tentativa = pedir_pagamento(arranjo.a, x)
+    entrou, liberar = _criacao_parada_no_provedor(monkeypatch)
+    primeira_terminou = Event()
+    administrador_ = administrador()
+
+    def executa_a_criacao(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        try:
+            return processar_chamadas()
+        finally:
+            primeira_terminou.set()
+
+    def modera(barreira: Any) -> bool:
+        barreira.wait(timeout=10)
+        assert entrou.wait(10), "a criação não entrou em execução"
+        moderar(administrador_, arranjo.a)
+        terminou_antes = not primeira_terminou.is_set()
+        liberar.set()
+        return terminou_antes
+
+    resultados = executar_em_paralelo(executa_a_criacao, modera)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor is True  # a moderação terminou sem esperar a criação
+    motivo = "suspensao" if moderar is suspender else "remocao_da_conta"
+    tentativa.refresh_from_db()
+    assert tentativa.situacao == "criada"
+    (cancelamento,) = ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca")
+    assert cancelamento.alvo == f"t{tentativa.pk}:{motivo}"
+    processar_chamadas()
+    (cobranca,) = CobrancaSimulada.objects.all()
+    assert cobranca.situacao == "cancelado"
+    assert PagamentoNoProvedor.objects.get(id_externo=cobranca.id_externo).situacao == "cancelado"
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "cancelado"
+    assert DestinoDoPagamento.objects.count() == 0
+    if moderar is suspender:  # A-15
+        reativar(administrador_, arranjo.a)
+        cliente = Client()
+        cliente.force_login(arranjo.a)
+        resposta = cliente.post(f"/pedidos/{x.pk}/pagar/")
+        assert resposta.status_code == 409
+        assert "Este pedido foi cancelado e não pode mais ser pago." in resposta.content.decode()
+        assert TentativaDePagamento.objects.filter(pedido=x).count() == 1
+        assert CobrancaSimulada.objects.count() == 1
 
 
 def test_a_suspensao_nao_espera_o_cancelamento_em_andamento(
@@ -417,3 +489,48 @@ def test_a_suspensao_nao_espera_o_cancelamento_em_andamento(
         )
     )
     assert alvos == [f"t{tentativa.pk}:prazo", f"t{tentativa.pk}:suspensao"]
+
+
+# --- E08-03, correção R02: pedido quitado com a criação em andamento (A-27) -----------------
+
+
+def test_pedido_quitado_durante_a_criacao_cancela_a_cobranca_nova(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-27
+    arranjo, x = pedido_aberto(relogio)
+    primeira = tentativa_criada(x)
+    assert primeira.id_externo is not None
+    simulador_pagamentos.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    segunda = pedir_pagamento(arranjo.a, x)
+    entrou, liberar = _criacao_parada_no_provedor(monkeypatch)
+    criacao_terminou = Event()
+
+    def executa_a_criacao(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        try:
+            return processar_chamadas()
+        finally:
+            criacao_terminou.set()
+
+    def quita(barreira: Any) -> bool:
+        barreira.wait(timeout=10)
+        assert entrou.wait(10), "a criação não entrou em execução"
+        simulador_pagamentos.aprovar(primeira.id_externo)
+        sincronizar(primeira.id_externo)
+        terminou_antes = not criacao_terminou.is_set()
+        liberar.set()
+        return terminou_antes
+
+    resultados = executar_em_paralelo(executa_a_criacao, quita)
+    assert all(r.excecao is None for r in resultados), [r.excecao for r in resultados]
+    assert resultados[1].valor is True  # a quitação terminou sem esperar a criação
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
+    segunda.refresh_from_db()
+    assert segunda.situacao == "criada"
+    (cancelamento,) = ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca")
+    assert cancelamento.alvo == f"t{segunda.pk}:pedido_pago"
+    processar_chamadas()
+    assert segunda.id_externo is not None
+    cobranca = CobrancaSimulada.objects.get(pk=int(segunda.id_externo.removeprefix("sim-")))
+    assert cobranca.situacao == "cancelado"

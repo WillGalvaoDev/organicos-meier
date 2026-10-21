@@ -1,5 +1,6 @@
 """E08-03: telas do comprador para pagar (acceptance A-14 a A-17)."""
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -12,6 +13,7 @@ from apps.pagamentos.chamadas import processar_chamadas
 from apps.pedidos.models import Pedido, TentativaDePagamento
 from apps.pedidos.pagamento import pedir_pagamento
 from tests.apoio.pedidos import (
+    T0,
     Arranjo,
     cancelar_direto,
     marcar_pago,
@@ -183,3 +185,32 @@ def test_prazo_encerrado_na_lista_e_sem_botao(
     cliente = _cliente(arranjo.a)
     assert "Prazo encerrado" in cliente.get("/pedidos/").content.decode()
     assert "Pagar com Pix" not in cliente.get(_detalhe(x)).content.decode()
+
+
+# --- Correção E08-R02 (A-28) ---------------------------------------------------------------
+
+
+def test_pedido_cancelado_nao_mostra_mensagem_de_tentativa(
+    cenario: tuple[Arranjo, Pedido],
+) -> None:  # A-28
+    arranjo, x = cenario
+    pedir_pagamento(arranjo.a, x)
+    cancelar_direto(x, "suspensao")
+    cliente = _cliente(arranjo.a)
+    for _ in range(2):  # antes e depois de a criação ser recusada
+        html = cliente.get(_detalhe(x)).content.decode()
+        assert "Cancelado" in html
+        assert "Estamos gerando a sua cobrança" not in html
+        assert "Não foi possível gerar a cobrança antes do fim do prazo." not in html
+        processar_chamadas()
+    assert TentativaDePagamento.objects.get(pedido=x).codigo_da_falha == "pedido_cancelado"
+
+
+def test_a_espera_so_aparece_dentro_do_prazo(
+    cenario: tuple[Arranjo, Pedido], relogio: RelogioControlado
+) -> None:  # regra da tela, E08-03 correção R02
+    arranjo, x = cenario
+    pedir_pagamento(arranjo.a, x)
+    relogio.congelar(T0 + timedelta(hours=24, minutes=30))
+    html = _cliente(arranjo.a).get(_detalhe(x)).content.decode()
+    assert "Estamos gerando a sua cobrança" not in html

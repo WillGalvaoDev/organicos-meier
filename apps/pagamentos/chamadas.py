@@ -20,6 +20,7 @@ from django.db.transaction import TransactionManagementError
 from apps.nucleo.tempo import agora, prazo_encerrado, somar_horas
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import (
+    PagamentoConsultado,
     PagamentoNaoEncontrado,
     Provedor,
     ProvedorIndisponivel,
@@ -46,11 +47,15 @@ class FalhaTemporaria(Exception):
 
 class FalhaDefinitiva(Exception):
     """A operação recusa antes de chamar o provedor (E08-03): é tratada como uma
-    `RecusaDoProvedor`, com a chamada em `falhou` e o `codigo` curto como último erro."""
+    `RecusaDoProvedor`, com a chamada em `falhou` e o `codigo` curto como último erro.
 
-    def __init__(self, codigo: str) -> None:
+    `encontrados` leva os pagamentos que a operação achou no provedor ao recusar (a busca pela
+    referência): o `falhou` da operação os sincroniza e cancela o que ficou sem dono."""
+
+    def __init__(self, codigo: str, *, encontrados: tuple[PagamentoConsultado, ...] = ()) -> None:
         super().__init__(codigo)
         self.codigo = codigo
+        self.encontrados = encontrados
 
 
 @dataclass(frozen=True)
