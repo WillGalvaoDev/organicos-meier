@@ -1,3 +1,17 @@
+# E08-06 — Nova revisão independente — 2026-10-21
+
+**REPROVADO no gate de processo sobre `584b323`.** Matriz: A-1 a A-15. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).
+
+R02 funcional encerrado: fila e criação em andamento cobertas para suspensão/remoção, sem esperar chamada externa nem reabrir pedido na reativação. R06 permanece no A-11 reescrito: teste inicialmente verde após proteção, conforme declaração do implementador. O tratamento autorizado abrangia os critérios antigos e exigiu explicitamente ciclo real para este A-11; sua mutação não substitui Red histórico. Necessária decisão expressa do responsável para tratar esse novo desvio, preservando o registro verdadeiro.
+
+Verificação independente global: `uv run pytest -q` sem filtro, **2160 passed in 246.21s**; Ruff lint/formatação, mypy e migrações sem pendências. Provas anteriores R01–R03: seis casos aprovados. Nova prova R08 falha por deadlock; controle de recuperação após rollback passa antes da asserção final de ausência de impasse. Comandos, fontes, limites, análise de TDD e reprodução completa no parecer consolidado.
+
+O texto anterior do revisor e os registros do implementador foram conferidos e preservados integralmente abaixo. Nenhum código de produção ou teste versionado alterado pelo revisor.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-06 — Revisão independente do agente 3 — 2026-10-21
 
 **REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`. E08 global: REPROVADO.**

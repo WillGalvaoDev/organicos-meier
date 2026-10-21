@@ -1,3 +1,17 @@
+# E08-04 — Nova revisão independente — 2026-10-21
+
+**APROVADO no escopo local sobre `584b323`.** Matriz: A-1 a A-17. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).
+
+Regressão e corridas verdes; tratamento autorizado do R06 antigo aceito. A mutação da guarda não é detectada pelo teste A-17 porque o sinal só chama na mudança de estado; limite/proposta registrados conforme spec. Controle independente de duas chamadas diretas sob trava retorna o mesmo destino e passa. Reforço não impeditivo M-4. R08 é falha do novo chamador em lote da E08-03, sem imputar defeito novo à decisão isolada.
+
+Verificação independente global: `uv run pytest -q` sem filtro, **2160 passed in 246.21s**; Ruff lint/formatação, mypy e migrações sem pendências. Provas anteriores R01–R03: seis casos aprovados. Nova prova R08 falha por deadlock; controle de recuperação após rollback passa antes da asserção final de ausência de impasse. Comandos, fontes, limites, análise de TDD e reprodução completa no parecer consolidado.
+
+O texto anterior do revisor e os registros do implementador foram conferidos e preservados integralmente abaixo. Nenhum código de produção ou teste versionado alterado pelo revisor.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-04 — Revisão independente do agente 3 — 2026-10-21
 
 **REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`. E08 global: REPROVADO.**

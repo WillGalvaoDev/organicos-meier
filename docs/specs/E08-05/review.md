@@ -1,3 +1,17 @@
+# E08-05 — Nova revisão independente — 2026-10-21
+
+**APROVADO no escopo local sobre `584b323`.** Matriz: A-1 a A-28. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).
+
+R01 encerrado: margem reconsulta também pagos e reconhece duplicidade. R03 original encerrado: bloqueio cancela órfãs conhecidas, pula cancelamento já agendado e não antecipa o prazo. A-22–A-28 e provas anteriores verdes. R08 afeta a recuperação em lote da E08-03, não este laço de reconsulta em transações separadas.
+
+Verificação independente global: `uv run pytest -q` sem filtro, **2160 passed in 246.21s**; Ruff lint/formatação, mypy e migrações sem pendências. Provas anteriores R01–R03: seis casos aprovados. Nova prova R08 falha por deadlock; controle de recuperação após rollback passa antes da asserção final de ausência de impasse. Comandos, fontes, limites, análise de TDD e reprodução completa no parecer consolidado.
+
+O texto anterior do revisor e os registros do implementador foram conferidos e preservados integralmente abaixo. Nenhum código de produção ou teste versionado alterado pelo revisor.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-05 — Revisão independente do agente 3 — 2026-10-21
 
 **REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`. E08 global: REPROVADO.**

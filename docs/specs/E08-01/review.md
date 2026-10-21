@@ -1,3 +1,212 @@
+# E08 — Nova revisão independente do agente 3 — 2026-10-21
+
+**Veredito global: REPROVADO sobre `584b323c8ec2da97a147642f25757592323da6be`, branch `e08-implementacao`.** R01 a R05 estão corrigidos nos cenários apontados. O tratamento dos critérios antigos de R06 foi registrado conforme a decisão de 2026-10-21, mas o A-11 reescrito da E08-06 descumpriu novamente o ciclo expressamente exigido. Há também um novo achado importante, R08: impasse na recuperação de vários pagamentos. Não foi demonstrada perda definitiva de dinheiro; a repetição após o rollback recuperou os destinos.
+
+## Fontes e matriz revalidada
+
+Lidas antes do código as correções de spec.md/acceptance.md do commit `7a1fb49`, as decisões registradas para R04/R06 e os registros acrescentados pelo implementador em `584b323`. Mantidas as fontes superiores e a leitura da revisão anterior (funcional v1.6, infraestrutura v1.7 e AGENTS.md). Conferidos os diffs de produção/testes desde `c1d38ec`, inclusive a migração do catálogo. As decisões registradas na spec autorizam a restrição do cadastro e o tratamento dos desvios antigos; não é necessário solicitar novamente essas decisões. Não se afirma integração em main.
+
+| Fatia | Matriz atual | Parecer local | Evidência |
+|---|---|---|---|
+| E08-01 | A-1 a A-12 | APROVADO | Sem alteração funcional; regressão na suíte completa. |
+| E08-02 | A-1 a A-27 | APROVADO | A-22–A-27 cobrem serviço, mensagens HTTP, CHECK/SQL, fronteira 0,005 e abertura de três pedidos com rateio exato. Tratamento autorizado de TDD antigo registrado; limites das mutações avaliados abaixo. |
+| E08-03 | A-1 a A-28 | REPROVADO | R02/R03 originais corrigidos; novos testes passam, mas a recuperação de múltiplos pagamentos introduz R08. |
+| E08-04 | A-1 a A-17 | APROVADO no escopo local | Quitação/duplicidade e corridas existentes verdes; tratamento de TDD antigo registrado. Controle adicional de chamada direta repetida passa. R08 está no chamador novo da E08-03. |
+| E08-05 | A-1 a A-28 | APROVADO no escopo local | Todos os estados entram na reconsulta; órfãs recebem cancelamento; repetição e fronteiras cobertas. |
+| E08-06 | A-1 a A-15 | REPROVADO no gate de processo | Comportamento corrigido, inclusive fila e criação em andamento nas duas moderações. R06 permanece exclusivamente no ciclo do A-11 reescrito. |
+| E08-07 | A-1 a A-9 | APROVADO | Igualdade exata por app, provas negativas de rota adicional, políticas e simulador configurado; suíte completa verde. |
+
+São **136 critérios** nas matrizes atuais. Aprovação local não aprova a integração enquanto R06/R08 permanecerem abertos.
+
+## Verificações independentes
+
+- `uv run pytest -q`, sem filtro ou exclusão: **2160 passed in 246.21s (0:04:06)**. Log `%TEMP%/om_e08_584b323_suite.log`. Inclui os arquivos inteiros de concorrência, catálogo, abertura, tentativas, prazos, moderação, telas e fronteiras.
+- `uv run ruff check .`: **All checks passed!**
+- `uv run ruff format --check .`: **291 files already formatted**.
+- `uv run mypy .`: **Success: no issues found in 342 source files**.
+- `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test`: **No changes detected**.
+- Seis casos da prova anterior (R01, R02 nas duas moderações, R03 e dois controles), extraídos sem alterar as asserções: **6 passed**. O cenário antigo de R04 foi retirado desse arquivo de reprodução porque a decisão agora exige recusar seu produto; sua substituição expressa são A-22–A-27, todos exercitados na suíte completa.
+- Execução conjunta dessas seis provas com a nova prova R08: `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e08_584b323.py" "$env:TEMP/test_review_e08_584b323_lock.py" -q --tb=short`: **1 failed, 6 passed in 6.24s**. Única falha: `OperationalError: deadlock detected`. Log `%TEMP%/om_e08_584b323_probes.log`.
+- Acrescentei à prova R08 a repetição após o rollback e executei o arquivo inteiro novamente: `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e08_584b323_lock.py" -q --tb=short`: **1 failed in 3.75s**, ainda na asserção de ausência de impasse; as asserções anteriores confirmaram dois destinos (`quita`/`devolucao por duplicidade`) e tentativa final `nao_criada`. Log `%TEMP%/om_e08_584b323_lock.log`.
+- Controle adicional: `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e08_584b323_idempotencia.py" -q --tb=short`: **1 passed in 2.51s**. Com pagamento aprovado sincronizado, dentro de transação e sob sua trava, duas chamadas a `decidir_destino` devolveram o mesmo PK e mantiveram um único destino. Código completo abaixo.
+
+Na retomada, o contêiner local estava parado; foi iniciado com `docker compose up -d db`. Duas verificações já iniciadas ficaram esperando conexão: interrompidos apenas os processos próprios identificados, e reexecutados os comandos. Não são contadas como resultados válidos. As provas de banco foram executadas sequencialmente com PostgreSQL 17 real e simulador. Nenhum arquivo de produção ou teste versionado foi alterado.
+
+## Fechamento dos achados anteriores
+
+- **R01 encerrado:** prova anterior e E08-05 A-22 confirmam a duplicidade reconhecida no pedido pago, sem novo aviso de quitação; A-23 cobre os três estados.
+- **R02 encerrado no comportamento:** a fila recusada não cria cobrança; a conclusão da criação em andamento relê a situação sob trava e agenda cancelamento. Suspensão/remoção terminam sem esperar a chamada externa. As duas ordens do A-11 e a reativação são exercitadas.
+- **R03 encerrado no cenário original:** resposta perdida ou falha local de conclusão são recuperadas pela busca; órfãs são canceladas também pelo bloqueio a partir do pagamento. Não há criação nova depois do prazo; pagamento aprovado encontrado recebe destino. **A extensão concorrente de múltiplos resultados falha em R08**, registrado separadamente.
+- **R04 encerrado:** decisão registrada de restringir no cadastro. Comparação decimal inclusiva, validação após trava na edição, última recusa de incremento e CHECK correspondem à spec. Nenhum teste anterior teve dados afrouxados. A integração da menor combinação aceita abre três pedidos e preserva o rateio.
+- **R05 encerrado:** teste alinhado à autorização das cinco rotas do simulador, preservando fronteira de pagamentos e provas negativas. A-9 é teste da própria fronteira corrigida, sem novo comportamento de produção; sua execução inicialmente verde não exige fabricar Red.
+- **R07 continua melhoria não impeditiva M-3**, deliberadamente fora das correções.
+
+## R06 — IMPORTANTE — Tratamento antigo atendido; novo A-11 ainda não atende ao gate
+
+**Referências:** E08-02/spec.md, correção R06, passo 4 e conclusão (“tratamento definitivo dos critérios antigos”); E08-06/acceptance.md, seção final (A-11 reescrito não usa mutação e exige verde funcional → Red da corrida → proteção); AGENTS.md §§3/4/8.
+
+O implementador procurou evidência histórica e registrou a não conformidade sem apagar o passado. Conferi a existência do arquivo de sessão citado e os eventos datados nos índices 13042, 13054, 13139, 13185, 13193, 13225, 13241, 13254, 13446, 13467, 13671 e 14021: eles sustentam a cronologia declarada (testes corrigidos após código/andaime recriado e travas escritas junto com o serviço). Não se atribui a execuções atuais valor de Red histórico.
+
+Aceito o tratamento autorizado dos critérios antigos: registros separados, causas e mutações identificadas. Não reexecutei todas as mutações do implementador. A mutação ORM do A-11 é detectada pela exceção errada em relação ao contrato esperado (`IntegrityError` em vez de `RegistroImutavel`), e não por falha de infraestrutura; isso demonstra a falta da barreira ORM. Em A-20 a trava anterior do fornecedor serializa a corrida mesmo sem a trava da rodada; a mutação complementar retirando as duas demonstra a proteção relevante. Não se exige um teste que imponha isoladamente uma trava redundante. Em A-17 o sinal só chama a decisão na mudança de estado, portanto retirar a guarda interna não afeta a corrida exercitada: é um limite declarado, com proposta de reforço, expressamente permitido pelo passo 3. Controle direto da guarda passou nesta revisão; reforço futuro registrado em M-4.
+
+**Pendência nova, confirmada pelo próprio registro de E08-06:** o teste do A-11 reescrito foi escrito depois da proteção e passou na primeira execução. A mutação que remove `pedido_cancelado` não é Red histórico. Os A-13/A-21 deram Red para a recusa sequencial, mas não cumprem a sequência específica exigida para o novo critério concorrente. O tratamento aprovado excluiu expressamente esse A-11 da substituição por mutação.
+
+**Encaminhamento:** preservar a declaração e submeter ao responsável o tratamento dessa nova não conformidade. É necessário decidir expressamente se o registro, a sensibilidade por mutação e a prova concorrente verde encerram também o A-11 reescrito; a decisão anterior cobre apenas os critérios antigos. Não refazer o passado nem remover código para chamar uma execução nova de Red. Este gate de processo permanece aberto; não é alegação de falha funcional atual da moderação.
+
+## R08 — IMPORTANTE — Recuperação em lote inverte a ordem de travas e entra em impasse
+
+**Referências:** AGENTS.md §6 (concorrência e recuperação); E08-03/spec.md, correção R02/R03, ordem pagamento → situação → tentativa; E08-04, casos concorrentes; E07-06 (sincronização individual em transações curtas). Código: `apps/pedidos/operacoes.py:112-136`, especialmente o laço em `:118`; integração com `apps/pedidos/quitacao.py:207` e a transação por chamada de `apps/pagamentos/chamadas.py:193`.
+
+**Arranjo reproduzido:** duas tentativas anteriores expiradas localmente; terceira somente solicitada. As duas cobranças anteriores são aprovadas no simulador sem sincronizar. Às T0+25h, a criação da terceira é recusada e a busca devolve os dois pagamentos aprovados. Em paralelo, chega a sincronização por aviso do segundo pagamento.
+
+1. A recuperação sincroniza P1 e retém suas travas e a situação S do pedido, porque todo o `falhou` está na transação da chamada.
+2. O aviso trava P2 e tenta decidir seu destino, esperando S.
+3. A recuperação segue para P2 ainda segurando S, esperando P2: **S → P2**, inverso de **P2 → S**.
+4. PostgreSQL aborta uma transação com `OperationalError: deadlock detected`, reproduzido nas duas execuções. Não é timeout do harness nem falha de arranjo.
+
+A prova usa `_tentar` sob a mesma trava/transação de `processar_chamadas` para expor a exceção; não altera a decisão de negócio. No worker normal, a exceção é capturada, registrada como erro inesperado e a chamada fica pendente para outra passada. A prova complementar confirmou que repetir recupera os dois destinos sem duplicá-los; **não foi demonstrada perda definitiva ou cobrança em dobro**. Ainda assim, uma sincronização financeira é abortada por inversão real de travas introduzida na correção, e a concorrência prescrita não está atendida.
+
+**Correção exigida:** manter a ordem global também quando a busca devolve vários pagamentos; não basta ordenar os resultados, pois a transação continua segurando S ao buscar P2. Fazer a recuperação não adquirir outro pagamento depois da situação (por exemplo, separar a sincronização individual da conclusão, ou planejar aquisição das travas antes das decisões, mantendo as fronteiras da E07). Cobrir a corrida com aviso e com reconsulta, bem como rollback/repetição, preservando idempotência, dinheiro reconhecido e ausência de criação nova após o prazo. A solução é técnica, sem nova decisão comercial. Registrar Red real antes da correção.
+
+## Próximo gate e preservação
+
+Devolver R08 ao implementador e resolver o tratamento do novo desvio R06 com o responsável. Reexecutar a prova R08, a suíte relevante e os checks depois da correção. E08 ainda não está aprovada.
+
+Os sete pareceres de `c1d38ec` estavam integralmente preservados como prefixo em `584b323`; conferência automática dos sete arquivos, não apenas leitura de trechos. Esta revisão é acrescentada antes de todo o conteúdo existente, preservando também os registros de correção do implementador. Alterados somente os sete review.md e docs/melhorias.md. Sem navegador, provedor real, dinheiro real ou worker como processo separado; sem mutação de produção nesta revisão.
+
+## Prova completa de R08
+
+Salvar em `%TEMP%/test_review_e08_584b323_lock.py` e executar o comando acima. O envoltório apenas sincroniza as threads entre P1 e P2, sem mudar o resultado da sincronização.
+
+```python
+from datetime import timedelta
+from decimal import Decimal
+import pytest
+from django.db import transaction
+from apps.contas.moderacao import suspender, remover
+from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.consulta import consultar_antes_de_decidir
+from apps.pedidos.models import DestinoDoPagamento, SituacaoDoPedido
+from apps.pedidos.pagamento import pedir_pagamento
+from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora, bloquear_tentativas_vencidas_agora
+from apps.simulador_pagamentos import controle as sim
+from apps.simulador_pagamentos.models import CobrancaSimulada
+from tests.apoio.pedidos import T0, pedido_aberto, tentativa_criada, sincronizar
+from tests.conftest import RelogioControlado
+
+pytestmark = pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+
+@pytest.fixture(autouse=True)
+def relogio():
+    r=RelogioControlado()
+    sim.reiniciar()
+    yield r
+    r.parar()
+    sim.reiniciar()
+
+
+def test_recuperacao_multiplos_pagamentos_e_aviso_sem_impasse(relogio, monkeypatch):
+    from threading import Event
+    from apps.pedidos import operacoes
+    from apps.pagamentos.chamadas import _tentar
+    from apps.pagamentos.sincronizacao import sincronizar_pagamento
+    from apps.pagamentos.provedor import obter_provedor
+    from tests.apoio.concorrencia import executar_em_paralelo
+    arranjo,pedido=pedido_aberto(relogio)
+    primeira=tentativa_criada(pedido)
+    sim.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    relogio.congelar(T0+timedelta(hours=2))
+    segunda=tentativa_criada(pedido)
+    sim.expirar(segunda.id_externo)
+    sincronizar(segunda.id_externo)
+    terceira=pedir_pagamento(arranjo.a,pedido)
+    relogio.congelar(T0+timedelta(hours=3))
+    sim.aprovar(primeira.id_externo)
+    sim.aprovar(segunda.id_externo)
+    relogio.congelar(T0+timedelta(hours=25))
+    resposta2=obter_provedor().consultar_pagamento(segunda.id_externo)
+    primeiro_sincronizado,segundo_travado=Event(),Event()
+    original=operacoes.sincronizar_pagamento
+    def pausa(consultado,**kwargs):
+        resultado=original(consultado,**kwargs)
+        if consultado.id_externo==primeira.id_externo:
+            primeiro_sincronizado.set()
+            assert segundo_travado.wait(10)
+        return resultado
+    monkeypatch.setattr(operacoes,'sincronizar_pagamento',pausa)
+    def recuperar(barreira):
+        barreira.wait(timeout=10)
+        with transaction.atomic():
+            chamada=ChamadaAoProvedor.objects.select_for_update().get(operacao='criar_cobranca',alvo=f't{terceira.pk}')
+            _tentar(chamada)
+    def aviso(barreira):
+        barreira.wait(timeout=10)
+        assert primeiro_sincronizado.wait(10)
+        with transaction.atomic():
+            PagamentoNoProvedor.objects.select_for_update().get(id_externo=segunda.id_externo)
+            segundo_travado.set()
+            sincronizar_pagamento(resposta2,origem='aviso')
+    resultados=executar_em_paralelo(recuperar,aviso)
+    processar_chamadas()  # repete a chamada se o PostgreSQL desfez a recuperacao
+    sincronizar(segunda.id_externo)  # repete o aviso se ele foi a vitima
+    assert sorted(DestinoDoPagamento.objects.filter(pedido=pedido).values_list('destino','motivo'))==[('devolucao','duplicidade'),('quita','')]
+    terceira.refresh_from_db()
+    assert terceira.situacao=='nao_criada'
+    assert all(r.excecao is None for r in resultados),[repr(r.excecao) for r in resultados]
+```
+
+## Controle completo de idempotência direta
+
+Salvar em `%TEMP%/test_review_e08_584b323_idempotencia.py`.
+
+```python
+from datetime import timedelta
+from decimal import Decimal
+import pytest
+from django.db import transaction
+from apps.contas.moderacao import suspender, remover
+from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.consulta import consultar_antes_de_decidir
+from apps.pedidos.models import DestinoDoPagamento, SituacaoDoPedido
+from apps.pedidos.pagamento import pedir_pagamento
+from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora, bloquear_tentativas_vencidas_agora
+from apps.simulador_pagamentos import controle as sim
+from apps.simulador_pagamentos.models import CobrancaSimulada
+from tests.apoio.pedidos import T0, pedido_aberto, tentativa_criada, sincronizar
+from tests.conftest import RelogioControlado
+
+pytestmark = pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+
+@pytest.fixture(autouse=True)
+def relogio():
+    r=RelogioControlado()
+    sim.reiniciar()
+    yield r
+    r.parar()
+    sim.reiniciar()
+
+
+def test_decidir_destino_repetido_devolve_o_mesmo_registro(relogio):
+    from apps.pedidos.quitacao import decidir_destino
+    _,pedido=pedido_aberto(relogio)
+    tentativa=tentativa_criada(pedido)
+    sim.aprovar(tentativa.id_externo)
+    sincronizar(tentativa.id_externo)
+    with transaction.atomic():
+        pagamento=PagamentoNoProvedor.objects.select_for_update().get(id_externo=tentativa.id_externo)
+        primeiro=decidir_destino(pagamento)
+        segundo=decidir_destino(pagamento)
+        assert primeiro.pk==segundo.pk
+        assert DestinoDoPagamento.objects.filter(pagamento=pagamento).count()==1
+```
+
+---
+
+## Histórico integralmente preservado
+
 # E08 — Revisão independente do agente 3 — 2026-10-21
 
 **Veredito global: REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`.** R01 é bloqueador; R02 a R06 são importantes. R04 depende de definição do tratamento comercial do valor zero, e R06 de esclarecimento/comprovação histórica ou tratamento autorizado da não conformidade de TDD. R07 é melhoria documental não impeditiva, registrada como M-3 em `docs/melhorias.md`.

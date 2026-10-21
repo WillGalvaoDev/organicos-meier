@@ -1,3 +1,17 @@
+# E08-03 — Nova revisão independente — 2026-10-21
+
+**REPROVADO sobre `584b323`.** Matriz: A-1 a A-28. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).
+
+R02/R03 originais corrigidos e provas anteriores verdes. R08 novo e importante: `_criacao_falhou` sincroniza vários pagamentos na mesma transação, retém a situação após P1 e espera P2, enquanto o aviso retém P2 e espera a situação. Prova independente reproduziu `deadlock detected`; repetição recuperou os dois destinos. Corrigir ordem global com Red real e testar concorrência/rollback. Tratamento de TDD antigo de A-19 registrado e aceito.
+
+Verificação independente global: `uv run pytest -q` sem filtro, **2160 passed in 246.21s**; Ruff lint/formatação, mypy e migrações sem pendências. Provas anteriores R01–R03: seis casos aprovados. Nova prova R08 falha por deadlock; controle de recuperação após rollback passa antes da asserção final de ausência de impasse. Comandos, fontes, limites, análise de TDD e reprodução completa no parecer consolidado.
+
+O texto anterior do revisor e os registros do implementador foram conferidos e preservados integralmente abaixo. Nenhum código de produção ou teste versionado alterado pelo revisor.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-03 — Revisão independente do agente 3 — 2026-10-21
 
 **REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`. E08 global: REPROVADO.**
