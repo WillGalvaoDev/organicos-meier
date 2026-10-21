@@ -66,11 +66,18 @@ def test_so_a_sincronizacao_escreve_nos_registros_de_pagamento() -> None:  # A-1
     assert ESCRITA.search(sincronizacao)
 
 
-def test_nenhuma_rota_comando_ou_admin_registra_pagamento() -> None:  # A-12, cenário 37
-    from django.conf import settings
-    from django.urls import URLPattern, URLResolver, get_resolver
+ROTAS_DE_PAGAMENTOS = {"pagamentos_avisos"}
+ROTAS_DO_SIMULADOR = {
+    "simulador_pagamentos_lista",
+    "simulador_pagamentos_aprovar",
+    "simulador_pagamentos_recusar",
+    "simulador_pagamentos_expirar",
+    "simulador_pagamentos_entregar",
+}
 
-    assert "django.contrib.admin" not in settings.INSTALLED_APPS
+
+def _rotas_por_app(urlconf: str | None) -> dict[str, set[str]]:
+    from django.urls import URLPattern, URLResolver, get_resolver
 
     def rotas(padroes: Any) -> Iterator[URLPattern]:
         for padrao in padroes:
@@ -79,14 +86,43 @@ def test_nenhuma_rota_comando_ou_admin_registra_pagamento() -> None:  # A-12, ce
             else:
                 yield padrao
 
-    de_pagamentos = {
-        r.name
-        for r in rotas(get_resolver().url_patterns)
-        if r.callback.__module__.startswith(("apps.pagamentos", "apps.simulador_pagamentos"))
-    }
-    assert de_pagamentos <= {"pagamentos_avisos"}
+    por_app: dict[str, set[str]] = {"pagamentos": set(), "simulador_pagamentos": set()}
+    for rota in rotas(get_resolver(urlconf).url_patterns):
+        for app in por_app:
+            if rota.callback.__module__.startswith(f"apps.{app}"):
+                por_app[app].add(str(rota.name))
+    return por_app
+
+
+def _confere_as_rotas(urlconf: str | None = None) -> None:
+    from django.conf import settings
+
+    assert "django.contrib.admin" not in settings.INSTALLED_APPS
+    por_app = _rotas_por_app(urlconf)
+    assert por_app["pagamentos"] == ROTAS_DE_PAGAMENTOS
+    assert por_app["simulador_pagamentos"] == ROTAS_DO_SIMULADOR
     for app in ("pagamentos", "simulador_pagamentos"):
         assert not (APPS / app / "management").exists()
+
+
+def test_nenhuma_rota_comando_ou_admin_registra_pagamento() -> None:
+    # E07-03 A-12, cenário 37, E08-07 A-9
+    _confere_as_rotas()
+
+
+@pytest.mark.parametrize(
+    ("urlconf", "rota"),
+    [
+        ("tests.apoio.urls_rota_extra_simulador", "simulador_rota_a_mais"),
+        ("tests.apoio.urls_rota_extra_pagamentos", "pagamentos_rota_a_mais"),
+    ],
+    ids=["simulador", "pagamentos"],
+)
+def test_uma_rota_a_mais_em_qualquer_dos_dois_apps_e_recusada(urlconf: str, rota: str) -> None:
+    # E08-07 A-9 (prova negativa)
+    with pytest.raises(AssertionError) as erro:
+        _confere_as_rotas(urlconf)
+    assert rota in str(erro.value)
 
 
 CAMPOS_DO_BANCO = ("NAME", "HOST", "PORT", "USER")
