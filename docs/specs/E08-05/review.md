@@ -1,3 +1,21 @@
+# E08-05 — Revisão independente do agente 3 — 2026-10-21
+
+**REPROVADO sobre `2714a6a2acaf88cc69e02345facf2a2403a66374`, branch `e08-implementacao`. E08 global: REPROVADO.**
+
+Matriz examinada: **A-1 a A-21**, a partir de spec.md/acceptance.md e das fontes superiores, antes de avaliar o código. R01: pedidos pagos excluídos da reconsulta, em desacordo com infraestrutura 4.3. R03: cobrança criada antes do prazo, cuja resposta se perdeu, segue pendente mesmo depois de a busca encontrá-la. Os testes nominais de prazos, tarefas e acompanhamento passam, mas não cobrem essas combinações.
+
+TDD declarado: **16 failed, 17 passed; justificativas de controles herdados/já verdes conferidas. A-20 herdado da quitação não exige fabricar Red tardio.** O revisor confere registro, testes e diffs; não presenciou a execução histórica. Reexecuções atuais não substituem evidência de Red anterior à implementação.
+
+Verificações independentes: suíte completa **1 failed, 2129 passed in 292.98s**, sem exclusões; provas adicionais **5 failed, 2 passed in 17.36s**; lint, formatação (288 arquivos), tipos (338 arquivos) e verificação de migrações passaram. A falha versionada é a de rotas descrita em R05; as cinco falhas adicionais correspondem a R01, R02 (duas variantes), R03 e R04.
+
+O [parecer consolidado](../E08-01/review.md) contém matriz das sete fatias, referências, classificação, resultados, código completo das provas, limites e encaminhamentos R01–R07. R04 requer decisão sobre pedido zero, e R06 requer evidência histórica ou tratamento autorizado; as perguntas foram encaminhadas durante a revisão. R07 está no registro central como M-3.
+
+Somente documentação foi alterada pelo revisor, sem correção silenciosa de produção ou testes. Histórico do implementador preservado integralmente abaixo. Próximo gate: correções/comprovações e nova revisão independente.
+
+---
+
+## Registro anterior integralmente preservado
+
 # E08-05 — Registro do implementador (2026-10-20)
 
 Status: implementada; **aguardando o agente 3**. Nada aqui é aprovação.
