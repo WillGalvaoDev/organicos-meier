@@ -151,3 +151,56 @@ Evidência procurada em `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive
 - **O que aconteceu:** Red só pela ausência do serviço; sem o ciclo verde sem trava → Red da corrida → trava.
 - **Causas:** as três confirmadas na seção equivalente da E08-02.
 - **Sensibilidade (mutação), não Red.** `pagamento.py`: `SituacaoDoPedido.objects.select_for_update()` vira `SituacaoDoPedido.objects` em `pedir_pagamento`. `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q --create-db`: **3 falharam, 14 passaram**: `test_dois_cliques_em_pagar_geram_uma_tentativa` (`[None, IntegrityError('duplicate key … chave_idempotencia')]`, asserção `all(r.excecao is None …)`) e as duas variantes de `test_suspensao_e_pagamento_ao_mesmo_tempo`. Arquivo restaurado por `git checkout -- apps/pedidos/pagamento.py` e suíte verde de novo.
+
+## Registro do implementador — correção R08 (2026-10-21)
+
+Especificação: `docs/specs/E08-03/spec.md` e `acceptance.md`, seção "Correção E08-R08" (commit `a41b44f`). Commit da correção: `6118ae4`.
+
+### Critério → teste → resultado do Red (antes de qualquer mudança de produção)
+
+O arranjo R está no apoio `recuperacao_de_dois_pagamentos` (`tests/apoio/pedidos.py`). Comandos, com o arquivo inteiro e sem `-k`:
+
+- `uv run pytest tests/tecnicos/test_pedidos_tentativas.py -q -p no:cacheprovider` → **2 falharam, 28 passaram**.
+- `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider` → **3 falharam, 17 passaram**.
+
+| Critério | Teste | Resultado contra o código anterior |
+|---|---|---|
+| A-29 | `test_aviso_de_um_pagamento_nao_espera_a_recuperacao_dos_outros` (concorrência) | **Red da corrida, por asserção:** `a outra thread não terminou enquanto a recuperação estava parada: a transação da recuperação a segura` (`Event.wait(8)` sem sinal). Nenhum `deadlock detected` nem tempo esgotado da infraestrutura: o controle converte a espera em asserção e libera a recuperação no `finally`. |
+| A-30 | `test_reconsulta_da_margem_nao_espera_a_recuperacao_e_nao_duplica` (concorrência) | **Red da corrida, por asserção**, a mesma mensagem. |
+| A-31 | `test_a_recuperacao_consulta_cada_pagamento_encontrado` (tentativas) | **verde funcional sem a proteção + Red estrutural:** as asserções funcionais, postas primeiro (chamada `falhou` com `prazo_encerrado`, destinos `[("devolucao","duplicidade"),("quita","")]`, tentativa 3 `nao_criada`, nenhuma cobrança com a chave da tentativa 3, uma `ConsultaDoPagamento` `busca` por pagamento), passam contra o código anterior. Falha só a asserção estrutural: `assert [] == ['sim-13', 'sim-14']` (nenhuma chamada `consultar_pagamento` agendada). |
+| A-32 | `test_falha_local_depois_de_agendar_desfaz_a_recuperacao_inteira` (tentativas) | **passou já no Red.** O rollback da transação da chamada já existia; o teste protege a propriedade que a correção precisa preservar (agora também para as consultas agendadas). Sem Red próprio, declarado. |
+| A-33 | `test_aviso_novo_antes_da_recuperacao_fica_com_uma_consulta_so` (concorrência) | Red por asserção: `assert 0 == 1` na consulta do pagamento 1 (a recuperação anterior sincronizava direto, sem consulta). |
+| A-34 | `test_provedor_indisponivel_depois_da_busca_deixa_as_consultas_pendentes` (tentativas) | Red por asserção: `assert 0 == 2` (`len(consultas)`). |
+
+**Interpretação a conferir.** A spec chama de "verde funcional sem a proteção" o A-31 contra o código atual. Como o A-31 também exige as chamadas `consultar_pagamento`, que só existem depois da correção, ele não é verde por inteiro. Pus as asserções funcionais antes das estruturais, e o Red mostra que só a estrutural falha. A parte do ciclo "Red da corrida" é a do A-29 e do A-30. Não observei um Red separado das travas `nowait` do A-29, porque a asserção do término do aviso falha antes dela.
+
+### Green
+
+`apps/pedidos/operacoes.py`, `_criacao_falhou`: no lugar de `sincronizar_pagamento` para cada pagamento achado, agenda `consultar_pagamento` (alvo igual ao `id_externo`, `parametros={"origem": "busca"}`), na ordem `(criado_em, id_externo)`. O cancelamento das órfãs e a marcação da tentativa não mudaram. O `falhou` não trava mais `PagamentoNoProvedor` nem `SituacaoDoPedido`.
+
+Os mesmos dois arquivos, depois do Green: os seis critérios passam; falharam **2** testes antigos (A-23 e A-24 da correção R03), pelo motivo previsto na spec ("o pagamento passa a ser registrado pela consulta agendada").
+
+### Testes antigos ajustados (só o ponto de observação, como a spec permite)
+
+Arquivo `tests/tecnicos/test_pedidos_tentativas.py`:
+
+- `test_resposta_perdida_perto_do_prazo_e_a_orfa_e_cancelada` (A-23). Antes: logo depois da recusa, `PagamentoNoProvedor...situacao == "pendente"`. Depois: o mesmo `assert`, movido para depois de `assert processar_chamadas(limite=1) == 1` (a consulta agendada pelo `falhou`), acrescentado antes dele. Nenhuma outra asserção mudou.
+- `test_falha_local_na_conclusao_desfaz_a_chamada_e_a_orfa_ainda_e_cancelada` (A-24). Antes: `assert processar_chamadas() == 1` (o cancelamento) logo depois da recusa. Depois: acrescentado `assert processar_chamadas(limite=1) == 1` antes dele, para a consulta; o `== 1` do cancelamento ficou igual.
+- A-25 e A-26 passaram sem ajuste. No A-26, a quitação da órfã aprovada vem agora da consulta agendada, na mesma `processar_chamadas()`.
+
+Nenhuma asserção foi removida, afrouxada nem trocada.
+
+### Invariante nova ("nenhuma transação de chamada sincroniza mais de um pagamento")
+
+Chamadores de `sincronizar_pagamento` conferidos por `grep`:
+
+- `apps/pagamentos/chamadas.py` (`_concluir_consulta`): um pagamento por chamada.
+- `apps/pedidos/operacoes.py` (`_concluir_criacao`, `_concluir_cancelamento`): um pagamento por chamada.
+- `apps/pagamentos/consulta.py` (`consultar_antes_de_decidir`): uma transação curta por pagamento, fora de transação de chamada.
+- `apps/pedidos/operacoes.py` (`_criacao_falhou`): **era o único que violava a invariante**, corrigido.
+
+Nenhum outro caminho viola a invariante, e não ampliei o escopo.
+
+### Verificação
+
+`uv run pytest -q -p no:cacheprovider` (suíte completa, sem filtro): **2166 passed in 259.82s** (eram 2160). `ruff check`, `ruff format --check` (291 arquivos), `mypy` (342 arquivos) e `makemigrations --check`: limpos. A prova R08 do parecer fica substituída pelo A-29, como a spec determina.

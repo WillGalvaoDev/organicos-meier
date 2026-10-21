@@ -107,3 +107,18 @@ A coordenação está na E08-03 (`executar` recusa com `pedido_cancelado`; `conc
 ## Não conformidade de TDD (R06) — texto antigo do E08-06 A-11
 
 O A-11 antigo dizia que a tentativa "nasce e logo recebe o cancelamento com alvo `:suspensao`", e o teste antigo executava `pedir_pagamento` e `processar_chamadas()` dentro da transação que segurava a trava, fechando a janela entre a solicitação e a criação. Evidência: `C:/Users/wsgon/.claude/projects/C--Users-wsgon-OneDrive-Desktop-AI-Hive-om/eca958a3-5baa-41c1-b7a8-d4c5947c3fdc.jsonl` (registro da sessão, com horário UTC; os números são índices de linha, base 0), Red da linha 14021 (19:49:57Z), **12 falharam e 13 passaram**, contra um serviço que devolvia zero; sem o ciclo verde sem trava → Red da corrida → trava. O critério foi reescrito (R02) e o texto novo segue o ciclo real descrito acima, com o desvio declarado.
+
+## Não conformidade de TDD (R06) — A-11 reescrito (segunda revisão, 2026-10-21)
+
+Especificação: `docs/specs/E08-06/spec.md`, seção "Correção E08-R06, segunda revisão" (commit `a41b44f`). Este registro soma-se ao anterior, que não foi editado.
+
+1. **O critério e o que aconteceu.** Critério: A-11 reescrito, `test_suspensao_e_pagamento_ao_mesmo_tempo` (duas ordens). Conforme já declarado neste arquivo: "teste escrito depois da proteção, verde na primeira execução; sem Red observado antes do código de produção".
+2. **Decisão aplicável.** O responsável pelo projeto decidiu em 2026-10-21 que o mesmo tratamento dos critérios antigos vale para este A-11: o registro, a sensibilidade por mutação e a prova concorrente verde encerram o gate. Não refaço o passado, não retiro código para produzir um Red novo, e a decisão não é dispensa para as próximas etapas.
+3. **Sensibilidade (mutação), não Red.** Repetida com o código atual (HEAD `6118ae4`), por `scratchpad/mutacao_a11.py`:
+   - Trecho mudado, em `apps/pedidos/operacoes.py`, `_motivo_da_recusa`: o ramo `if situacao == SituacaoDePagamento.CANCELADO: return "pedido_cancelado"` foi retirado.
+   - Comando (arquivo inteiro, sem `-k`): `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider`.
+   - Resultado: **1 falhou, 19 passaram**: `test_suspensao_e_pagamento_ao_mesmo_tempo[pagamento_antes]`, por asserção: `assert ('criada', '') == ('nao_criada', 'pedido_cancelado')`.
+   - Restauração: o script regravou os bytes originais do arquivo; `git status` ficou limpo.
+   - Mesmo comando, depois da restauração: **20 passed in 13.50s**.
+4. **Prova concorrente verde.** `test_suspensao_e_pagamento_ao_mesmo_tempo`, nas duas ordens (`pagamento_antes` e a de suspensão antes), com o arquivo inteiro: `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider` → **20 passed** (restaurado) e, na suíte completa depois da correção R08, **2166 passed**.
+5. **Causa.** O Green de um critério sequencial (A-13 e A-21) também entregou a proteção de um critério concorrente que ainda não tinha teste. A prevenção da spec (conferir, antes do Green de um critério sequencial, se a proteção cobre uma corrida sem Red; se cobrir, escrever antes o teste da corrida e registrar as duas linhas) passa a valer para as próximas etapas.

@@ -523,3 +523,26 @@ pytest: 2160 passed in 247.71s (0:04:07)
 Comandos: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy .`, `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` e `uv run pytest -q`.
 
 **Pontos para o revisor:** (1) mutações do A-20 (só a trava da rodada) e do A-17 não foram detectadas pelos testes atuais, com reforço proposto nos registros da E08-02 e da E08-04; (2) o E08-06 A-11 reescrito não teve Red próprio (Red tardio, declarado na E08-06); (3) a prova R04 do parecer foi substituída pelos critérios A-22 a A-27, porque a fábrica de produto agora é recusada pelo `CHECK`; (4) a §4.2 da especificação funcional não foi alterada.
+
+## Registro do implementador — correções da segunda revisão, R08 e R06 (2026-10-21)
+
+Especificações: commit `a41b44f` (seção "Correções da segunda revisão da E08" de `docs/specs/E08-01/spec.md`). R01 a R05 estavam encerrados; R07 segue como M-3 e M-4 fica para a revisão final.
+
+| Achado | Onde está o registro | Commit |
+|---|---|---|
+| R08 | E08-03 ("Registro do implementador — correção R08") | `6118ae4` |
+| R06, A-11 reescrito | E08-06 ("Não conformidade de TDD (R06) — A-11 reescrito (segunda revisão)") | registros |
+
+Ordem seguida: primeiro o R08 (verde funcional e Red das corridas contra o código anterior, depois a correção); depois o registro do R06.
+
+**Verificação final** (sem `--deselect` e sem filtro):
+
+```
+ruff check: All checks passed!
+ruff format --check: 291 files already formatted
+mypy: Success: no issues found in 342 source files
+makemigrations --check: No changes detected
+pytest: 2166 passed in 259.82s (0:04:19)
+```
+
+**Pontos para o revisor:** (1) o A-32 passou já no Red (o rollback da transação da chamada já existia) e o A-31 é verde funcional com Red só na asserção estrutural: interpretação declarada na E08-03; (2) os testes A-23 e A-24 da correção R03 só tiveram o ponto de observação ajustado, listados com antes e depois; (3) a invariante "nenhuma transação de chamada sincroniza mais de um pagamento" foi conferida em todos os chamadores de `sincronizar_pagamento`, e só o `_criacao_falhou` a violava; (4) as mutações do A-20 e do A-17 seguem como declarado (M-4 para o A-17).
