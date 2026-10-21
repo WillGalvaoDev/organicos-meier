@@ -10,6 +10,7 @@ relógio deve estar congelado antes de montar o arranjo.
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from django.db import transaction
 
@@ -205,3 +206,27 @@ def pedido_na_abertura(
     )
     SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
     return pedido
+
+
+def recuperacao_de_dois_pagamentos(
+    relogio: RelogioControlado, sim: Any
+) -> tuple[Arranjo, Pedido, TentativaDePagamento, TentativaDePagamento, TentativaDePagamento]:
+    """O arranjo R da correção E08-R08: duas tentativas expiradas e sincronizadas, uma terceira só
+    `solicitada`, as duas cobranças aprovadas no simulador sem sincronizar, e o relógio em
+    `T0 + 25h`, dentro da margem. Devolve (arranjo, pedido, primeira, segunda, terceira)."""
+    arranjo, pedido = pedido_aberto(relogio)
+    primeira = tentativa_criada(pedido)
+    assert primeira.id_externo is not None
+    sim.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    relogio.congelar(T0 + timedelta(hours=2))
+    segunda = tentativa_criada(pedido)
+    assert segunda.id_externo is not None
+    sim.expirar(segunda.id_externo)
+    sincronizar(segunda.id_externo)
+    terceira = pedir_pagamento(arranjo.a, pedido)
+    relogio.congelar(T0 + timedelta(hours=3))
+    sim.aprovar(primeira.id_externo)
+    sim.aprovar(segunda.id_externo)
+    relogio.congelar(T0 + timedelta(hours=25))
+    return arranjo, pedido, primeira, segunda, terceira

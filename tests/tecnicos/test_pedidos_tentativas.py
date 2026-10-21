@@ -20,7 +20,12 @@ from apps.pagamentos.chamadas import (
     processar_chamadas,
     registrar_operacao,
 )
-from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor, SituacaoDaChamada
+from apps.pagamentos.models import (
+    ChamadaAoProvedor,
+    ConsultaDoPagamento,
+    PagamentoNoProvedor,
+    SituacaoDaChamada,
+)
 from apps.pagamentos.provedor import RecusaDoProvedor
 from apps.pedidos.models import (
     DestinoDoPagamento,
@@ -38,6 +43,7 @@ from tests.apoio.pedidos import (
     marcar_pago,
     pedido_aberto,
     pedido_avulso,
+    recuperacao_de_dois_pagamentos,
     sincronizar,
 )
 from tests.conftest import RelogioControlado
@@ -558,10 +564,11 @@ def test_resposta_perdida_perto_do_prazo_e_a_orfa_e_cancelada(
     assert (chamada.situacao, chamada.ultimo_erro) == (SituacaoDaChamada.FALHOU, "prazo_encerrado")
     tentativa.refresh_from_db()
     assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
-    assert PagamentoNoProvedor.objects.get(id_externo=cobranca.id_externo).situacao == "pendente"
     (cancelamento,) = _chamadas("cancelar_cobranca")
     assert cancelamento.alvo == f"t{tentativa.pk}:recuperacao:1"
     assert cancelamento.parametros == {"id_externo": cobranca.id_externo}
+    assert processar_chamadas(limite=1) == 1  # a consulta agendada pelo `falhou` (E08-R08)
+    assert PagamentoNoProvedor.objects.get(id_externo=cobranca.id_externo).situacao == "pendente"
     avisos = [r for r in caplog.records if r.levelno == logging.WARNING and AVISO_ORFA in r.message]
     assert len(avisos) == 1
     assert cobranca.id_externo in avisos[0].getMessage()
@@ -605,6 +612,7 @@ def test_falha_local_na_conclusao_desfaz_a_chamada_e_a_orfa_ainda_e_cancelada(
     assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
     (cancelamento,) = _chamadas("cancelar_cobranca")
     assert cancelamento.alvo == f"t{tentativa.pk}:recuperacao:1"
+    assert processar_chamadas(limite=1) == 1  # a consulta agendada pelo `falhou` (E08-R08)
     assert processar_chamadas() == 1
     cobranca.refresh_from_db()
     assert cobranca.situacao == "cancelado"
@@ -672,3 +680,126 @@ def test_orfa_aprovada_depois_do_prazo_quita_pela_e08_04(
     assert _chamadas("cancelar_cobranca") == []
     tentativa.refresh_from_db()
     assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+
+
+# --- Correção E08-R08: a recuperação agenda uma consulta por pagamento (A-31, A-32 e A-34) ----
+
+
+def _destinos(pedido: Pedido) -> list[tuple[str, str]]:
+    return sorted(DestinoDoPagamento.objects.filter(pedido=pedido).values_list("destino", "motivo"))
+
+
+def _confere_a_recuperacao_de_dois_pagamentos(
+    pedido: Pedido, primeira: TentativaDePagamento, segunda: TentativaDePagamento, terceira: Any
+) -> None:
+    assert _destinos(pedido) == [("devolucao", "duplicidade"), ("quita", "")]
+    terceira.refresh_from_db()
+    assert (terceira.situacao, terceira.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    assert not CobrancaSimulada.objects.filter(
+        chave_idempotencia=terceira.chave_idempotencia
+    ).exists()
+    assert primeira.id_externo is not None
+    assert segunda.id_externo is not None
+    for id_externo in (primeira.id_externo, segunda.id_externo):
+        assert (
+            ConsultaDoPagamento.objects.filter(
+                pagamento__id_externo=id_externo, origem="busca"
+            ).count()
+            == 1
+        )
+
+
+def test_a_recuperacao_consulta_cada_pagamento_encontrado(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-31
+    _, x, primeira, segunda, terceira = recuperacao_de_dois_pagamentos(
+        relogio, simulador_pagamentos
+    )
+    processar_chamadas()
+    criacao = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{terceira.pk}")
+    assert (criacao.situacao, criacao.ultimo_erro) == (SituacaoDaChamada.FALHOU, "prazo_encerrado")
+    _confere_a_recuperacao_de_dois_pagamentos(x, primeira, segunda, terceira)
+    registros = PagamentoNoProvedor.objects.filter(
+        id_externo__in=[primeira.id_externo, segunda.id_externo]
+    ).order_by("criado_no_provedor_em", "id_externo")
+    consultas = ChamadaAoProvedor.objects.filter(
+        operacao="consultar_pagamento", alvo__in=[r.id_externo for r in registros]
+    ).order_by("pk")
+    assert [c.alvo for c in consultas] == [r.id_externo for r in registros]
+    assert all(c.parametros == {"origem": "busca"} for c in consultas)
+    assert _chamadas("cancelar_cobranca") == []
+
+
+def test_falha_local_depois_de_agendar_desfaz_a_recuperacao_inteira(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-32
+    _, x, primeira, segunda, terceira = recuperacao_de_dois_pagamentos(
+        relogio, simulador_pagamentos
+    )
+    original = OPERACOES["criar_cobranca"]
+    falhas: list[int] = []
+
+    def falhou_que_estoura_uma_vez(chamada: ChamadaAoProvedor, erro: Exception) -> None:
+        assert original.falhou is not None
+        original.falhou(chamada, erro)
+        if not falhas:
+            falhas.append(1)
+            raise RuntimeError("falha local de teste")
+
+    monkeypatch.setitem(
+        OPERACOES,
+        "criar_cobranca",
+        Operacao(
+            original.executar, original.concluir, falhou_que_estoura_uma_vez, original.combinar
+        ),
+    )
+    consultas_antes = ChamadaAoProvedor.objects.filter(operacao="consultar_pagamento").count()
+    processar_chamadas()
+    assert falhas == [1]
+    criacao = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{terceira.pk}")
+    assert (criacao.situacao, criacao.tentativas) == (SituacaoDaChamada.PENDENTE, 0)
+    terceira.refresh_from_db()
+    assert terceira.situacao == "solicitada"
+    assert (
+        ChamadaAoProvedor.objects.filter(operacao="consultar_pagamento").count() == consultas_antes
+    )
+    assert _chamadas("cancelar_cobranca") == []
+    assert _destinos(x) == []
+    processar_chamadas()
+    _confere_a_recuperacao_de_dois_pagamentos(x, primeira, segunda, terceira)
+
+
+def test_provedor_indisponivel_depois_da_busca_deixa_as_consultas_pendentes(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-34, AGENTS.md §6
+    _, x, primeira, segunda, terceira = recuperacao_de_dois_pagamentos(
+        relogio, simulador_pagamentos
+    )
+    buscar = ProvedorSimulado.buscar_por_referencia
+
+    def busca_e_cai(self: Any, referencia: str) -> list[Any]:
+        encontrados = buscar(self, referencia)
+        simulador_pagamentos.indisponivel()
+        return encontrados
+
+    monkeypatch.setattr(ProvedorSimulado, "buscar_por_referencia", busca_e_cai)
+    processar_chamadas()
+    monkeypatch.setattr(ProvedorSimulado, "buscar_por_referencia", buscar)
+    criacao = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{terceira.pk}")
+    assert criacao.situacao == SituacaoDaChamada.FALHOU
+    terceira.refresh_from_db()
+    assert (terceira.situacao, terceira.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    consultas = _chamadas("consultar_pagamento")
+    assert len(consultas) == 2
+    assert {(c.situacao, c.ultimo_erro) for c in consultas} == {
+        (SituacaoDaChamada.PENDENTE, "indisponivel")
+    }
+    assert _destinos(x) == []
+    simulador_pagamentos.normalizar()
+    relogio.congelar(T0 + 25 * H + MIN)
+    processar_chamadas()
+    _confere_a_recuperacao_de_dois_pagamentos(x, primeira, segunda, terceira)

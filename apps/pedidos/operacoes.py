@@ -110,13 +110,17 @@ def _concluir_criacao(chamada: ChamadaAoProvedor, resultado: Any) -> None:
 
 
 def _criacao_falhou(chamada: ChamadaAoProvedor, erro: Exception) -> None:
-    """Sincroniza o que a busca achou (dinheiro nunca é ignorado), cancela a cobrança sem
-    tentativa (a órfã) e só então marca a tentativa, na ordem das travas."""
+    """Agenda uma consulta por pagamento que a busca achou (dinheiro nunca é ignorado), cancela a
+    cobrança sem tentativa (a órfã) e marca a tentativa. Não sincroniza nem trava pagamento ou
+    situação do pedido: cada consulta roda na sua transação e mantém a ordem das travas, e uma
+    transação de chamada nunca sincroniza mais de um pagamento (E08-R08)."""
     tentativa_id = chamada.parametros["tentativa"]
     encontrados: tuple[PagamentoConsultado, ...] = getattr(erro, "encontrados", ())
     codigo = str(getattr(erro, "codigo", "falha"))[:40]
-    for consultado in encontrados:
-        sincronizar_pagamento(consultado, origem="busca")
+    for consultado in sorted(encontrados, key=lambda c: (c.criado_em, c.id_externo)):
+        agendar_chamada(
+            "consultar_pagamento", consultado.id_externo, parametros={"origem": "busca"}
+        )
     orfas = sorted(
         (c for c in encontrados if _eh_orfa(c)), key=lambda c: (c.criado_em, c.id_externo)
     )

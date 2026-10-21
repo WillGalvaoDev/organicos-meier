@@ -10,14 +10,15 @@ from threading import Event
 from typing import Any
 
 import pytest
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.test import Client
 
 from apps.catalogo.servicos import editar_produto
 from apps.contas.moderacao import reativar, remover, suspender
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
-from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
+from apps.nucleo.tempo import agora
+from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
 from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.models import (
@@ -29,7 +30,10 @@ from apps.pedidos.models import (
     TentativaDePagamento,
 )
 from apps.pedidos.pagamento import PagamentoRecusado, agendar_cancelamento, pedir_pagamento
-from apps.pedidos.tarefas import bloquear_tentativas_vencidas_agora
+from apps.pedidos.tarefas import (
+    bloquear_tentativas_vencidas_agora,
+    reconsultar_pagamentos_da_margem_agora,
+)
 from apps.rodadas.fechamento import TransicaoRecusada
 from apps.simulador_pagamentos.models import CobrancaSimulada
 from tests.apoio.concorrencia import executar_em_paralelo
@@ -39,6 +43,7 @@ from tests.apoio.pedidos import (
     administrador,
     montar_arranjo,
     pedido_aberto,
+    recuperacao_de_dois_pagamentos,
     sincronizar,
     tentativa_criada,
 )
@@ -535,3 +540,156 @@ def test_pedido_quitado_durante_a_criacao_cancela_a_cobranca_nova(
     assert segunda.id_externo is not None
     cobranca = CobrancaSimulada.objects.get(pk=int(segunda.id_externo.removeprefix("sim-")))
     assert cobranca.situacao == "cancelado"
+
+
+# --- Correção E08-R08: a recuperação de vários pagamentos não inverte as travas ---------------
+
+
+def _recuperacao_parada(monkeypatch: pytest.MonkeyPatch) -> tuple[Event, Event]:
+    """O ponto de pausa Π: a recuperação (`falhou` da criação) roda inteira e fica parada, com a
+    transação da chamada aberta, até `liberar` (com prazo). O ponto existe antes e depois da
+    correção; o que mudou é o que a transação segura quando ela chega aqui."""
+    original = OPERACOES["criar_cobranca"]
+    parou, liberar = Event(), Event()
+
+    def falhou_e_para(chamada: ChamadaAoProvedor, erro: Exception) -> None:
+        assert original.falhou is not None
+        original.falhou(chamada, erro)
+        parou.set()
+        assert liberar.wait(30), "ninguém liberou a recuperação"
+
+    monkeypatch.setitem(
+        OPERACOES,
+        "criar_cobranca",
+        Operacao(original.executar, original.concluir, falhou_e_para, original.combinar),
+    )
+    return parou, liberar
+
+
+def _destinos_do(pedido: Pedido) -> list[tuple[str, str]]:
+    return sorted(DestinoDoPagamento.objects.filter(pedido=pedido).values_list("destino", "motivo"))
+
+
+def _outra_thread_termina_enquanto_a_recuperacao_para(
+    monkeypatch: pytest.MonkeyPatch,
+    trabalho: Any,
+    conferir_as_travas: Any = None,
+) -> tuple[list[Any], Event]:
+    """Roda a recuperação parada em Π, o `trabalho` numa segunda thread e um controle que só
+    libera a recuperação depois de ver o `trabalho` terminar. Se ele não termina, o controle
+    falha por asserção (nunca por deadlock ou tempo esgotado da infraestrutura)."""
+    parou, liberar = _recuperacao_parada(monkeypatch)
+    terminou = Event()
+
+    def recupera(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        return processar_chamadas()
+
+    def outra(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        assert parou.wait(15), "a recuperação não chegou ao ponto de pausa"
+        trabalho()
+        terminou.set()
+
+    def controle(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        try:
+            assert parou.wait(15), "a recuperação não chegou ao ponto de pausa"
+            assert terminou.wait(8), (
+                "a outra thread não terminou enquanto a recuperação estava parada: "
+                "a transação da recuperação a segura"
+            )
+            if conferir_as_travas is not None:
+                conferir_as_travas()
+        finally:
+            liberar.set()
+
+    resultados = executar_em_paralelo(recupera, outra, controle)
+    return resultados, terminou
+
+
+def test_aviso_de_um_pagamento_nao_espera_a_recuperacao_dos_outros(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-29, correção R08
+    _, x, primeira, segunda, terceira = recuperacao_de_dois_pagamentos(
+        relogio, simulador_pagamentos
+    )
+    assert primeira.id_externo is not None
+    assert segunda.id_externo is not None
+
+    def aviso_da_segunda() -> None:
+        sincronizar(segunda.id_externo or "", "aviso")
+
+    def travas_livres() -> None:
+        try:
+            with transaction.atomic():
+                PagamentoNoProvedor.objects.select_for_update(nowait=True).get(
+                    id_externo=primeira.id_externo
+                )
+                SituacaoDoPedido.objects.select_for_update(nowait=True).get(pedido=x)
+        except DatabaseError as erro:
+            raise AssertionError(
+                f"a recuperação segura a trava do pagamento 1 ou do pedido: {erro}"
+            ) from None
+
+    resultados, _ = _outra_thread_termina_enquanto_a_recuperacao_para(
+        monkeypatch, aviso_da_segunda, travas_livres
+    )
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert _destinos_do(x) == [("devolucao", "duplicidade"), ("quita", "")]
+    terceira.refresh_from_db()
+    assert (terceira.situacao, terceira.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    assert not CobrancaSimulada.objects.filter(
+        chave_idempotencia=terceira.chave_idempotencia
+    ).exists()
+
+
+def test_reconsulta_da_margem_nao_espera_a_recuperacao_e_nao_duplica(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-30, correção R08, E08-05
+    arranjo, x, _, _, terceira = recuperacao_de_dois_pagamentos(relogio, simulador_pagamentos)
+    destinos_durante: list[list[tuple[str, str]]] = []
+
+    def reconsulta() -> None:
+        reconsultar_pagamentos_da_margem_agora()
+        destinos_durante.append(_destinos_do(x))
+
+    resultados, _ = _outra_thread_termina_enquanto_a_recuperacao_para(monkeypatch, reconsulta)
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert destinos_durante == [[("devolucao", "duplicidade"), ("quita", "")]]
+    assert _destinos_do(x) == [("devolucao", "duplicidade"), ("quita", "")]
+    assert DestinoDoPagamento.objects.filter(pedido=x).count() == 2
+    avisos = Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado")
+    assert avisos.count() == 1
+    terceira.refresh_from_db()
+    assert (terceira.situacao, terceira.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+
+
+def test_aviso_novo_antes_da_recuperacao_fica_com_uma_consulta_so(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-33, E07-06
+    _, x, primeira, segunda, terceira = recuperacao_de_dois_pagamentos(
+        relogio, simulador_pagamentos
+    )
+    assert segunda.id_externo is not None
+    with transaction.atomic():
+        agendar_chamada(
+            "consultar_pagamento",
+            segunda.id_externo,
+            parametros={"origem": "aviso", "aviso_recebido_em": agora().isoformat()},
+        )
+    processar_chamadas()
+    consultas = ChamadaAoProvedor.objects.filter(
+        operacao="consultar_pagamento", alvo=segunda.id_externo
+    )
+    assert consultas.count() == 1
+    assert _destinos_do(x) == [("devolucao", "duplicidade"), ("quita", "")]
+    assert DestinoDoPagamento.objects.filter(pedido=x).count() == 2
+    terceira.refresh_from_db()
+    assert (terceira.situacao, terceira.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    assert (
+        ChamadaAoProvedor.objects.filter(
+            operacao="consultar_pagamento", alvo=primeira.id_externo
+        ).count()
+        == 1
+    )
