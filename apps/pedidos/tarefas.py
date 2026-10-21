@@ -11,10 +11,12 @@ from django.db import transaction
 from procrastinate.contrib.django import app
 
 from apps.nucleo.tempo import agora
+from apps.pagamentos.chamadas import agendar_chamada
 from apps.pagamentos.consulta import (
     ConsultaAoProvedorFalhou,
     aprovados_da_referencia,
     consultar_antes_de_decidir,
+    pendentes_das_referencias,
     travar_pagamento,
 )
 from apps.pagamentos.models import ChamadaAoProvedor
@@ -23,7 +25,6 @@ from apps.pedidos.models import (
     DestinoDoPagamento,
     Pedido,
     SituacaoDaTentativa,
-    SituacaoDePagamento,
     TentativaDePagamento,
 )
 from apps.pedidos.pagamento import agendar_cancelamento
@@ -52,6 +53,29 @@ def _bloquear(abertura: AberturaDoPagamento) -> int:
             continue
         if agendar_cancelamento(tentativa, "prazo") is not None:
             agendadas += 1
+    return agendadas + _bloquear_cobrancas_sem_tentativa(abertura)
+
+
+def _bloquear_cobrancas_sem_tentativa(abertura: AberturaDoPagamento) -> int:
+    """Agenda o cancelamento das cobranças pendentes da abertura que nenhuma tentativa conhece
+    (a resposta da criação se perdeu), uma vez só: quem já tem alguma chamada de cancelamento,
+    em qualquer situação, não é reagendada (E08-R03). O alvo `p<pagamento>:prazo` é só deste
+    bloqueio, que não trava pedido nem pagamento."""
+    referencias = [p.referencia_externa for p in Pedido.objects.filter(abertura=abertura)]
+    agendadas = 0
+    for pagamento in pendentes_das_referencias(referencias):
+        if TentativaDePagamento.objects.filter(id_externo=pagamento.id_externo).exists():
+            continue
+        if ChamadaAoProvedor.objects.filter(
+            operacao="cancelar_cobranca", parametros__id_externo=pagamento.id_externo
+        ).exists():
+            continue
+        agendar_chamada(
+            "cancelar_cobranca",
+            f"p{pagamento.pk}:prazo",
+            parametros={"id_externo": pagamento.id_externo},
+        )
+        agendadas += 1
     return agendadas
 
 
@@ -89,7 +113,7 @@ def _decidir_o_que_ficou_pendente(pedido: Pedido) -> None:
 
 
 def reconsultar_pagamentos_da_margem_agora() -> int:
-    """Reconsulta no provedor os pedidos `aguardando_pagamento` e `cancelado` em margem.
+    """Reconsulta no provedor todos os pedidos das aberturas em margem, pagos ou não.
 
     Cada pedido usa `consultar_antes_de_decidir`, fora de qualquer transação; se o provedor não
     responde, o motivo vai para o log e segue o próximo. Depois decide o destino dos pagamentos
@@ -97,13 +121,7 @@ def reconsultar_pagamentos_da_margem_agora() -> int:
     """
     instante = agora()
     candidatos = (
-        Pedido.objects.filter(
-            abertura__rodada__etapa=Etapa.PAGAMENTO,
-            estado__situacao__in=(
-                SituacaoDePagamento.AGUARDANDO_PAGAMENTO,
-                SituacaoDePagamento.CANCELADO,
-            ),
-        )
+        Pedido.objects.filter(abertura__rodada__etapa=Etapa.PAGAMENTO)
         .select_related("abertura")
         .order_by("pk")
     )

@@ -93,6 +93,15 @@ def aprovados_da_referencia(referencia_externa: str) -> list[PagamentoNoProvedor
     )
 
 
+def pendentes_das_referencias(referencias: list[str]) -> list[PagamentoNoProvedor]:
+    """Os pagamentos pendentes de qualquer das referências, por criação e id. Só leitura."""
+    return list(
+        PagamentoNoProvedor.objects.filter(
+            referencia_externa__in=referencias, situacao="pendente"
+        ).order_by("criado_no_provedor_em", "id_externo")
+    )
+
+
 def travar_pagamento(pk: int) -> PagamentoNoProvedor:
     """Relê o pagamento com a linha travada (exige transação). É o primeiro item da ordem das
     travas: pagamento, situação do pedido, tentativa."""

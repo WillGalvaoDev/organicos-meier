@@ -19,12 +19,17 @@ from apps.interesses.servicos import adicionar_interesse
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.so_insercao import RegistroImutavel
-from apps.pagamentos.chamadas import OPERACOES, Operacao, processar_chamadas
-from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
+from apps.pagamentos.chamadas import OPERACOES, Operacao, agendar_chamada, processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import NovaCobranca, RecusaDoProvedor, obter_provedor
 from apps.pagamentos.sinais import situacao_do_pagamento_mudou
 from apps.pedidos import tarefas
-from apps.pedidos.models import AberturaDoPagamento, Pedido, SituacaoDoPedido
+from apps.pedidos.models import (
+    AberturaDoPagamento,
+    DestinoDoPagamento,
+    Pedido,
+    SituacaoDoPedido,
+)
 from apps.pedidos.pagamento import PagamentoRecusado, agendar_cancelamento, pedir_pagamento
 from apps.pedidos.prazos import (
     aceita_tentativas,
@@ -39,14 +44,18 @@ from apps.pedidos.tarefas import (
 )
 from apps.rodadas.condicoes import InteressesBloqueados
 from apps.rodadas.models import Etapa, Rodada
+from apps.simulador_pagamentos.models import CobrancaSimulada
 from tests.apoio.admin_fluxos import administrador_logado
 from tests.apoio.pedidos import (
     T0,
     Arranjo,
+    abertura_unica,
+    cancelar_direto,
     marcar_pago,
     pedido_aberto,
     pedido_avulso,
     pedido_de,
+    pedido_na_abertura,
     sincronizar,
     tentativa_criada,
 )
@@ -434,3 +443,194 @@ def test_falha_numa_abertura_nao_impede_as_outras(
     mensagens = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
     assert any(f"abertura={primeira}" in m and "RuntimeError" in m for m in mensagens), mensagens
     assert [c.alvo.split(":")[0] for c in _chamadas()] == [f"t{avulso.tentativas.get().pk}"]
+
+
+# --- Correção E08-R01 e E08-R03: reconsulta de todos os pedidos e bloqueio por pagamento -----
+
+
+def _orfa(pedido: Pedido, chave: str) -> str:
+    """Cobrança criada direto no simulador, com a referência do pedido e uma chave que não é de
+    nenhuma tentativa: é a resposta de criação que se perdeu."""
+    criada = obter_provedor().criar_cobranca(
+        NovaCobranca(
+            chave_idempotencia=chave,
+            referencia_externa=pedido.referencia_externa,
+            valor=pedido.total,
+            descricao="Cobrança órfã de apoio",
+            expira_em=PRAZO,
+        )
+    )
+    return str(criada.pagamento.id_externo)
+
+
+def _pagamento(id_externo: str) -> PagamentoNoProvedor:
+    return PagamentoNoProvedor.objects.get(id_externo=id_externo)
+
+
+def _destinos(pedido: Pedido) -> list[tuple[str, str]]:
+    return sorted(DestinoDoPagamento.objects.filter(pedido=pedido).values_list("destino", "motivo"))
+
+
+@pytest.mark.acceptance
+def test_a_margem_reconsulta_o_pedido_ja_pago_e_devolve_a_duplicidade(
+    cenario: tuple[Arranjo, Pedido, Any], relogio: RelogioControlado
+) -> None:  # A-22, §8.3 duplicidade na margem
+    arranjo, x, sim = cenario
+    primeira = tentativa_criada(x)
+    assert primeira.id_externo is not None
+    sim.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    relogio.congelar(T0 + 2 * H)
+    segunda = tentativa_criada(x)
+    assert segunda.id_externo is not None
+    relogio.congelar(T0 + 3 * H)
+    sim.aprovar(segunda.id_externo)
+    sincronizar(segunda.id_externo)
+    assert _situacao(x).situacao == "pago"
+    quitado_em = _situacao(x).quitado_em
+    relogio.congelar(T0 + 25 * H)
+    sim.aprovar(primeira.id_externo)  # sem aviso entregue
+    reconsultar_pagamentos_da_margem_agora()
+    assert _destinos(x) == [("devolucao", "duplicidade"), ("quita", "")]
+    situacao = _situacao(x)
+    assert (situacao.situacao, situacao.quitado_em) == ("pago", quitado_em)
+    avisos = Notificacao.objects.filter(conta=arranjo.a, evento="pagamento_confirmado")
+    assert avisos.count() == 1
+
+
+def test_a_margem_reconsulta_pagos_aguardando_e_cancelados(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-23
+    _arranjo, x, sim = cenario
+    paga = tentativa_criada(x)
+    assert paga.id_externo is not None
+    sim.aprovar(paga.id_externo)
+    sincronizar(paga.id_externo)
+    v = pedido_na_abertura(abertura_unica(), ContaFactory.create(), "40.00")
+    cancelar_direto(v, "suspensao", T0 + 2 * H)
+    relogio.congelar(T0 + 25 * H)
+    caplog.set_level(logging.INFO, logger="apps.simulador_pagamentos")
+    assert reconsultar_pagamentos_da_margem_agora() == 3
+    buscas = [r for r in caplog.records if "buscar_por_referencia" in r.getMessage()]
+    assert len(buscas) == 3
+    assert {_situacao(x).situacao, _situacao(v).situacao} == {"pago", "cancelado"}
+
+
+def test_o_bloqueio_cancela_a_cobranca_orfa_encontrada_na_margem(
+    cenario: tuple[Arranjo, Pedido, Any], relogio: RelogioControlado
+) -> None:  # A-24, Infra 4.3
+    arranjo, _, _ = cenario
+    y = pedido_de(arranjo.b)
+    relogio.congelar(T0 + 23 * H)
+    id_externo = _orfa(y, "orfa-y")
+    relogio.congelar(T0 + 25 * H)
+    reconsultar_pagamentos_da_margem_agora()
+    pagamento = _pagamento(id_externo)
+    assert pagamento.situacao == "pendente"
+    assert bloquear_tentativas_vencidas_agora() == 1
+    (chamada,) = _chamadas()
+    assert chamada.alvo == f"p{pagamento.pk}:prazo"
+    assert chamada.parametros == {"id_externo": id_externo}
+    assert processar_chamadas() == 1
+    assert CobrancaSimulada.objects.get(chave_idempotencia="orfa-y").situacao == "cancelado"
+    assert _pagamento(id_externo).situacao == "cancelado"
+    assert bloquear_tentativas_vencidas_agora() == 0
+
+
+@pytest.mark.parametrize("situacao_da_chamada", ["pendente", "falhou"])
+def test_o_bloqueio_pula_a_orfa_que_ja_tem_cancelamento(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    monkeypatch: pytest.MonkeyPatch,
+    situacao_da_chamada: str,
+) -> None:  # A-25
+    arranjo, _, _ = cenario
+    y = pedido_de(arranjo.b)
+    relogio.congelar(T0 + 23 * H)
+    id_externo = _orfa(y, "orfa-y")
+    relogio.congelar(T0 + 25 * H)
+    reconsultar_pagamentos_da_margem_agora()
+    with transaction.atomic():
+        agendar_chamada(
+            "cancelar_cobranca", "t999:recuperacao:1", parametros={"id_externo": id_externo}
+        )
+    if situacao_da_chamada == "falhou":
+        original = OPERACOES["cancelar_cobranca"]
+
+        def recusa(provedor: Any, chamada: ChamadaAoProvedor) -> Any:
+            raise RecusaDoProvedor("recusado")
+
+        monkeypatch.setitem(OPERACOES, "cancelar_cobranca", Operacao(recusa, original.concluir))
+        processar_chamadas()
+        (chamada,) = _chamadas()
+        assert chamada.situacao == SituacaoDaChamada.FALHOU
+    assert bloquear_tentativas_vencidas_agora() == 0
+    assert len(_chamadas()) == 1
+
+
+def test_o_bloqueio_cancela_a_orfa_de_pedido_pago_ou_cancelado(
+    cenario: tuple[Arranjo, Pedido, Any], relogio: RelogioControlado
+) -> None:  # A-26
+    _arranjo, x, sim = cenario
+    paga = tentativa_criada(x)
+    assert paga.id_externo is not None
+    sim.aprovar(paga.id_externo)
+    sincronizar(paga.id_externo)
+    v = pedido_na_abertura(abertura_unica(), ContaFactory.create(), "40.00")
+    cancelar_direto(v, "suspensao", T0 + 2 * H)
+    relogio.congelar(T0 + 23 * H)
+    orfa_x = _orfa(x, "orfa-x")
+    orfa_v = _orfa(v, "orfa-v")
+    destinos_antes = DestinoDoPagamento.objects.count()
+    relogio.congelar(T0 + 25 * H)
+    reconsultar_pagamentos_da_margem_agora()
+    assert bloquear_tentativas_vencidas_agora() == 2
+    assert sorted(c.alvo for c in _chamadas()) == sorted(
+        [f"p{_pagamento(orfa_x).pk}:prazo", f"p{_pagamento(orfa_v).pk}:prazo"]
+    )
+    processar_chamadas()
+    assert (_pagamento(orfa_x).situacao, _pagamento(orfa_v).situacao) == ("cancelado", "cancelado")
+    assert (_situacao(x).situacao, _situacao(v).situacao) == ("pago", "cancelado")
+    assert DestinoDoPagamento.objects.count() == destinos_antes
+
+
+def test_resposta_perdida_no_prazo_e_cancelada_uma_vez_so(
+    cenario: tuple[Arranjo, Pedido, Any], relogio: RelogioControlado
+) -> None:  # A-27, prova do parecer
+    arranjo, x, sim = cenario
+    relogio.congelar(T0 + 24 * H - 30 * timedelta(seconds=1))
+    tentativa = pedir_pagamento(arranjo.a, x)
+    sim.falhar_proximas(1, operacao="criar_cobranca", depois_de_executar=True)
+    processar_chamadas()
+    (cobranca,) = CobrancaSimulada.objects.all()
+    relogio.congelar(T0 + 24 * H + MIN)
+    assert processar_chamadas(limite=1) == 1  # a recusa; o cancelamento fica para depois
+    reconsultar_pagamentos_da_margem_agora()
+    assert bloquear_tentativas_vencidas_agora() == 0  # a recuperação já agendou o cancelamento
+    processar_chamadas()
+    cobranca.refresh_from_db()
+    assert cobranca.situacao == "cancelado"
+    tentativa.refresh_from_db()
+    assert (tentativa.situacao, tentativa.codigo_da_falha) == ("nao_criada", "prazo_encerrado")
+    assert _pagamento(cobranca.id_externo).situacao == "cancelado"
+    (so,) = _chamadas()
+    assert so.alvo == f"t{tentativa.pk}:recuperacao:1"
+
+
+def test_antes_do_prazo_nem_a_margem_nem_o_bloqueio_agem(
+    cenario: tuple[Arranjo, Pedido, Any],
+    relogio: RelogioControlado,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-28
+    arranjo, _, _ = cenario
+    y = pedido_de(arranjo.b)
+    relogio.congelar(T0 + 23 * H)
+    _orfa(y, "orfa-y")
+    relogio.congelar(T0 + 23 * H + 59 * MIN)
+    caplog.set_level(logging.INFO, logger="apps.simulador_pagamentos")
+    assert reconsultar_pagamentos_da_margem_agora() == 0
+    assert not any("buscar_por_referencia" in r.getMessage() for r in caplog.records)
+    assert bloquear_tentativas_vencidas_agora() == 0
+    assert _chamadas() == []
