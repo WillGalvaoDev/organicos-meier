@@ -17,6 +17,7 @@ from typing import Protocol
 from django.db import transaction
 
 from apps.financeiro.alertas import abrir_alerta
+from apps.financeiro.apuracao import cobrir_tarifas_pendentes_da_rodada, rodada_apurada
 from apps.financeiro.livro import EXTERIOR, Transferencia, conta, lancar
 from apps.financeiro.models import (
     Componente,
@@ -167,7 +168,7 @@ def registrar_tarifa(pagamento: _Pagamento) -> MovimentoFinanceiro | None:
         tipo=TipoDeDespesa.TARIFA,
         defaults={"valor": pagamento.tarifa, "rodada_id": rodada_id},
     )
-    return lancar(
+    movimento = lancar(
         tipo=TipoDeMovimento.TARIFA,
         transferencias=[
             Transferencia(conta(Destinacao.DESPESAS_A_COBRIR), EXTERIOR, pagamento.tarifa)
@@ -177,6 +178,10 @@ def registrar_tarifa(pagamento: _Pagamento) -> MovimentoFinanceiro | None:
         origem=destino.pagamento,
         chave=f"tarifa:{pagamento.pk}",
     )
+    if destino.pedido is not None and rodada_apurada(destino.pedido.abertura.rodada):
+        # a receita da rodada já existe: a tarifa nova tenta ser coberta por ela (P-1)
+        cobrir_tarifas_pendentes_da_rodada(destino.pedido.abertura.rodada)
+    return movimento
 
 
 def registrar_tarifas_pendentes_agora() -> int:

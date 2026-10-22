@@ -175,6 +175,8 @@ class ObrigacaoComComprador(RegistroSoInsercao):
     frete = CampoDinheiro(default=0)
     # o que não se separa em componentes, como o pagamento devolvido inteiro
     integral = CampoDinheiro(default=0)
+    # nasceu quando o ciclo já tinha sido apurado no livro (E09-06): muda as fontes e o relatório
+    depois_da_apuracao = models.BooleanField(default=False)
     criada_em = models.DateTimeField(default=agora)
 
     class Meta:
@@ -303,6 +305,36 @@ class DesignacaoDesfeita(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"designação {self.designacao_id} desfeita"
+
+
+class ApuracaoNoLivro(RegistroSoInsercao):
+    """A apuração de um ciclo no livro-razão (E09-06): uma por ciclo. Guarda o frete efetivo (o
+    `F` da abertura) e o arrecadado (o que os pedidos válidos pagaram de frete)."""
+
+    ciclo = models.OneToOneField(Ciclo, on_delete=models.PROTECT, related_name="apuracao_no_livro")
+    movimento = models.ForeignKey(
+        MovimentoFinanceiro, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    frete_efetivo = CampoDinheiro()
+    frete_arrecadado = CampoDinheiro()
+    criada_em = models.DateTimeField(default=agora)
+
+    def __str__(self) -> str:
+        return f"apuração do ciclo {self.ciclo_id}"
+
+
+class PedidoApurado(RegistroSoInsercao):
+    """Um pedido válido da apuração: o conjunto dela fica registrado, para repetir sem efeito."""
+
+    apuracao = models.ForeignKey(
+        ApuracaoNoLivro, on_delete=models.PROTECT, related_name="pedidos_validos"
+    )
+    pedido = models.ForeignKey("pedidos.Pedido", on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["apuracao", "pedido"], name="pedido_apurado_unico"),
+        )
 
 
 class AlertaFinanceiro(models.Model):

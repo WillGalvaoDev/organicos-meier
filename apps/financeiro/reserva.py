@@ -51,6 +51,7 @@ from apps.nucleo.valores import ValorInvalido, dinheiro
 ZERO = Decimal("0.00")
 MAIOR_IDENTIFICACAO = 64
 ORIGEM_DA_DESPESA = "financeiro.despesa"
+ORIGEM_DA_DESIGNACAO = "financeiro.designacaodareserva"
 
 
 class ReservaInsuficiente(Exception):
@@ -95,10 +96,28 @@ def _soma(consulta: "QuerySet[Any]") -> Decimal:
     return Decimal(total) if total is not None else ZERO
 
 
+def consumido_da_designacao(designacao: DesignacaoDaReserva) -> Decimal:
+    """O quanto da designação a liquidação já consumiu: os movimentos que a citam."""
+    return _soma(
+        TransferenciaFinanceira.objects.filter(
+            movimento__tipo=TipoDeMovimento.FINANCIAMENTO_DE_OBRIGACAO,
+            movimento__origem_tipo=ORIGEM_DA_DESIGNACAO,
+            movimento__origem_id=str(designacao.pk),
+        )
+    )
+
+
+def _restante_das_designacoes(designacoes: "QuerySet[DesignacaoDaReserva]") -> Decimal:
+    """O que ainda está designado: o valor de cada designação menos o que já foi consumido."""
+    return sum((Decimal(d.valor) - consumido_da_designacao(d) for d in designacoes), ZERO)
+
+
 def situacao_da_reserva() -> SituacaoDaReserva:
     """Saldo da reserva, o que está comprometido em designações ativas e o que sobra (livre)."""
     em_caixa = saldo(conta(Destinacao.RESERVA))
-    comprometido = _soma(DesignacaoDaReserva.objects.filter(desfeita__isnull=True))
+    comprometido = _restante_das_designacoes(
+        DesignacaoDaReserva.objects.filter(desfeita__isnull=True)
+    )
     return SituacaoDaReserva(em_caixa, comprometido, em_caixa - comprometido)
 
 
@@ -113,7 +132,9 @@ def _financiado(obrigacao: ObrigacaoComComprador) -> Decimal:
 
 
 def _designado(obrigacao: ObrigacaoComComprador) -> Decimal:
-    return _soma(DesignacaoDaReserva.objects.filter(obrigacao=obrigacao, desfeita__isnull=True))
+    return _restante_das_designacoes(
+        DesignacaoDaReserva.objects.filter(obrigacao=obrigacao, desfeita__isnull=True)
+    )
 
 
 def sem_cobertura_da_obrigacao(obrigacao: ObrigacaoComComprador) -> Decimal:
@@ -296,8 +317,11 @@ def desfazer_designacao(autor: Conta, designacao: DesignacaoDaReserva, justifica
     _exigir_administrador(autor)
     justificativa = _justificativa(justificativa)
     _travar_a_reserva()
-    if DesignacaoDesfeita.objects.filter(designacao=designacao).exists():
-        raise DesignacaoEncerrada(f"a designação {designacao.pk} já foi desfeita")
+    if (
+        DesignacaoDesfeita.objects.filter(designacao=designacao).exists()
+        or consumido_da_designacao(designacao) >= designacao.valor
+    ):
+        raise DesignacaoEncerrada(f"a designação {designacao.pk} já foi desfeita ou consumida")
     DesignacaoDesfeita.objects.create(
         designacao=designacao, autor_id=str(autor.pk), justificativa=justificativa
     )
@@ -350,6 +374,7 @@ __all__ = [
     "ReservaInsuficiente",
     "SituacaoDaReserva",
     "avaliar_reserva",
+    "consumido_da_designacao",
     "desfazer_designacao",
     "designar_reserva",
     "itens_sem_cobertura",

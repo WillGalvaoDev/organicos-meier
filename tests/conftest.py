@@ -116,6 +116,10 @@ PREFIXOS_COM_SIMULADOR = (
     "test_simulador_pagamentos_",
     "test_financeiro_",
     "test_cenario_30_",
+    "test_cenario_31_",
+    "test_cenario_32_",
+    "test_cenario_33_",
+    "test_cenario_40_",
     "test_cenario_39_",
 )
 

@@ -207,3 +207,173 @@ def despesa_de_tarifa(valor: str = "2.00", rodada: Rodada | None = None) -> Desp
         aprovado_no_provedor_em=instante,
     )
     return Despesa.objects.create(tipo="tarifa", valor=D(valor), pagamento=pagamento, rodada=rodada)
+
+
+@dataclass
+class Apuracao:
+    """O arranjo Ap da E09-06: a rodada `r` do fornecedor A, o ciclo `c` e a abertura com frete
+    30,00, com o pedido X do comprador B (125,00) e o pedido Y do comprador D (62,50)."""
+
+    fornecedor: Fornecedor
+    rodada: Rodada
+    ciclo: Ciclo
+    abertura: AberturaDoPagamento
+    x: Pedido
+    y: Pedido
+    b: Conta
+    d: Conta
+    admin: Conta
+
+
+def montar_ap() -> Apuracao:
+    fornecedor = FornecedorFactory.create(nome="Fornecedor A")
+    rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.PAGAMENTO)
+    ciclo = dar_prazo_de_teste(rodada).ciclo
+    admin = administrador()
+    abertura = AberturaDoPagamento.objects.create(
+        ciclo=ciclo,
+        rodada=rodada,
+        t0=T0,
+        frete=D("30.00"),
+        total_produtos=D("150.00"),
+        autor=admin,
+    )
+    b = ContaFactory.create(nome="Comprador B")
+    d = ContaFactory.create(nome="Comprador D")
+    pedidos = []
+    for comprador, (produtos, servico, frete) in (
+        (b, ("100.00", "5.00", "20.00")),
+        (d, ("50.00", "2.50", "10.00")),
+    ):
+        valores = (D(produtos), D(servico), D(frete))
+        pedido = Pedido.objects.create(
+            abertura=abertura,
+            comprador=comprador,
+            produtos=valores[0],
+            servico=valores[1],
+            frete=valores[2],
+            total=sum(valores, D("0.00")),
+        )
+        SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
+        pedidos.append(pedido)
+    return Apuracao(fornecedor, rodada, ciclo, abertura, pedidos[0], pedidos[1], b, d, admin)
+
+
+def pagar_pedido(ap: Apuracao, pedido: Pedido, sim: Any, relogio: Any, quando: timedelta) -> str:
+    """O pedido é pago: cobrança criada, aprovada em `T0 + quando` e sincronizada. Devolve o
+    `id_externo`. A tarifa vem do plano que o teste definiu no simulador."""
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+
+    relogio.congelar(T0 + timedelta(hours=1))
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    relogio.congelar(T0 + quando)
+    sim.aprovar(id_externo)
+    sincronizar(id_externo)
+    return id_externo
+
+
+@dataclass
+class Rodada1:
+    """Uma rodada quitada e apurada: o fornecedor, a rodada, o ciclo, os pedidos e o comprador do
+    primeiro."""
+
+    fornecedor: Fornecedor
+    rodada: Rodada
+    ciclo: Ciclo
+    pedido: Pedido
+    comprador: Conta
+    pedidos: list[Pedido]
+
+
+@dataclass(frozen=True)
+class ItemPago:
+    produtos: str
+    servico: str
+    aprovado_em: Any
+    liberacao_horas: int = 24
+
+
+def pedidos_pagos_e_apurados(
+    sim: Any, relogio: Any, *, nome: str, t0: Any, itens: list[ItemPago]
+) -> Rodada1:
+    """Uma rodada nova, aberta em `t0` (frete 0,00), com um pedido por item: cada um é pago
+    (cobrança criada meia hora depois de `t0`, aprovada em `aprovado_em`, com a liberação do
+    item) e todos são apurados juntos no livro. O relógio fica no último `aprovado_em`."""
+    from django.db import transaction
+
+    from apps.financeiro.apuracao import registrar_apuracao_no_livro
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+
+    fornecedor = FornecedorFactory.create(nome=nome)
+    rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.PAGAMENTO)
+    ciclo = dar_prazo_de_teste(rodada).ciclo
+    abertura = AberturaDoPagamento.objects.create(
+        ciclo=ciclo,
+        rodada=rodada,
+        t0=t0,
+        frete=D("0.00"),
+        total_produtos=sum((D(i.produtos) for i in itens), D("0.00")),
+        autor=administrador(),
+    )
+    pedidos: list[Pedido] = []
+    for numero, item in enumerate(itens, start=1):
+        comprador = ContaFactory.create(nome=f"Comprador {nome}{numero}")
+        valores = (D(item.produtos), D(item.servico), D("0.00"))
+        pedido = Pedido.objects.create(
+            abertura=abertura,
+            comprador=comprador,
+            produtos=valores[0],
+            servico=valores[1],
+            frete=valores[2],
+            total=sum(valores, D("0.00")),
+        )
+        SituacaoDoPedido.objects.create(pedido=pedido, situacao="aguardando_pagamento")
+        sim.definir_liberacao("pix", horas=item.liberacao_horas)
+        relogio.congelar(t0 + timedelta(minutes=30))
+        id_externo = tentativa_criada(pedido).id_externo
+        assert id_externo is not None
+        relogio.congelar(item.aprovado_em)
+        sim.aprovar(id_externo)
+        sincronizar(id_externo)
+        pedidos.append(pedido)
+    with transaction.atomic():
+        registrar_apuracao_no_livro(ciclo, pedidos, autor=SISTEMA)
+    return Rodada1(fornecedor, rodada, ciclo, pedidos[0], pedidos[0].comprador, pedidos)
+
+
+def pedido_pago_e_apurado(
+    sim: Any,
+    relogio: Any,
+    *,
+    nome: str,
+    t0: Any,
+    produtos: str,
+    servico: str,
+    aprovado_em: Any,
+    liberacao_horas: int = 24,
+) -> Rodada1:
+    """Uma rodada com um pedido só: ver `pedidos_pagos_e_apurados`."""
+    item = ItemPago(produtos, servico, aprovado_em, liberacao_horas)
+    return pedidos_pagos_e_apurados(sim, relogio, nome=nome, t0=t0, itens=[item])
+
+
+def montar_l(sim: Any, relogio: Any) -> tuple[Rodada1, Rodada1]:
+    """O arranjo L da E09-07: XA (100,00 + 5,00) em `rA`, aprovado às `T0 + 1h`, e XB (80,00 +
+    4,00) em `rB`, aprovado às `T0 - 30h`, os dois quitados e apurados, com liberação em 24h e
+    tarifa zero. O relógio fica em `T0 + 2h`: XB liberado, XA a liberar. Devolve (A, B)."""
+    h = timedelta(hours=1)
+    b = pedido_pago_e_apurado(
+        sim,
+        relogio,
+        nome="B",
+        t0=T0 - 48 * h,
+        produtos="80.00",
+        servico="4.00",
+        aprovado_em=T0 - 30 * h,
+    )
+    a = pedido_pago_e_apurado(
+        sim, relogio, nome="A", t0=T0, produtos="100.00", servico="5.00", aprovado_em=T0 + h
+    )
+    relogio.congelar(T0 + 2 * h)
+    return a, b

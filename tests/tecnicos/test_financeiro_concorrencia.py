@@ -11,6 +11,7 @@ from django.db import transaction
 
 from apps.financeiro import livro
 from apps.financeiro.alertas import abrir_alerta
+from apps.financeiro.apuracao import registrar_apuracao_no_livro
 from apps.financeiro.livro import (
     EXTERIOR,
     SaldoInsuficiente,
@@ -25,6 +26,12 @@ from apps.financeiro.models import (
     MovimentoFinanceiro,
     ObrigacaoComComprador,
     TipoDeMovimento,
+    TransferenciaFinanceira,
+)
+from apps.financeiro.obrigacoes import (
+    LiquidacaoRecusada,
+    liquidar_obrigacao,
+    registrar_obrigacao_com_comprador,
 )
 from apps.financeiro.reserva import (
     AporteRepetido,
@@ -40,11 +47,15 @@ from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.financeiro import (
     Mundo,
+    custodia,
     despesa_de_tarifa,
     despesas,
+    montar_ap,
     montar_mundo,
     mover,
+    obrigacao_de,
     obrigacao_de_teste,
+    pagar_pedido,
     pedido_composto,
     receita_de,
     reserva,
@@ -302,3 +313,106 @@ def test_o_mesmo_deposito_registrado_duas_vezes(m: Mundo) -> None:  # E09-05, A-
     assert isinstance(recusa, AporteRepetido), recusa
     assert MovimentoFinanceiro.objects.filter(tipo=T.APORTE).count() == 1
     assert saldo(reserva()) == Decimal("100.00")
+
+
+# --- E09-06: apuração e obrigações com compradores (A-17 a A-19) ------------------------------
+
+
+def _ap_com_x_pago(relogio: RelogioControlado, sim: Any) -> Any:
+    sim.definir_tarifa("pix", percentual=Decimal("1.00"), fixa=Decimal("0.00"))
+    ap = montar_ap()
+    pagar_pedido(ap, ap.x, sim, relogio, timedelta(hours=1))
+    return ap
+
+
+def _financiar(ap: Any, origem: Any, produtos: str) -> Callable[[], Any]:
+    def registrar() -> Any:
+        return registrar_obrigacao_com_comprador(
+            origem=origem,
+            rodada=ap.rodada,
+            ciclo=ap.ciclo,
+            comprador=ap.b,
+            pedido=ap.x,
+            motivo="devolucao_de_teste",
+            produtos=Decimal(produtos),
+            servico=Decimal("0.00"),
+            frete=Decimal("0.00"),
+        )
+
+    return registrar
+
+
+def test_duas_obrigacoes_do_mesmo_comprador_disputam_a_mesma_custodia(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-06, A-17
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    resultados = executar_em_paralelo(
+        segurando(_financiar(ap, ap.x, "60.00")),
+        esperando(_atomica(_financiar(ap, ap.abertura, "60.00"))),
+    )
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert sorted(r.valor.sem_cobertura for r in resultados) == [
+        Decimal("0.00"),
+        Decimal("20.00"),
+    ]
+    assert saldo(custodia(ap.rodada, ap.ciclo, ap.b, "produtos")) == Decimal("0.00")
+    financiado = sum(
+        t.valor
+        for t in TransferenciaFinanceira.objects.filter(
+            movimento__tipo=T.FINANCIAMENTO_DE_OBRIGACAO
+        )
+    )
+    assert financiado == Decimal("100.00")
+
+
+def test_duas_liquidacoes_da_mesma_obrigacao(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-06, A-18
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    with transaction.atomic():
+        obrigacao = _financiar(ap, ap.x, "25.00")().obrigacao
+
+    def liquidar(referencia: str) -> Callable[[], Any]:
+        return lambda: liquidar_obrigacao(obrigacao, Decimal("25.00"), referencia=referencia)
+
+    resultados = executar_em_paralelo(
+        segurando(liquidar("dev-a")), esperando(_atomica(liquidar("dev-b")))
+    )
+    excecoes = [r.excecao for r in resultados]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, LiquidacaoRecusada), recusa
+    assert MovimentoFinanceiro.objects.filter(tipo=T.DEVOLUCAO).count() == 1
+
+
+def test_apuracao_e_quitacao_ao_mesmo_tempo_nunca_movem_so_parte(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-06, A-19
+    simulador_pagamentos.definir_tarifa("pix", percentual=Decimal("1.00"), fixa=Decimal("0.00"))
+    ap = montar_ap()
+    relogio.congelar(T0 + timedelta(hours=1))
+    id_externo = tentativa_criada(ap.x).id_externo
+    assert id_externo is not None
+    simulador_pagamentos.aprovar(id_externo)
+
+    def quitar(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        sincronizar(id_externo)
+
+    def apurar(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        with transaction.atomic():
+            registrar_apuracao_no_livro(ap.ciclo, [ap.x], autor=SISTEMA)
+
+    resultados = executar_em_paralelo(quitar, apurar)
+    assert resultados[0].excecao is None, repr(resultados[0].excecao)
+    custodias = [
+        saldo(custodia(ap.rodada, ap.ciclo, ap.b, componente))
+        for componente in ("produtos", "servico", "frete")
+    ]
+    if resultados[1].excecao is None:  # a apuração viu o destino e moveu os saldos completos
+        assert custodias == [Decimal("0.00")] * 3
+        assert saldo(obrigacao_de(ap.fornecedor, ap.rodada)) == Decimal("100.00")
+    else:  # a apuração chegou antes de X quitar: recusada, sem tocar nada
+        assert isinstance(resultados[1].excecao, ValueError), repr(resultados[1].excecao)
+        assert custodias == [Decimal("100.00"), Decimal("5.00"), Decimal("20.00")]
