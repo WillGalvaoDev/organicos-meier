@@ -33,6 +33,7 @@ from apps.financeiro.models import (
     PedidoApurado,
     TipoDeDespesa,
     TipoDeMovimento,
+    TransferenciaFinanceira,
 )
 from apps.financeiro.reserva import (
     CoberturaExcedente,
@@ -42,6 +43,7 @@ from apps.financeiro.reserva import (
     _valor,
     avaliar_reserva,
     pendente_da_despesa,
+    sem_cobertura_da_obrigacao,
     utilizar_reserva,
 )
 from apps.nucleo.auditoria import SISTEMA
@@ -199,6 +201,24 @@ def rodada_apurada(rodada: Rodada) -> bool:
     return ApuracaoNoLivro.objects.filter(ciclo__rodada=rodada).exists()
 
 
+def _frete_coberto_da_obrigacao(obrigacao: ObrigacaoComComprador) -> Decimal:
+    """A parte do frete da obrigação que não veio de `frete(r)` (esta já gerou uma despesa de
+    déficit, contada nas despesas) e que já está coberta. Atribuição conservadora (E09-R04): o
+    que falta cobrir na obrigação é atribuído primeiro ao frete."""
+    destino = ContaFinanceira.objects.filter(
+        destinacao=Destinacao.OBRIGACAO_COMPRADOR, chave=f"o{obrigacao.pk}"
+    ).first()
+    pela_regra = ZERO
+    if destino is not None:
+        total = TransferenciaFinanceira.objects.filter(
+            para=destino, de__destinacao=Destinacao.FRETE
+        ).aggregate(s=Sum("valor"))["s"]
+        pela_regra = Decimal(total) if total is not None else ZERO
+    fora_da_regra = Decimal(obrigacao.frete) - pela_regra
+    falta = sem_cobertura_da_obrigacao(obrigacao)
+    return fora_da_regra - min(fora_da_regra, falta)
+
+
 def frete_do_ciclo(ciclo: Ciclo) -> FreteDoCiclo:
     """O relatório do frete do ciclo; antes da apuração, todos os campos são `None`."""
     apuracao = ApuracaoNoLivro.objects.filter(ciclo=ciclo).first()
@@ -213,6 +233,12 @@ def frete_do_ciclo(ciclo: Ciclo) -> FreteDoCiclo:
         (
             Decimal(d.valor) - pendente_da_despesa(d)
             for d in Despesa.objects.filter(tipo=TipoDeDespesa.DEFICIT_DE_FRETE, ciclo=ciclo)
+        ),
+        ZERO,
+    ) + sum(
+        (
+            _frete_coberto_da_obrigacao(o)
+            for o in ObrigacaoComComprador.objects.filter(ciclo=ciclo, depois_da_apuracao=True)
         ),
         ZERO,
     )
