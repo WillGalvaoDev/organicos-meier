@@ -100,14 +100,16 @@ def _classificar(movimento: MovimentoNoProvedor, ate: datetime | None = None) ->
             return SEM_LANCAMENTO
         return None if entrada == movimento.valor else DIVERGENTE
     if tipo == TipoDeMovimentoNoProvedor.TARIFA:
-        despesas = Despesa.objects.filter(
+        despesa = Despesa.objects.filter(
             tipo=TipoDeDespesa.TARIFA,
             pagamento__id_externo=movimento.id_externo,
             valor=abs(movimento.valor),
-        )
-        if ate is not None:
-            despesas = despesas.filter(criada_em__lte=ate)
-        return None if despesas.exists() else DIVERGENTE
+        ).first()
+        if despesa is None:
+            return DIVERGENTE
+        if ate is not None and _total(f"tarifa:{despesa.pagamento_id}", ate) != despesa.valor:
+            return DIVERGENTE  # a despesa existe, mas o débito ainda não estava no livro em `ate`
+        return None
     if tipo == TipoDeMovimentoNoProvedor.DEPOSITO:
         total = _total(f"aporte:{movimento.id_movimento}", ate)
         return None if total == movimento.valor else DIVERGENTE
