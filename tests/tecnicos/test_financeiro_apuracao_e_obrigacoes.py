@@ -16,6 +16,7 @@ from apps.financeiro.apuracao import (
     registrar_apuracao_no_livro,
 )
 from apps.financeiro.entradas import registrar_tarifa
+from apps.financeiro.liquidez import registrar_saida
 from apps.financeiro.livro import (
     EXTERIOR,
     MovimentoConflitante,
@@ -394,3 +395,72 @@ def test_so_o_administrador_cobre(cen: Cenario) -> None:
             cobrir_obrigacao_com_receita(autor, obrigacao, cen.ap.rodada, D("1.00"), "x")  # type: ignore[arg-type]
         with pytest.raises(PermissionDenied):
             cobrir_despesa(autor, deficit, fonte="reserva", valor=D("1.00"), justificativa="x")  # type: ignore[arg-type]
+
+
+# --- Correção E09-R04: o frete coberto inclui a cobertura das obrigações (A-25 e A-26) ----------
+
+
+def _arranjo_f(c: Cenario) -> None:
+    """O A-4 (déficit de 10,00 coberto) e o frete de 30,00 pago: `frete(r)` em 0,00."""
+    ap = c.ap
+    _apurar(c)
+    deficit = _deficit(c)
+    cobrir_despesa(
+        ap.admin, deficit, fonte=("receita", ap.rodada), valor=D("3.75"), justificativa="a"
+    )
+    cobrir_despesa(ap.admin, deficit, fonte="reserva", valor=D("6.25"), justificativa="b")
+    registrar_saida(
+        ap.admin,
+        tipo="pagamento_do_frete",
+        conta=frete_de(ap.rodada),
+        valor=D("30.00"),
+        identificacao="frete-1",
+        justificativa="Pagamento do frete",
+    )
+    assert saldo(frete_de(ap.rodada)) == D("0.00")
+
+
+def _coberto(c: Cenario) -> Decimal | None:
+    return frete_do_ciclo(c.ap.ciclo).deficit_coberto
+
+
+def test_cobertura_da_obrigacao_so_de_frete_entra_no_deficit_coberto(cen: Cenario) -> None:
+    ap = cen.ap  # A-25, E09-R04
+    _arranjo_f(cen)
+    resultado = _obrigacao(cen, produtos="0.00", servico="0.00", frete="5.00")
+    assert resultado.sem_cobertura == D("5.00")
+    assert Despesa.objects.filter(tipo="deficit_frete").count() == 1  # sem despesa nova
+    leituras = []
+    for passo in range(3):
+        if passo == 1:
+            designar_reserva(ap.admin, resultado.obrigacao, D("5.00"), "reserva")
+        if passo == 2:
+            liquidar_obrigacao(resultado.obrigacao, D("5.00"), referencia="dev-frete")
+        relatorio = frete_do_ciclo(ap.ciclo)
+        assert (relatorio.devolvido, relatorio.deficit) == (D("5.00"), D("15.00"))
+        leituras.append(relatorio.deficit_coberto)
+    assert leituras == [D("10.00"), D("15.00"), D("15.00")]
+
+
+def test_o_que_falta_da_obrigacao_mista_e_atribuido_primeiro_ao_frete(cen: Cenario) -> None:
+    ap = cen.ap  # A-26, E09-R04
+    _arranjo_f(cen)
+    obrigacao = ObrigacaoComComprador.objects.create(
+        rodada=ap.rodada,
+        ciclo=ap.ciclo,
+        pedido=ap.x,
+        comprador=ap.b,
+        origem_tipo="teste",
+        origem_id="mista",
+        motivo="devolucao_de_teste",
+        produtos=D("10.00"),
+        frete=D("5.00"),
+        depois_da_apuracao=True,
+    )
+    leituras = [_coberto(cen)]
+    for valor in ("5.00", "8.00", "2.00"):
+        designar_reserva(ap.admin, obrigacao, D(valor), "reserva")
+        relatorio = frete_do_ciclo(ap.ciclo)
+        assert (relatorio.devolvido, relatorio.deficit) == (D("5.00"), D("15.00"))
+        leituras.append(relatorio.deficit_coberto)
+    assert leituras == [D("10.00"), D("10.00"), D("13.00"), D("15.00")]

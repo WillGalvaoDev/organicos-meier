@@ -1,5 +1,6 @@
 """E09-01: livro-razão, destinações, movimentos e proibições (acceptance A-1 a A-13, A-17, A-18)."""
 
+from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -13,8 +14,10 @@ from apps.financeiro.livro import (
     MovimentoConflitante,
     MovimentoInvalido,
     MovimentoProibido,
+    OrdemDeTravasViolada,
     SaldoInsuficiente,
     Transferencia,
+    _travar_conta,
     conta,
     extrato,
     lancar,
@@ -487,3 +490,96 @@ def test_extrato_lista_as_transferencias_da_conta_com_o_saldo_acumulado(m: Mundo
         (b.pk, D("-30.00"), D("70.00")),
         (c.pk, D("5.00"), D("75.00")),
     ]
+
+
+# --- Correção E09-R02: a guarda da ordem das travas (A-19 e A-20) -------------------------------
+
+
+@dataclass
+class TresContas:
+    c1: ContaFinanceira
+    c2: ContaFinanceira
+    c3: ContaFinanceira
+
+
+def _tres_contas() -> TresContas:
+    """Três contas criadas nesta ordem (`pk` crescente), com saldo: reserva, receita e despesas."""
+    mundo = montar_mundo()
+    with transaction.atomic():
+        c1, c2, c3 = reserva(), receita_de(mundo.ra), despesas()
+        semear(mundo, c1, "100.00")
+        semear(mundo, c2, "100.00")
+    assert c1.pk < c2.pk < c3.pk
+    return TresContas(c1, c2, c3)
+
+
+def _estado_das_tres(t: TresContas) -> tuple[int, list[Decimal]]:
+    return MovimentoFinanceiro.objects.count(), [saldo(c) for c in (t.c1, t.c2, t.c3)]
+
+
+def _cobertura(origem: ContaFinanceira, destino: ContaFinanceira, chave: str) -> Any:
+    return lancar(
+        tipo=T.COBERTURA_DE_DESPESA,
+        transferencias=[Transferencia(origem, destino, D("1.00"))],
+        autor=SISTEMA,
+        justificativa="teste",
+        origem=origem,
+        chave=chave,
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_travar_fora_de_ordem_e_recusado_antes_de_travar() -> None:  # A-19, E09-R02
+    t = _tres_contas()
+    antes = _estado_das_tres(t)
+    with transaction.atomic():
+        _travar_conta(t.c3.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(t.c1.pk)
+    with transaction.atomic():
+        _travar_conta(t.c2.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _cobertura(t.c1, t.c3, "guarda-1")  # o `lancar` precisaria travar c1 depois de c2
+    assert _estado_das_tres(t) == antes
+
+
+@pytest.mark.django_db(transaction=True)
+def test_travar_de_novo_e_o_registro_recomeca_em_cada_transacao() -> None:  # A-20, E09-R02
+    t = _tres_contas()
+    with transaction.atomic():
+        for conta_ in (t.c1, t.c3, t.c1):
+            _travar_conta(conta_.pk)  # travar de novo uma conta já travada é permitido
+    with transaction.atomic():
+        lancar(
+            tipo=T.COBERTURA_DE_DESPESA,
+            transferencias=[
+                Transferencia(t.c2, t.c3, D("1.00")),
+                Transferencia(t.c1, t.c3, D("1.00")),
+            ],
+            autor=SISTEMA,
+            justificativa="teste",
+            origem=t.c1,
+            chave="guarda-2",
+        )  # as transferências em qualquer ordem: o `lancar` ordena
+    with transaction.atomic():
+        lancar(
+            tipo=T.COBERTURA_DE_DESPESA,
+            transferencias=[
+                Transferencia(t.c1, t.c3, D("1.00")),
+                Transferencia(t.c2, t.c3, D("1.00")),
+            ],
+            autor=SISTEMA,
+            justificativa="teste",
+            origem=t.c1,
+            chave="guarda-3",
+        )
+    with transaction.atomic():
+        _travar_conta(t.c3.pk)
+    with transaction.atomic():  # depois de um commit, o registro começa vazio
+        _travar_conta(t.c1.pk)
+    with pytest.raises(RuntimeError):  # noqa: PT012
+        with transaction.atomic():
+            _travar_conta(t.c3.pk)
+            raise RuntimeError("desfaz a transação")
+    with transaction.atomic():  # depois de um rollback, também
+        _travar_conta(t.c1.pk)

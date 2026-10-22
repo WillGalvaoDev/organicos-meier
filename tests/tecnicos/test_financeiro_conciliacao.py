@@ -303,3 +303,141 @@ def test_tarifa_do_provedor_sem_despesa_e_divergencia_ate_a_tarefa_registra(
     sincronizar(id_externo)
     assert registrar_tarifas_pendentes_agora() == 1
     assert _alertas("divergencia_na_conciliacao") == []
+
+
+# --- Correções E09-R06 e E09-R07 (A-25 a A-27) -------------------------------------------------
+
+
+class _Dubles:
+    """Um provedor de teste: o saldo e os movimentos que o teste decidir."""
+
+    def __init__(
+        self, saldo_: SaldoNoProvedor, movimentos: list[MovimentoNoProvedor] | None = None
+    ) -> None:
+        self._saldo = saldo_
+        self._movimentos = movimentos or []
+
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        return self._saldo
+
+    def listar_movimentos(self, desde: datetime, ate: datetime) -> list[MovimentoNoProvedor]:
+        return [m for m in self._movimentos if desde <= m.ocorrido_em < ate]
+
+
+def _usar(monkeypatch: pytest.MonkeyPatch, provedor: _Dubles) -> None:
+    monkeypatch.setattr("apps.financeiro.conciliacao.obter_provedor", lambda: provedor)
+
+
+def _saldo(valor: str, quando: datetime) -> SaldoNoProvedor:
+    return SaldoNoProvedor(D(valor), D("0.00"), quando, quando)
+
+
+def _movimento(
+    tipo: TipoDeMovimentoNoProvedor,
+    id_movimento: str,
+    valor: str,
+    quando: datetime,
+    id_externo: str | None = None,
+) -> MovimentoNoProvedor:
+    return MovimentoNoProvedor(id_movimento, tipo, tipo.value, D(valor), id_externo, quando, quando)
+
+
+def test_identificacao_de_64_caracteres_e_conciliavel(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-25, E09-R06
+    from apps.financeiro.conciliacao import limites_do_dia
+    from tests.apoio.financeiro import frete_de, montar_mundo, semear
+
+    inicio, fim = limites_do_dia(DIA)
+    relogio.congelar(inicio + 12 * H)
+    mundo = montar_mundo()
+    with transaction.atomic():
+        semear(mundo, frete_de(mundo.ra), "10.00")
+        registrar_aporte(administrador(), D("100.00"), "a" * 64, "Aporte")
+        registrar_saida(
+            administrador(),
+            tipo="pagamento_do_frete",
+            conta=frete_de(mundo.ra),
+            valor=D("5.00"),
+            identificacao="s" * 64,
+            justificativa="Pagamento do frete",
+        )
+    _usar(monkeypatch, _Dubles(_saldo("0.00", fim + H)))
+    relogio.congelar(fim + H)
+    conciliacao = conciliar_dia(DIA)
+    assert conciliacao.resultado == "divergente"
+    alertas = _alertas("divergencia_na_conciliacao")
+    assert sorted(a.chave for a in alertas if a.chave.startswith("livro:")) == sorted(
+        ["livro:" + "a" * 64, "livro:" + "s" * 64]
+    )
+    assert {a.dados["identificacao"] for a in alertas if a.chave.startswith("livro:")} == {
+        "a" * 64,
+        "s" * 64,
+    }
+    relogio.congelar(fim + 2 * 24 * H)
+    _usar(monkeypatch, _Dubles(_saldo("0.00", fim + 2 * 24 * H)))
+    assert conciliar_dias_pendentes_agora() >= 1
+    assert ConciliacaoDiaria.objects.filter(data=DIA + timedelta(days=1)).exists()
+
+
+def test_a_diferenca_respeita_o_instante_do_saldo(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-26 (i), E09-R07
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    inicio, fim = limites_do_dia(DIA)
+    ajuste = _movimento(TipoDeMovimentoNoProvedor.AJUSTE, "ajuste-tarde", "10.00", inicio + 12 * H)
+    _usar(monkeypatch, _Dubles(_saldo("0.00", inicio + 10 * H), [ajuste]))
+    relogio.congelar(fim + H)
+    conciliacao = conciliar_dia(DIA)
+    assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["ajuste-tarde"]
+
+
+def test_pagamento_lancado_depois_do_instante_do_saldo_nao_cria_diferenca(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-26 (ii), E09-R07
+    from apps.financeiro.conciliacao import limites_do_dia
+    from tests.apoio.financeiro import pedido_composto
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+    from tests.fabricas import ContaFactory
+
+    _, fim = limites_do_dia(DIA)
+    relogio.congelar(T0 + H)
+    pedido = pedido_composto(ContaFactory.create())
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    relogio.congelar(fim - H)  # 23:00 de D em Brasília
+    simulador_pagamentos.aprovar(id_externo)
+    relogio.congelar(fim + timedelta(minutes=30))  # a entrada é lançada às 00:30 de D + 1
+    sincronizar(id_externo)
+    pagamento = _movimento(
+        TipoDeMovimentoNoProvedor.PAGAMENTO, "pag-1", "125.00", fim - H, id_externo
+    )
+    _usar(monkeypatch, _Dubles(_saldo("125.00", fim - timedelta(minutes=30)), [pagamento]))
+    relogio.congelar(fim + H)
+    conciliacao = conciliar_dia(DIA)
+    assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")
+    assert not [a for a in AlertaFinanceiro.objects.all() if a.chave.startswith("saldo:")]
+    assert _alertas("pagamento_sem_conciliacao") == []
+
+
+def test_movimento_do_provedor_depois_do_dia_nao_e_par_de_um_aporte_do_dia(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-27, E09-R07
+    from apps.financeiro.conciliacao import limites_do_dia
+    from tests.apoio.financeiro import montar_mundo
+
+    inicio, fim = limites_do_dia(DIA)
+    relogio.congelar(inicio + 12 * H)
+    montar_mundo()
+    with transaction.atomic():
+        registrar_aporte(administrador(), D("100.00"), "futuro", "Aporte")
+    deposito = _movimento(TipoDeMovimentoNoProvedor.DEPOSITO, "futuro", "100.00", fim + H)
+    _usar(monkeypatch, _Dubles(_saldo("100.00", fim + 2 * H), [deposito]))
+    relogio.congelar(fim + 2 * H)
+    conciliacao = conciliar_dia(DIA)
+    assert conciliacao.resultado == "divergente"
+    assert conciliacao.resumo["sem_par"] == 1
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["livro:futuro"]
+    assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")

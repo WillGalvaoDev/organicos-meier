@@ -175,10 +175,10 @@ def test_titulo_e_corpo_de_cada_tipo(
     [
         ("tipo_inexistente", "geral", {}),
         (RESERVA, "", {}),
-        (RESERVA, "c" * 65, {}),
+        (RESERVA, "c" * 81, {}),
         (RESERVA, "geral", {"token": "x"}),
     ],
-    ids=["tipo", "chave_vazia", "chave_longa", "segredo"],
+    ids=["tipo", "chave_vazia", "chave_de_81", "segredo"],
 )
 def test_entradas_invalidas_sao_recusadas(
     admin: Conta, tipo: str, chave: str, dados: dict[str, Any]
@@ -262,3 +262,24 @@ def test_abrir_e_resolver_exigem_transacao(admin: Conta) -> None:
     with pytest.raises(TransactionManagementError):
         resolver_alerta(RESERVA, "geral", motivo="cobertura")
     assert AlertaFinanceiro.objects.count() == 0
+
+
+def test_chave_de_80_caracteres_e_aceita_e_resolvida_inteira(admin: Conta) -> None:  # A-13
+    from apps.financeiro.alertas import abrir_alerta as abrir
+
+    chaves = ["livro:" + "x" * 64, "y" * 80]
+    abertos = []
+    for chave in chaves:
+        with transaction.atomic():
+            abertos.append(
+                abrir("divergencia_na_conciliacao", chave, {"identificacao": chave[-64:]})
+            )
+    assert [len(a.chave) for a in abertos] == [70, 80]
+    assert [a.chave for a in AlertaFinanceiro.objects.order_by("pk")] == chaves
+    assert len(_notificacoes(admin)) == 2
+    for chave in chaves:
+        with transaction.atomic():
+            resolvido = resolver_alerta("divergencia_na_conciliacao", chave, motivo="par")
+        assert resolvido is not None
+        assert resolvido.chave == chave
+    assert alertas_abertos() == []

@@ -1,6 +1,7 @@
 """E09-01: concorrência do livro-razão (acceptance A-14 a A-16)."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Barrier, BrokenBarrierError, local
@@ -9,13 +10,21 @@ from typing import Any
 import pytest
 from django.db import transaction
 
+from apps.financeiro import apuracao as apuracao_modulo
 from apps.financeiro import livro
+from apps.financeiro import obrigacoes as obrigacoes_modulo
+from apps.financeiro import reserva as reserva_modulo
 from apps.financeiro.alertas import abrir_alerta
-from apps.financeiro.apuracao import registrar_apuracao_no_livro
+from apps.financeiro.apuracao import (
+    cobrir_despesa,
+    cobrir_tarifas_pendentes_da_rodada,
+    registrar_apuracao_no_livro,
+)
 from apps.financeiro.conciliacao import ConciliacaoDiaria, conciliar_dia
 from apps.financeiro.liquidez import LiquidezInsuficiente, registrar_saida
 from apps.financeiro.livro import (
     EXTERIOR,
+    MovimentoConflitante,
     SaldoInsuficiente,
     Transferencia,
     lancar,
@@ -32,14 +41,19 @@ from apps.financeiro.models import (
 )
 from apps.financeiro.obrigacoes import (
     LiquidacaoRecusada,
+    cobrir_obrigacao_com_receita,
+    conta_da_obrigacao,
     liquidar_obrigacao,
     registrar_obrigacao_com_comprador,
 )
 from apps.financeiro.reserva import (
     AporteRepetido,
+    CoberturaExcedente,
     ReservaInsuficiente,
     designar_reserva,
+    pendente_da_despesa,
     registrar_aporte,
+    sem_cobertura_da_obrigacao,
     situacao_da_reserva,
     utilizar_reserva,
 )
@@ -47,6 +61,7 @@ from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import SISTEMA
 from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora
 from tests.apoio.concorrencia import executar_em_paralelo
+from tests.apoio.corrida import Corrida, pausar_depois_da_primeira_trava
 from tests.apoio.financeiro import (
     Mundo,
     custodia,
@@ -475,3 +490,269 @@ def test_duas_conciliacoes_do_mesmo_dia(
     assert ConciliacaoDiaria.objects.count() == 1
     abertos = AlertaFinanceiro.objects.filter(tipo="divergencia_na_conciliacao", resolvido_em=None)
     assert abertos.count() == 1
+
+
+# --- Correção E09-R01, R02, R03 e R09: uma regra única de travas (E09-05 A-16 e A-17; E09-06
+# A-20 a A-24) --------------------------------------------------------------------------------
+
+
+def test_designacao_e_liquidacao_nao_se_travam_mutuamente(
+    m: Mundo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-05, A-16, E09-R02
+    with transaction.atomic():
+        obrigacao = obrigacao_de_teste("50.00")
+        destino = conta_da_obrigacao(obrigacao)  # nasce antes da `reserva`: `pk` menor
+        semear(m, destino, "25.00")
+        caixa = reserva()
+        semear(m, caixa, "100.00")
+    assert destino.pk < caixa.pk
+    pausar_depois_da_primeira_trava(monkeypatch)
+
+    def designar(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        with transaction.atomic():
+            return designar_reserva(m.admin, obrigacao, D("25.00"), "devolução")
+
+    def liquidar(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        with transaction.atomic():
+            return liquidar_obrigacao(obrigacao, D("25.00"), referencia="dev-trava")
+
+    resultados = executar_em_paralelo(designar, liquidar)
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert saldo(destino) == D("0.00")
+    assert MovimentoFinanceiro.objects.filter(tipo=T.DEVOLUCAO).count() == 1
+    situacao = situacao_da_reserva()
+    assert (situacao.saldo, situacao.comprometido, situacao.livre) == (
+        D("100.00"),
+        D("25.00"),
+        D("75.00"),
+    )
+    assert sem_cobertura_da_obrigacao(obrigacao) == D("0.00")
+
+
+def test_designacao_e_cobertura_pela_receita_de_obrigacao_sem_conta(
+    m: Mundo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-05, A-17, E09-R02
+    with transaction.atomic():
+        obrigacao = obrigacao_de_teste("50.00")  # sem conta no livro-razão
+        semear(m, reserva(), "100.00")
+        semear(m, receita_de(m.rb), "100.00")
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, reserva_modulo, "sem_cobertura_da_obrigacao")
+
+    def designar() -> Any:
+        return designar_reserva(m.admin, obrigacao, D("50.00"), "devolução")
+
+    def cobrir() -> Any:
+        return cobrir_obrigacao_com_receita(m.admin, obrigacao, m.rb, D("50.00"), "receita")
+
+    a, b = corrida.rodar(designar, cobrir)
+    excecoes = [a.excecao, b.excecao]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, CoberturaExcedente), recusa
+    destino = conta_da_obrigacao(obrigacao)
+    financiado = sum(
+        (t.valor for t in TransferenciaFinanceira.objects.filter(para=destino)), D("0.00")
+    )
+    assert financiado + situacao_da_reserva().comprometido == D("50.00")
+    assert sem_cobertura_da_obrigacao(obrigacao) == D("0.00")
+    if a.excecao is None:  # a designação venceu
+        assert (situacao_da_reserva().comprometido, saldo(receita_de(m.rb))) == (
+            D("50.00"),
+            D("100.00"),
+        )
+    else:
+        assert (situacao_da_reserva().comprometido, saldo(receita_de(m.rb))) == (
+            D("0.00"),
+            D("50.00"),
+        )
+
+
+@dataclass
+class ArranjoR:
+    m: Mundo
+    despesa: Despesa
+
+
+def _arranjo_r(m: Mundo) -> ArranjoR:
+    """Uma tarifa D de 10,00 da rodada `r`, lançada por F4; a reserva e a receita com 100,00."""
+    with transaction.atomic():
+        semear(m, reserva(), "100.00")
+        semear(m, receita_de(m.ra), "100.00")
+        despesa = despesa_de_tarifa("10.00", m.ra)
+        mover(T.TARIFA, despesas(), EXTERIOR, "10.00", origem=despesa.pagamento)
+    return ArranjoR(m, despesa)
+
+
+def _confere_uma_so_cobertura(r: ArranjoR, a: Any, b: Any) -> None:
+    excecoes = [a.excecao, b.excecao]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, CoberturaExcedente), recusa
+    coberto = sum(
+        (
+            t.valor
+            for t in TransferenciaFinanceira.objects.filter(
+                movimento__tipo=T.COBERTURA_DE_DESPESA,
+                movimento__origem_tipo="financeiro.despesa",
+                movimento__origem_id=str(r.despesa.pk),
+            )
+        ),
+        D("0.00"),
+    )
+    assert coberto == D("10.00")
+    assert pendente_da_despesa(r.despesa) == D("0.00")
+    assert saldo(despesas()) == D("0.00")
+    assert saldo(reserva()) + saldo(receita_de(r.m.ra)) == D("190.00")
+
+
+def test_reserva_e_receita_nao_cobrem_a_mesma_despesa_duas_vezes(
+    m: Mundo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-20, E09-R01
+    r = _arranjo_r(m)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, reserva_modulo, "pendente_da_despesa")
+
+    def utilizar() -> Any:
+        return utilizar_reserva(m.admin, r.despesa, D("10.00"), "tarifa")
+
+    def cobrir() -> Any:
+        return cobrir_despesa(
+            m.admin, r.despesa, fonte=("receita", m.ra), valor=D("10.00"), justificativa="tarifa"
+        )
+
+    a, b = corrida.rodar(utilizar, cobrir)
+    _confere_uma_so_cobertura(r, a, b)
+
+
+def test_receita_e_reserva_nao_cobrem_a_mesma_despesa_duas_vezes(
+    m: Mundo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-21, E09-R01
+    r = _arranjo_r(m)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, apuracao_modulo, "pendente_da_despesa")
+
+    def cobrir() -> Any:
+        return cobrir_despesa(
+            m.admin, r.despesa, fonte=("receita", m.ra), valor=D("10.00"), justificativa="tarifa"
+        )
+
+    def utilizar() -> Any:
+        return utilizar_reserva(m.admin, r.despesa, D("10.00"), "tarifa")
+
+    a, b = corrida.rodar(cobrir, utilizar)
+    _confere_uma_so_cobertura(r, a, b)
+
+
+def test_cobertura_automatica_e_reserva_nao_cobrem_a_mesma_despesa(
+    m: Mundo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-22, E09-R01
+    r = _arranjo_r(m)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, apuracao_modulo, "pendente_da_despesa")
+
+    def automatica() -> Any:
+        return cobrir_tarifas_pendentes_da_rodada(m.ra)
+
+    def utilizar() -> Any:
+        return utilizar_reserva(m.admin, r.despesa, D("10.00"), "tarifa")
+
+    a, b = corrida.rodar(automatica, utilizar)
+    assert a.excecao is None, repr(a.excecao)
+    if a.valor == 1:  # (a) a automática cobriu e a utilização foi recusada
+        assert isinstance(b.excecao, CoberturaExcedente), repr(b.excecao)
+    else:  # (b) a utilização cobriu e a automática não fez nada
+        assert (a.valor, b.excecao) == (0, None)
+    coberto = sum(
+        (
+            t.valor
+            for t in TransferenciaFinanceira.objects.filter(
+                movimento__tipo=T.COBERTURA_DE_DESPESA,
+                movimento__origem_tipo="financeiro.despesa",
+                movimento__origem_id=str(r.despesa.pk),
+            )
+        ),
+        D("0.00"),
+    )
+    assert coberto == D("10.00")
+
+
+def _obrigacao_financiada(ap: Any, valor: str = "25.00") -> Any:
+    with transaction.atomic():
+        return _financiar(ap, ap.x, valor)().obrigacao
+
+
+def test_a_mesma_referencia_devolve_o_mesmo_movimento(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-23 (i), E09-R03
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    obrigacao = _obrigacao_financiada(ap)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, obrigacoes_modulo, "_ja_liquidada")
+
+    def liquidar() -> Any:
+        return liquidar_obrigacao(obrigacao, D("25.00"), referencia="mesma")
+
+    a, b = corrida.rodar(liquidar, liquidar)
+    assert (a.excecao, b.excecao) == (None, None), (repr(a.excecao), repr(b.excecao))
+    assert a.valor.pk == b.valor.pk
+    assert MovimentoFinanceiro.objects.filter(tipo=T.DEVOLUCAO).count() == 1
+    assert saldo(conta_da_obrigacao(obrigacao)) == D("0.00")
+
+
+def test_a_mesma_referencia_com_valor_diferente_e_conflito(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-23 (ii), E09-R03
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    obrigacao = _obrigacao_financiada(ap)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, obrigacoes_modulo, "_ja_liquidada")
+
+    a, b = corrida.rodar(
+        lambda: liquidar_obrigacao(obrigacao, D("25.00"), referencia="mesma"),
+        lambda: liquidar_obrigacao(obrigacao, D("20.00"), referencia="mesma"),
+    )
+    assert b.excecao is None, repr(b.excecao)  # B gravou primeiro
+    assert isinstance(a.excecao, MovimentoConflitante), repr(a.excecao)
+    assert MovimentoFinanceiro.objects.filter(tipo=T.DEVOLUCAO).count() == 1
+
+
+def _confere_obrigacao_e_apuracao(ap: Any, resultado: Any) -> None:
+    assert resultado.sem_cobertura == D("0.00")
+    assert saldo(obrigacao_de(ap.fornecedor, ap.rodada)) == D("75.00")
+    assert saldo(custodia(ap.rodada, ap.ciclo, ap.b, "produtos")) == D("0.00")
+    assert saldo(conta_da_obrigacao(resultado.obrigacao)) == D("25.00")
+    tirou_da_custodia = TransferenciaFinanceira.objects.filter(
+        para=conta_da_obrigacao(resultado.obrigacao), de__destinacao="custodia"
+    ).exists()
+    assert tirou_da_custodia is (not resultado.obrigacao.depois_da_apuracao)
+
+
+def test_obrigacao_que_le_o_estado_da_apuracao_e_a_apuracao_se_serializam(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-24 (i), E09-R09
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    corrida = Corrida()
+    corrida.antes_de(monkeypatch, obrigacoes_modulo, "_fontes")
+    a, b = corrida.rodar(
+        _financiar(ap, ap.x, "25.00"),
+        lambda: registrar_apuracao_no_livro(ap.ciclo, [ap.x], autor=SISTEMA),
+    )
+    assert (a.excecao, b.excecao) == (None, None), (repr(a.excecao), repr(b.excecao))
+    _confere_obrigacao_e_apuracao(ap, a.valor)
+
+
+def test_apuracao_que_le_os_saldos_e_a_obrigacao_se_serializam(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E09-06, A-24 (ii), E09-R09
+    ap = _ap_com_x_pago(relogio, simulador_pagamentos)
+    corrida = Corrida()
+    corrida.antes_de(monkeypatch, apuracao_modulo, "lancar")
+    a, b = corrida.rodar(
+        lambda: registrar_apuracao_no_livro(ap.ciclo, [ap.x], autor=SISTEMA),
+        _financiar(ap, ap.abertura, "25.00"),
+    )
+    assert (a.excecao, b.excecao) == (None, None), (repr(a.excecao), repr(b.excecao))
+    _confere_obrigacao_e_apuracao(ap, b.valor)

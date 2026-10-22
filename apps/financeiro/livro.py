@@ -50,6 +50,10 @@ class MovimentoInvalido(Exception):
         self.codigo = codigo
 
 
+class OrdemDeTravasViolada(Exception):
+    """Uma conta foi pedida fora da ordem crescente de `pk` na mesma transação (E09-R02)."""
+
+
 class MovimentoConflitante(Exception):
     """A chave já existe com outro conteúdo."""
 

@@ -6,14 +6,15 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from apps.financeiro.invariante import ResultadoDoInvariante, verificar_invariante_agora
-from apps.financeiro.liquidez import registrar_saida
 from django.db import transaction
 
 from apps.financeiro.alertas import abrir_alerta
+from apps.financeiro.invariante import ResultadoDoInvariante, verificar_invariante_agora
+from apps.financeiro.liquidez import registrar_saida
 from apps.financeiro.models import AlertaFinanceiro
 from apps.financeiro.reserva import InvarianteViolado, registrar_aporte
-from apps.pagamentos.provedor import SaldoNoProvedor
+from apps.nucleo.tempo import agora
+from apps.pagamentos.provedor import ProvedorIndisponivel, SaldoNoProvedor
 from tests.apoio.financeiro import montar_l, obrigacao_de, pedido_composto, receita_de
 from tests.apoio.pedidos import T0, administrador, sincronizar, tentativa_criada
 from tests.conftest import RelogioControlado
@@ -145,3 +146,55 @@ def test_o_saldo_de_relatorio_e_comparado_com_o_livro_no_mesmo_instante(
     verificar_invariante_agora()
     (alerta,) = _alertas_abertos()
     assert D(str(alerta.dados["diferenca"])) == D("-91.00")
+
+
+class _ProvedorQueResponde:
+    """Um dublê que responde só o saldo, com folga para o invariante."""
+
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        agora_ = agora()
+        return SaldoNoProvedor(D("1000.00"), D("0.00"), agora_, agora_)
+
+
+class _ProvedorFora:
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        raise ProvedorIndisponivel("fora do ar")
+
+
+def _alertas_da_reserva() -> list[AlertaFinanceiro]:
+    return list(AlertaFinanceiro.objects.filter(tipo="reserva_insuficiente", resolvido_em=None))
+
+
+def test_a_tarefa_do_invariante_avalia_a_reserva(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:  # A-24, E09-R05
+    from apps.financeiro.apuracao import cobrir_tarifas_pendentes_da_rodada
+    from tests.apoio.financeiro import despesa_de_tarifa, montar_mundo, semear
+
+    relogio.congelar(T0)
+    mundo = montar_mundo()
+    despesa_de_tarifa("10.00", mundo.ra)
+    monkeypatch.setattr("apps.financeiro.invariante.obter_provedor", lambda: _ProvedorQueResponde())
+    # (i) sem violação do invariante, mas com 10,00 de tarifa pendente e a reserva em 0,00
+    resultado = verificar_invariante_agora()
+    assert resultado is not None
+    assert _alertas_abertos() == []
+    (alerta,) = _alertas_da_reserva()
+    assert (D(str(alerta.dados["sem_cobertura"])), D(str(alerta.dados["livre"]))) == (
+        D("10.00"),
+        D("0.00"),
+    )
+    # (iii) o provedor fora do ar: devolve None, avisa, e a reserva continua avaliada
+    monkeypatch.setattr("apps.financeiro.invariante.obter_provedor", lambda: _ProvedorFora())
+    caplog.set_level(logging.INFO, logger=LOG)
+    assert verificar_invariante_agora() is None
+    assert [r for r in caplog.records if r.name == LOG and r.levelno == logging.WARNING]
+    assert len(_alertas_da_reserva()) == 1
+    assert _alertas_abertos() == []
+    # (ii) a tarifa é coberta fora das operações da reserva: a tarefa resolve o alerta
+    with transaction.atomic():
+        semear(mundo, receita_de(mundo.ra), "10.00")
+        assert cobrir_tarifas_pendentes_da_rodada(mundo.ra) == 1
+    monkeypatch.setattr("apps.financeiro.invariante.obter_provedor", lambda: _ProvedorQueResponde())
+    verificar_invariante_agora()
+    assert _alertas_da_reserva() == []
