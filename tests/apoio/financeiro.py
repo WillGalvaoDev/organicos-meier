@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from apps.contas.models import Conta
-from apps.financeiro.livro import EXTERIOR, Transferencia, conta, lancar
+from apps.financeiro.livro import EXTERIOR, Transferencia, conta, lancar, travar_contas
 from apps.financeiro.models import (
     Componente,
     ContaFinanceira,
@@ -143,6 +143,7 @@ def semear(m: Mundo, destino: ContaFinanceira, valor: str) -> None:
             Destinacao.OBRIGACAO_FORNECEDOR: Componente.PRODUTOS,
         }[Destinacao(d)]
         origem = custodia(rodada, ciclo, m.x, componente)
+        travar_contas(origem, destino)  # as duas contas de uma vez, em ordem: a regra de travas
         mover(TipoDeMovimento.ENTRADA_DE_PAGAMENTO, EXTERIOR, origem, valor)
         mover(TipoDeMovimento.APURACAO, origem, destino, valor)
     else:

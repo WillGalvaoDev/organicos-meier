@@ -399,9 +399,51 @@ def saldo_total_esperado(ate: datetime | None = None) -> Decimal:
     return (entrou or ZERO) - (saiu or ZERO)
 
 
+def _escopo_da_transacao() -> object | None:
+    """O bloco `atomic` mais externo que não é o do caso de teste: a transação das travas. No
+    `TestCase` o único bloco é o do próprio teste, que nunca termina; sem transação própria, não
+    há ordem a guardar."""
+    for bloco in connection.atomic_blocks:
+        if not getattr(bloco, "_from_testcase", False):
+            return bloco
+    return None
+
+
+def _travadas_da_transacao() -> set[int] | None:
+    """As contas que a transação mais externa já travou; começa vazio em cada transação nova,
+    depois de um commit ou de um rollback."""
+    escopo = _escopo_da_transacao()
+    if escopo is None:
+        return None
+    atual = getattr(connection, "_travas_do_financeiro", None)
+    if atual is None or atual[0] is not escopo:
+        atual = (escopo, set())
+        connection._travas_do_financeiro = atual  # type: ignore[attr-defined]
+    travadas: set[int] = atual[1]
+    return travadas
+
+
 def _travar_conta(pk: int) -> ContaFinanceira:
+    """O único caminho de trava das contas do livro-razão. A guarda da ordem (E09-R02): pedir uma
+    conta de `pk` menor que a maior já travada na transação é um erro de programação, e levanta
+    `OrdemDeTravasViolada` antes de travar; travar de novo uma conta já travada é permitido."""
+    travadas = _travadas_da_transacao()
+    if travadas is not None and pk not in travadas and travadas and pk < max(travadas):
+        raise OrdemDeTravasViolada(
+            f"a conta {pk} foi pedida depois da {max(travadas)}: trave o conjunto de uma vez, "
+            "em ordem crescente de pk"
+        )
     travada: ContaFinanceira = ContaFinanceira.objects.select_for_update().get(pk=pk)
+    if travadas is not None:
+        travadas.add(pk)
     return travada
+
+
+def travar_contas(*contas: ContaFinanceira) -> None:
+    """Trava o conjunto de contas de uma vez, em ordem crescente de `pk` (regra única de travas
+    do financeiro, E09-R01, R02 e R09)."""
+    for pk in sorted({c.pk for c in contas}):
+        _travar_conta(pk)
 
 
 __all__ = [
@@ -417,4 +459,5 @@ __all__ = [
     "lancar",
     "saldo",
     "saldo_total_esperado",
+    "travar_contas",
 ]

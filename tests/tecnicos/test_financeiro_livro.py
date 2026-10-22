@@ -507,8 +507,9 @@ def _tres_contas() -> TresContas:
     mundo = montar_mundo()
     with transaction.atomic():
         c1, c2, c3 = reserva(), receita_de(mundo.ra), despesas()
-        semear(mundo, c1, "100.00")
-        semear(mundo, c2, "100.00")
+    for destino in (c1, c2):  # cada saldo na sua transação, como em produção
+        with transaction.atomic():
+            semear(mundo, destino, "100.00")
     assert c1.pk < c2.pk < c3.pk
     return TresContas(c1, c2, c3)
 
