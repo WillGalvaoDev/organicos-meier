@@ -33,6 +33,7 @@ from apps.pedidos.models import (
     SituacaoDoPedido,
 )
 from apps.pedidos.prazos import aceita_tentativas, fim_da_margem, prazo_de_pagamento
+from apps.pedidos.sinais import destino_do_pagamento_decidido
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +73,16 @@ def ler_referencia(texto: str) -> tuple[int, int] | None:
 def _gravar_destino(
     pagamento: PagamentoDoProvedor, pedido: Pedido | None, destino: str, motivo: str
 ) -> DestinoDoPagamento:
-    return DestinoDoPagamento.objects.create(
+    gravado = DestinoDoPagamento.objects.create(
         pagamento_id=pagamento.pk,
         pedido=pedido,
         destino=destino,
         motivo=motivo,
         decidido_em=agora(),
     )
+    # quem recebe (o livro-razão, E09-04) roda na mesma transação: uma exceção desfaz tudo
+    destino_do_pagamento_decidido.send(sender=DestinoDoPagamento, destino=gravado)
+    return gravado
 
 
 def _sem_pedido(pagamento: PagamentoDoProvedor) -> DestinoDoPagamento:

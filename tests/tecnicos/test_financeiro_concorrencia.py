@@ -1,6 +1,7 @@
 """E09-01: concorrência do livro-razão (acceptance A-14 a A-16)."""
 
 from collections.abc import Callable
+from datetime import timedelta
 from decimal import Decimal
 from threading import Barrier, BrokenBarrierError, local
 from typing import Any
@@ -17,12 +18,32 @@ from apps.financeiro.livro import (
     lancar,
     saldo,
 )
-from apps.financeiro.models import AlertaFinanceiro, MovimentoFinanceiro, TipoDeMovimento
+from apps.financeiro.models import (
+    AlertaFinanceiro,
+    ContaFinanceira,
+    Despesa,
+    MovimentoFinanceiro,
+    ObrigacaoComComprador,
+    TipoDeMovimento,
+)
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import SISTEMA
+from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora
 from tests.apoio.concorrencia import executar_em_paralelo
-from tests.apoio.financeiro import Mundo, despesas, montar_mundo, mover, receita_de, reserva, semear
+from tests.apoio.financeiro import (
+    Mundo,
+    despesas,
+    montar_mundo,
+    mover,
+    pedido_composto,
+    receita_de,
+    reserva,
+    semear,
+)
+from tests.apoio.pedidos import T0, sincronizar, tentativa_criada
 from tests.apoio.trava import esperando, segurando
+from tests.conftest import RelogioControlado
+from tests.fabricas import ContaFactory
 
 pytestmark = [pytest.mark.concorrencia, pytest.mark.django_db(transaction=True)]
 
@@ -141,3 +162,76 @@ def test_duas_aberturas_do_mesmo_alerta_gravam_um_so(m: Mundo) -> None:  # E09-0
     assert resultados[0].valor.pk == resultados[1].valor.pk
     assert AlertaFinanceiro.objects.count() == 1
     assert Notificacao.objects.filter(conta=admin, evento="alerta_financeiro").count() == 1
+
+
+# --- E09-04: entradas dos pagamentos (A-11 e A-12) --------------------------------------------
+
+
+def _duas_cobrancas_aprovadas(relogio: RelogioControlado, sim: Any) -> tuple[Any, str, str]:
+    """O pedido X de B com duas cobranças aprovadas, a primeira expirada e sincronizada antes."""
+    sim.definir_tarifa("pix", percentual=Decimal("1.00"), fixa=Decimal("0.00"))
+    relogio.congelar(T0 + timedelta(hours=1))
+    comprador = ContaFactory.create()
+    pedido = pedido_composto(comprador)
+    primeira = tentativa_criada(pedido).id_externo
+    assert primeira is not None
+    sim.expirar(primeira)
+    sincronizar(primeira)
+    relogio.congelar(T0 + timedelta(hours=2))
+    segunda = tentativa_criada(pedido).id_externo
+    assert segunda is not None
+    sim.aprovar(primeira, em=T0 + timedelta(minutes=110))
+    sim.aprovar(segunda, em=T0 + timedelta(minutes=125))
+    return pedido, primeira, segunda
+
+
+def test_dois_pagamentos_do_mesmo_pedido_ao_mesmo_tempo(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-04, A-11, cenário 39
+    pedido, primeira, segunda = _duas_cobrancas_aprovadas(relogio, simulador_pagamentos)
+
+    def sincronizar_em_paralelo(id_externo: str) -> Callable[[Any], None]:
+        def executa(barreira: Any) -> None:
+            barreira.wait(timeout=10)
+            sincronizar(id_externo)
+
+        return executa
+
+    resultados = executar_em_paralelo(
+        sincronizar_em_paralelo(primeira), sincronizar_em_paralelo(segunda)
+    )
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    entradas = MovimentoFinanceiro.objects.filter(tipo=T.ENTRADA_DE_PAGAMENTO)
+    assert entradas.count() == 1
+    assert sum(t.valor for t in entradas.get().transferencias.all()) == Decimal("125.00")
+    (obrigacao,) = ObrigacaoComComprador.objects.all()
+    assert obrigacao.integral == Decimal("125.00")
+    assert MovimentoFinanceiro.objects.filter(tipo=T.ENTRADA_PARA_DEVOLUCAO).count() == 1
+    custodias = ContaFinanceira.objects.filter(destinacao="custodia", comprador=pedido.comprador)
+    assert sum((saldo(c) for c in custodias), Decimal("0.00")) == pedido.total
+
+
+def test_aviso_e_reconsulta_do_mesmo_pagamento_registram_uma_entrada(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-04, A-12
+    simulador_pagamentos.definir_tarifa("pix", percentual=Decimal("1.00"), fixa=Decimal("0.00"))
+    relogio.congelar(T0 + timedelta(hours=1))
+    pedido = pedido_composto(ContaFactory.create())
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    simulador_pagamentos.aprovar(id_externo)
+    relogio.congelar(T0 + timedelta(hours=25))
+
+    def aviso(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        sincronizar(id_externo, "aviso")
+
+    def reconsulta(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        reconsultar_pagamentos_da_margem_agora()
+
+    resultados = executar_em_paralelo(aviso, reconsulta)
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert MovimentoFinanceiro.objects.filter(tipo=T.ENTRADA_DE_PAGAMENTO).count() == 1
+    assert MovimentoFinanceiro.objects.filter(tipo=T.TARIFA).count() == 1
+    assert Despesa.objects.count() == 1

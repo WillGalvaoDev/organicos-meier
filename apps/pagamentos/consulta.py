@@ -102,6 +102,16 @@ def pendentes_das_referencias(referencias: list[str]) -> list[PagamentoNoProvedo
     )
 
 
+def pagamentos_com_tarifa_e_destino() -> list[int]:
+    """Os pagamentos que informaram tarifa e já têm destino decidido, por criação e id. Só
+    leitura: quem registra a despesa trava cada um depois."""
+    return list(
+        PagamentoNoProvedor.objects.filter(tarifa__gt=0, destino__isnull=False)
+        .order_by("criado_no_provedor_em", "id_externo")
+        .values_list("pk", flat=True)
+    )
+
+
 def travar_pagamento(pk: int) -> PagamentoNoProvedor:
     """Relê o pagamento com a linha travada (exige transação). É o primeiro item da ordem das
     travas: pagamento, situação do pedido, tentativa."""

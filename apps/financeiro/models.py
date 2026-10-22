@@ -4,9 +4,12 @@ Tudo aqui só aceita inserção, no banco e na aplicação. O saldo de uma conta
 entrou nela menos o que saiu, somado das transferências.
 """
 
+from decimal import Decimal
+
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models import F, Q
+from django.db.models.lookups import GreaterThan
 
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
@@ -147,6 +150,113 @@ class TransferenciaFinanceira(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"transferência {self.pk}"
+
+
+class TipoDeDespesa(models.TextChoices):
+    TARIFA = "tarifa", "Tarifa do provedor"
+    DEFICIT_DE_FRETE = "deficit_frete", "Déficit de frete"
+
+
+class ObrigacaoComComprador(RegistroSoInsercao):
+    """Uma devolução devida a um comprador. O registro nunca muda: o financiado, o designado e o
+    liquidado saem do livro-razão, e não de campos alteráveis."""
+
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, null=True, blank=True)
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, null=True, blank=True)
+    pedido = models.ForeignKey(
+        "pedidos.Pedido", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    comprador = models.ForeignKey(Conta, on_delete=models.PROTECT, null=True, blank=True)
+    origem_tipo = models.CharField(max_length=100)
+    origem_id = models.CharField(max_length=64)
+    motivo = models.CharField(max_length=40)
+    produtos = CampoDinheiro(default=0)
+    servico = CampoDinheiro(default=0)
+    frete = CampoDinheiro(default=0)
+    # o que não se separa em componentes, como o pagamento devolvido inteiro
+    integral = CampoDinheiro(default=0)
+    criada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["origem_tipo", "origem_id"], name="obrigacao_origem_unica"
+            ),
+            models.CheckConstraint(
+                condition=Q(origem_tipo__regex=r"\S") & Q(origem_id__regex=r"\S"),
+                name="obrigacao_origem_preenchida",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(produtos__gte=0) & Q(servico__gte=0) & Q(frete__gte=0) & Q(integral__gte=0)
+                ),
+                name="obrigacao_componentes_nao_negativos",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    GreaterThan(F("produtos") + F("servico") + F("frete") + F("integral"), 0)
+                ),
+                name="obrigacao_devido_positivo",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        rodada__isnull=True,
+                        ciclo__isnull=True,
+                        pedido__isnull=True,
+                        comprador__isnull=True,
+                    )
+                    | Q(
+                        rodada__isnull=False,
+                        ciclo__isnull=False,
+                        pedido__isnull=False,
+                        comprador__isnull=False,
+                    )
+                ),
+                name="obrigacao_pedido_todo_ou_nada",
+            ),
+        )
+
+    @property
+    def devido(self) -> Decimal:
+        return Decimal(self.produtos + self.servico + self.frete + self.integral)
+
+    def __str__(self) -> str:
+        return f"obrigação {self.pk}"
+
+
+class Despesa(RegistroSoInsercao):
+    """Uma despesa a cobrir: a tarifa de um pagamento ou o déficit de frete de um ciclo. O coberto
+    é a soma dos movimentos de cobertura; o pendente é o valor menos o coberto."""
+
+    tipo = models.CharField(max_length=20, choices=TipoDeDespesa.choices)
+    valor = CampoDinheiro()
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, null=True, blank=True)
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, null=True, blank=True)
+    pagamento = models.ForeignKey(
+        "pagamentos.PagamentoNoProvedor", on_delete=models.PROTECT, null=True, blank=True
+    )
+    criada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pagamento"],
+                condition=Q(tipo="tarifa"),
+                name="despesa_uma_tarifa_por_pagamento",
+            ),
+            models.CheckConstraint(condition=Q(valor__gt=0), name="despesa_valor_positivo"),
+            models.CheckConstraint(
+                condition=(
+                    Q(tipo="tarifa", pagamento__isnull=False)
+                    | Q(tipo="deficit_frete", rodada__isnull=False, ciclo__isnull=False)
+                ),
+                name="despesa_coerente_com_o_tipo",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"{self.tipo} {self.valor}"
 
 
 class AlertaFinanceiro(models.Model):
