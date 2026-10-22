@@ -20,13 +20,14 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-12 | E08-07 | positivo e negativo | um administrador e o simulador configurado | `POST` nos formulários "Depositar na conta" (R$ 1.000,00) e "Registrar saída da conta" (R$ 50,00, "repasse"); depois com valor `1.000,00` e com `-5` | dois movimentos novos; nos inválidos, a mensagem de erro do formulário e nenhum movimento; comprador e fornecedor recebem 403, e sem o simulador configurado, 404 |
 | A-13 | E08-07 A-9 | positivo | as rotas de `config/urls.py` | o teste de fronteira | as rotas de `apps.simulador_pagamentos` são exatamente as sete; as de `apps.pagamentos` continuam `{"pagamentos_avisos"}` |
 | A-14 | E07-01 | concorrência | C pendente, com a tarifa do A-1 | duas aprovações de C em paralelo pelo controle | um único movimento `pagamento` e um único `tarifa` |
+| A-16 | Coerência com o Mercado Pago | positivo | o simulador às `T0 + 2h` | `consultar_saldo()` | `referente_a == consultado_em == T0 + 2h`; nenhum movimento do simulador tem o tipo `outro` |
 | A-15 | Interface | positivo | `reiniciar()` depois do A-4 | `listar_movimentos` e `consultar_saldo` | lista vazia e saldo zero; os planos de tarifa e liberação de volta a zero |
 
 ## Mapeamento para testes
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-7, A-11, A-14 e A-15 | `tests/tecnicos/test_pagamentos_simulador.py` |
+| A-1 a A-7, A-11, A-14 a A-16 | `tests/tecnicos/test_pagamentos_simulador.py` |
 | A-8 a A-10 | `tests/tecnicos/test_pagamentos_sincronizacao.py` |
 | A-12 | `tests/tecnicos/test_simulador_pagamentos_tela.py` |
 | A-13 | `tests/tecnicos/test_pagamentos_fronteiras.py` |

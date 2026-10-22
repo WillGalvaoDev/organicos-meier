@@ -135,7 +135,7 @@ Qualquer outra combinação é recusada, inclusive:
 - `conta(destinacao, **chave) -> ContaFinanceira`, que cria ou devolve a conta, e `EXTERIOR`, o marcador.
 - `Transferencia(de, para, valor)`, uma *dataclass* congelada.
 - `lancar(*, tipo, transferencias, autor, justificativa, origem, chave) -> MovimentoFinanceiro`. A `origem` é o objeto de origem: o tipo e a `pk` são gravados como texto, como na auditoria.
-- `saldo(conta) -> Decimal`; `extrato(conta) -> list[...]`, em ordem de movimento; `saldo_total_esperado() -> Decimal`, a soma de todas as contas.
+- `saldo(conta) -> Decimal`; `extrato(conta) -> list[...]`, em ordem de movimento; `saldo_total_esperado(ate=None) -> Decimal`, a soma de todas as contas, só com os movimentos de momento ≤ `ate` quando informado (E09-07).
 - As exceções `MovimentoProibido`, `SaldoInsuficiente`, `MovimentoInvalido` e `MovimentoConflitante`.
 
 ## Invariantes

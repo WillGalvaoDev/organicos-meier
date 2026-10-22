@@ -23,11 +23,12 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-15 | Idempotência | concorrência | o arranjo | duas transações em paralelo com o mesmo `lancar` (mesma chave e conteúdo) | um único movimento; as duas devolvem o mesmo; os saldos não dobram |
 | A-16 | Ordem das travas | concorrência | `receita_servico(rA)` e `reserva` com saldo; `despesas_a_cobrir` negativa | duas transações em paralelo, cada uma com duas transferências F11 (de `receita_servico(rA)` e de `reserva` para `despesas_a_cobrir`), listadas em ordens opostas; cada uma pausa depois da primeira trava | as duas terminam, sem `deadlock detected`; os saldos refletem as duas |
 | A-17 | Decisão técnica | negativo | o arranjo | `lancar` fora de transação | `TransactionManagementError`; nenhuma escrita |
+| A-18 | E09-07, saldo de relatório | positivo | um F1 de 125,00 às 10:00 e um F3 de 1000,00 às 12:00 | `saldo_total_esperado(ate=11:00)` e `saldo_total_esperado()` | 125,00 e 1125,00 |
 
 ## Mapeamento para testes
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-13 e A-17 | `tests/tecnicos/test_financeiro_livro.py` |
+| A-1 a A-13, A-17 e A-18 | `tests/tecnicos/test_financeiro_livro.py` |
 | A-3 a A-6 | também `tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py`, pelo nível do livro-razão |
 | A-14 a A-16 | `tests/tecnicos/test_financeiro_concorrencia.py` |

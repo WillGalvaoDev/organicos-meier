@@ -54,6 +54,8 @@ Esta fatia acrescenta isso à interface `Provedor` e ao simulador, sem presumir 
   - **Movimentos da conta:** ficam numa tabela nova do simulador, `MovimentoSimulado`, no banco do simulador. A aprovação gera um movimento `pagamento` (+valor) e, havendo tarifa, um movimento `tarifa` (−tarifa). O controle `depositar` gera `deposito` (+valor), e `registrar_saida` gera `saida` (−valor).
   - **Saldo:** liberado é a soma dos movimentos com `liberado_em ≤ agora`; a liberar é o resto. O movimento `tarifa` tem o mesmo `liberado_em` do pagamento, porque é descontado do valor dele. Depósitos, saídas e ajustes são liberados no ato.
 - **Falhas.** O plano de falhas da E07 (`indisponivel`, `falhar_proximas`) vale também para `consultar_saldo` e `listar_movimentos`, com os nomes de operação iguais aos dos métodos.
+- **Saldo com instante de referência.** O saldo pode não ser em tempo real: no Mercado Pago, ele vem de relatórios gerados de forma assíncrona (ver "Coerência com o Mercado Pago"). Por isso `SaldoNoProvedor` diz a que instante o saldo se refere (`referente_a`), e quem compara usa o livro-razão naquele instante (E09-07). No simulador, `referente_a = consultado_em = agora`.
+- **Tipo `outro`.** É para o movimento que o provedor tem e o sistema não modela, como contestação, retenção de imposto ou frete do provedor. A tradução da fase 2a mantém o rótulo original em `descricao_no_provedor`. A conciliação trata esse movimento como divergência, com o rótulo no alerta. O simulador não gera `outro`.
 - **Divergência de teste.** O controle `ajustar_saldo(valor)` cria um movimento `ajuste` que nenhum registro do sistema explica. Ele serve para provar a conciliação (E09-07) e só existe no simulador.
 
 ## Regras
@@ -62,8 +64,8 @@ Esta fatia acrescenta isso à interface `Provedor` e ao simulador, sem presumir 
 
 | Tipo | Campos |
 |---|---|
-| `SaldoNoProvedor` | `liberado`, `a_liberar` (`Decimal`, podem ser negativos), `consultado_em` (UTC) |
-| `MovimentoNoProvedor` | `id_movimento` (texto, até 64), `tipo` (`pagamento`, `tarifa`, `deposito`, `saida`, `devolucao`, `ajuste`), `valor` (`Decimal` com sinal, nunca zero), `id_externo` (pagamento, só para `pagamento`, `tarifa` e `devolucao`, ou `None`), `ocorrido_em` e `liberado_em` (UTC; `liberado_em` pode ser `None`) |
+| `SaldoNoProvedor` | `liberado`, `a_liberar` (`Decimal`, podem ser negativos), `referente_a` (UTC, o instante a que o saldo se refere) e `consultado_em` (UTC) |
+| `MovimentoNoProvedor` | `id_movimento` (texto, até 64), `tipo` (`pagamento`, `tarifa`, `deposito`, `saida`, `devolucao`, `ajuste`, `outro`), `descricao_no_provedor` (texto, até 50, o rótulo original do provedor), `valor` (`Decimal` com sinal, nunca zero), `id_externo` (pagamento, só para `pagamento`, `tarifa` e `devolucao`, ou `None`), `ocorrido_em` e `liberado_em` (UTC; `liberado_em` pode ser `None`) |
 
 **Métodos novos do protocolo:**
 
@@ -106,6 +108,22 @@ Os tipos e métodos acima. Também `PagamentoNoProvedor.tarifa` (dinheiro, nulo)
 - **Liberação exatamente em `agora`:** conta como liberado, com o limite inclusivo.
 - **Consulta do pagamento antes da aprovação:** `tarifa` e `liberado_em` vêm `None`.
 - **Duas aprovações concorrentes do mesmo pagamento no simulador:** um único par de movimentos (`pagamento` e `tarifa`), pela trava da cobrança da E07-01.
+
+## Coerência com o Mercado Pago (consulta de 2026-10-22)
+
+O especificador conferiu a referência pública da API (`/developers/pt/reference`), a página de pagamentos, a de busca, a de cancelamento, a de reembolso e os campos do relatório de liberações. Essa conferência não substitui a prova de conceito no sandbox da fase 0, e as limitações L-n continuam abertas.
+
+| Ponto do modelo | No Mercado Pago | Tradução prevista na fase 2a |
+|---|---|---|
+| `aprovado_em`, `criado_em`, `referencia_externa`, `valor` | `date_approved`, `date_created`, `external_reference`, `transaction_amount` em `GET /v1/payments/{id}` | direta, com os horários em UTC (L-4) |
+| `liberado_em` | `money_release_date` do pagamento (nulo até haver data) | direta; nulo continua "a liberar" (L-10) |
+| `tarifa` | `fee_details` (tipo, valor e `fee_payer`) e `transaction_details.net_received_amount` | somar só as tarifas cobradas do recebedor; as pagas pelo comprador (por exemplo, `fee_payer: payer`) não entram |
+| `buscar_por_referencia` | `GET /v1/payments/search?external_reference=...`, com `range` por `date_created`, `date_approved` ou `money_release_date` | direta; atraso de consistência continua L-6 |
+| `chave_idempotencia` | cabeçalho `X-Idempotency-Key`, obrigatório na criação e no reembolso | direta |
+| `cancelar_cobranca` de cobrança já terminal | `PUT /v1/payments/{id}` com `status: cancelled` só vale para `pending`, `in_process` ou `authorized`; nos outros estados, erro `2018` | traduzir o `2018` numa consulta do pagamento e devolver o estado atual, como o simulador já faz (E07-01; L-2 continua aberta) |
+| `consultar_saldo` | sem endpoint de saldo em tempo real na referência; relatórios assíncronos (tarefa, depois o arquivo): "Liberações", com saldo disponível por linha (`BALANCE_AMOUNT`, `available_balance`), e "Dinheiro em conta", com o dinheiro ainda não liberado | montar o saldo pelo último relatório, com `referente_a` igual ao fim do período dele; relatório ainda não pronto = `ProvedorIndisponivel` (nova tentativa) (L-9) |
+| `listar_movimentos` | linhas dos relatórios com `SOURCE_ID`, `EXTERNAL_REFERENCE`, `DESCRIPTION` (`payment`, `refund`, `payout`, `chargeback`, `dispute`, `shipping`, `tax_withholding`...), `NET_CREDIT_AMOUNT`, `NET_DEBIT_AMOUNT`, `MP_FEE_AMOUNT` e datas | `payment` vira `pagamento` mais um `tarifa` (de `MP_FEE_AMOUNT`); `refund` vira `devolucao`; `payout` vira `saida`; o resto vira `outro`; o depósito de recursos próprios ainda não tem rótulo confirmado (L-9) |
+| identificação das saídas | `SOURCE_ID` da linha de `payout` | o administrador informa esse identificador no registro da saída |
 
 ## Dependências e decisões em aberto
 

@@ -33,6 +33,8 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-18 | Decisão técnica | positivo | o relógio em `D`, 23:59 no horário de Brasília | `conciliar_dias_pendentes_agora()` | não concilia `D` |
 | A-19 | T-11 | concorrência | L com o relógio em `T0 + 25h` | dois repasses de 60,00 da `obrigacao_fornecedor(A, rA)` em paralelo | um aceito e o outro `LiquidezInsuficiente`; o saldo final é 40,00 |
 | A-20 | Decisão técnica | concorrência | o arranjo do A-11 | duas `conciliar_dia(D)` em paralelo | um `ConciliacaoDiaria`; nenhum alerta duplicado |
+| A-22 | Saldo de relatório (E09-02) | positivo | L; um provedor de teste (dublê do protocolo) cujo `consultar_saldo` devolve 189,00 com `referente_a = T0 + 2h`; depois disso, às `T0 + 3h`, o pedido XC (125,00) é quitado e entra na custódia | `verificar_invariante_agora()`; depois o dublê devolve 89,00 com o mesmo `referente_a` | na primeira, nenhum alerta: as obrigações até `T0 + 2h` são 180,00, e a entrada de XC, posterior, não entra (sem o recorte seriam 305,00, um falso alerta); na segunda, alerta `invariante_violado` com a diferença −91,00 |
+| A-23 | Coerência com o Mercado Pago | positivo | um dublê do provedor que lista, no dia `D`, um movimento `outro` com `descricao_no_provedor = "chargeback"` | `conciliar_dia(D)` | alerta `divergencia_na_conciliacao` com a chave do `id_movimento` e o rótulo `chargeback` nos dados |
 | A-21 | AGENTS.md §6 | positivo | o A-12 | os movimentos do livro-razão antes e depois da conciliação | a conciliação não criou nenhum movimento |
 
 ## Mapeamento para testes
@@ -41,6 +43,6 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-6 | `tests/tecnicos/test_financeiro_liquidez_e_saidas.py` |
 | A-2 e A-3 | também `tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py` (T-11) e `tests/aceitacao/test_cenario_40_repasse.py` (nível do livro-razão) |
-| A-7 a A-10 | `tests/tecnicos/test_financeiro_invariante.py` |
-| A-11 a A-18 e A-21 | `tests/tecnicos/test_financeiro_conciliacao.py` |
+| A-7 a A-10 e A-22 | `tests/tecnicos/test_financeiro_invariante.py` |
+| A-11 a A-18, A-21 e A-23 | `tests/tecnicos/test_financeiro_conciliacao.py` |
 | A-19 e A-20 | `tests/tecnicos/test_financeiro_concorrencia.py` |

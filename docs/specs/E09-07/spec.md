@@ -65,7 +65,7 @@ O dinheiro no provedor não fica todo disponível ao mesmo tempo, e o saldo da c
   obrigacoes_de_terceiros = Σ saldo(custodia) + Σ saldo(obrigacao_fornecedor) + Σ saldo(frete) + Σ saldo(obrigacao_comprador)
   ```
 
-  A soma é lida numa única consulta, e o saldo do provedor vem de `consultar_saldo()`, chamado fora de transação. Com `liberado + a_liberar < obrigacoes_de_terceiros`, abre o alerta `invariante_violado` (`"geral"`), com a diferença. Quando volta a valer, ele é resolvido. Se o provedor não responde, um log `warning` é gravado, e o alerta fica como estava.
+  O saldo do provedor vem de `consultar_saldo()`, chamado fora de transação. A soma é lida numa única consulta, só com as transferências de movimentos até o `referente_a` desse saldo (E09-02). Assim um saldo de relatório, que no Mercado Pago não é em tempo real, é comparado com o livro-razão do mesmo instante. Com `liberado + a_liberar < obrigacoes_de_terceiros`, abre o alerta `invariante_violado` (`"geral"`), com a diferença. Quando volta a valer, ele é resolvido. Se o provedor não responde, um log `warning` é gravado, e o alerta fica como estava.
 - **Cadência.**
   - O invariante roda a cada 10 minutos, como a reconsulta da margem.
   - A conciliação roda de hora em hora e concilia cada dia ainda não conciliado. O primeiro é o dia seguinte ao último conciliado, e o último é o dia anterior. Na primeira execução, só o dia anterior. Um dia só é conciliado depois que termina no horário de Brasília. Se o provedor falha, o dia fica para a próxima hora.
@@ -77,13 +77,13 @@ O dinheiro no provedor não fica todo disponível ao mesmo tempo, e o saldo da c
   | `tarifa` | a `Despesa(tarifa)` do pagamento, com o mesmo valor (em módulo) | `divergencia_na_conciliacao` (chave `id_movimento`) |
   | `deposito` | o aporte com a identificação igual ao `id_movimento` e o mesmo valor | `divergencia_na_conciliacao` |
   | `saida` | a saída registrada com a identificação igual ao `id_movimento` e o mesmo valor (em módulo) | `divergencia_na_conciliacao` |
-  | `ajuste` ou outro tipo | não há | `divergencia_na_conciliacao` |
+  | `ajuste`, `outro` ou tipo desconhecido | não há | `divergencia_na_conciliacao`, com o `descricao_no_provedor` nos dados |
 
   No sentido inverso: cada aporte ou saída registrado no livro-razão com momento no dia `D` precisa de um movimento do provedor com a mesma identificação, entre `D − 3 dias` e o fim de `D`. Sem ele, abre `divergencia_na_conciliacao`, com a chave `livro:<identificacao>`.
 - **Diferença de saldo.** Na execução:
 
   ```
-  diferenca = saldo do provedor − saldo_total_esperado() − Σ(movimentos do provedor sem par, de D até agora) + Σ(aportes e saídas do livro sem par)
+  diferenca = saldo do provedor − saldo_total_esperado(até referente_a) − Σ(movimentos do provedor sem par, de D até referente_a) + Σ(aportes e saídas do livro sem par)
   ```
 
   Diferente de zero abre `divergencia_na_conciliacao` com a chave `saldo:<D>`, porque é uma diferença que nenhum movimento explica. Uma conciliação posterior com diferença zero resolve as chaves `saldo:*` abertas.
