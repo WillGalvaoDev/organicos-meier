@@ -1,3 +1,19 @@
+# E09-01 — Revalidação independente sobre 2930ffd
+
+**Veredito: REPROVADO.**
+
+Revisão independente de 2026-10-22, base `2930ffddc8fc53ad21c6bb777719b19508d1a4da` (branch `e09-implementacao`). Foram conferidos os adendos de especificação e aceitação em `6dc9850`, o commit de testes Red `e3733ad`, os diffs das correções e os registros de implementação. O histórico anterior permanece integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2418 passed in 234.26s**, sem filtro; `uv run ruff check .` passou; `uv run ruff format --check .` → 329 arquivos; `uv run mypy .` → 393 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run` → nenhuma alteração pendente. Provas adicionais: **4 failed, 9 passed in 9.77s**. Reprodução completa, limites e veredito global no [parecer consolidado](../E09-08/review.md).
+
+## Matriz e achados
+
+A-1–A-21 examinados. Os testes versionados passam, mas a guarda nova não cumpre integralmente A-19/A-20 e a regra de escopo das travas: **R10 (importante)** demonstra rejeição indevida em nova transação, aceitação de ordem invertida com Atomic reutilizado e aceitação de trava desfeita por savepoint como se ainda estivesse retida. O caso original de deadlock de R02 está corrigido; a falha nova da guarda é rastreada separadamente.
+
+R08: aceito o tratamento excepcional expressamente registrado na correção E09-R08 da spec, sem afirmar Red histórico. Conferidos registro de não conformidade, procura de evidência, mutações e restauração verde declaradas. O limite da mutação ORM (IntegrityError em vez de RegistroImutavel) foi preservado: demonstra perda da recusa específica do ORM; não demonstra perda da proteção SQL. A guarda fica desativada no invólucro TestCase sem atomic próprio, conforme registro do implementador; por isso o verde da suíte não comprova sua atuação em todas as chamadas. As provas novas do revisor usam transações reais e não desativam a guarda.
+
+---
+
 # E09-01 — Parecer independente sobre 34f9547
 
 **Veredito: REPROVADO.**

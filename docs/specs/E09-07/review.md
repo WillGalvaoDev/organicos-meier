@@ -1,3 +1,19 @@
+# E09-07 — Revalidação independente sobre 2930ffd
+
+**Veredito: REPROVADO.**
+
+Revisão independente de 2026-10-22, base `2930ffddc8fc53ad21c6bb777719b19508d1a4da` (branch `e09-implementacao`). Foram conferidos os adendos de especificação e aceitação em `6dc9850`, o commit de testes Red `e3733ad`, os diffs das correções e os registros de implementação. O histórico anterior permanece integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2418 passed in 234.26s**, sem filtro; `uv run ruff check .` passou; `uv run ruff format --check .` → 329 arquivos; `uv run mypy .` → 393 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run` → nenhuma alteração pendente. Provas adicionais: **4 failed, 9 passed in 9.77s**. Reprodução completa, limites e veredito global no [parecer consolidado](../E09-08/review.md).
+
+## Matriz e achados
+
+A-1–A-27: testes versionados verdes. **R05 e R06 encerrados**: avaliação da reserva em transação própria inclusive com provedor indisponível; chaves até 80 e avanço da conciliação com identificação de 64. **R07 parcialmente corrigido:** os três recortes e os casos originais passam, mas o pareamento de tarifa até `referente_a` consulta `Despesa.criada_em`, contrariando o adendo que exige o lançamento do livro até aquele instante. Prova com sincronização real resulta em diferença falsa −10,00 e alerta de saldo indevido. Ver detalhe e reprodução no parecer consolidado.
+
+R08: aceito o tratamento autorizado do A-20 antigo; nova evidência Red/Green consta em e3733ad → 1ad1944. O erro de desempacotamento em A-24 corresponde ao alerta ausente, e não a falha de infraestrutura; não foi reclassificado como asserção. Não basta o verde atual para encerrar R07.
+
+---
+
 # E09-07 — Parecer independente sobre 34f9547
 
 **Veredito: REPROVADO.**

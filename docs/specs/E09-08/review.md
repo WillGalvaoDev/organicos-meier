@@ -1,3 +1,351 @@
+# E09 — Revalidação independente das correções sobre 2930ffd
+
+**Veredito final: REPROVADO.** Oito achados anteriores foram encerrados no alcance descrito abaixo. R07 está parcialmente corrigido e há um novo achado importante, R10, na guarda de travas. A E09 ainda não atende à Definition of Done.
+
+Revisão independente de 2026-10-22, base `2930ffddc8fc53ad21c6bb777719b19508d1a4da` (branch `e09-implementacao`). Foram conferidos os adendos de especificação e aceitação em `6dc9850`, o commit de testes Red `e3733ad`, os diffs das correções e os registros de implementação. O histórico anterior permanece integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2418 passed in 234.26s**, sem filtro; `uv run ruff check .` passou; `uv run ruff format --check .` → 329 arquivos; `uv run mypy .` → 393 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run` → nenhuma alteração pendente. Provas adicionais: **4 failed, 9 passed in 9.77s**. Reprodução completa, limites e veredito global no [parecer consolidado](../E09-08/review.md).
+
+## Resultado por achado
+
+| Achado | Resultado desta revisão | Evidência |
+|---|---|---|
+| R01 — cobertura duplicada | Encerrado | destino e fontes travados antes do pendente; A-20–A-22 da E09-06 e prova independente verdes |
+| R02 — designação versus liquidação | Defeito original encerrado | ordem comum por PK; A-16/A-17 da E09-05 e prova independente verdes; a guarda introduzida tem o novo R10 |
+| R03 — referência concorrente | Encerrado | referência revalidada sob trava; A-23 e prova independente verdes |
+| R04 — frete coberto omitido | Encerrado | componente fora do financiamento pela regra incluído; A-25/A-26 e prova independente verdes |
+| R05 — reserva sem avaliação periódica | Encerrado | avaliação própria após invariante, inclusive indisponibilidade; A-24 e prova independente verdes |
+| R06 — identificação de 64 caracteres | Encerrado | chave de alerta até 80, migração e identificador integral; A-13 da E09-03, A-25 da E09-07 e prova independente verdes |
+| R07 — recortes da conciliação | Parcial; permanece importante | casos originais verdes; tarifa ainda usa o instante da despesa, produzindo diferença falsa |
+| R08 — TDD | Tratamento autorizado aceito | decisão expressa em E09-01/spec.md; não conformidade, mutações e novos commits Red/Green registrados; limites abaixo |
+| R09 — fontes da obrigação | Encerrado | fontes candidatas travadas antes da leitura do estado; A-24 e prova independente após a leitura verdes |
+| R10 — escopo da guarda | Novo, importante | três provas falham: Atomic reutilizado e rollback de savepoint |
+
+## Matriz das fatias
+
+As matrizes atuais têm 150 critérios; todos os testes versionados passam. Não se confunde esse resultado com a satisfação integral das regras.
+
+| Fatia | Critérios | Veredito local |
+|---|---|---|
+| E09-01 | A-1–A-21 | REPROVADO: R10 |
+| E09-02 | A-1–A-18 | APROVADO no escopo local, mantido |
+| E09-03 | A-1–A-13, A-6 reescrito | APROVADO no escopo local |
+| E09-04 | A-1–A-13 | APROVADO no escopo local |
+| E09-05 | A-1–A-17 | APROVADO nos fluxos revistos; dependência compartilhada R10 pendente |
+| E09-06 | A-1–A-26 | APROVADO nos fluxos revistos; dependência compartilhada R10 pendente |
+| E09-07 | A-1–A-27 | REPROVADO: R07 residual |
+| E09-08 | A-1–A-15 | REPROVADO na integração; conciliação ainda mostra divergência falsa |
+
+M-8 continua editorial, conforme decisão do especificador: o valor de mil reais é digitado `1000,00`, sem separador de milhar. Não se alterou o formulário nem o critério nesta revisão. Mantidos os demais registros de melhorias; aceito M-6 encerrado segundo o tratamento aprovado da R08.
+
+## R07 residual — importante — tarifa pareada pela data da despesa
+
+Referência: E09-07/spec.md, correção E09-R07, “Sem par no livro até t”: o par da tarifa é **o movimento da tarifa**, com `momento <= t`. Código: `apps/financeiro/conciliacao.py:102`, especialmente a seleção `despesas.filter(criada_em__lte=ate)` na linha 109.
+
+A correção separa os recortes corretamente, mas continua usando `Despesa.criada_em` como evidência de que o débito já existia no livro no instante do saldo. A criação da despesa precede `lancar` em `registrar_tarifa`; os instantes podem divergir dentro da mesma transação.
+
+Prova `test_tarifa_pareada_pelo_instante_do_lancamento`:
+
+1. Sincronizar um pagamento real do simulador de 125,00, com tarifa fixa de 10,00.
+2. A entrada de 125,00 e a despesa nascem em T; antes do lançamento da tarifa, avançar o relógio controlado 10 segundos, sem retirar nenhuma validação/efeito. O movimento da tarifa nasce em T+10s. A prova confere os dois timestamps gravados.
+3. Conciliar o dia seguinte com saldo do provedor de 115,00 referente a T+5s; os movimentos do provedor são pagamento +125,00 e tarifa −10,00, ambos em T.
+4. Até T+5s, o livro tem 125,00 e ainda não tem o débito. A tarifa do provedor ainda não tem par naquele instante e explica a diferença: `115 − 125 − (−10) = 0`.
+
+**Obtido:** `movimentos=2`, `sem_par=0`, `diferenca=-10.00` e alerta `saldo:<D>` indevido. Os movimentos já têm par na data da execução, mas isso não os torna pareados no instante do saldo. O dia é consolidado como divergente de forma imutável.
+
+**Correção necessária:** no recorte até t, conferir o movimento efetivo da tarifa e seu timestamp, sem mudar o pareamento do dia pela situação conhecida na execução. Acrescentar o caso negativo entre a criação da despesa e o débito; também preservar o caso em que ambos precedem t. Não é decisão comercial nova.
+
+## R10 — importante — a guarda não acompanha a vida real das travas
+
+Referência: E09-01/spec.md, regra única de travas, guarda por transação mais externa e invariantes; E09-01 A-19/A-20. Código: `apps/financeiro/livro.py:414`, `:424` e `:438`.
+
+`_travadas_da_transacao` identifica uma transação pela identidade do objeto `Atomic` mais externo e mantém um conjunto na conexão. Um objeto `Atomic` pode ser reutilizado: isso consta no código instalado do Django (`django/db/transaction.py`, classe Atomic) e acontece também no uso como decorador. O mesmo objeto não identifica uma nova execução de transação. Além disso, rollback de savepoint libera travas adquiridas dentro dele, mas o conjunto não é ajustado.
+
+Três reproduções independentes em transações PostgreSQL:
+
+| Prova | Esperado | Obtido |
+|---|---|---|
+| `test_guarda_reinicia_com_atomic_reutilizado` | primeiro `with escopo` trava conta maior e commita; segundo trava somente a menor, sem recusa | `OrdemDeTravasViolada` indevida, baseada na transação já encerrada |
+| `test_guarda_ativa_depois_de_atomic_reutilizado` | primeira transação trava menor/maior e commita; segunda trava maior e tenta menor: deve recusar | nenhuma exceção; ambas figuram como “já travadas” por causa da transação anterior |
+| `test_guarda_desconta_trava_desfeita_por_savepoint` | trava menor adquirida em savepoint e desfeita; depois trava maior; nova tentativa da menor deve recusar | nenhuma exceção, embora a trava menor tenha sido liberada |
+
+A terceira prova inclui controle em outra conexão com `lock_timeout=500ms`: ela consegue travar a conta menor depois do rollback do savepoint. Portanto, a divergência entre o conjunto e as travas realmente retidas não é apenas uma suposição sobre o PostgreSQL.
+
+**Impacto:** o mecanismo novo recusa uso válido e permite a inversão que deveria detectar. Não se demonstrou saída financeira duplicada nesses três cenários; demonstrou-se descumprimento da garantia de ordem e reinicialização da própria correção, com risco de reintroduzir impasses nos chamadores que reutilizam contexto/decorador ou recuperam savepoints. O deadlock original de designação/liquidação foi eliminado e não é reapresentado como se permanecesse igual.
+
+**Correção necessária:** associar o estado à execução efetiva da transação e às travas ainda retidas após savepoints, sem usar apenas identidade de Atomic como geração. Manter o novo controle ativo e os cenários de repetição legítima de trava; não contornar removendo a guarda ou recusando formas válidas de `transaction.atomic`. Red para os três casos, Green e regressão dos fluxos financeiros existentes.
+
+## TDD e limites de evidência
+
+O tratamento excepcional de R08 está explicitamente decidido pelo responsável em `docs/specs/E09-01/spec.md`, correção E09-R08, e não foi inferido das decisões antigas. Os registros de não conformidade nas fatias 01/06/07 preservam a cronologia e distinguem mutação de Red. O commit `e3733ad` contém testes e apenas a exceção vazia como andaime técnico, antes dos commits de implementação `742a679`, `a66a663`, `ca616ce` e `1ad1944`. O registro informa 18 falhas/129 passes antes da correção. A-20 da guarda e os negativos que já passavam foram declarados; não se inventou Red para eles.
+
+As mutações históricas não foram reexecutadas nesta revisão. Foi conferido o relato de trechos, comandos com arquivos inteiros, falhas e restaurações verdes. Na mutação ORM de A-2, a falha foi a exceção SQL em vez da recusa específica ORM; ela comprova a sensibilidade à retirada da proteção ORM, não uma escrita indevida no banco. A mutação SQL registra também erro de limpeza apenas sob mutação, preservado como limite. A-19 antigo não detecta retirar travas de apuração; isso continua declarado e a proteção é exercitada por A-24(ii), conforme o tratamento aprovado. O log `scratchpad/red_e09.log` citado pelo implementador não está disponível nesta árvore; a evidência acessível é o registro commitado e a sequência de commits. Nenhuma reexecução atual é apresentada como testemunho do Red histórico.
+
+As quatro provas concorrentes antigas não foram rodadas literalmente: elas esperavam a operação concorrente concluir enquanto seguravam a trava, incompatível com a serialização corrigida. As provas adaptadas liberam a pausa quando a concorrente espera no PostgreSQL, mantendo as asserções de negócio. O frete também passou a executar cada operação em sua transação, como nas rotas reais. Em R09, o ponto de pausa independente fica depois da leitura de `_ciclo_apurado`, não na preparação das fontes. As cinco provas não concorrentes e as quatro adaptadas passaram.
+
+Não foram alterados produção, testes versionados, regras comerciais ou critérios. Não houve integração com dinheiro/provedor real, inspeção visual em navegador ou ensaio de carga. M-8 e as demais melhorias diferidas não impedem o aceite por si mesmas; R07/R10 impedem.
+
+## Próximo gate
+
+Corrigir o pareamento temporal da tarifa (R07) e a vida útil do registro de travas (R10), com Red real anterior à produção. Depois executar a suíte, verificações estáticas e provas relevantes e solicitar revalidação. Os achados encerrados não precisam ser reabertos sem regressão ou nova evidência. Não há decisão comercial pendente para essas duas correções técnicas.
+
+## Reprodução das provas desta revalidação
+
+Salvar o bloco abaixo como `$env:TEMP/test_revisao_e09_correcao.py`, na raiz do projeto executar:
+
+```powershell
+uv run pytest "$env:TEMP/test_revisao_e09_correcao.py" -q -c pyproject.toml --tb=short
+```
+
+Resultado em 2930ffd: **4 failed, 9 passed in 9.77s**. Os testes usam serviços reais; os monkeypatches de concorrência apenas pausam e o da tarifa apenas avança o relógio antes do lançamento real. Dublês substituem somente o protocolo externo de saldo/movimentos.
+
+<!-- INICIO_PROVAS_E09_2930FFD -->
+```python
+from datetime import timedelta
+from decimal import Decimal as D
+from threading import Barrier, Event
+from types import SimpleNamespace
+import pytest
+from django.db import transaction
+from apps.financeiro import reserva as r, obrigacoes as o, apuracao as a, conciliacao as c, invariante as inv
+from apps.financeiro.livro import saldo, EXTERIOR
+from apps.financeiro.models import *
+from apps.financeiro.liquidez import registrar_saida
+from apps.pagamentos.provedor import SaldoNoProvedor
+from tests.apoio.financeiro import *
+from tests.apoio.concorrencia import executar_em_paralelo
+from tests.conftest import relogio, simulador_pagamentos
+from apps.nucleo.auditoria import SISTEMA
+pytestmark = pytest.mark.django_db(transaction=True, databases=['default', 'simulador_pagamentos'])
+
+def test_frete_coberto(relogio, simulador_pagamentos):
+    ap = montar_ap()
+    pagar_pedido(ap, ap.x, simulador_pagamentos, relogio, timedelta(hours=1))
+    with transaction.atomic():
+        r.registrar_aporte(ap.admin, D('100'), 'deposito', 'teste')
+    with transaction.atomic():
+        a.registrar_apuracao_no_livro(ap.ciclo, [ap.x], autor=SISTEMA)
+    with transaction.atomic():
+        desp = Despesa.objects.get(tipo=TipoDeDespesa.DEFICIT_DE_FRETE, ciclo=ap.ciclo)
+    with transaction.atomic():
+        r.utilizar_reserva(ap.admin, desp, D('10'), 'teste')
+    with transaction.atomic():
+        registrar_saida(ap.admin, tipo='pagamento_do_frete', conta=frete_de(ap.rodada), valor=D('30'), identificacao='frete', justificativa='teste')
+    with transaction.atomic():
+        obrig, _ = o.registrar_obrigacao_com_comprador(origem=ap.x, rodada=ap.rodada, ciclo=ap.ciclo, comprador=ap.b, pedido=ap.x, motivo='teste', produtos=D('0'), servico=D('0'), frete=D('5'))
+    with transaction.atomic():
+        r.designar_reserva(ap.admin, obrig, D('5'), 'teste')
+    with transaction.atomic():
+        o.liquidar_obrigacao(obrig, D('5'), referencia='dev-frete')
+    resultado = a.frete_do_ciclo(ap.ciclo)
+    assert resultado.deficit_coberto == D('15'), resultado
+
+def test_tarefa_avalia_reserva(monkeypatch, relogio):
+    relogio.congelar(T0)
+    montar_mundo()
+    despesa_de_tarifa('10')
+    monkeypatch.setattr(inv, 'obter_provedor', lambda: SimpleNamespace(consultar_saldo=lambda: SaldoNoProvedor(D('0'), D('0'), T0, T0)))
+    inv.verificar_invariante_agora()
+    assert AlertaFinanceiro.objects.filter(tipo=TipoDeAlerta.RESERVA_INSUFICIENTE, resolvido_em__isnull=True).exists()
+
+def test_identificador_64_conciliavel(monkeypatch, relogio):
+    relogio.congelar(T0)
+    m = montar_mundo()
+    with transaction.atomic():
+        r.registrar_aporte(m.admin, D('100'), 'x' * 64, 'teste')
+    relogio.avancar(timedelta(days=1))
+    monkeypatch.setattr(c, 'obter_provedor', lambda: SimpleNamespace(consultar_saldo=lambda: SaldoNoProvedor(D('0'), D('0'), T0 + timedelta(days=1), T0 + timedelta(days=1)), listar_movimentos=lambda *args: []))
+    c.conciliar_dia(T0.date())
+
+def test_conciliacao_respeita_referente_a(monkeypatch, relogio):
+    from apps.pagamentos.provedor import MovimentoNoProvedor, TipoDeMovimentoNoProvedor as P
+    from datetime import datetime, UTC
+    dia = T0.date()
+    inicio, fim = c.limites_do_dia(dia)
+    referencia = inicio + timedelta(hours=10)
+    ocorrido = inicio + timedelta(hours=12)
+    relogio.congelar(fim + timedelta(hours=1))
+    montar_mundo()
+    mov = MovimentoNoProvedor('ajuste-tarde', P.AJUSTE, 'ajuste', D('10'), None, ocorrido, ocorrido)
+    monkeypatch.setattr(c, 'obter_provedor', lambda: SimpleNamespace(consultar_saldo=lambda: SaldoNoProvedor(D('0'), D('0'), referencia, fim), listar_movimentos=lambda *args: [mov]))
+    resultado = c.conciliar_dia(dia)
+    assert D(resultado.resumo['diferenca']) == D('0'), resultado.resumo
+
+def test_conciliacao_nao_parea_movimento_futuro(monkeypatch, relogio):
+    from apps.pagamentos.provedor import MovimentoNoProvedor, TipoDeMovimentoNoProvedor as P
+    dia = T0.date()
+    inicio, fim = c.limites_do_dia(dia)
+    relogio.congelar(inicio + timedelta(hours=12))
+    m = montar_mundo()
+    with transaction.atomic():
+        r.registrar_aporte(m.admin, D('100'), 'futuro', 'teste')
+    instante = fim + timedelta(hours=2)
+    ocorrido = fim + timedelta(hours=1)
+    relogio.congelar(instante)
+    mov = MovimentoNoProvedor('futuro', P.DEPOSITO, 'deposito', D('100'), None, ocorrido, ocorrido)
+    monkeypatch.setattr(c, 'obter_provedor', lambda: SimpleNamespace(consultar_saldo=lambda: SaldoNoProvedor(D('100'), D('0'), instante, instante), listar_movimentos=lambda *args: [mov]))
+    resultado = c.conciliar_dia(dia)
+    assert resultado.resumo['sem_par'] == 1, resultado.resumo
+from apps.financeiro.livro import _travar_conta, OrdemDeTravasViolada
+
+def duas_contas():
+    pequena = reserva()
+    grande = despesas()
+    assert pequena.pk < grande.pk
+    return (pequena, grande)
+
+def test_guarda_reinicia_com_atomic_reutilizado():
+    pequena, grande = duas_contas()
+    escopo = transaction.atomic()
+    with escopo:
+        _travar_conta(grande.pk)
+    with escopo:
+        _travar_conta(pequena.pk)
+
+def test_guarda_ativa_depois_de_atomic_reutilizado():
+    pequena, grande = duas_contas()
+    escopo = transaction.atomic()
+    with escopo:
+        _travar_conta(pequena.pk)
+        _travar_conta(grande.pk)
+    with escopo:
+        _travar_conta(grande.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(pequena.pk)
+
+def test_guarda_desconta_trava_desfeita_por_savepoint():
+    pequena, grande = duas_contas()
+    with transaction.atomic():
+        try:
+            with transaction.atomic():
+                _travar_conta(pequena.pk)
+                raise ValueError('rollback da trava')
+        except ValueError:
+            pass
+        # Controle: a trava do savepoint não está mais retida no PostgreSQL.
+        def outra_conexao(barreira):
+            from django.db import connection
+            with transaction.atomic():
+                with connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL lock_timeout = '500ms'")
+                _travar_conta(pequena.pk)
+        resultado = executar_em_paralelo(outra_conexao)
+        assert resultado[0].excecao is None, repr(resultado[0].excecao)
+        _travar_conta(grande.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(pequena.pk)
+
+def test_tarifa_pareada_pelo_instante_do_lancamento(monkeypatch, relogio, simulador_pagamentos):
+    from apps.financeiro import entradas
+    from apps.pagamentos.provedor import MovimentoNoProvedor, TipoDeMovimentoNoProvedor as P
+    relogio.congelar(T0)
+    ap = montar_ap()
+    simulador_pagamentos.definir_tarifa('pix', percentual=D('0'), fixa=D('10'))
+    original = entradas.lancar
+
+    def avancar_antes_da_tarifa(*args, **kwargs):
+        if kwargs.get('tipo') == TipoDeMovimento.TARIFA:
+            relogio.avancar(timedelta(seconds=10))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(entradas, 'lancar', avancar_antes_da_tarifa)
+    id_pagamento = pagar_pedido(ap, ap.x, simulador_pagamentos, relogio, timedelta(hours=1))
+    ocorrido = T0 + timedelta(hours=1)
+    referencia = ocorrido + timedelta(seconds=5)
+    desp = Despesa.objects.get(pagamento__id_externo=id_pagamento)
+    mov = MovimentoFinanceiro.objects.get(chave=f'tarifa:{desp.pagamento_id}')
+    assert desp.criada_em == ocorrido
+    assert mov.momento == ocorrido + timedelta(seconds=10)
+    _, fim = c.limites_do_dia(T0.date())
+    relogio.congelar(fim + timedelta(hours=1))
+    movimentos = [MovimentoNoProvedor('pagamento-1', P.PAGAMENTO, 'pagamento', D('125'), id_pagamento, ocorrido, ocorrido), MovimentoNoProvedor('tarifa-1', P.TARIFA, 'tarifa', D('-10'), id_pagamento, ocorrido, ocorrido)]
+    monkeypatch.setattr(c, 'obter_provedor', lambda: SimpleNamespace(consultar_saldo=lambda: SaldoNoProvedor(D('115'), D('0'), referencia, fim), listar_movimentos=lambda *args: movimentos))
+    resultado = c.conciliar_dia(T0.date())
+    assert D(resultado.resumo['diferenca']) == D('0'), resultado.resumo
+from tests.apoio.corrida import Corrida, pausar_depois_da_primeira_trava
+
+def test_revalidacao_r01_cobertura_cruzada(monkeypatch):
+    m = montar_mundo()
+    caixa = reserva()
+    receita = receita_de(m.ra)
+    with transaction.atomic():
+        semear(m, caixa, '100')
+    with transaction.atomic():
+        semear(m, receita, '100')
+    with transaction.atomic():
+        desp = despesa_de_tarifa('10', m.ra)
+        mover(TipoDeMovimento.TARIFA, despesas(), EXTERIOR, '10', origem=desp.pagamento)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, r, 'pendente_da_despesa')
+    primeiro, segundo = corrida.rodar(lambda: r.utilizar_reserva(m.admin, desp, D('10'), 'teste'), lambda: a.cobrir_despesa(m.admin, desp, fonte=('receita', m.ra), valor=D('10'), justificativa='teste'))
+    assert primeiro.excecao is None, repr(primeiro.excecao)
+    assert isinstance(segundo.excecao, r.CoberturaExcedente), repr(segundo.excecao)
+    assert saldo(caixa) + saldo(receita) == D('190')
+    assert saldo(despesas()) == D('0')
+
+def test_revalidacao_r02_designacao_liquidacao(monkeypatch):
+    m = montar_mundo()
+    obrig = obrigacao_de_teste('50')
+    dest = o.conta_da_obrigacao(obrig)
+    with transaction.atomic():
+        semear(m, dest, '25')
+    caixa = reserva()
+    with transaction.atomic():
+        semear(m, caixa, '100')
+    assert dest.pk < caixa.pk
+    pausar_depois_da_primeira_trava(monkeypatch)
+
+    def designar(b):
+        b.wait(10)
+        with transaction.atomic():
+            return r.designar_reserva(m.admin, obrig, D('25'), 'teste')
+
+    def liquidar(b):
+        b.wait(10)
+        with transaction.atomic():
+            return o.liquidar_obrigacao(obrig, D('25'), referencia='dev-revisao')
+    resultado = executar_em_paralelo(designar, liquidar)
+    assert all((x.excecao is None for x in resultado)), [repr(x.excecao) for x in resultado]
+    assert saldo(dest) == D('0')
+    assert r.situacao_da_reserva().comprometido == D('25')
+    assert saldo(caixa) == D('100')
+
+def test_revalidacao_r03_referencia_concorrente(monkeypatch):
+    m = montar_mundo()
+    obrig = obrigacao_de_teste('25')
+    dest = o.conta_da_obrigacao(obrig)
+    with transaction.atomic():
+        semear(m, dest, '25')
+    reserva()
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, o, '_ja_liquidada')
+
+    def liquidar():
+        return o.liquidar_obrigacao(obrig, D('25'), referencia='mesma-revisao')
+    primeiro, segundo = corrida.rodar(liquidar, liquidar)
+    assert (primeiro.excecao, segundo.excecao) == (None, None), (repr(primeiro.excecao), repr(segundo.excecao))
+    assert primeiro.valor.pk == segundo.valor.pk
+    assert saldo(dest) == D('0')
+
+def test_revalidacao_r09_pausa_apos_leitura_do_estado(monkeypatch, relogio, simulador_pagamentos):
+    ap = montar_ap()
+    pagar_pedido(ap, ap.x, simulador_pagamentos, relogio, timedelta(hours=1))
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, o, '_ciclo_apurado')
+
+    def obrigacao():
+        return o.registrar_obrigacao_com_comprador(origem=ap.x, rodada=ap.rodada, ciclo=ap.ciclo, comprador=ap.b, pedido=ap.x, motivo='teste', produtos=D('25'), servico=D('0'), frete=D('0'))
+    primeiro, segundo = corrida.rodar(obrigacao, lambda: a.registrar_apuracao_no_livro(ap.ciclo, [ap.x], autor=SISTEMA))
+    assert (primeiro.excecao, segundo.excecao) == (None, None), (repr(primeiro.excecao), repr(segundo.excecao))
+    assert primeiro.valor.sem_cobertura == D('0')
+    assert primeiro.valor.obrigacao.depois_da_apuracao is False
+    assert saldo(obrigacao_de(ap.fornecedor, ap.rodada)) == D('75')
+    assert saldo(o.conta_da_obrigacao(primeiro.valor.obrigacao)) == D('25')
+
+```
+<!-- FIM_PROVAS_E09_2930FFD -->
+
+---
+
 # E09 — Parecer independente consolidado sobre 34f9547
 
 **Veredito final: REPROVADO.** Há defeitos financeiros reproduzidos e não conformidades TDD sem tratamento autorizado. As aprovações locais de fatias não autorizam encerrar a E09.

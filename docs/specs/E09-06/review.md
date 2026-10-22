@@ -1,3 +1,21 @@
+# E09-06 — Revalidação independente sobre 2930ffd
+
+**Veredito: APROVADO no escopo desta fatia.**
+
+Revisão independente de 2026-10-22, base `2930ffddc8fc53ad21c6bb777719b19508d1a4da` (branch `e09-implementacao`). Foram conferidos os adendos de especificação e aceitação em `6dc9850`, o commit de testes Red `e3733ad`, os diffs das correções e os registros de implementação. O histórico anterior permanece integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2418 passed in 234.26s**, sem filtro; `uv run ruff check .` passou; `uv run ruff format --check .` → 329 arquivos; `uv run mypy .` → 393 arquivos sem erros; `uv run python manage.py makemigrations --check --dry-run` → nenhuma alteração pendente. Provas adicionais: **4 failed, 9 passed in 9.77s**. Reprodução completa, limites e veredito global no [parecer consolidado](../E09-08/review.md).
+
+## Matriz e achados
+
+A-1–A-26: testes verdes. **R01, R03, R04 e R09 encerrados**: proteção compartilhada do pendente; referência consultada de novo após as travas; relatório soma cobertura do frete das obrigações conforme atribuição conservadora da spec; apuração e obrigação serializam a escolha de fontes.
+
+As provas independentes repetem cobertura cruzada, mesma referência concorrente, frete pago/obrigação de frete e obrigação versus apuração. Na última, a pausa foi colocada depois de `_ciclo_apurado`, garantindo que o teste examine o ponto posterior à leitura do estado; passa com financiamento 25,00 e fornecedor 75,00. O teste versionado A-24(i) pausa em `_fontes`, que na nova implementação também é chamado na preparação das contas; essa diferença de ponto foi suprida pela prova independente, sem modificar o teste versionado.
+
+R08: tratamento autorizado aceito, com mutações posteriores explicitamente tratadas como sensibilidade. Preservada a limitação do antigo A-19; A-24(ii) e a mutação registrada cobrem a proteção da apuração em outra corrida válida. Aceito o encerramento de M-6 no alcance definido pelo especificador. A regra conservadora de R04 é somente de relatório e não altera lançamentos/dívidas. R10 da guarda compartilhada ainda impede aprovação global.
+
+---
+
 # E09-06 — Parecer independente sobre 34f9547
 
 **Veredito: REPROVADO.**
