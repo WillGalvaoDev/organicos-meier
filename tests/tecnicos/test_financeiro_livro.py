@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.transaction import TransactionManagementError
+from django.test import TestCase as DjangoTestCase
 
 from apps.financeiro.livro import (
     EXTERIOR,
@@ -584,3 +585,157 @@ def test_travar_de_novo_e_o_registro_recomeca_em_cada_transacao() -> None:  # A-
             raise RuntimeError("desfaz a transação")
     with transaction.atomic():  # depois de um rollback, também
         _travar_conta(t.c1.pk)
+
+
+# --- Correção E09-R10: o registro da guarda segue as travas retidas (A-22 a A-27) --------------
+
+
+def _menor_e_maior() -> tuple[ContaFinanceira, ContaFinanceira]:
+    """Duas contas do livro com `menor.pk < maior.pk`, conferido aqui."""
+    menor = conta(Destinacao.RESERVA)
+    maior = conta(Destinacao.DESPESAS_A_COBRIR)
+    assert menor.pk < maior.pk
+    return menor, maior
+
+
+def _outra_conexao_trava(conta_: ContaFinanceira) -> bool:
+    """Uma outra conexão consegue travar a conta em 500 ms? (a trava não está retida)"""
+    import threading
+
+    resultado: list[bool] = []
+
+    def tenta() -> None:
+        try:
+            with transaction.atomic():
+                with connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL lock_timeout = '500ms'")
+                ContaFinanceira.objects.select_for_update().get(pk=conta_.pk)
+            resultado.append(True)
+        except DatabaseError:
+            resultado.append(False)
+        finally:
+            connection.close()
+
+    fio = threading.Thread(target=tenta)
+    fio.start()
+    fio.join(20)
+    return resultado == [True]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_o_mesmo_objeto_atomic_reutilizado_recomeca_o_registro() -> None:  # A-22, E09-R10
+    menor, maior = _menor_e_maior()
+    escopo = transaction.atomic()
+    with escopo:
+        _travar_conta(maior.pk)
+    with escopo:
+        _travar_conta(menor.pk)  # a segunda execução não herda a trava da primeira
+    with pytest.raises(RuntimeError):  # noqa: PT012
+        with escopo:
+            _travar_conta(maior.pk)
+            raise RuntimeError("desfaz a transação")
+    with escopo:
+        _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_o_objeto_atomic_reutilizado_continua_guardando_a_ordem() -> None:  # A-23, E09-R10
+    menor, maior = _menor_e_maior()
+    escopo = transaction.atomic()
+    with escopo:
+        _travar_conta(menor.pk)
+        _travar_conta(maior.pk)
+    with escopo:
+        _travar_conta(maior.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_funcao_decorada_com_atomic_recomeca_o_registro_a_cada_chamada() -> None:  # A-24, E09-R10
+    menor, maior = _menor_e_maior()
+
+    @transaction.atomic
+    def travar(*contas: ContaFinanceira) -> None:
+        for c in contas:
+            _travar_conta(c.pk)
+
+    travar(maior)
+    travar(menor)  # (i) duas chamadas aceitas
+    travar(menor, maior)
+    with pytest.raises(OrdemDeTravasViolada):  # (ii) a segunda chamada recusa
+        travar(maior, menor)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_trava_desfeita_por_savepoint_nao_conta_mas_a_ordem_segue_guardada() -> None:  # A-25
+    menor, maior = _menor_e_maior()
+    with transaction.atomic():
+        with pytest.raises(RuntimeError):  # noqa: PT012
+            with transaction.atomic():
+                _travar_conta(menor.pk)
+                raise RuntimeError("desfaz o savepoint")
+        assert _outra_conexao_trava(menor)  # a trava não está retida
+        _travar_conta(maior.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_trava_liberada_pelo_savepoint_desfeito_pode_ser_pedida_depois() -> None:  # A-26
+    menor, maior = _menor_e_maior()
+    with transaction.atomic():
+        with pytest.raises(RuntimeError):  # noqa: PT012
+            with transaction.atomic():
+                _travar_conta(maior.pk)
+                raise RuntimeError("desfaz o savepoint")
+        _travar_conta(menor.pk)
+        _travar_conta(maior.pk)
+    with transaction.atomic():  # aninhado: o de dentro trava e o de fora é desfeito
+        with pytest.raises(RuntimeError):  # noqa: PT012
+            with transaction.atomic():
+                with transaction.atomic():
+                    _travar_conta(maior.pk)
+                raise RuntimeError("desfaz o savepoint de fora")
+        _travar_conta(menor.pk)
+        _travar_conta(maior.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_savepoint_liberado_mantem_a_trava_no_registro() -> None:  # A-27 (i)
+    menor, maior = _menor_e_maior()
+    with transaction.atomic():
+        with transaction.atomic():
+            _travar_conta(maior.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_savepoint_desfeito_nao_libera_a_trava_anterior() -> None:  # A-27 (ii)
+    menor, maior = _menor_e_maior()
+    with transaction.atomic():
+        _travar_conta(maior.pk)
+        with pytest.raises(RuntimeError):  # noqa: PT012
+            with transaction.atomic():
+                _travar_conta(maior.pk)
+                raise RuntimeError("desfaz o savepoint")
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(menor.pk)
+
+
+class TestGuardaNoTestCase(DjangoTestCase):  # A-27 (iii)
+    def test_o_mesmo_escopo_usado_duas_vezes_no_testcase(self) -> None:
+        menor, maior = _menor_e_maior()
+        escopo = transaction.atomic()
+        with escopo:
+            _travar_conta(maior.pk)
+        with escopo:
+            _travar_conta(menor.pk)  # A-22: a segunda execução começa vazia
+        with escopo:
+            _travar_conta(menor.pk)
+            _travar_conta(maior.pk)
+        with escopo:  # A-23: o registro vale dentro da execução
+            _travar_conta(maior.pk)
+            with pytest.raises(OrdemDeTravasViolada):
+                _travar_conta(menor.pk)
