@@ -25,3 +25,16 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-9, A-11 e A-12 | `tests/tecnicos/test_financeiro_alertas.py` |
 | A-10 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+
+## Correção E09-R06 — tamanho da chave do alerta (2026-10-22)
+
+Valem a seção da correção no `spec.md` e a correção E09-R08 (E09-01). Red esperado no código atual: o A-13 falha com `ValueError` ("a chave do alerta deve ter de 1 a 64 caracteres").
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-6 (reescrito) | Decisão técnica, correção R06 | negativo | o arranjo | tipo desconhecido; chave vazia; chave com **81** caracteres; dados com a chave `token` | `ValueError` nos quatro; nada é gravado |
+| A-13 | Correção R06 | positivo | o arranjo | `abrir_alerta(divergencia_na_conciliacao, "livro:" + "x" * 64, {...})` e `abrir_alerta(divergencia_na_conciliacao, "y" * 80, {...})`; depois `resolver_alerta` das duas | os dois abertos, com a chave inteira gravada (70 e 80 caracteres) e o aviso emitido; os dois resolvidos pela mesma chave |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-6 e A-13 | `tests/tecnicos/test_financeiro_alertas.py` |

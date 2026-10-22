@@ -153,3 +153,60 @@ O efeito é um movimento F12, F13 ou F14 com a auditoria.
 - Depende de E09-02 e E09-06.
 - **L-8, L-9 e L-10 continuam abertas:** na fase 2a, se a API não der os movimentos ou o saldo, a conciliação desse ponto vira conferência manual.
 - A E10 acrescenta o par dos movimentos `devolucao` e exclui as devoluções excepcionais da conciliação.
+
+## Correções da revisão da E09 (2026-10-22)
+
+Origem: parecer sobre `34f9547` (`docs/specs/E09-08/review.md`), achados R05, R06 e R07. Valem a correção E09-R08 e a "Regra única de travas" (E09-01, `spec.md`).
+
+### Correção E09-R05 — a tarefa do invariante avalia a reserva
+
+**Diagnóstico.** A E09-05 manda rodar `avaliar_reserva` também na tarefa do invariante, mas `verificar_invariante_agora` não a chama. Algumas despesas nascem sem nenhuma operação da reserva depois delas: por exemplo, a tarifa registrada pela sincronização ou pela tarefa `registrar_tarifas_pendentes`. Nesses casos, o alerta `reserva_insuficiente` não abre. Pelo mesmo motivo, também não se resolve quando a cobertura automática acontece fora das operações da reserva.
+
+**Regras.**
+- `verificar_invariante_agora`, depois do passo do invariante, avalia a reserva numa transação própria. Ela trava a conta `reserva` (regra única) e chama `avaliar_reserva()`.
+- A avaliação da reserva acontece também com o provedor indisponível, porque usa só o livro-razão. Com o provedor indisponível:
+  - a função continua devolvendo `None`;
+  - grava o log `warning`;
+  - deixa os alertas do invariante como estavam (A-10).
+- O valor devolvido e o tratamento do invariante não mudam. Uma falha na avaliação da reserva não desfaz o passo do invariante, e vice-versa.
+
+### Correção E09-R06 — identificação de 64 caracteres na conciliação
+
+**Diagnóstico.** Para uma identificação de aporte ou de saída com 64 caracteres, que é válida, a chave `livro:<identificacao>` tem 70 caracteres. A chave do alerta aceitava até 64, então `abrir_alerta` levantava `ValueError`. O dia era desfeito, e a tarefa ficava parada nesse dia.
+
+**Regra.** O limite da chave do alerta passa a 80 caracteres (E09-03, "Correção E09-R06"). A conciliação continua usando `livro:<identificacao>` com a identificação inteira, sem truncar nem resumir. A identificação também fica nos dados do alerta.
+
+### Correção E09-R07 — três recortes separados na conciliação
+
+**Diagnóstico.** A conciliação usa a mesma lista ampla de movimentos do provedor para três coisas:
+- os movimentos do dia;
+- o par inverso;
+- a diferença de saldo.
+
+Na diferença, entravam movimentos posteriores ao `referente_a`. No par inverso, entravam movimentos posteriores ao fim do dia. O resultado era uma diferença falsa (prova `test_conciliacao_respeita_referente_a`) e um `ok` falso (prova `test_conciliacao_nao_parea_movimento_futuro`). O par de um pagamento também era procurado sem olhar o instante, o que dá uma diferença falsa quando a entrada é lançada depois do `referente_a`.
+
+**Regras (substituem a fórmula da diferença e detalham o par inverso acima).** A consulta ao provedor não muda: `listar_movimentos(início de D − 3 dias, max(fim de D, referente_a + 1 µs))`. Sobre essa lista, os três recortes são separados. `t` é o `referente_a` do saldo.
+
+| Recorte | Movimentos do provedor | Movimentos do livro-razão | Uso |
+|---|---|---|---|
+| **Movimentos do dia** | `ocorrido_em` em [início de D, fim de D) | — | classificação pela tabela acima, alertas desses movimentos e a contagem `movimentos` do resumo |
+| **Par inverso** | `ocorrido_em` em [início de D − 3 dias, fim de D) | aportes e saídas com `momento` em [início de D, fim de D) | o aporte ou a saída sem movimento do provedor de mesma identificação nesse intervalo abre `livro:<identificacao>` e conta em `sem_par` |
+| **Diferença no instante `t`** | `ocorrido_em` em [início de D, `t`] | aportes e saídas com `momento` em [início de D, `t`] | a fórmula abaixo |
+
+```
+diferenca = saldo do provedor
+          − saldo_total_esperado(até t)
+          − Σ(movimentos do provedor do recorte da diferença sem par no livro até t)
+          + Σ(aportes e saídas do recorte da diferença sem movimento do provedor de mesma
+              identificação com ocorrido_em em [início de D − 3 dias, t])
+```
+
+- **"Sem par no livro até `t`."** O par usa a mesma tabela da classificação, mas só vale um lançamento do livro-razão com `momento ≤ t`:
+  - a entrada do pagamento;
+  - o movimento da tarifa;
+  - o aporte;
+  - a saída.
+
+  `ajuste`, `outro` e os tipos desconhecidos nunca têm par.
+- **`t` antes do início de D.** As duas somas ficam vazias, e a diferença compara o saldo com o livro-razão até `t`.
+- **O resumo e o resultado.** `sem_par` continua sendo a soma dos sem par do dia: sem lançamento, divergentes e do livro. O resultado é `ok` só com `sem_par = 0` e diferença zero. O registro continua imutável e único por dia.

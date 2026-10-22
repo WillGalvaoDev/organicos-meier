@@ -102,3 +102,24 @@ O link do aviso aponta para a tela financeira (E09-08). Enquanto ela não existi
 ## Dependências e decisões em aberto
 
 Depende de E04 (emissão) e de E09-01. Nenhuma decisão em aberto.
+
+## Correção E09-R06 — tamanho da chave do alerta (2026-10-22)
+
+Origem: parecer sobre `34f9547`, R06. A parte da conciliação está na E09-07, na seção da mesma correção. Valem as regras da correção E09-R08 (E09-01, `spec.md`).
+
+### Diagnóstico
+
+A chave do alerta aceita até 64 caracteres. A identificação de um aporte ou de uma saída também aceita até 64 (E09-05, E09-07). A conciliação usa a chave `livro:<identificacao>`, que chega a 70 caracteres. Com uma identificação válida de 64 caracteres, `abrir_alerta` levanta `ValueError`, e a conciliação do dia é desfeita.
+
+### Regra
+
+- **O limite da chave passa de 64 para 80 caracteres**, no `abrir_alerta`, no `resolver_alerta` e no campo `AlertaFinanceiro.chave`, com uma migração.
+  - Chave vazia ou com mais de 80 caracteres continua levantando `ValueError`, sem escrita.
+  - A regra "Chave vazia ou com mais de 64 caracteres" das regras acima fica revogada.
+- **As chaves são sempre derivadas sem truncar e sem resumir.** Todo identificador que entra numa chave tem no máximo 64 caracteres:
+  - o `id_externo` (`LIMITE_ID_EXTERNO`);
+  - o `id_movimento` (E09-02);
+  - a identificação de aporte e de saída.
+
+  Os prefixos atuais (`livro:` e `saldo:`) têm 6 caracteres, e `saldo:<data>` tem 16. Toda chave cabe em 80, então não há truncamento nem colisão.
+- **Prefixo novo tem limite.** Um prefixo criado depois disto precisa ter no máximo 16 caracteres, para caber com um identificador de 64. A identificação original continua nos dados do alerta, como já acontece.

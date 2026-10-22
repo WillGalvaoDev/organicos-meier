@@ -157,3 +157,170 @@ Qualquer outra combinação é recusada, inclusive:
 
 - Depende de E08, pelos modelos `Rodada`, `Ciclo`, `Pedido` e `Fornecedor`. Nenhuma decisão em aberto.
 - **Limite de verificação:** o comportamento do Mercado Pago não interfere nesta fatia.
+
+## Correções da revisão da E09 (2026-10-22)
+
+O parecer consolidado do agente 3 sobre `34f9547` está em `docs/specs/E09-08/review.md` e reprovou a E09. As correções estão nas fatias afetadas:
+
+| Achado | Classificação | Onde está a especificação | Critérios novos ou alterados |
+|---|---|---|---|
+| R01 — cobertura duplicada da mesma despesa | bloqueador | esta fatia ("Regra única de travas") e E09-06, "Correção E09-R01" | E09-06 A-20 a A-22 |
+| R02 — impasse entre designação e liquidação | bloqueador | esta fatia ("Regra única de travas") e E09-05, "Correção E09-R02" | E09-01 A-19 a A-21; E09-05 A-16 e A-17 |
+| R03 — liquidação repetida em paralelo não idempotente | importante | E09-06, "Correção E09-R03" | E09-06 A-23 |
+| R04 — relatório do frete sem a cobertura das obrigações | importante | E09-06, "Correção E09-R04" | E09-06 A-25 e A-26 |
+| R05 — a tarefa periódica não avalia a reserva | importante | E09-07, "Correção E09-R05" | E09-07 A-24 |
+| R06 — identificação de 64 caracteres aborta a conciliação | importante | E09-03 e E09-07, "Correção E09-R06" | E09-03 A-6 (reescrito) e A-13; E09-07 A-25 |
+| R07 — janelas da conciliação | importante | E09-07, "Correção E09-R07" | E09-07 A-26 e A-27 |
+| R08 — evidência de TDD | bloqueador de processo; **tratamento decidido pelo responsável em 2026-10-22: o mesmo da E05-R04, E06-R05 e E08-R06** | esta fatia, "Correção E09-R08" (vale para toda a E09) | sem critério novo para os antigos; registro e mutação por critério |
+| R09 — fontes desatualizadas durante a apuração | bloqueador | esta fatia ("Regra única de travas") e E09-06, "Correção E09-R09" | E09-06 A-24 |
+| M-8 — literal `1.000,00` no E09-08 A-3 | melhoria | `docs/melhorias.md`, M-8 | nenhum. Resposta ao implementador: a leitura dele está certa. O A-3 é o valor de R$ 1.000,00 digitado `1000,00`, e a regra de entrada (sem separador de milhar) prevalece. A redação fica para a revisão final das melhorias. |
+
+**Ordem sugerida:**
+
+1. A regra única de travas: primeiro a guarda (A-19 a A-21 desta fatia), porque ela faz a suíte acusar as inversões que ainda existem.
+2. R02 e R01, que dependem da regra.
+3. R09 e R03.
+4. R04, R05, R06 e R07, que são independentes entre si.
+5. O registro da R08.
+
+Ao final, o implementador roda:
+- a suíte completa, sem `--deselect`;
+- o ruff, o mypy e o `makemigrations --check`;
+- as nove provas do parecer.
+
+As provas `test_cobertura_cruzada`, `test_ordem_designacao_liquidacao`, `test_mesma_referencia_concorrente` e `test_obrigacao_concorrente_apuracao` esperam a outra operação terminar ou passar por uma barreira enquanto seguram a primeira. Com a correção, a outra operação fica esperando a trava, e essas provas passam a esgotar o tempo em vez de passar. Por isso elas ficam substituídas pelos critérios novos, que liberam a pausa também quando a outra conexão está esperando trava ("Padrão das corridas desta correção", abaixo). As outras cinco provas têm de passar como estão.
+
+### Regra única de travas do financeiro (correção E09-R01, E09-R02 e E09-R09)
+
+Origem: parecer sobre `34f9547`, R01, R02 e R09. Esta regra substitui:
+- a "Ordem das travas" desta fatia;
+- a regra de travas da E09-05 ("a conta `reserva` primeiro, depois o alvo");
+- as travas que a E09-06 descreve operação por operação.
+
+#### Diagnóstico
+
+Os três defeitos têm a mesma causa: **a operação decide com um valor lido antes de travar todas as contas de que a decisão depende.**
+- **R01:** a utilização da reserva lê o pendente da despesa travando só a `reserva`. A conta de destino da despesa, que as outras fontes também usam, fica sem trava.
+- **R02:** a designação trava a `reserva` e depois a conta da obrigação, enquanto a liquidação trava as duas em ordem de `pk`. Quando a conta da obrigação tem `pk` menor, as ordens se invertem e o PostgreSQL detecta o impasse.
+- **R09:** a obrigação lê se o ciclo está apurado e escolhe as fontes antes das travas.
+
+Ordenar por `pk` dentro do `lancar` não resolve, porque as contas já travadas antes dele ficam fora dessa ordem.
+
+#### Regras
+
+1. **O conjunto de contas vem antes de qualquer leitura.** Cada operação do financeiro determina todas as contas que pode ler para decidir ou que pode movimentar. Isso inclui as contas das operações que ela chama na mesma transação, por exemplo:
+   - a cobertura automática das tarifas dentro de `registrar_tarifa` e da apuração: `receita_servico(r)` e `despesas_a_cobrir`;
+   - o consumo das designações dentro da liquidação: a `reserva`.
+
+   As contas que ainda não existem são criadas antes, por `conta(...)`.
+2. **Uma trava só, em ordem.** O conjunto inteiro é travado de uma vez, em ordem crescente de `pk`. Depois disso, a operação não trava nenhuma conta que não esteja no conjunto.
+3. **A decisão vem depois da trava.** Tudo o que decide o resultado é lido depois da trava:
+   - saldos;
+   - pendente da despesa;
+   - sem cobertura e financiado da obrigação;
+   - liquidado;
+   - designações ativas;
+   - a existência da apuração do ciclo;
+   - movimentos e referências idempotentes.
+
+   Uma leitura feita antes da trava só pode encerrar a operação quando encontra um fato definitivo, como um movimento já gravado, que é imutável: devolver o existente ou recusar o conflitante. Quando a leitura não encontra nada, a busca é refeita depois da trava.
+4. **A proteção compartilhada de cada alvo é uma conta.** Todas as fontes que cobrem o mesmo alvo travam a mesma conta antes de ler o que falta. As fontes são a reserva, a receita de uma rodada e a cobertura automática.
+   - **Despesa:** a conta de destino dela. É `despesas_a_cobrir` para a tarifa e `frete(r)` para o déficit de frete.
+   - **Obrigação com comprador:** a conta `obrigacao_comprador(o)`. Ela é criada se ainda não existir, inclusive na designação, que hoje só trava a conta quando ela já existe.
+5. **Ordem geral.** As travas da E08 vêm primeiro (`PagamentoNoProvedor` → `SituacaoDoPedido` → `TentativaDePagamento`). Depois vêm as contas do livro-razão, pela regra acima. Depois, os alertas e avisos.
+
+Conjuntos de contas das operações existentes. O implementador confere e completa esta lista, e a guarda acusa o que faltar:
+
+| Operação | Contas travadas juntas |
+|---|---|
+| `registrar_aporte`, `desfazer_designacao` | `reserva` |
+| `designar_reserva` | `reserva`, `obrigacao_comprador(o)` |
+| `utilizar_reserva` | `reserva`, o destino da despesa |
+| `cobrir_despesa` pela receita | `receita_servico(rodada_fonte)`, o destino da despesa |
+| `cobrir_tarifas_pendentes_da_rodada` | `receita_servico(r)`, `despesas_a_cobrir` |
+| `registrar_tarifa` | `despesas_a_cobrir`; com a rodada apurada, também `receita_servico(r)` |
+| `registrar_obrigacao_com_comprador` | `obrigacao_comprador(o)`; as três custódias do comprador no ciclo; `obrigacao_fornecedor(f, r)`, `receita_servico(r)` e `frete(r)` (as fontes antes e depois da apuração, porque o estado só é lido depois da trava) |
+| `cobrir_obrigacao_com_receita` | `obrigacao_comprador(o)`, `receita_servico(rodada_fonte)` |
+| `liquidar_obrigacao` | `obrigacao_comprador(o)`, `reserva` |
+| `registrar_apuracao_no_livro` | as custódias dos pedidos válidos, `obrigacao_fornecedor(f, r)`, `receita_servico(r)`, `frete(r)`, `despesas_a_cobrir` |
+| `registrar_saida` | a conta da saída |
+| entradas da E09-04 | a custódia ou a conta da obrigação de destino, mais as contas da obrigação que a entrada cria |
+
+#### Guarda da ordem (decisão técnica)
+
+A função que trava uma conta do livro-razão (hoje `_travar_conta`) é o único caminho de trava das contas. Ela passa a guardar quais contas a transação mais externa já travou.
+- Se a conta pedida ainda não está travada e tem `pk` menor que a maior já travada, a função levanta `OrdemDeTravasViolada` antes de travar. Como a exceção desfaz a transação de quem chamou, nada é gravado.
+- Travar de novo uma conta já travada é permitido, em qualquer ordem.
+- O registro começa vazio em cada transação mais externa, tanto depois de um commit quanto depois de um rollback.
+- A guarda fica ativa sempre, não só nos testes. Ela é uma asserção de programação: no código correto nunca dispara. Num caminho com inversão, ela troca um impasse que só aparece às vezes por um erro determinístico, sem escrita.
+- O `lancar` continua travando as contas das transferências em ordem crescente. Com a guarda, um `lancar` que precisaria de uma conta de `pk` menor que a maior já travada falha. Isso obriga quem chama a incluir essa conta no conjunto inicial.
+
+#### Padrão das corridas desta correção
+
+Os critérios de concorrência novos da E09 (E09-05 A-16 e A-17; E09-06 A-20 a A-24) seguem este padrão:
+
+- O teste usa os serviços reais, em transações PostgreSQL, como as provas do parecer. O monkeypatch só pausa a execução num ponto: não retira trava, validação nem efeito.
+- A operação A pausa no ponto indicado no critério, e a operação B começa. O teste libera A quando acontecer a primeira destas três coisas:
+  - B terminou;
+  - B está esperando trava (`tests/apoio/trava.py::outra_conexao_esperando`);
+  - B chegou ao seu próprio ponto de pausa.
+
+  O tempo limite é de 15 s. O teste nunca espera só pelo fim de B, porque depois da correção B espera a trava de A e o teste travaria.
+- O critério indica a falha esperada no código atual (o Red). Uma falha por tempo esgotado ou por erro de infraestrutura não vale como Red.
+- O resultado vale em qualquer ordem: o critério dá o estado final, que é o mesmo de uma das ordens seriais.
+
+#### Invariantes acrescentados
+
+- Nenhuma transação do financeiro trava uma conta de `pk` menor depois de uma de `pk` maior.
+- Toda decisão sobre saldo, pendente, cobertura, liquidação ou estado da apuração é tomada com as contas de que ela depende já travadas.
+
+### Correção E09-R08 — evidência de TDD (2026-10-22)
+
+Origem: parecer sobre `34f9547`, R08. Esta seção vale para toda a E09. As outras fatias só remetem a ela.
+
+#### Diagnóstico
+
+Estes critérios não têm Red válido comprovado antes do código de produção:
+
+| Critério | O que o registro mostra |
+|---|---|
+| E09-01, `extrato` (sem critério próprio na lista) | escrito junto com `saldo`; o teste veio depois, com prova por mutação |
+| E09-01 A-2 | o Red falhou porque a conta do andaime não existia, e não porque a mutação fosse permitida; a cronologia das proteções do ORM e do SQL não está registrada |
+| E09-06 A-17 a A-19 | as travas foram escritas junto com as operações, sem a sequência "verde funcional sem a trava → Red da corrida → trava"; a mutação detecta A-17 e A-18, mas não A-19 |
+| E09-07 A-20 | o `UNIQUE` e o tratamento do conflito vieram antes do Red específico; prova por mutação registrada |
+
+#### Tratamento — decisão do responsável pelo projeto (2026-10-22)
+
+É o mesmo tratamento das correções E05-R04, E06-R05 e E08-R06 (E08-02, `spec.md`, seção "Correção E08-R06"), escolhido de novo para a E09. Ele não vira dispensa automática para as próximas etapas.
+
+1. **Procurar a evidência que existe.** Valem commits locais, logs guardados com data e saídas registradas no momento. Se o implementador encontrar a evidência, registra a referência exata e o critério sai da lista. Não vale execução nova, andaime recriado ou inferência sobre a ordem.
+2. **Registrar a não conformidade** numa seção "Não conformidade de TDD" no `review.md` de cada fatia afetada (E09-01, E09-06 e E09-07). A seção traz:
+   - os critérios;
+   - o que aconteceu;
+   - o tratamento aplicado.
+
+   O registro anterior é preservado sem edição, e nenhum texto pode dar a entender que houve Red nesses critérios.
+3. **Provar a sensibilidade por mutação**, com o título "sensibilidade (mutação), não Red". Valem as mutações já registradas que cumpram as exigências do E08-R06: o trecho mudado, o comando com os arquivos inteiros e sem `-k`, a falha por asserção e a restauração verde.
+
+   | Critério | Mutação |
+   |---|---|
+   | E09-01 `extrato` | já registrada (`extrato` devolvendo `[]`); acrescentar uma segunda, que inverte a ordem dos movimentos |
+   | E09-01 A-2 | duas mutações, uma por caminho: retirar a recusa do ORM de um dos modelos; retirar a trigger de uma das tabelas |
+   | E09-06 A-17 | já registrada (`registrar_obrigacao_com_comprador` sem travas); refazer depois da regra única de travas, sobre o código novo |
+   | E09-06 A-18 | já registrada (`liquidar_obrigacao` sem travas); refazer sobre o código novo |
+   | E09-06 A-19 | a mutação "apuração sem travas" não é detectada pelo A-19, e o limite fica registrado. A trava das contas da apuração passa a ser provada pelo E09-06 A-24 (ii), em que uma obrigação disputa a custódia com a apuração pausada. Retirar a trava da apuração tem de fazer o A-24 (ii) falhar. Não existe Red real possível para o A-19: a proteção já existe e a entrada concorrente na custódia de um pedido já quitado não acontece pelas regras. Com esse registro, a M-6 é encerrada no `docs/melhorias.md`. |
+   | E09-07 A-20 | já registrada (sem o tratamento do `IntegrityError`) |
+
+4. **Correções com Red real.** Todos os critérios novos desta correção (E09-01 A-19 a A-21; E09-03 A-13; E09-05 A-16 e A-17; E09-06 A-20 a A-26; E09-07 A-24 a A-27) seguem Red → Green → Refactor.
+   - Os de concorrência registram as duas linhas da prevenção do E08-R06:
+     - o verde funcional, que já existe;
+     - o Red da corrida, observado no código atual.
+   - Cada critério novo indica a falha esperada.
+   - O E09-03 A-6 reescrito também precisa de Red: o teste com 81 caracteres passa no código atual, então o Red do par vem do A-13 (80 caracteres aceitos).
+
+Os passos 2 e 3 são o tratamento definitivo dos critérios antigos. Mesmo com esse tratamento, R01 a R07 e R09 só se encerram pelos critérios novos.
+
+#### Prevenção (soma-se às anteriores)
+
+- **Mutação não substitui o Red.** A frase "provei por mutação" só aparece em critério já declarado como não conformidade. Comportamento novo só ganha código de produção depois de um Red observado.
+- **A ordem do registro segue a ordem dos fatos.** O registro de cada critério novo mostra o commit ou a saída do Red antes do commit da produção.

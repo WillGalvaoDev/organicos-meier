@@ -43,3 +43,33 @@ X é quitado pela entrada da E09-04, com a tarifa 1,25. Y fica sem pagamento (in
 | A-6 a A-9 | também `tests/aceitacao/test_cenario_33_devolucao_e_repasse.py` |
 | A-10 | também `tests/aceitacao/test_cenario_34_reserva_insuficiente.py` |
 | A-17 a A-19 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+
+## Correções da revisão da E09 (2026-10-22)
+
+Valem as seções das correções no `spec.md`, a "Regra única de travas" e o "Padrão das corridas desta correção" (E09-01, `spec.md`), e a correção E09-R08.
+
+**Arranjo R (R01):**
+- uma tarifa D de 10,00 da rodada `r`, lançada por F4 (`despesas_a_cobrir` em −10,00);
+- a reserva com 100,00;
+- `receita_servico(r)` com 100,00;
+- o administrador ADM.
+
+**Arranjo F (R04):**
+- o A-4 (déficit de 10,00 coberto);
+- `registrar_saida(ADM, tipo="pagamento_do_frete", conta=frete(r), valor=30.00, ...)`, que deixa `frete(r)` em 0,00.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-20 | Correção R01 | concorrência | R | `utilizar_reserva(ADM, D, 10.00, ...)`, que pausa depois de ler o pendente, em paralelo com `cobrir_despesa(ADM, D, fonte=("receita", r), valor=10.00, ...)` | **Red esperado:** as duas aceitas; as coberturas de D somam 20,00. **Depois da correção:** uma aceita e a outra levanta `CoberturaExcedente`, sem escrita; as coberturas de D somam 10,00; o pendente é 0,00; `despesas_a_cobrir` fica em 0,00; reserva + receita = 190,00 |
+| A-21 | Correção R01 | concorrência | R | `cobrir_despesa(ADM, D, fonte=("receita", r), valor=10.00, ...)`, que pausa depois de ler o pendente, em paralelo com `utilizar_reserva(ADM, D, 10.00, ...)` | **Red esperado:** as duas aceitas, com 20,00. **Depois da correção:** o mesmo resultado do A-20 |
+| A-22 | Correção R01 | concorrência | R | `cobrir_tarifas_pendentes_da_rodada(r)`, que pausa depois de ler o pendente de D, em paralelo com `utilizar_reserva(ADM, D, 10.00, ...)` | **Red esperado:** as duas cobrem, com 20,00. **Depois da correção**, um destes dois resultados: (a) a automática devolve 1 e a utilização levanta `CoberturaExcedente`; (b) a utilização cobre e a automática devolve 0, sem movimento. Nos dois, as coberturas de D somam 10,00 |
+| A-23 | Correção R03 | concorrência | uma obrigação de 25,00 totalmente financiada (conta com 25,00) | (i) duas `liquidar_obrigacao(o, 25.00, referencia="mesma")` em paralelo, cada uma pausando depois da primeira consulta da referência; (ii) o mesmo, com uma das chamadas de 20,00 | **Red esperado em (i):** uma levanta `LiquidacaoRecusada` ("passa do que falta devolver"). **Depois da correção:** em (i), as duas devolvem o mesmo movimento (mesmo `pk`), com uma F15 só, de 25,00, e a conta da obrigação em 0,00; em (ii), a segunda a gravar levanta `MovimentoConflitante`, e há uma F15 só |
+| A-24 | Correção R09 | concorrência | Ap antes da apuração: X pago, com as custódias de produtos 100,00, serviço 5,00 e frete 20,00 | (i) `registrar_obrigacao_com_comprador` do comprador de X, com produtos 25,00, que pausa depois de ler se o ciclo está apurado, em paralelo com `registrar_apuracao_no_livro(c, [X], autor=SISTEMA)`; (ii) a apuração, que pausa depois de ler os saldos das custódias e antes de lançar, em paralelo com a mesma obrigação | **Red esperado nos dois:** a obrigação termina com 25,00 sem cobertura. **Depois da correção:** as duas operações terminam; o sem cobertura é 0,00; `obrigacao_fornecedor(A, r)` fica 75,00; a custódia de produtos de X fica 0,00; a conta da obrigação fica 25,00. Se a obrigação veio primeiro, `depois_da_apuracao` é falso e o financiamento é F8; se a apuração veio primeiro, é verdadeiro e o financiamento é F9. Retirar as travas de contas da apuração faz o (ii) falhar (E09-R08, prova do A-19) |
+| A-25 | Correção R04 | positivo | F | `registrar_obrigacao_com_comprador` do comprador de X só com frete 5,00; `frete_do_ciclo(c)`; `designar_reserva(ADM, o, 5.00, ...)`; `frete_do_ciclo(c)`; `liquidar_obrigacao(o, 5.00, referencia="dev-frete")`; `frete_do_ciclo(c)` | a obrigação nasce com 5,00 sem cobertura e sem despesa de déficit nova (`frete(r)` em 0,00); as três leituras dão devolvido 5,00 e déficit 15,00; o déficit coberto é 10,00 na primeira e 15,00 na segunda e na terceira. **Red esperado:** 10,00 na segunda |
+| A-26 | Correção R04 | positivo | F, com uma `ObrigacaoComComprador` O do ciclo criada por fábrica, com `depois_da_apuracao` verdadeiro, produtos 10,00, frete 5,00 e nenhum financiamento | `frete_do_ciclo(c)`; depois `designar_reserva(ADM, O, 5.00, ...)`, `designar_reserva(ADM, O, 8.00, ...)` e `designar_reserva(ADM, O, 2.00, ...)`, com `frete_do_ciclo(c)` depois de cada uma | o devolvido é 5,00 e o déficit 15,00 em todas; o déficit coberto é 10,00, 10,00, 13,00 e 15,00 (o que falta é atribuído primeiro ao frete). **Red esperado:** 10,00 na terceira leitura |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-20 a A-24 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+| A-25 e A-26 | `tests/tecnicos/test_financeiro_apuracao_e_obrigacoes.py` |
+| A-25 | também `tests/aceitacao/test_cenario_31_deficit_de_frete.py` |

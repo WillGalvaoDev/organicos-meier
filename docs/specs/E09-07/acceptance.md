@@ -46,3 +46,19 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-7 a A-10 e A-22 | `tests/tecnicos/test_financeiro_invariante.py` |
 | A-11 a A-18, A-21 e A-23 | `tests/tecnicos/test_financeiro_conciliacao.py` |
 | A-19 e A-20 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+
+## Correções da revisão da E09 (2026-10-22)
+
+Valem as seções das correções no `spec.md` e a correção E09-R08 (E09-01). Nos A-26 e A-27, o provedor é um dublê do protocolo, como no A-22. O dia `D` é um dia já terminado no horário de Brasília.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-24 | Correção R05, E09-05 | positivo | (i) o provedor responde, sem violação do invariante; uma despesa de tarifa de 10,00 pendente; a reserva com 0,00; nenhum alerta `reserva_insuficiente`. (ii) o (i) depois da verificação, com a tarifa coberta por `cobrir_tarifas_pendentes_da_rodada(r)` (a receita de `r` com 10,00). (iii) o arranjo do (i) com `indisponivel()` | `verificar_invariante_agora()` em cada caso | (i) devolve o resultado do invariante, sem alerta `invariante_violado`; o alerta `reserva_insuficiente` fica aberto, com sem cobertura 10,00 e livre 0,00. (ii) o alerta é resolvido. (iii) devolve `None`, com o log `warning`; os alertas do invariante ficam como estavam; o alerta `reserva_insuficiente` fica aberto. **Red esperado:** em (i), nenhum alerta `reserva_insuficiente` |
+| A-25 | Correção R06 | positivo | um aporte registrado em `D` com a identificação `"a" * 64` e uma saída registrada em `D` com a identificação `"s" * 64`, sem movimento correspondente no provedor | `conciliar_dia(D)`; depois, com o relógio em `D + 2`, `conciliar_dias_pendentes_agora()` | um `ConciliacaoDiaria` de `D`, `divergente`; dois alertas `divergencia_na_conciliacao` com as chaves `livro:` + 64 caracteres (70 no total), com a identificação inteira nos dados; a tarefa concilia `D + 1` em seguida. **Red esperado:** `ValueError` da chave e nenhum registro do dia |
+| A-26 | Correção R07 | positivo | (i) o saldo do provedor 0,00 com `referente_a` às 10:00 de `D`, e um movimento `ajuste` de +10,00 às 12:00 de `D`; o livro-razão vazio. (ii) um pagamento de 125,00 no provedor às 23:00 de `D`, com a entrada no livro-razão às 00:30 de `D + 1`; o saldo do provedor 125,00 com `referente_a` às 23:30 de `D` | `conciliar_dia(D)` à 01:00 de `D + 1` | (i) diferença 0,00; nenhum alerta `saldo:<D>`; o alerta de divergência do `ajuste` aberto (é um movimento do dia). (ii) diferença 0,00; nenhum alerta `saldo:<D>` nem `pagamento_sem_conciliacao` (a entrada existe na execução). **Red esperado:** em (i), diferença −10,00; em (ii), diferença +125,00 |
+| A-27 | Correção R07 | negativo | um aporte de 100,00 registrado às 12:00 de `D` com a identificação `"futuro"`; um depósito `"futuro"` de 100,00 no provedor só à 01:00 de `D + 1`; o saldo do provedor 100,00 com `referente_a` às 02:00 de `D + 1` | `conciliar_dia(D)` às 02:00 de `D + 1` | o resultado é `divergente`, com `sem_par = 1`; o alerta `livro:futuro` aberto; a diferença é 0,00 e não há alerta `saldo:<D>` (no instante `t`, o depósito e o aporte se pareiam). **Red esperado:** `ok` com `sem_par = 0` |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-24 | `tests/tecnicos/test_financeiro_invariante.py` |
+| A-25 a A-27 | `tests/tecnicos/test_financeiro_conciliacao.py` |

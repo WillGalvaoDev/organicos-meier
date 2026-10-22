@@ -34,3 +34,16 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-1 | também `tests/aceitacao/test_cenario_29_aporte.py` |
 | A-4 a A-6 | também `tests/aceitacao/test_cenario_34_reserva_insuficiente.py` (nível do livro-razão) |
 | A-12 a A-14 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+
+## Correção E09-R02 — travas da designação (2026-10-22)
+
+Valem a seção da correção no `spec.md`, a "Regra única de travas" e o "Padrão das corridas desta correção" (E09-01, `spec.md`), e a correção E09-R08.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-16 | Correção R02 | concorrência | uma obrigação de 50,00 (fábrica), com a conta `obrigacao_comprador(o)` criada antes da `reserva` (`pk` menor) e semeada com 25,00 financiados; a reserva com 100,00 | `designar_reserva(ADM, o, 25.00, ...)` em paralelo com `liquidar_obrigacao(o, 25.00, referencia="dev-trava")`; cada uma pausa logo depois da sua primeira trava de conta | **Red esperado:** uma das duas falha com `OperationalError` (`deadlock detected`). **Depois da correção:** as duas terminam, em qualquer ordem; a conta da obrigação fica 0,00; uma F15 de 25,00; a designação de 25,00 continua ativa, sem consumo; a reserva fica com saldo 100,00, comprometido 25,00 e livre 75,00; o sem cobertura de `o` é 0,00 |
+| A-17 | Correção R02 | concorrência | uma obrigação O1 de 50,00 (fábrica) **sem conta no livro-razão**; a reserva com 100,00; a `receita_servico(r2)` com 100,00 | `designar_reserva(ADM, O1, 50.00, ...)`, que pausa depois de ler o sem cobertura, em paralelo com `cobrir_obrigacao_com_receita(ADM, O1, r2, 50.00, ...)` | **Red esperado:** as duas aceitas, com financiado + designado = 100,00 para um devido de 50,00. **Depois da correção:** uma aceita e a outra levanta `CoberturaExcedente`, sem escrita; financiado + designado = 50,00; o sem cobertura é 0,00. Se a designação venceu, o comprometido é 50,00 e a receita fica 100,00; se venceu a receita, o comprometido é 0,00 e a receita fica 50,00 |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-16 e A-17 | `tests/tecnicos/test_financeiro_concorrencia.py` |

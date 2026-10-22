@@ -32,3 +32,20 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-1 a A-13, A-17 e A-18 | `tests/tecnicos/test_financeiro_livro.py` |
 | A-3 a A-6 | também `tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py`, pelo nível do livro-razão |
 | A-14 a A-16 | `tests/tecnicos/test_financeiro_concorrencia.py` |
+
+## Correção E09-R02 — guarda da ordem das travas (2026-10-22)
+
+Valem a "Regra única de travas do financeiro" e a correção E09-R08, no `spec.md` desta fatia. Red esperado no código atual: o A-19 falha porque a trava fora de ordem é aceita, sem exceção.
+
+**Arranjo:** três contas criadas nesta ordem, `c1`, `c2` e `c3`, com `pk` crescente e saldo semeado.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-19 | Correção R02 | negativo | o arranjo | numa transação, travar `c3` e depois `c1`; noutra, travar `c2` e depois `lancar` F11 de `c1` para `c3` | `OrdemDeTravasViolada` nas duas, antes de travar `c1`; nenhum movimento gravado; saldos iguais |
+| A-20 | Correção R02 | positivo | o arranjo | numa transação, travar `c1`, `c3` e de novo `c1`; e `lancar` com as transferências entre `c1` e `c3` listadas em qualquer ordem; noutra, travar `c3`, terminar a transação e, numa transação nova, travar `c1` | aceitos: travar de novo uma conta já travada é permitido, e o registro começa vazio em cada transação mais externa, depois de commit e depois de rollback |
+| A-21 | Correção R02 | positivo | o arranjo | a suíte inteira, com a guarda ativa | nenhum teste existente falha por `OrdemDeTravasViolada` depois da correção. Um teste que falhar por ela antes da correção é registrado como inversão encontrada, com o caminho, e corrigido pela regra única, sem desligar a guarda |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-19 e A-20 | `tests/tecnicos/test_financeiro_livro.py` |
+| A-21 | a suíte completa, com o resultado registrado no `review.md` |

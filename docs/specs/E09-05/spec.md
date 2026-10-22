@@ -113,3 +113,20 @@ Tudo termina com `avaliar_reserva()`.
 ## Dependências e decisões em aberto
 
 Depende de E09-01, E09-03 e E09-04 (obrigação e despesa). Nenhuma decisão em aberto.
+
+## Correção E09-R02 — travas da designação e da utilização (2026-10-22)
+
+Origem: parecer sobre `34f9547`, R02, com a parte da utilização vinda do R01. Valem a "Regra única de travas do financeiro" e a correção E09-R08 (E09-01, `spec.md`). A regra "Travas" desta fatia (a conta `reserva` primeiro, depois o alvo) fica revogada.
+
+### Diagnóstico
+
+- **Ordem.** `designar_reserva` trava a `reserva` e depois a conta da obrigação. `liquidar_obrigacao` (E09-06) trava as duas em ordem crescente de `pk`. Quando a conta da obrigação nasceu antes da `reserva`, as duas operações se travam mutuamente, e uma falha com `OperationalError`, embora as duas sejam válidas em qualquer ordem serial.
+- **Conta inexistente.** `designar_reserva` só trava a conta da obrigação quando ela existe. Uma obrigação sem conta pode ser coberta ao mesmo tempo pela designação e pela receita (`cobrir_obrigacao_com_receita`), e cada uma lê o sem cobertura sem ver a outra.
+- **Utilização.** `utilizar_reserva` lê o pendente da despesa travando só a `reserva`. O defeito e os critérios estão na E09-06, na correção E09-R01.
+
+### Regras
+
+- `designar_reserva` obtém a conta `obrigacao_comprador(o)`, criando-a se ainda não existir. Trava essa conta e a `reserva` juntas, em ordem crescente de `pk`. Só depois lê o livre, o sem cobertura e o alerta de invariante.
+- `utilizar_reserva` trava a `reserva` e o destino da despesa juntos, em ordem crescente de `pk`. O destino é `despesas_a_cobrir` ou `frete(r)`. Só depois lê o livre e o pendente.
+- `registrar_aporte` e `desfazer_designacao` continuam travando só a `reserva`.
+- Os resultados e as recusas desta fatia não mudam. Só muda o momento das leituras, que passa a ser depois de todas as travas.

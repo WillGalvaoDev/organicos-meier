@@ -138,3 +138,70 @@ Chamada pelo sistema, a partir da E10. Valor > 0 e ≤ devido − liquidado, e �
 ## Dependências e decisões em aberto
 
 Depende de E09-04 e E09-05. Nenhuma decisão em aberto. Herdados registrados na milestone para E10, E11, E12, E13 e E14.
+
+## Correções da revisão da E09 (2026-10-22)
+
+Origem: parecer sobre `34f9547` (`docs/specs/E09-08/review.md`), achados R01, R03, R04 e R09. Valem:
+- a "Regra única de travas do financeiro" e o "Padrão das corridas desta correção" (E09-01, `spec.md`), que substituem as travas descritas operação por operação nesta fatia;
+- a correção E09-R08, também na E09-01.
+
+### Correção E09-R01 — uma só cobertura por despesa
+
+**Diagnóstico.** `utilizar_reserva` (E09-05) lê o pendente da despesa travando só a `reserva`. A cobertura pela receita (`cobrir_despesa`) e a automática (`cobrir_tarifas_pendentes_da_rodada`) travam outras contas. Assim, duas fontes podem ler o mesmo pendente e cobrir a mesma despesa duas vezes. O `max(0, ...)` do pendente esconde o excedente.
+
+**Regras.**
+- A conta de destino da despesa é a proteção compartilhada de todas as fontes: `despesas_a_cobrir` para a tarifa e `frete(r)` para o déficit de frete. Toda cobertura trava essa conta junto com a fonte, em ordem crescente de `pk`, e só depois lê o pendente:
+  - pela reserva (E09-05);
+  - pela receita (`cobrir_despesa`);
+  - automática (`cobrir_tarifas_pendentes_da_rodada`, chamada pela apuração e por `registrar_tarifa`).
+- A cobertura automática continua inteira ou nada e na ordem de criação. Uma tarifa que já ficou sem pendente é pulada, sem movimento.
+- A soma das coberturas de uma despesa nunca passa do valor dela. Isso agora é garantido pela trava, e não pelo `max(0, ...)`.
+
+### Correção E09-R03 — a mesma referência devolve o mesmo movimento
+
+**Diagnóstico.** `liquidar_obrigacao` consulta a referência (`devolucao:<referencia>`) só antes das travas. Duas chamadas com a mesma referência e o mesmo conteúdo, em paralelo, não se veem. A segunda é recusada com `LiquidacaoRecusada` ("passa do que falta devolver"), quando deveria receber o movimento da primeira.
+
+**Regras.**
+- A referência é consultada de novo depois das travas (regra única, item 3). A consulta antes das travas pode continuar, mas só como atalho para um movimento já gravado.
+- Com a mesma referência e o mesmo conteúdo (tipo, obrigação e valor), a chamada devolve o movimento existente, sem nada novo.
+- Com conteúdo diferente, levanta `MovimentoConflitante`.
+- Com referências diferentes que juntas passam do devido, continua o A-18: uma passa e a outra levanta `LiquidacaoRecusada`.
+
+### Correção E09-R09 — a obrigação decide as fontes depois de travar
+
+**Diagnóstico.** `registrar_obrigacao_com_comprador` lê se o ciclo está apurado e escolhe as fontes antes das travas. Se a apuração conclui nesse intervalo, a obrigação usa as custódias já esvaziadas e fica sem cobertura, embora haja saldo na própria rodada: na obrigação com o fornecedor, na receita e no frete. Isso contraria P-2 e os A-6/A-7, que valem em qualquer ordem serial.
+
+**Regras.**
+- A operação trava, numa só chamada e em ordem crescente de `pk`, todas as contas candidatas:
+  - a conta da obrigação;
+  - as três custódias do comprador no ciclo, que são as fontes antes da apuração;
+  - `obrigacao_fornecedor(f, r)`, `receita_servico(r)` e `frete(r)`, que são as fontes depois dela.
+- Só depois lê se existe `ApuracaoNoLivro` do ciclo. Essa leitura define `depois_da_apuracao` e a tabela das fontes. Depois lê os saldos.
+- A apuração trava as custódias e as três contas de destino (regra única). Por isso as duas operações se serializam sempre, qualquer que seja o comprador.
+- A apuração também confere de novo, depois das travas, se o ciclo já foi apurado (regra única, item 3).
+
+### Correção E09-R04 — o frete coberto inclui a cobertura das obrigações
+
+**Diagnóstico.** `frete_do_ciclo` soma só as coberturas das despesas de déficit. A parte do frete devolvida a um comprador depois da apuração sem vir de `frete(r)` aumenta o déficit (entra no `devolvido`). Mas a cobertura dessa parte, pela reserva ou pela receita, não aparece no `deficit_coberto`. A regra desta fatia ("coberturas do componente frete sem cobertura das obrigações") não dizia como atribuir a cobertura de uma obrigação com vários componentes.
+
+**Regra (substitui a definição de `deficit_coberto` acima).** Para cada obrigação `o` do ciclo com `depois_da_apuracao`:
+
+| Termo | Definição |
+|---|---|
+| `frete_pela_regra(o)` | a soma das transferências de `frete(r)` para a conta da obrigação. É o financiamento pela regra, que já criou uma despesa de déficit do mesmo valor, e por isso já é contado pelas despesas |
+| `frete_fora_da_regra(o)` | `o.frete − frete_pela_regra(o)` |
+| `falta(o)` | `sem_cobertura_da_obrigacao(o)`: o devido menos o financiado menos o designado (E09-05) |
+| `frete_coberto(o)` | `frete_fora_da_regra(o) − min(frete_fora_da_regra(o), falta(o))` |
+
+```
+deficit_coberto = Σ(valor − pendente das despesas de déficit do ciclo) + Σ frete_coberto(o)
+```
+
+**Atribuição conservadora (decisão técnica).** O que falta numa obrigação com vários componentes é atribuído primeiro ao frete. A cobertura só conta para o frete depois de cobrir o resto da obrigação. Com isso, o relatório nunca informa como coberto um déficit que pode não estar coberto.
+
+Essa regra é só de relatório. Ela não muda:
+- nenhum movimento;
+- o devido, o financiamento ou a cobertura de nenhuma obrigação;
+- quem arca com o déficit (o administrador, §9.3).
+
+Numa obrigação só de frete, que é o caso do parecer, não há atribuição a fazer. Os valores dos A-3, A-4 e A-7 não mudam: no A-7, `frete_fora_da_regra` é 0,00.
