@@ -26,7 +26,7 @@ from apps.nucleo.tempo import agora
 
 logger = logging.getLogger(__name__)
 
-MAIOR_CHAVE = 64
+MAIOR_CHAVE = 80  # cabe `livro:` ou `saldo:` mais um identificador de até 64 caracteres
 
 GRAVIDADE_POR_TIPO: dict[str, str] = {
     TipoDeAlerta.INVARIANTE_VIOLADO: Gravidade.CRITICO,

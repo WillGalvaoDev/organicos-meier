@@ -63,7 +63,6 @@ class _Achados:
     livro_sem_par: list[tuple[str, Decimal]] = field(
         default_factory=list
     )  # (identificação, ±valor)
-    soma_do_provedor_sem_par: Decimal = ZERO
     movimentos_do_dia: int = 0
 
 
@@ -74,9 +73,13 @@ def limites_do_dia(data: date) -> tuple[datetime, datetime]:
     return inicio, fim.astimezone(UTC)
 
 
-def _total(chave: str) -> Decimal | None:
-    """A soma das transferências do movimento com essa chave; `None` se ele não existe."""
-    if not MovimentoFinanceiro.objects.filter(chave=chave).exists():
+def _total(chave: str, ate: datetime | None = None) -> Decimal | None:
+    """A soma das transferências do movimento com essa chave; `None` se ele não existe (ou, com
+    `ate`, se só foi lançado depois desse instante)."""
+    movimentos = MovimentoFinanceiro.objects.filter(chave=chave)
+    if ate is not None:
+        movimentos = movimentos.filter(momento__lte=ate)
+    if not movimentos.exists():
         return None
     total = TransferenciaFinanceira.objects.filter(movimento__chave=chave).aggregate(
         s=Sum("valor")
@@ -84,30 +87,32 @@ def _total(chave: str) -> Decimal | None:
     return Decimal(total) if total is not None else ZERO
 
 
-def _classificar(movimento: MovimentoNoProvedor) -> str | None:
+def _classificar(movimento: MovimentoNoProvedor, ate: datetime | None = None) -> str | None:
     """`None` se o movimento tem par no livro; senão, `SEM_LANCAMENTO` (pagamento ainda sem a
-    entrada) ou `DIVERGENTE`."""
+    entrada) ou `DIVERGENTE`. Com `ate`, só vale o par lançado até esse instante."""
     tipo = movimento.tipo
     if tipo == TipoDeMovimentoNoProvedor.PAGAMENTO:
         destino = DestinoDoPagamento.objects.filter(
             pagamento__id_externo=movimento.id_externo
         ).first()
-        entrada = _total(f"entrada:{destino.pk}") if destino is not None else None
+        entrada = _total(f"entrada:{destino.pk}", ate) if destino is not None else None
         if entrada is None:
             return SEM_LANCAMENTO
         return None if entrada == movimento.valor else DIVERGENTE
     if tipo == TipoDeMovimentoNoProvedor.TARIFA:
-        casa = Despesa.objects.filter(
+        despesas = Despesa.objects.filter(
             tipo=TipoDeDespesa.TARIFA,
             pagamento__id_externo=movimento.id_externo,
             valor=abs(movimento.valor),
-        ).exists()
-        return None if casa else DIVERGENTE
+        )
+        if ate is not None:
+            despesas = despesas.filter(criada_em__lte=ate)
+        return None if despesas.exists() else DIVERGENTE
     if tipo == TipoDeMovimentoNoProvedor.DEPOSITO:
-        total = _total(f"aporte:{movimento.id_movimento}")
+        total = _total(f"aporte:{movimento.id_movimento}", ate)
         return None if total == movimento.valor else DIVERGENTE
     if tipo == TipoDeMovimentoNoProvedor.SAIDA:
-        total = _total(f"saida:{movimento.id_movimento}")
+        total = _total(f"saida:{movimento.id_movimento}", ate)
         return None if total == abs(movimento.valor) else DIVERGENTE
     return DIVERGENTE  # ajuste, outro ou um tipo que o livro não conhece
 
@@ -116,34 +121,67 @@ def _identificacao(chave: str) -> str:
     return chave.split(":", 1)[1]
 
 
-def _ler_o_dia(movimentos: list[MovimentoNoProvedor], inicio: datetime, fim: datetime) -> _Achados:
-    achados = _Achados()
-    ids_do_provedor = {m.id_movimento for m in movimentos}
-    for movimento in movimentos:
-        if movimento.ocorrido_em < inicio:
-            continue  # só entra na janela do livro (ids)
-        if movimento.ocorrido_em < fim:
-            achados.movimentos_do_dia += 1
-        motivo = _classificar(movimento)
-        if motivo is None:
+def _do_livro_sem_par(
+    inicio: datetime,
+    fim: datetime,
+    ids_do_provedor: set[str],
+    *,
+    incluindo_o_fim: bool,
+) -> list[tuple[str, Decimal]]:
+    """Os aportes e as saídas do livro com `momento` em [inicio, fim) (ou [inicio, fim], no
+    recorte da diferença) que não têm movimento do provedor de mesma identificação em
+    `ids_do_provedor`. Devolve (identificação, valor com sinal)."""
+    filtro = {"momento__gte": inicio}
+    filtro["momento__lte" if incluindo_o_fim else "momento__lt"] = fim
+    registrados = MovimentoFinanceiro.objects.filter(
+        tipo__in=(TipoDeMovimento.APORTE, *TIPOS_DE_SAIDA_NO_LIVRO), **filtro
+    ).order_by("pk")
+    sem_par: list[tuple[str, Decimal]] = []
+    for movimento in registrados:
+        identificacao = _identificacao(movimento.chave)
+        if identificacao in ids_do_provedor:
             continue
-        achados.soma_do_provedor_sem_par += movimento.valor
-        if movimento.ocorrido_em < fim:
+        sinal = 1 if movimento.tipo == TipoDeMovimento.APORTE else -1
+        sem_par.append((identificacao, sinal * (_total(movimento.chave) or ZERO)))
+    return sem_par
+
+
+def _ler_o_dia(
+    movimentos: list[MovimentoNoProvedor], inicio: datetime, fim: datetime, instante: datetime
+) -> tuple[_Achados, Decimal]:
+    """Os três recortes da conciliação (E09-R07), sobre a mesma lista do provedor. `instante` é o
+    `referente_a` do saldo. Devolve os achados do dia e o ajuste da diferença de saldo."""
+    achados = _Achados()
+    # 1. os movimentos do dia: classificação, alertas e a contagem do resumo
+    do_dia = [m for m in movimentos if inicio <= m.ocorrido_em < fim]
+    achados.movimentos_do_dia = len(do_dia)
+    for movimento in do_dia:
+        motivo = _classificar(movimento)
+        if motivo is not None:
             (achados.sem_lancamento if motivo == SEM_LANCAMENTO else achados.divergentes).append(
                 movimento
             )
-    no_dia = MovimentoFinanceiro.objects.filter(momento__gte=inicio, momento__lt=fim)
-    registrados = list(
-        no_dia.filter(tipo=TipoDeMovimento.APORTE).values_list("chave", flat=True).order_by("pk")
-    ) + list(no_dia.filter(tipo__in=TIPOS_DE_SAIDA_NO_LIVRO).values_list("chave", flat=True))
-    for chave in registrados:
-        identificacao = _identificacao(chave)
-        if identificacao in ids_do_provedor:
-            continue
-        total = _total(chave) or ZERO
-        sinal = 1 if chave.startswith("aporte:") else -1
-        achados.livro_sem_par.append((identificacao, sinal * total))
-    return achados
+    # 2. o par inverso: o provedor de D - 3 dias até o fim de D, o livro só no dia D
+    ids_do_par_inverso = {m.id_movimento for m in movimentos if m.ocorrido_em < fim}
+    achados.livro_sem_par = _do_livro_sem_par(
+        inicio, fim, ids_do_par_inverso, incluindo_o_fim=False
+    )
+    # 3. a diferença no instante `instante`: só o que já existia nele, de um lado e do outro
+    ate_o_instante = [m for m in movimentos if inicio <= m.ocorrido_em <= instante]
+    do_provedor_sem_par = sum(
+        (m.valor for m in ate_o_instante if _classificar(m, instante) is not None), ZERO
+    )
+    ids_ate_o_instante = {m.id_movimento for m in movimentos if m.ocorrido_em <= instante}
+    do_livro_sem_par = sum(
+        (
+            valor
+            for _, valor in _do_livro_sem_par(
+                inicio, instante, ids_ate_o_instante, incluindo_o_fim=True
+            )
+        ),
+        ZERO,
+    )
+    return achados, do_livro_sem_par - do_provedor_sem_par
 
 
 def conciliar_dia(data: date) -> ConciliacaoDiaria:
@@ -165,14 +203,9 @@ def conciliar_dia(data: date) -> ConciliacaoDiaria:
         motivo = "indisponivel" if isinstance(erro, ProvedorIndisponivel) else "recusa"
         logger.warning("Conciliação de %s adiada: provedor %s", data, motivo)
         raise ConsultaAoProvedorFalhou(f"conciliacao:{data}", motivo) from erro
-    achados = _ler_o_dia(movimentos, inicio, fim)
+    achados, ajuste = _ler_o_dia(movimentos, inicio, fim, saldo_do_provedor.referente_a)
     total_do_provedor = saldo_do_provedor.liberado + saldo_do_provedor.a_liberar
-    diferenca = (
-        total_do_provedor
-        - saldo_total_esperado(ate=saldo_do_provedor.referente_a)
-        - achados.soma_do_provedor_sem_par
-        + sum((valor for _, valor in achados.livro_sem_par), ZERO)
-    )
+    diferenca = total_do_provedor - saldo_total_esperado(ate=saldo_do_provedor.referente_a) + ajuste
     sem_par = len(achados.sem_lancamento) + len(achados.divergentes) + len(achados.livro_sem_par)
     resultado = (
         ConciliacaoDiaria.Resultado.OK

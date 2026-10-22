@@ -17,7 +17,9 @@ from django.db import transaction
 from django.db.models import Case, DecimalField, Sum, Value, When
 
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
+from apps.financeiro.livro import OrdemDeTravasViolada, conta, travar_contas
 from apps.financeiro.models import Destinacao, TipoDeAlerta, TransferenciaFinanceira
+from apps.financeiro.reserva import avaliar_reserva
 from apps.pagamentos.provedor import ProvedorIndisponivel, RecusaDoProvedor, obter_provedor
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,20 @@ def obrigacoes_de_terceiros(ate: object) -> Decimal:
     return (total["entrou"] or ZERO) - (total["saiu"] or ZERO)
 
 
+def _avaliar_a_reserva() -> None:
+    """Abre ou resolve o alerta `reserva_insuficiente` numa transação própria (E09-R05): algumas
+    despesas nascem sem nenhuma operação da reserva depois delas. Trava a `reserva` (regra única de
+    travas). Uma falha aqui não desfaz o passo do invariante, e vice-versa."""
+    try:
+        with transaction.atomic():
+            travar_contas(conta(Destinacao.RESERVA))
+            avaliar_reserva()
+    except OrdemDeTravasViolada:
+        raise  # erro de programação: nunca engolido
+    except Exception:
+        logger.exception("Reserva não avaliada na tarefa do invariante")
+
+
 def verificar_invariante_agora() -> ResultadoDoInvariante | None:
     """Compara o saldo do provedor com o dinheiro de terceiros; abre ou resolve o alerta. Com o
     provedor indisponível, devolve `None`, registra um aviso e deixa os alertas como estavam."""
@@ -61,6 +77,7 @@ def verificar_invariante_agora() -> ResultadoDoInvariante | None:
         saldo_do_provedor = obter_provedor().consultar_saldo()
     except (ProvedorIndisponivel, RecusaDoProvedor) as erro:
         logger.warning("Invariante não verificado: provedor sem saldo (%s)", type(erro).__name__)
+        _avaliar_a_reserva()  # usa só o livro-razão: vale também com o provedor fora do ar
         return None
     total = saldo_do_provedor.liberado + saldo_do_provedor.a_liberar
     terceiros = obrigacoes_de_terceiros(saldo_do_provedor.referente_a)
@@ -80,4 +97,5 @@ def verificar_invariante_agora() -> ResultadoDoInvariante | None:
             resolver_alerta(
                 TipoDeAlerta.INVARIANTE_VIOLADO, "geral", motivo="invariante restabelecido"
             )
+    _avaliar_a_reserva()
     return ResultadoDoInvariante(total, terceiros, diferenca)

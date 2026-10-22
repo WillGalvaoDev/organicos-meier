@@ -359,7 +359,7 @@ class AlertaFinanceiro(models.Model):
     O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""
 
     tipo = models.CharField(max_length=30, choices=TipoDeAlerta.choices)
-    chave = models.CharField(max_length=64)
+    chave = models.CharField(max_length=80)
     gravidade = models.CharField(max_length=10, choices=Gravidade.choices)
     dados = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
     aberto_em = models.DateTimeField(default=agora)
