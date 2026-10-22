@@ -49,3 +49,7 @@ Na primeira execução, 10 das falhas (o A-8 parametrizado) não eram por asser�
 - Os três arquivos da fatia mais a varredura de `float` (`tests/tecnicos/test_varredura_float.py`): `uv run pytest tests/tecnicos/test_financeiro_livro.py tests/tecnicos/test_financeiro_concorrencia.py tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py tests/tecnicos/test_varredura_float.py -q -p no:cacheprovider` → **67 passed**.
 - `ruff check`, `ruff format --check`, `mypy` e `makemigrations --check` limpos no commit da fatia.
 - A suíte completa, sem filtro, é registrada na verificação final da E09 (E09-08), depois da última fatia.
+
+## Correção posterior (2026-10-22)
+
+A suíte completa, rodada depois do commit da fatia, acusou `tests/tecnicos/test_pagamentos_fronteiras.py::test_so_a_sincronizacao_escreve_nos_registros_de_pagamento`: a heurística da melhoria M-2 (coocorrência do texto `PagamentoNoProvedor` com uma chamada de escrita) pegou o docstring de `apps/financeiro/livro.py`, que citava a classe. Corrigi só o texto do docstring (agora diz "o pagamento no provedor"), sem mudar o teste nem o comportamento. O teste passa de novo. É o mesmo atrito já registrado na M-2: os módulos que escrevem precisam evitar citar essas classes.

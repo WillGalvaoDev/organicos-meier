@@ -4,8 +4,8 @@ Um movimento é um conjunto de transferências `(de, para, valor)` que acontece 
 acontece. O saldo de uma conta é o que entrou nela menos o que saiu. A P-2 fica garantida por uma
 lista fechada de fluxos permitidos: o que não está na lista é recusado, mesmo que o chamador erre.
 
-Ordem das travas: as da E08 (`PagamentoNoProvedor` → `SituacaoDoPedido` → `TentativaDePagamento`)
-vêm antes; as contas do livro-razão são travadas por último.
+Ordem das travas: as da E08 (o pagamento no provedor, a situação do pedido e a tentativa) vêm
+antes; as contas do livro-razão são travadas por último.
 """
 
 from dataclasses import dataclass
