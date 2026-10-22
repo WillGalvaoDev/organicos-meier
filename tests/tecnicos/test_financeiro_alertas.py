@@ -67,7 +67,7 @@ def test_abrir_o_alerta_avisa_so_o_administrador(
     assert notificacao.titulo == "Reserva insuficiente"
     assert "R$ 50,00" in notificacao.corpo
     assert "R$ 20,00" in notificacao.corpo
-    assert notificacao.link == "/inicio/"
+    assert notificacao.link == "/administracao/financeiro/"  # E09-08: a tela financeira
     assert notificacao.chave == f"alerta_financeiro:{alerta.pk}:{admin.pk}"
     (envio,) = Envio.objects.filter(notificacao=notificacao)
     assert (envio.canal, envio.destino) == ("email", admin.email_normalizado)

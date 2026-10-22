@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Movimentos · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Movimentos do livro-razão</h1>
+  {% include "financeiro/_menu.html" %}
+  <form method="get">
+    <label>Destinação
+      <select name="destinacao">
+        <option value="">Todas</option>
+        {% for valor, rotulo in destinacoes %}<option value="{{ valor }}"{% if valor == destinacao %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Rodada <input name="rodada" value="{{ rodada }}" inputmode="numeric"></label>
+    <button type="submit">Filtrar</button>
+  </form>
+  <table>
+    <thead><tr><th>Tipo</th><th>Momento</th><th>Autor</th><th>Justificativa</th><th>Origem</th><th>Transferências</th></tr></thead>
+    <tbody>
+      {% for linha in linhas %}
+        <tr>
+          <td>{{ linha.tipo }}</td>
+          <td>{{ linha.momento }}</td>
+          <td>{{ linha.autor }}</td>
+          <td>{{ linha.movimento.justificativa }}</td>
+          <td>{{ linha.movimento.origem_tipo }} {{ linha.movimento.origem_id }}</td>
+          <td>
+            {% for t in linha.transferencias %}{{ t.de }} → {{ t.para }}: {{ t.valor|reais }}<br>{% endfor %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">Nenhum movimento.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>
+    {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}&destinacao={{ destinacao }}&rodada={{ rodada }}">Anteriores</a>{% endif %}
+    Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+    {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}&destinacao={{ destinacao }}&rodada={{ rodada }}">Próximos</a>{% endif %}
+  </p>
+{% endblock %}

@@ -93,6 +93,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
     ),
     path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
     path("administracao/simulador-pagamentos/", include("apps.simulador_pagamentos.urls")),
+    path("administracao/financeiro/", include("apps.financeiro.urls")),
     path("pedidos/", pedidos_views.lista, name="pedidos_lista"),
     path("pedidos/<int:pk>/", pedidos_views.detalhe, name="pedidos_detalhe"),
     path("pedidos/<int:pk>/pagar/", pedidos_views.pagar, name="pedidos_pagar"),

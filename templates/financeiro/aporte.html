@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Depósito da reserva · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Registrar depósito na reserva</h1>
+  {% include "financeiro/_menu.html" %}
+  <p>Saldo {{ reserva.saldo|reais }} · Livre {{ reserva.livre|reais }}. Registre só depois de depositar na conta do provedor.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <form method="post" action="{% url 'financeiro_aporte' %}">
+    {% csrf_token %}
+    <label>Valor (R$) <input name="valor" value="{{ dados.valor }}" inputmode="decimal" required></label>
+    <label>Identificação do depósito no provedor <input name="identificacao" value="{{ dados.identificacao }}" maxlength="64" required></label>
+    <label>Justificativa <input name="justificativa" value="{{ dados.justificativa }}" required></label>
+    <button type="submit">Registrar depósito</button>
+  </form>
+{% endblock %}

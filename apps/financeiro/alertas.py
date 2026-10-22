@@ -14,6 +14,7 @@ from typing import Any
 
 from django.db import IntegrityError, connection, transaction
 from django.db.transaction import TransactionManagementError
+from django.urls import reverse
 
 from apps.catalogo.templatetags.catalogo import reais
 from apps.contas.models import Conta, Papel, Situacao
@@ -26,7 +27,6 @@ from apps.nucleo.tempo import agora
 logger = logging.getLogger(__name__)
 
 MAIOR_CHAVE = 64
-LINK_DO_AVISO = "/inicio/"  # passa a ser a tela financeira na E09-08
 
 GRAVIDADE_POR_TIPO: dict[str, str] = {
     TipoDeAlerta.INVARIANTE_VIOLADO: Gravidade.CRITICO,
@@ -167,7 +167,7 @@ def _avisar(alerta: AlertaFinanceiro) -> None:
         administradores,
         titulo=titulo,
         corpo=montar_corpo(alerta.dados),
-        link=LINK_DO_AVISO,
+        link=reverse("financeiro_resumo"),
         chave_base=f"alerta_financeiro:{alerta.pk}",
     )
 

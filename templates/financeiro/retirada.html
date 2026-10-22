@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Retirada de receita · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Registrar retirada de receita</h1>
+  {% include "financeiro/_menu.html" %}
+  <p>Registre só depois de fazer a saída pela conta do provedor. A retirada vai até o valor já liberado.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <ul>
+    {% for r in rodadas %}
+      <li>Rodada {{ r.rodada.pk }}: saldo {{ r.saldo|reais }}, liberado {{ r.liquidez.liberado|reais }}</li>
+    {% empty %}
+      <li>Nenhuma rodada com receita.</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{% url 'financeiro_retirada' %}">
+    {% csrf_token %}
+    <label>Rodada
+      <select name="rodada" required>
+        {% for r in rodadas %}<option value="{{ r.rodada.pk }}">Rodada {{ r.rodada.pk }} (liberado {{ r.liquidez.liberado|reais }})</option>{% endfor %}
+      </select>
+    </label>
+    <label>Valor (R$) <input name="valor" value="{{ dados.valor }}" inputmode="decimal" required></label>
+    <label>Identificação da saída no provedor <input name="identificacao" value="{{ dados.identificacao }}" maxlength="64" required></label>
+    <label>Justificativa <input name="justificativa" value="{{ dados.justificativa }}" required></label>
+    <button type="submit">Registrar retirada</button>
+  </form>
+{% endblock %}

@@ -4,6 +4,7 @@
   <h1>Administração</h1>
   <p>Olá, {{ conta.nome }}.</p>
   <p><a href="{% url 'envios_lista' %}">Envios</a></p>
+  <p><a href="{% url 'financeiro_resumo' %}">Financeiro</a></p>
   {% if envios_com_falha %}<p>Envios com falha: {{ envios_com_falha }} · <a href="{% url 'envios_lista' %}?situacao=falhou">ver falhas</a></p>{% endif %}
   <form method="post" action="{% url 'account_logout' %}">
     {% csrf_token %}
