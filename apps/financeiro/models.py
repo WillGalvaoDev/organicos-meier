@@ -4,6 +4,7 @@ Tudo aqui só aceita inserção, no banco e na aplicação. O saldo de uma conta
 entrou nela menos o que saiu, somado das transferências.
 """
 
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models import F, Q
 
@@ -43,6 +44,20 @@ class TipoDeMovimento(models.TextChoices):
     RETIRADA_DE_RECEITA = "retirada_de_receita", "Retirada de receita"
     PAGAMENTO_DO_FRETE = "pagamento_do_frete", "Pagamento do frete"
     DEVOLUCAO = "devolucao", "Devolução"
+
+
+class TipoDeAlerta(models.TextChoices):
+    INVARIANTE_VIOLADO = "invariante_violado", "Invariante violado"
+    RESERVA_INSUFICIENTE = "reserva_insuficiente", "Reserva insuficiente"
+    PAGAMENTO_SEM_CONCILIACAO = "pagamento_sem_conciliacao", "Pagamento sem conciliação"
+    DIVERGENCIA_NA_CONCILIACAO = "divergencia_na_conciliacao", "Divergência na conciliação"
+    APROVADO_APOS_A_MARGEM = "aprovado_apos_a_margem", "Aprovado depois da margem"
+    DUPLICIDADE = "duplicidade", "Duplicidade"
+
+
+class Gravidade(models.TextChoices):
+    CRITICO = "critico", "Crítico"
+    AVISO = "aviso", "Aviso"
 
 
 class ContaFinanceira(RegistroSoInsercao):
@@ -132,3 +147,28 @@ class TransferenciaFinanceira(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"transferência {self.pk}"
+
+
+class AlertaFinanceiro(models.Model):
+    """Um alerta ao administrador: aberto uma vez por situação `(tipo, chave)` e resolvido depois.
+    O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""
+
+    tipo = models.CharField(max_length=30, choices=TipoDeAlerta.choices)
+    chave = models.CharField(max_length=64)
+    gravidade = models.CharField(max_length=10, choices=Gravidade.choices)
+    dados = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
+    aberto_em = models.DateTimeField(default=agora)
+    resolvido_em = models.DateTimeField(null=True, blank=True)
+    motivo_da_resolucao = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["tipo", "chave"],
+                condition=Q(resolvido_em__isnull=True),
+                name="alerta_um_aberto_por_par",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"{self.tipo}:{self.chave}"

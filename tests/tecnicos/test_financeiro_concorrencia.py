@@ -9,6 +9,7 @@ import pytest
 from django.db import transaction
 
 from apps.financeiro import livro
+from apps.financeiro.alertas import abrir_alerta
 from apps.financeiro.livro import (
     EXTERIOR,
     SaldoInsuficiente,
@@ -16,7 +17,8 @@ from apps.financeiro.livro import (
     lancar,
     saldo,
 )
-from apps.financeiro.models import MovimentoFinanceiro, TipoDeMovimento
+from apps.financeiro.models import AlertaFinanceiro, MovimentoFinanceiro, TipoDeMovimento
+from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import SISTEMA
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.financeiro import Mundo, despesas, montar_mundo, mover, receita_de, reserva, semear
@@ -124,3 +126,18 @@ def test_ordem_de_chamada_diferente_nao_causa_impasse(
         D("8.00"),
         D("1.00"),
     )
+
+
+def test_duas_aberturas_do_mesmo_alerta_gravam_um_so(m: Mundo) -> None:  # E09-03, A-10
+    admin = m.admin
+
+    def abrir() -> Any:
+        return abrir_alerta(
+            "reserva_insuficiente", "geral", {"sem_cobertura": "5.00", "livre": "1.00"}
+        )
+
+    resultados = executar_em_paralelo(segurando(abrir), esperando(_atomica(abrir)))
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert resultados[0].valor.pk == resultados[1].valor.pk
+    assert AlertaFinanceiro.objects.count() == 1
+    assert Notificacao.objects.filter(conta=admin, evento="alerta_financeiro").count() == 1

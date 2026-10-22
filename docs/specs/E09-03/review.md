@@ -1,0 +1,52 @@
+# E09-03 — Registro do implementador (2026-10-22)
+
+Agente 2. Este arquivo traz a evidência da implementação; a aprovação é do agente 3.
+
+## Arquivos
+
+- `apps/financeiro/alertas.py` (`abrir_alerta`, `resolver_alerta`, `alertas_abertos`), `apps/financeiro/models.py` (`AlertaFinanceiro`, `TipoDeAlerta`, `Gravidade`, restrição `UNIQUE` parcial), migrações `financeiro/0002_alertafinanceiro.py` e `0003_alerta_um_aberto_por_par.py`.
+- `apps/notificacoes/eventos.py` (evento `alerta_financeiro`, site e e-mail, para o administrador) e migração `notificacoes/0007_evento_alerta_financeiro.py`.
+- Testes: `tests/tecnicos/test_financeiro_alertas.py` (A-1 a A-9, A-11, A-12 e "exige transação"), `tests/tecnicos/test_financeiro_concorrencia.py` (A-10).
+
+## Andaime (exceção técnica)
+
+Antes do Red: os modelos e as migrações; o membro `ALERTA_FINANCEIRO` do enum `Evento` com o catálogo provisório (só site, destinatário comprador, que os testes do A-11 recusam); as três funções com corpo trivial (`abrir_alerta` devolve um alerta não salvo, `resolver_alerta` devolve `None`, `alertas_abertos` devolve lista vazia). O modelo ainda **sem** a restrição `UNIQUE` parcial, que é a proteção do A-10.
+
+## Red (arquivos inteiros, sem `-k`)
+
+`uv run pytest tests/tecnicos/test_financeiro_alertas.py tests/tecnicos/test_financeiro_concorrencia.py tests/tecnicos/test_notificacoes_eventos.py -q -p no:cacheprovider`: **20 falharam, 5 passaram** (com o teste de "exige transação" acrescentado depois, o arquivo de alertas ficou em **18 falharam, 2 passaram**).
+
+| Critério | Teste | Resultado do Red |
+|---|---|---|
+| A-1, A-2, A-3, A-5 | os quatro primeiros de `test_financeiro_alertas.py` | `assert {} == {'sem_cobertura': '50.00', ...}`; `assert '' == Gravidade.AVISO`; `notificações do alerta: 0` |
+| A-5 (cada tipo) | `test_titulo_e_corpo_de_cada_tipo` (5) | `notificações do alerta: 0` |
+| A-6 | `test_entradas_invalidas_sao_recusadas` (4) | `DID NOT RAISE ValueError` |
+| A-7, A-8, A-12 | `test_email_que_falha_...`, `test_alertas_abertos_...`, `test_sem_administrador_...` | asserções do alerta e da lista |
+| A-11 | `test_o_catalogo_do_evento_novo` e as duas de `test_notificacoes_eventos.py` | `assert {'alerta_financeiro', 'preco_alterado'} == {'preco_alterado'}` |
+| "exige transação" | `test_abrir_e_resolver_exigem_transacao` | `DID NOT RAISE TransactionManagementError` |
+| A-4, A-9 | `test_resolver_sem_alerta_...`, `test_transacao_desfeita_...` | **passaram já no Red**: o andaime não grava nada, que é o que os critérios pedem; guardas de regressão |
+| A-10 | `test_duas_aberturas_do_mesmo_alerta_gravam_um_so` | falha por asserção do suporte de trava: `a outra conexão não ficou esperando pela trava` |
+
+Na primeira execução, cinco testes falharam por `ValueError: not enough values to unpack` (a lista de notificações vazia); troquei a desestruturação por um auxiliar `_unica` que afirma `len == 1` com mensagem, sem mudar o que o teste exige.
+
+## Green, em dois passos (regra da concorrência)
+
+1. **Verde funcional sem a proteção** (sem a restrição `UNIQUE` e sem tratar o conflito): **25 passaram, 1 falhou**. A falha é o **Red da corrida do A-10**: sem nenhuma trava, a segunda transação não espera, e a asserção do apoio de trava (`a outra conexão não ficou esperando pela trava`) falha. Um erro do meu teste apareceu aqui (`ContaFactory.create(administrador=True)` com o administrador que a fábrica de rodada já cria, violando `conta_administrador_unico`); passei a usar `m.admin`.
+2. **A proteção:** a restrição `alerta_um_aberto_por_par` (única em `(tipo, chave)` para os abertos) e o tratamento do `IntegrityError` com savepoint, devolvendo o alerta que a outra transação abriu. Os três arquivos: **26 passed**.
+
+Verificação adicional: `uv run pytest tests/tecnicos -k "notificacoes or financeiro"` → **308 passed**.
+
+## Testes antigos ajustados
+
+`tests/tecnicos/test_notificacoes_eventos.py`, a matriz da E04-01 (`MATRIZ`): acrescentada a linha `("alerta_financeiro", Papel.ADMINISTRADOR, {S, E})`, que a própria spec do A-11 manda ("os outros eventos sem mudança"). Nenhuma outra asserção mudou.
+
+## Decisões técnicas
+
+- **Corpo dos avisos.** Texto de cada tipo, com os valores em reais (`reais`), tolerante a campo ausente em `dados` (mostra um traço). O corpo do invariante usa o módulo da diferença: "O saldo do provedor está R$ 10,00 abaixo do dinheiro de terceiros. Utilizações da reserva e retiradas de receita estão bloqueadas."
+- **Destinatários.** Todos os administradores ativos; os suspensos ou removidos não recebem. Sem nenhum, um log `warning` com "nenhum administrador ativo".
+- **Importação privada.** A validação de segredos reaproveita `_validar_sem_segredos` da auditoria (a mesma regra), sem duplicar a lista de termos.
+- **Ordem de `alertas_abertos`.** Críticos primeiro; depois `aberto_em` e `pk`.
+
+## Verificação
+
+Os três arquivos da fatia: **26 passed**; `ruff check`, `ruff format --check`, `mypy` e `makemigrations --check` limpos. A suíte completa, sem filtro, é registrada na verificação final da E09 (E09-08).
