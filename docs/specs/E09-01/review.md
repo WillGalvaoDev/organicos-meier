@@ -129,3 +129,34 @@ Critérios desta fatia: **A-19, A-20 e A-21** (a guarda da ordem das travas e a 
 - **A-21 (suíte completa com a guarda ativa):** a guarda acusou inversões reais, corrigidas no código: a apuração, na cobertura automática, não travava `despesas_a_cobrir` no conjunto; e o receptor travava a entrada e só depois a tarifa. Acusou também setups de teste que juntavam várias operações numa transação só; dividi cada um em transações separadas (`_tres_contas` no livro, a fixture `dia` da conciliação, o A-16 da concorrência e o `semear` do apoio, que agora trava o conjunto antes). Mudou ainda a asserção do cenário 39, de "nenhuma conta de receita" para "nenhuma com saldo diferente de zero", porque a regra "criar antes de travar" cria a conta vazia. Nenhum teste foi afrouxado quanto ao que exige.
 - **Limite da guarda:** em teste do tipo `TestCase`, sem transação própria, a guarda fica desligada (só o bloco do próprio `TestCase` existe). Os testes de concorrência usam transações reais e ficam cobertos.
 - **Verificação (`1ad1944`):** `uv run pytest -q -p no:cacheprovider` sem filtro: **2418 passed**.
+
+## Correção E09-R10 (2026-10-22): o registro da guarda segue as travas retidas
+
+Critérios: **A-22 a A-27**. Testes em `tests/tecnicos/test_financeiro_livro.py`.
+
+**Red** (`afbe7c0`, só testes; código de produção no estado de `1ad1944`). Comando: `uv run pytest tests/tecnicos/test_financeiro_livro.py -q -p no:cacheprovider` (arquivo inteiro, sem `-k`): **6 failed, 62 passed**.
+
+| Critério | Teste | Falha observada |
+|---|---|---|
+| A-22 | `test_o_mesmo_objeto_atomic_reutilizado_recomeca_o_registro` | `OrdemDeTravasViolada: a conta 214 foi pedida depois da 215` na segunda execução |
+| A-23 | `test_o_objeto_atomic_reutilizado_continua_guardando_a_ordem` | `Failed: DID NOT RAISE OrdemDeTravasViolada` |
+| A-24 | `test_funcao_decorada_com_atomic_recomeca_o_registro_a_cada_chamada` | (i) `OrdemDeTravasViolada` na segunda chamada |
+| A-25 | `test_trava_desfeita_por_savepoint_nao_conta_mas_a_ordem_segue_guardada` | `DID NOT RAISE OrdemDeTravasViolada` |
+| A-26 | `test_trava_liberada_pelo_savepoint_desfeito_pode_ser_pedida_depois` | `OrdemDeTravasViolada: a conta 222 foi pedida depois da 223` |
+| A-27 (iii) | `TestGuardaNoTestCase::test_o_mesmo_escopo_usado_duas_vezes_no_testcase` | `OrdemDeTravasViolada` na segunda execução do mesmo escopo |
+
+O A-24 (ii) está no mesmo teste do (i), que falha antes de chegar nele; o (ii) é exercido depois do Green. **A-27 (i) e (ii) passaram já no Red** (`test_savepoint_liberado_mantem_a_trava_no_registro` e `test_savepoint_desfeito_nao_libera_a_trava_anterior`): são regressão do comportamento que a guarda antiga já tinha, e não tiveram Red inventado.
+
+O controle do A-25 (outra conexão com `lock_timeout = '500ms'` consegue travar `menor` depois do rollback do savepoint) roda no mesmo teste e passou no Red e no Green: mostra que a trava de fato não está retida.
+
+**Mecanismo escolhido e justificativa.** O registro passa a ser um dicionário conta → marcador (`_TravaRetida`), e cada trava nova registra o marcador com `transaction.on_commit`. O Django descarta esses callbacks no rollback do savepoint em que nasceram e ao fim da transação, que é quando o PostgreSQL libera a trava; então a presença do marcador em `connection.run_on_commit` espelha a trava retida. Antes de cada pedido, o registro tira as contas cujo marcador sumiu.
+- **Execução, não objeto.** Numa transação real, o fim da transação limpa os callbacks, e o mesmo objeto `Atomic` reutilizado ou o decorador começam vazios. No `TestCase`, o bloco do escopo é um savepoint: a execução é identificada pelo identificador do savepoint (`connection.savepoint_ids[posição - 1]`), único na conexão, e o registro recomeça quando ele muda.
+- **Savepoint liberado.** O callback passa para o bloco de fora e a conta continua registrada (A-27 (i)). **Já travada antes do savepoint:** não registro marcador novo, então desfazer o savepoint não a retira (A-27 (ii)).
+- **Sem monkeypatch do Django, sem subclasse de `Atomic`, sem consulta extra ao banco** além do `select_for_update`. O custo é uma varredura da lista `run_on_commit` por pedido de trava.
+- **Limites declarados.** (1) Usa `connection.run_on_commit` e `connection.savepoint_ids`, atributos da conexão que o Django documenta só indiretamente (`on_commit`); uma mudança interna futura quebraria os testes A-22 a A-27, que existem para isso. (2) No `TestCase`, um escopo `atomic(savepoint=False)` não tem identificador de savepoint; uso a identidade do objeto, e a reutilização desse objeto específico não é distinguida. É um caso que o próprio Django desencoraja e que não ocorre na aplicação. (3) Os marcadores são callbacks sem efeito, executados no commit.
+
+**Green** (`4b2d488`): o mesmo comando dá **68 passed**.
+
+**A-21 refeito (a suíte inteira com a guarda nova):** ver a verificação no fim desta seção.
+
+**Verificação final (A-21 refeito, sobre `c73de68`):** `uv run pytest -q -p no:cacheprovider`, sem filtro: **2428 passed in 338.20s** (com a guarda nova, sem inversão nova nem teste alterado); `ruff check .`, `ruff format --check .` (329 arquivos), `mypy .` (393 arquivos) e `makemigrations --check --dry-run`: limpos. O mesmo resultado vale para a E09-07 (A-28 e A-29).

@@ -124,3 +124,18 @@ Critérios: **A-24 a A-27**.
 | A-27 | `test_movimento_do_provedor_depois_do_dia_nao_e_par_de_um_aporte_do_dia` | `assert ConciliacaoDiaria.Resultado.OK == 'divergente'` |
 
 **Green:** `1ad1944` (R05, R06 e R07: a reserva avaliada sob a trava, chave do alerta até 80 caracteres com a migração `0010`, e a leitura em três recortes). O A-25 também depende do E09-03 A-13 (limite de 80). O E09-03 A-6 reescrito (81 caracteres) já passava no Red; o Red do par vem do A-13 (`test_chave_de_80_caracteres_e_aceita_e_resolvida_inteira`: `ValueError: a chave do alerta deve ter de 1 a 64 caracteres`). Verificação em `1ad1944`: suíte completa sem filtro, **2418 passed**; as provas do parecer não substituídas (`test_frete_coberto`, `test_tarefa_avalia_reserva`, `test_identificador_64_conciliavel`, `test_conciliacao_respeita_referente_a`, `test_conciliacao_nao_parea_movimento_futuro`) passaram, a primeira depois de dividir as operações dela em transações separadas por causa da guarda.
+
+## Correção E09-R07 residual (2026-10-22): a tarifa pareada pelo instante do lançamento
+
+Critérios: **A-28 e A-29**. Testes em `tests/tecnicos/test_financeiro_conciliacao.py`.
+
+**Red** (`d6a09d3`, só testes; produção no estado de `4b2d488`). Comando: `uv run pytest tests/tecnicos/test_financeiro_conciliacao.py -q -p no:cacheprovider` (arquivo inteiro, sem `-k`): **1 failed, 18 passed**.
+
+| Critério | Teste | Resultado do Red |
+|---|---|---|
+| A-28 | `test_tarifa_sem_movimento_no_instante_do_saldo_nao_e_par` | falha: `assert Decimal('-10.00') == Decimal('0.00')` (a diferença). O arranjo confere antes os dois instantes: `Despesa.criada_em == T` e o `momento` do movimento `tarifa:<pk>` em `T + 10 s` |
+| A-29 | `test_tarifa_com_movimento_antes_do_instante_do_saldo_e_par` | **passou já no Red**: regressão declarada, sem Red inventado |
+
+O pagamento é real, do simulador (tarifa fixa de 10,00); o provedor da conciliação é um dublê; o único monkeypatch avança o relógio em 10 s imediatamente antes do `lancar` do movimento de tarifa e não retira validação nem efeito.
+
+**Green** (`ad3d137`): em `_classificar`, com o limite `ate`, a tarifa só tem par se, além da `Despesa(tarifa)` do pagamento com o mesmo valor, existir o movimento `tarifa:<pk do pagamento>` com `momento ≤ ate` e total igual ao valor. Sem `ate` (a classificação do dia), nada muda. O `criada_em` da despesa deixou de decidir o recorte. Mesmo comando: **19 passed**. Um ajuste de forma depois (`c73de68`): o teste usa o caminho textual no `monkeypatch`, para o mypy.
