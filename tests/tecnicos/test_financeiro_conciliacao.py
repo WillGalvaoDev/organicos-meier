@@ -442,3 +442,92 @@ def test_movimento_do_provedor_depois_do_dia_nao_e_par_de_um_aporte_do_dia(
     assert conciliacao.resumo["sem_par"] == 1
     assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["livro:futuro"]
     assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")
+
+
+# --- Correção E09-R07 residual: a tarifa pareada pelo instante do lançamento (A-28 e A-29) ------
+
+
+def _arranjo_da_tarifa(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> tuple[datetime, str]:
+    """Pagamento de 125,00 sincronizado em T (23:00 de D), tarifa fixa de 10,00: a despesa nasce em
+    T e o movimento `tarifa:<pk>` em T + 10 s (o relógio avança imediatamente antes do `lancar`
+    da tarifa; o monkeypatch não retira validação nem efeito)."""
+    from apps.financeiro import entradas
+    from apps.financeiro.conciliacao import limites_do_dia
+    from apps.financeiro.models import Despesa
+    from tests.apoio.financeiro import pedido_composto
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+    from tests.fabricas import ContaFactory
+
+    _, fim = limites_do_dia(DIA)
+    instante = fim - H
+    simulador_pagamentos.definir_tarifa("pix", percentual=D("0.00"), fixa=D("10.00"))
+    relogio.congelar(T0 + H)
+    pedido = pedido_composto(ContaFactory.create())
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    relogio.congelar(instante)
+    simulador_pagamentos.aprovar(id_externo)
+    lancar_original = entradas.lancar
+
+    def lancar_com_atraso(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("tipo") == TipoDeMovimento.TARIFA:
+            relogio.avancar(timedelta(seconds=10))
+        return lancar_original(*args, **kwargs)
+
+    monkeypatch.setattr(entradas, "lancar", lancar_com_atraso)
+    sincronizar(id_externo)
+    despesa = Despesa.objects.get(tipo="tarifa")
+    assert despesa.criada_em == instante
+    tarifa = MovimentoFinanceiro.objects.get(tipo=TipoDeMovimento.TARIFA)
+    assert tarifa.momento == instante + timedelta(seconds=10)
+    return instante, id_externo
+
+
+def _conciliar_com_saldo_em(
+    monkeypatch: pytest.MonkeyPatch,
+    relogio: RelogioControlado,
+    instante: datetime,
+    id_externo: str,
+    referente_a: datetime,
+) -> Any:
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    _, fim = limites_do_dia(DIA)
+    movimentos = [
+        _movimento(TipoDeMovimentoNoProvedor.PAGAMENTO, "pag-1", "125.00", instante, id_externo),
+        _movimento(TipoDeMovimentoNoProvedor.TARIFA, "tar-1", "-10.00", instante, id_externo),
+    ]
+    _usar(monkeypatch, _Dubles(_saldo("115.00", referente_a), movimentos))
+    relogio.congelar(fim + H)
+    return conciliar_dia(DIA)
+
+
+def _confere_conciliacao_sem_divergencia(conciliacao: Any) -> None:
+    assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")
+    assert conciliacao.resumo["movimentos"] == 2
+    assert conciliacao.resumo["sem_par"] == 0
+    assert conciliacao.resultado == "ok"
+    assert not [a for a in AlertaFinanceiro.objects.all() if a.chave.startswith("saldo:")]
+    assert _alertas("divergencia_na_conciliacao") == []
+
+
+def test_tarifa_sem_movimento_no_instante_do_saldo_nao_e_par(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-28, E09-R07 residual
+    instante, id_externo = _arranjo_da_tarifa(relogio, simulador_pagamentos, monkeypatch)
+    conciliacao = _conciliar_com_saldo_em(
+        monkeypatch, relogio, instante, id_externo, instante + timedelta(seconds=5)
+    )
+    _confere_conciliacao_sem_divergencia(conciliacao)
+
+
+def test_tarifa_com_movimento_antes_do_instante_do_saldo_e_par(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-29, E09-R07 residual (regressão: já passa no código atual)
+    instante, id_externo = _arranjo_da_tarifa(relogio, simulador_pagamentos, monkeypatch)
+    conciliacao = _conciliar_com_saldo_em(
+        monkeypatch, relogio, instante, id_externo, instante + timedelta(seconds=15)
+    )
+    _confere_conciliacao_sem_divergencia(conciliacao)
