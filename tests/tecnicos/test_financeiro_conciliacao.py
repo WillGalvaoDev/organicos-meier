@@ -453,8 +453,8 @@ def _arranjo_da_tarifa(
     """Pagamento de 125,00 sincronizado em T (23:00 de D), tarifa fixa de 10,00: a despesa nasce em
     T e o movimento `tarifa:<pk>` em T + 10 s (o relógio avança imediatamente antes do `lancar`
     da tarifa; o monkeypatch não retira validação nem efeito)."""
-    from apps.financeiro import entradas
     from apps.financeiro.conciliacao import limites_do_dia
+    from apps.financeiro.livro import lancar as lancar_original
     from apps.financeiro.models import Despesa
     from tests.apoio.financeiro import pedido_composto
     from tests.apoio.pedidos import sincronizar, tentativa_criada
@@ -469,14 +469,13 @@ def _arranjo_da_tarifa(
     assert id_externo is not None
     relogio.congelar(instante)
     simulador_pagamentos.aprovar(id_externo)
-    lancar_original = entradas.lancar
 
     def lancar_com_atraso(*args: Any, **kwargs: Any) -> Any:
         if kwargs.get("tipo") == TipoDeMovimento.TARIFA:
             relogio.avancar(timedelta(seconds=10))
         return lancar_original(*args, **kwargs)
 
-    monkeypatch.setattr(entradas, "lancar", lancar_com_atraso)
+    monkeypatch.setattr("apps.financeiro.entradas.lancar", lancar_com_atraso)
     sincronizar(id_externo)
     despesa = Despesa.objects.get(tipo="tarifa")
     assert despesa.criada_em == instante
