@@ -259,6 +259,52 @@ class Despesa(RegistroSoInsercao):
         return f"{self.tipo} {self.valor}"
 
 
+class DesignacaoDaReserva(RegistroSoInsercao):
+    """Dinheiro da reserva separado para uma obrigação com comprador (P-3). Não move nada: o saldo
+    da reserva continua o mesmo e o comprometido aumenta. Desfazer e consumir são outros
+    registros."""
+
+    obrigacao = models.ForeignKey(
+        ObrigacaoComComprador, on_delete=models.PROTECT, related_name="designacoes"
+    )
+    valor = CampoDinheiro()
+    autor_id = models.CharField(max_length=64)
+    justificativa = models.TextField()
+    criada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(condition=Q(valor__gt=0), name="designacao_valor_positivo"),
+            models.CheckConstraint(
+                condition=Q(justificativa__regex=r"\S"), name="designacao_justificativa_preenchida"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"designação {self.pk}"
+
+
+class DesignacaoDesfeita(RegistroSoInsercao):
+    """O desfazer de uma designação, com a justificativa. Uma designação só se desfaz uma vez."""
+
+    designacao = models.OneToOneField(
+        DesignacaoDaReserva, on_delete=models.PROTECT, related_name="desfeita"
+    )
+    autor_id = models.CharField(max_length=64)
+    justificativa = models.TextField()
+    desfeita_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(justificativa__regex=r"\S"), name="desfeita_justificativa_preenchida"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"designação {self.designacao_id} desfeita"
+
+
 class AlertaFinanceiro(models.Model):
     """Um alerta ao administrador: aberto uma vez por situação `(tipo, chave)` e resolvido depois.
     O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""

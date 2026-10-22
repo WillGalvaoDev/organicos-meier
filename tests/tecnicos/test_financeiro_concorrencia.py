@@ -26,15 +26,25 @@ from apps.financeiro.models import (
     ObrigacaoComComprador,
     TipoDeMovimento,
 )
+from apps.financeiro.reserva import (
+    AporteRepetido,
+    ReservaInsuficiente,
+    designar_reserva,
+    registrar_aporte,
+    situacao_da_reserva,
+    utilizar_reserva,
+)
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import SISTEMA
 from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.apoio.financeiro import (
     Mundo,
+    despesa_de_tarifa,
     despesas,
     montar_mundo,
     mover,
+    obrigacao_de_teste,
     pedido_composto,
     receita_de,
     reserva,
@@ -235,3 +245,60 @@ def test_aviso_e_reconsulta_do_mesmo_pagamento_registram_uma_entrada(
     assert MovimentoFinanceiro.objects.filter(tipo=T.ENTRADA_DE_PAGAMENTO).count() == 1
     assert MovimentoFinanceiro.objects.filter(tipo=T.TARIFA).count() == 1
     assert Despesa.objects.count() == 1
+
+
+# --- E09-05: reserva (A-12 a A-14) ------------------------------------------------------------
+
+
+def _um_passa_e_o_outro_e_recusado(resultados: list[Any]) -> None:
+    excecoes = [r.excecao for r in resultados]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, ReservaInsuficiente), recusa
+
+
+def test_duas_designacoes_que_juntas_passam_do_livre(m: Mundo) -> None:  # E09-05, A-12, T-10
+    with transaction.atomic():
+        semear(m, reserva(), "60.00")
+        primeira, segunda = obrigacao_de_teste("50.00"), obrigacao_de_teste("50.00")
+
+    def designar(obrigacao: Any) -> Callable[[], Any]:
+        return lambda: designar_reserva(m.admin, obrigacao, Decimal("50.00"), "devolução")
+
+    resultados = executar_em_paralelo(
+        segurando(designar(primeira)), esperando(_atomica(designar(segunda)))
+    )
+    _um_passa_e_o_outro_e_recusado(resultados)
+    assert situacao_da_reserva().comprometido == Decimal("50.00")
+
+
+def test_designacao_e_utilizacao_ao_mesmo_tempo(m: Mundo) -> None:  # E09-05, A-13, T-10
+    with transaction.atomic():
+        semear(m, reserva(), "60.00")
+        obrigacao = obrigacao_de_teste("50.00")
+        tarifa = despesa_de_tarifa("40.00")
+
+    def designar() -> Any:
+        return designar_reserva(m.admin, obrigacao, Decimal("50.00"), "devolução")
+
+    def utilizar() -> Any:
+        return utilizar_reserva(m.admin, tarifa, Decimal("40.00"), "tarifa")
+
+    resultados = executar_em_paralelo(segurando(designar), esperando(_atomica(utilizar)))
+    _um_passa_e_o_outro_e_recusado(resultados)
+    assert situacao_da_reserva().livre >= 0
+
+
+def test_o_mesmo_deposito_registrado_duas_vezes(m: Mundo) -> None:  # E09-05, A-14
+    reserva()  # a conta já existe: o que serializa as duas é a trava, e não a criação dela
+
+    def aportar() -> Any:
+        return registrar_aporte(m.admin, Decimal("100.00"), "sim-mov-1", "Aporte")
+
+    resultados = executar_em_paralelo(segurando(aportar), esperando(_atomica(aportar)))
+    excecoes = [r.excecao for r in resultados]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, AporteRepetido), recusa
+    assert MovimentoFinanceiro.objects.filter(tipo=T.APORTE).count() == 1
+    assert saldo(reserva()) == Decimal("100.00")
