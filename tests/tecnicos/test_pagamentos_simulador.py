@@ -27,6 +27,7 @@ from apps.pagamentos.provedor import (
     ProvedorIndisponivel,
     RecusaDoProvedor,
     SituacaoNoProvedor,
+    TipoDeMovimentoNoProvedor,
     obter_provedor,
 )
 from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
@@ -244,7 +245,7 @@ def test_provedor_indisponivel(sim: Any) -> None:  # A-10
         lambda: provedor.consultar_pagamento("sim-1"),
         lambda: provedor.buscar_por_referencia("ref-1"),
         lambda: provedor.cancelar_cobranca("sim-1"),
-        lambda: provedor.verificar_aviso(b"{}", {}),
+        lambda: provedor.verificar_aviso(b"{}", {}, {}),
     ]
     for operacao in operacoes:
         with pytest.raises(ProvedorIndisponivel):
@@ -362,7 +363,7 @@ def test_verificacao_do_aviso(sim: Any) -> None:  # A-14
     aviso = tres_avisos(sim)[0]
     corpo, cabecalhos = sim.corpo_e_cabecalhos(aviso)
     provedor = obter_provedor()
-    assert provedor.verificar_aviso(corpo, cabecalhos) == AvisoDoProvedor(
+    assert provedor.verificar_aviso(corpo, cabecalhos, {}) == AvisoDoProvedor(
         aviso.id_evento, "pagamento", aviso.id_externo
     )
     adulterado = bytes([corpo[0] ^ 1]) + corpo[1:]
@@ -370,7 +371,7 @@ def test_verificacao_do_aviso(sim: Any) -> None:  # A-14
     casos = [(adulterado, cabecalhos), (corpo, {}), (corpo, outra), (b"nao e json", cabecalhos)]
     for corpo_ruim, cabecalhos_ruins in casos:
         with pytest.raises(AvisoInvalido):
-            provedor.verificar_aviso(corpo_ruim, cabecalhos_ruins)
+            provedor.verificar_aviso(corpo_ruim, cabecalhos_ruins, {})
 
 
 def test_corpo_que_nao_e_json_com_assinatura_valida_e_invalido(sim: Any) -> None:  # A-14
@@ -384,14 +385,16 @@ def test_corpo_que_nao_e_json_com_assinatura_valida_e_invalido(sim: Any) -> None
         settings.SEGREDO_AVISOS_SIMULADOR.encode(), corpo, hashlib.sha256
     ).hexdigest()
     with pytest.raises(AvisoInvalido):
-        obter_provedor().verificar_aviso(corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"})
+        obter_provedor().verificar_aviso(
+            corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"}, {}
+        )
 
 
 def test_verificacao_aceita_cabecalho_em_qualquer_caixa(sim: Any) -> None:  # A-14
     aviso = tres_avisos(sim)[0]
     corpo, cabecalhos = sim.corpo_e_cabecalhos(aviso)
     minusculo = {nome.lower(): valor for nome, valor in cabecalhos.items()}
-    assert obter_provedor().verificar_aviso(corpo, minusculo).id_evento == aviso.id_evento
+    assert obter_provedor().verificar_aviso(corpo, minusculo, {}).id_evento == aviso.id_evento
 
 
 def test_o_log_nao_leva_dado_do_pedido(sim: Any, caplog: pytest.LogCaptureFixture) -> None:
@@ -529,7 +532,9 @@ def test_verificar_aviso_recusa_corpo_assinado_fora_do_limite(sim: Any) -> None:
         settings.SEGREDO_AVISOS_SIMULADOR.encode(), corpo, hashlib.sha256
     ).hexdigest()
     with pytest.raises(AvisoInvalido):
-        obter_provedor().verificar_aviso(corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"})
+        obter_provedor().verificar_aviso(
+            corpo, {"X-Simulador-Assinatura": f"sha256={assinatura}"}, {}
+        )
 
 
 def test_o_estado_do_simulador_sobrevive_ao_rollback_do_sistema(
@@ -556,3 +561,161 @@ def test_o_estado_do_simulador_sobrevive_ao_rollback_do_sistema(
     assert AvisoSimulado.objects.count() == avisos_antes + 2
     assert provedor.criar_cobranca(nova()).pagamento.id_externo == dentro[0]
     assert CobrancaSimulada.objects.filter(chave_idempotencia="k1").count() == 1
+
+
+# --- E09-02: tarifa, liberação, saldo e movimentos da conta (A-1 a A-7, A-11, A-14 a A-16) ------
+
+H = timedelta(hours=1)
+TIPO = TipoDeMovimentoNoProvedor
+
+
+def _cobranca_aprovada_com_tarifa(sim: Any, relogio: RelogioControlado) -> str:
+    """A cobrança C de R$ 125,00, com tarifa de 0,99% e liberação em 24h, aprovada em T + 1h."""
+    sim.definir_tarifa("pix", percentual=D("0.99"), fixa=D("0.00"))
+    sim.definir_liberacao("pix", horas=24)
+    id_externo = criar(valor=D("125.00"))
+    relogio.congelar(T + H)
+    sim.aprovar(id_externo)
+    return id_externo
+
+
+def test_a_aprovacao_informa_a_tarifa_e_a_liberacao(sim: Any, relogio: RelogioControlado) -> None:
+    id_externo = _cobranca_aprovada_com_tarifa(sim, relogio)  # A-1
+    consultado = obter_provedor().consultar_pagamento(id_externo)
+    assert consultado.tarifa == D("1.24")  # 125,00 x 0,99% = 1,2375, para cima
+    assert consultado.liberado_em == T + 25 * H
+
+
+def test_antes_da_aprovacao_tarifa_e_liberacao_vem_nulas(sim: Any) -> None:  # A-2
+    consultado = obter_provedor().consultar_pagamento(criar(valor=D("125.00")))
+    assert consultado.situacao == SituacaoNoProvedor.PENDENTE
+    assert (consultado.tarifa, consultado.liberado_em) == (None, None)
+
+
+def test_o_saldo_separa_o_liberado_do_a_liberar(sim: Any, relogio: RelogioControlado) -> None:
+    _cobranca_aprovada_com_tarifa(sim, relogio)  # A-3
+    relogio.congelar(T + 2 * H)
+    antes = obter_provedor().consultar_saldo()
+    assert (antes.liberado, antes.a_liberar) == (D("0.00"), D("123.76"))
+    relogio.congelar(T + 25 * H)  # o limite é inclusivo
+    depois = obter_provedor().consultar_saldo()
+    assert (depois.liberado, depois.a_liberar) == (D("123.76"), D("0.00"))
+
+
+def test_movimentos_da_conta_em_ordem_e_com_ids_estaveis(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # A-4
+    id_externo = _cobranca_aprovada_com_tarifa(sim, relogio)
+    relogio.congelar(T + 3 * H)
+    sim.depositar(D("1000.00"))
+    sim.registrar_saida(D("50.00"), descricao="repasse")
+    movimentos = obter_provedor().listar_movimentos(T, T + 4 * H)
+    assert [(m.tipo, m.valor, m.id_externo) for m in movimentos] == [
+        (TIPO.PAGAMENTO, D("125.00"), id_externo),
+        (TIPO.TARIFA, D("-1.24"), id_externo),
+        (TIPO.DEPOSITO, D("1000.00"), None),
+        (TIPO.SAIDA, D("-50.00"), None),
+    ]
+    assert [m.ocorrido_em for m in movimentos] == [T + H, T + H, T + 3 * H, T + 3 * H]
+    assert movimentos[0].liberado_em == movimentos[1].liberado_em == T + 25 * H
+    assert movimentos[2].liberado_em == T + 3 * H
+    assert movimentos[3].descricao_no_provedor == "repasse"
+    assert [m.id_movimento for m in obter_provedor().listar_movimentos(T, T + 4 * H)] == [
+        m.id_movimento for m in movimentos
+    ]
+    assert len({m.id_movimento for m in movimentos}) == 4
+    assert [m.tipo for m in obter_provedor().listar_movimentos(T + 2 * H, T + 4 * H)] == [
+        TIPO.DEPOSITO,
+        TIPO.SAIDA,
+    ]  # desde inclusivo, ate exclusivo
+
+
+def test_movimentos_e_controles_recusam_entradas_invalidas(sim: Any) -> None:  # A-5
+    provedor = obter_provedor()
+    with pytest.raises(InstanteSemFuso):
+        provedor.listar_movimentos(datetime(2026, 11, 2, 13, 0), T)  # noqa: DTZ001
+    with pytest.raises(InstanteSemFuso):
+        provedor.listar_movimentos(T, datetime(2026, 11, 2, 13, 0))  # noqa: DTZ001
+    with pytest.raises(ValueError):
+        provedor.listar_movimentos(T + H, T)
+    for invalido in (D("0"), D("-1"), 1.0):
+        with pytest.raises(ValueError):
+            sim.depositar(invalido)
+        with pytest.raises(ValueError):
+            sim.registrar_saida(invalido, descricao="x")
+
+
+def test_saldo_e_movimentos_seguem_o_plano_de_indisponibilidade(sim: Any) -> None:  # A-6
+    provedor = obter_provedor()
+    sim.indisponivel()
+    with pytest.raises(ProvedorIndisponivel):
+        provedor.consultar_saldo()
+    with pytest.raises(ProvedorIndisponivel):
+        provedor.listar_movimentos(T, T + H)
+    sim.normalizar()
+    assert provedor.consultar_saldo().liberado == D("0.00")
+    assert provedor.listar_movimentos(T, T + H) == []
+
+
+def test_falhar_proximas_vale_para_o_saldo(sim: Any) -> None:  # A-7
+    sim.falhar_proximas(1, operacao="consultar_saldo")
+    with pytest.raises(ProvedorIndisponivel):
+        obter_provedor().consultar_saldo()
+    assert obter_provedor().consultar_saldo().liberado == D("0.00")
+
+
+def test_ajuste_aparece_nos_movimentos_e_no_saldo(sim: Any, relogio: RelogioControlado) -> None:
+    _cobranca_aprovada_com_tarifa(sim, relogio)  # A-11
+    relogio.congelar(T + 5 * H)
+    sim.ajustar_saldo(D("-0.50"))
+    ajustes = [m for m in obter_provedor().listar_movimentos(T, T + 6 * H) if m.tipo == TIPO.AJUSTE]
+    assert [m.valor for m in ajustes] == [D("-0.50")]
+    relogio.congelar(T + 25 * H)
+    assert obter_provedor().consultar_saldo().liberado == D("123.26")
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.concorrencia
+def test_duas_aprovacoes_concorrentes_geram_um_par_de_movimentos(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # A-14
+    from apps.simulador_pagamentos.models import MovimentoSimulado
+    from tests.apoio.concorrencia import executar_em_paralelo
+
+    sim.definir_tarifa("pix", percentual=D("0.99"), fixa=D("0.00"))
+    id_externo = criar(valor=D("125.00"))
+    relogio.congelar(T + H)
+
+    def aprovar(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        sim.aprovar(id_externo)
+
+    resultados = executar_em_paralelo(aprovar, aprovar)
+    erros = [r.excecao for r in resultados if r.excecao is not None]
+    assert len(erros) == 1
+    assert isinstance(erros[0], ValueError)
+    assert sorted(MovimentoSimulado.objects.values_list("tipo", flat=True)) == [
+        "pagamento",
+        "tarifa",
+    ]
+
+
+def test_o_saldo_diz_a_que_instante_se_refere(sim: Any, relogio: RelogioControlado) -> None:  # A-16
+    relogio.congelar(T + 2 * H)
+    saldo = obter_provedor().consultar_saldo()
+    assert saldo.referente_a == saldo.consultado_em == T + 2 * H
+    assert all(m.tipo != TIPO.OUTRO for m in obter_provedor().listar_movimentos(T, T + 3 * H))
+
+
+def test_reiniciar_apaga_movimentos_e_planos(sim: Any, relogio: RelogioControlado) -> None:  # A-15
+    _cobranca_aprovada_com_tarifa(sim, relogio)
+    sim.depositar(D("10.00"))
+    sim.reiniciar()
+    relogio.congelar(T + 2 * H)
+    assert obter_provedor().listar_movimentos(T, T + 3 * H) == []
+    saldo = obter_provedor().consultar_saldo()
+    assert (saldo.liberado, saldo.a_liberar) == (D("0.00"), D("0.00"))
+    id_externo = criar(chave_idempotencia="k-novo", valor=D("125.00"))
+    sim.aprovar(id_externo)
+    consultado = obter_provedor().consultar_pagamento(id_externo)
+    assert (consultado.tarifa, consultado.liberado_em) == (D("0.00"), T + 2 * H)

@@ -11,6 +11,21 @@
     <button type="submit">Entregar avisos pendentes ({{ avisos_pendentes }})</button>
   </form>
 
+  <h2>Depositar na conta</h2>
+  <form method="post" action="{% url 'simulador_pagamentos_depositar' %}">
+    {% csrf_token %}
+    <label>Valor (R$) <input type="text" name="valor" inputmode="decimal" required></label>
+    <button type="submit">Depositar na conta</button>
+  </form>
+
+  <h2>Registrar saída da conta</h2>
+  <form method="post" action="{% url 'simulador_pagamentos_saida' %}">
+    {% csrf_token %}
+    <label>Valor (R$) <input type="text" name="valor" inputmode="decimal" required></label>
+    <label>Descrição <input type="text" name="descricao" maxlength="50" required></label>
+    <button type="submit">Registrar saída da conta</button>
+  </form>
+
   {% if cobrancas %}
     <table>
       <thead>

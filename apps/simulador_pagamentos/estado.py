@@ -6,16 +6,18 @@ import hmac
 import logging
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from django.conf import settings
 
-from apps.nucleo.tempo import agora
+from apps.nucleo.tempo import agora, somar_horas
+from apps.nucleo.valores import arredondar_centavos
 from apps.pagamentos.provedor import (
     PagamentoConsultado,
     PagamentoNaoEncontrado,
     SituacaoNoProvedor,
 )
-from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
+from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada, MovimentoSimulado
 from apps.simulador_pagamentos.plano import PLANO, Anterior
 
 logger = logging.getLogger("apps.simulador_pagamentos")
@@ -48,6 +50,7 @@ def consultado(cobranca: CobrancaSimulada, *, atrasavel: bool = False) -> Pagame
     anterior = PLANO.visao_atrasada(cobranca.pk) if atrasavel else None
     situacao = anterior.situacao if anterior else cobranca.situacao
     aprovado_em = anterior.aprovado_em if anterior else cobranca.aprovado_em
+    aprovada = situacao == SituacaoNoProvedor.APROVADO
     return PagamentoConsultado(
         provedor=NOME,
         id_externo=cobranca.id_externo,
@@ -58,6 +61,8 @@ def consultado(cobranca: CobrancaSimulada, *, atrasavel: bool = False) -> Pagame
         aprovado_em=aprovado_em,
         expira_em=cobranca.expira_em,
         consultado_em=agora(),
+        tarifa=cobranca.tarifa if aprovada else None,
+        liberado_em=cobranca.liberado_em if aprovada else None,
     )
 
 
@@ -71,10 +76,45 @@ def mudar(
     """Muda a situação (com a cobrança travada) e cria o aviso."""
     PLANO.registrar_mudanca(cobranca.pk, Anterior(cobranca.situacao, cobranca.aprovado_em))
     cobranca.situacao = situacao.value
+    campos = ["situacao", "aprovado_em"]
     if aprovado_em is not None:
         cobranca.aprovado_em = aprovado_em
-    cobranca.save(update_fields=["situacao", "aprovado_em"])
+    if situacao == SituacaoNoProvedor.APROVADO and aprovado_em is not None:
+        _registrar_aprovacao(cobranca, aprovado_em)
+        campos += ["tarifa", "liberado_em"]
+    cobranca.save(update_fields=campos)
     novo_aviso(cobranca.id_externo)
+
+
+def _registrar_aprovacao(cobranca: CobrancaSimulada, aprovado_em: datetime) -> None:
+    """A tarifa do meio, arredondada uma vez a centavos, e a liberação; a conta do provedor
+    recebe o pagamento e, havendo tarifa, o desconto dela, ambos liberados juntos."""
+    percentual, fixa = PLANO.tarifa_do(cobranca.meio)
+    tarifa = arredondar_centavos(cobranca.valor * percentual / Decimal(100) + fixa)
+    liberado_em = somar_horas(aprovado_em, PLANO.liberacao_do(cobranca.meio))
+    cobranca.tarifa = tarifa
+    cobranca.liberado_em = liberado_em
+    novo_movimento("pagamento", "pagamento", cobranca.valor, aprovado_em, liberado_em, cobranca)
+    if tarifa > 0:
+        novo_movimento("tarifa", "tarifa", -tarifa, aprovado_em, liberado_em, cobranca)
+
+
+def novo_movimento(
+    tipo: str,
+    descricao: str,
+    valor: Decimal,
+    ocorrido_em: datetime,
+    liberado_em: datetime,
+    cobranca: CobrancaSimulada | None = None,
+) -> MovimentoSimulado:
+    return MovimentoSimulado.objects.create(
+        tipo=tipo,
+        descricao=descricao,
+        valor=valor,
+        id_externo=cobranca.id_externo if cobranca is not None else "",
+        ocorrido_em=ocorrido_em,
+        liberado_em=liberado_em,
+    )
 
 
 def assinar(corpo: bytes) -> str:

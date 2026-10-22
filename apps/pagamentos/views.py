@@ -12,4 +12,4 @@ from apps.pagamentos.avisos import receber_aviso
 @csrf_exempt
 @require_POST
 def avisos(request: HttpRequest) -> HttpResponse:
-    return HttpResponse(status=receber_aviso(request.body, request.headers))
+    return HttpResponse(status=receber_aviso(request.body, request.headers, request.GET.dict()))

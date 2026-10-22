@@ -18,6 +18,9 @@ class CobrancaSimulada(models.Model):
     criado_em = models.DateTimeField(default=agora)
     aprovado_em = models.DateTimeField(null=True, blank=True)
     expira_em = models.DateTimeField()
+    # Calculados na aprovação (E09-02); nulos antes dela.
+    tarifa = CampoDinheiro(null=True, blank=True)
+    liberado_em = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return self.id_externo
@@ -42,3 +45,22 @@ class AvisoSimulado(models.Model):
     @property
     def id_evento(self) -> str:
         return f"sim-ev-{self.pk}"
+
+
+class MovimentoSimulado(models.Model):
+    """Um movimento da conta do provedor simulado (E09-02): pagamento, tarifa, depósito, saída ou
+    ajuste. O valor tem sinal; `liberado_em` é quando o dinheiro passa a estar disponível."""
+
+    tipo = models.CharField(max_length=20)
+    descricao = models.CharField(max_length=50)
+    valor = CampoDinheiro()
+    id_externo = models.CharField(max_length=40, blank=True, default="")
+    ocorrido_em = models.DateTimeField(default=agora)
+    liberado_em = models.DateTimeField()
+
+    def __str__(self) -> str:
+        return self.id_movimento
+
+    @property
+    def id_movimento(self) -> str:
+        return f"mov-{self.pk}"

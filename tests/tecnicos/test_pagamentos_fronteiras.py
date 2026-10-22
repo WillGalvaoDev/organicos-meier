@@ -73,6 +73,8 @@ ROTAS_DO_SIMULADOR = {
     "simulador_pagamentos_recusar",
     "simulador_pagamentos_expirar",
     "simulador_pagamentos_entregar",
+    "simulador_pagamentos_depositar",
+    "simulador_pagamentos_saida",
 }
 
 

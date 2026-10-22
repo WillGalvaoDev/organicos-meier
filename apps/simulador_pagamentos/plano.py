@@ -8,6 +8,7 @@ controles dos testes. O estado das cobranças e dos avisos fica no banco.
 import threading
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from apps.pagamentos.provedor import ProvedorIndisponivel
 
@@ -38,6 +39,8 @@ class PlanoDeFalhas:
         self._atrasos: dict[int, int] = {}
         self._anteriores: dict[int, Anterior] = {}
         self._aprovacoes_no_cancelamento: dict[int, datetime | None] = {}
+        self._tarifas: dict[str, tuple[Decimal, Decimal]] = {}
+        self._liberacoes: dict[str, int] = {}
 
     def indisponivel(self) -> None:
         with self._trava:
@@ -94,6 +97,24 @@ class PlanoDeFalhas:
                 return None
             self._atrasos[cobranca_id] = restantes - 1
             return anterior
+
+    def definir_tarifa(self, meio: str, percentual: Decimal, fixa: Decimal) -> None:
+        with self._trava:
+            self._tarifas[meio] = (percentual, fixa)
+
+    def definir_liberacao(self, meio: str, horas: int) -> None:
+        with self._trava:
+            self._liberacoes[meio] = horas
+
+    def tarifa_do(self, meio: str) -> tuple[Decimal, Decimal]:
+        """O percentual (em %) e a parte fixa da tarifa do meio; o padrão é zero."""
+        with self._trava:
+            return self._tarifas.get(meio, (Decimal(0), Decimal(0)))
+
+    def liberacao_do(self, meio: str) -> int:
+        """O prazo de liberação do meio, em horas; o padrão é zero."""
+        with self._trava:
+            return self._liberacoes.get(meio, 0)
 
     def aprovar_no_cancelamento(self, cobranca_id: int, em: datetime | None) -> None:
         with self._trava:
