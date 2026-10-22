@@ -1,3 +1,25 @@
+# E09-01 — Parecer independente sobre 34f9547
+
+**Veredito: REPROVADO.**
+
+Base: `34f9547ae7962687ed96997e3338914f985a277f`, branch `e09-implementacao`, revisão independente em 2026-10-22. Lidos documentos-base funcional v1.6 e infraestrutura v1.7, AGENTS.md, especificações, critérios, código, testes e registros das oito fatias. Histórico do implementador preservado integralmente abaixo.
+
+Verificações independentes:
+
+- `uv run pytest -q`: **2398 passed in 273.67s**, sem filtro, PostgreSQL e banco separado do simulador.
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: 328 arquivos conformes.
+- `uv run mypy .`: 391 arquivos sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais, fora da suíte versionada: **9 failed in 8.57s**, pelos defeitos descritos no [parecer consolidado](../E09-08/review.md), que contém o código completo para reprodução.
+
+Não foram alterados código de produção nem testes versionados. Testes verdes dos critérios existentes não bastam para aprovar as interações financeiras. O revisor não presenciou os ciclos TDD históricos; conferiu os registros e não trata mutação posterior como Red anterior à implementação.
+
+## Matriz e achados
+
+A-1–A-18: testes existentes verdes, incluindo fluxos F1–F15, segregação, imutabilidade ORM/SQL, auditoria e corridas do lançador. Nenhum defeito adicional demonstrado no lançador isolado. R02 mostra que ordenar as travas no lançador não corrige a ordem já adquirida pelos serviços. **R08 bloqueia o gate TDD:** extrato implementado antes do teste, por declaração expressa. A falha de A-2 por conta inexistente no andaime também não demonstra Red da proteção de imutabilidade; conferir a evidência anterior das proteções ORM/SQL.
+
+---
+
 # E09-01 — Registro do implementador (2026-10-22)
 
 Agente 2. Este arquivo traz a evidência da implementação; a aprovação é do agente 3.

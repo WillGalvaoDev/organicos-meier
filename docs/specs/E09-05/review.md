@@ -1,3 +1,25 @@
+# E09-05 — Parecer independente sobre 34f9547
+
+**Veredito: REPROVADO.**
+
+Base: `34f9547ae7962687ed96997e3338914f985a277f`, branch `e09-implementacao`, revisão independente em 2026-10-22. Lidos documentos-base funcional v1.6 e infraestrutura v1.7, AGENTS.md, especificações, critérios, código, testes e registros das oito fatias. Histórico do implementador preservado integralmente abaixo.
+
+Verificações independentes:
+
+- `uv run pytest -q`: **2398 passed in 273.67s**, sem filtro, PostgreSQL e banco separado do simulador.
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: 328 arquivos conformes.
+- `uv run mypy .`: 391 arquivos sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais, fora da suíte versionada: **9 failed in 8.57s**, pelos defeitos descritos no [parecer consolidado](../E09-08/review.md), que contém o código completo para reprodução.
+
+Não foram alterados código de produção nem testes versionados. Testes verdes dos critérios existentes não bastam para aprovar as interações financeiras. O revisor não presenciou os ciclos TDD históricos; conferiu os registros e não trata mutação posterior como Red anterior à implementação.
+
+## Matriz e achados
+
+A-1–A-15: testes existentes verdes, porém não cobrem as interações que falham. **R01 bloqueador:** reserva e receita cobrem duas vezes a mesma despesa (A-6/A-7 e E09-06 A-4/A-16). **R02 bloqueador:** reserva → obrigação diverge da ordem por PK na liquidação e causa deadlock. **R05 importante:** tarefa do invariante não chama avaliar_reserva, contrariando a seção de obrigações sem cobertura da spec. O registro Red/Green da reserva não cobre essas integrações; exigir Red específico nas correções.
+
+---
+
 # E09-05 — Registro do implementador (2026-10-22)
 
 Agente 2. Este arquivo traz a evidência da implementação; a aprovação é do agente 3.

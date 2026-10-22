@@ -1,3 +1,291 @@
+# E09 — Parecer independente consolidado sobre 34f9547
+
+**Veredito final: REPROVADO.** Há defeitos financeiros reproduzidos e não conformidades TDD sem tratamento autorizado. As aprovações locais de fatias não autorizam encerrar a E09.
+
+Base: `34f9547ae7962687ed96997e3338914f985a277f`, branch `e09-implementacao`, revisão independente em 2026-10-22. Lidos documentos-base funcional v1.6 e infraestrutura v1.7, AGENTS.md, especificações, critérios, código, testes e registros das oito fatias. Histórico do implementador preservado integralmente abaixo.
+
+Verificações independentes:
+
+- `uv run pytest -q`: **2398 passed in 273.67s**, sem filtro, PostgreSQL e banco separado do simulador.
+- `uv run ruff check .`: passou; `uv run ruff format --check .`: 328 arquivos conformes.
+- `uv run mypy .`: 391 arquivos sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: nenhuma alteração pendente.
+- Provas adicionais, fora da suíte versionada: **9 failed in 8.57s**, pelos defeitos descritos no [parecer consolidado](../E09-08/review.md), que contém o código completo para reprodução.
+
+Não foram alterados código de produção nem testes versionados. Testes verdes dos critérios existentes não bastam para aprovar as interações financeiras. O revisor não presenciou os ciclos TDD históricos; conferiu os registros e não trata mutação posterior como Red anterior à implementação.
+
+## Matriz das oito fatias
+
+As matrizes somam 133 critérios. Todos os testes versionados passam; os achados mostram lacunas relevantes nas combinações e no processo.
+
+| Fatia | Critérios examinados | Resultado |
+|---|---|---|
+| E09-01 | A-1–A-18 | REPROVADO: R08; lançador isolado sem novo defeito demonstrado |
+| E09-02 | A-1–A-18 | APROVADO localmente |
+| E09-03 | A-1–A-12 | APROVADO localmente; integração pendente |
+| E09-04 | A-1–A-13 | APROVADO localmente; integração pendente |
+| E09-05 | A-1–A-15 | REPROVADO: R01, R02, R05 |
+| E09-06 | A-1–A-19 | REPROVADO: R01–R04, R08, R09 |
+| E09-07 | A-1–A-23 | REPROVADO: R05–R08 |
+| E09-08 | A-1–A-15 | REPROVADO na integração; M-8 editorial em A-3 |
+
+E09-08: políticas de administrador, passkey recente, validações, respostas e paginação conferidas nos testes existentes. O literal `1.000,00` de A-3 é recusado: a spec exige recusar separador de milhar, e o teste usa `1000,00`. Não se declara o literal A-3 satisfeito; M-8 solicita alinhamento editorial, sem alterar o parser. Não houve inspeção visual no navegador ou ensaio de carga. Dinheiro/provedor real permanece fora da fase 1.
+
+## Achados e reprodução
+
+### E09-R01 — bloqueador — cobertura duplicada da mesma despesa
+
+Referências: funcional §9.3/§9.4; E09-05 A-6/A-7; E09-06 A-4/A-16; AGENTS §6. Código: `apps/financeiro/reserva.py:341`, `apps/financeiro/apuracao.py:213`.
+
+`utilizar_reserva` lê o pendente antes de travar o destino; a cobertura pela receita pode concluir nesse intervalo. Prova `test_cobertura_cruzada`: tarifa de 10,00 lançada, reserva e receita de 100,00; pausar a reserva depois da leitura do pendente, concluir a cobertura pela receita, retomar a reserva. **Ambas passam e a cobertura soma 20,00 para uma despesa de 10,00.** O cálculo do pendente limita o resultado em zero, escondendo o excedente.
+
+Validar o pendente sob proteção compartilhada por todas as fontes, inclusive cobertura automática; testar a corrida entre fontes diferentes. A trava exclusiva da reserva não basta.
+
+### E09-R02 — bloqueador — deadlock entre designação e liquidação
+
+Referências: AGENTS §6; E09-01 ordem global/A-16; E09-05 travas e E09-06 liquidação. Código: `reserva.py:289`, `obrigacoes.py:83` e `obrigacoes.py:271`.
+
+Designação trava reserva → obrigação; liquidação trava por PK. Se a conta da obrigação nasceu primeiro, as ordens se invertem. Prova `test_ordem_designacao_liquidacao`: obrigação 50,00, financiada 25,00, reserva 100,00; designação de 25,00 em paralelo com liquidação dos 25,00 financiados, pausando cada operação após a primeira trava. **PostgreSQL detecta deadlock em financeiro_contafinanceira; uma operação falha com OperationalError.** Ambas seriam válidas em qualquer ordem serial.
+
+Unificar a ordem efetiva ao longo de toda a transação, inclusive antes de `lancar`. Ordenar contas já travadas não resolve. É decisão técnica derivável, sem necessidade de mudar regra comercial.
+
+### E09-R03 — importante — repetição concorrente da liquidação não é idempotente
+
+Referências: AGENTS §6; E09-06 A-10 e contrato de liquidar_obrigacao. Código: `obrigacoes.py:271`.
+
+A referência só é consultada antes das travas. Prova `test_mesma_referencia_concorrente`: duas chamadas de 25,00 para obrigação financiada, mesma referência, ambas consultando antes de qualquer conclusão. Uma devolve o movimento; outra lança **LiquidacaoRecusada: o valor passa do que falta devolver**. Deve devolver o mesmo movimento às duas. Não houve segunda saída: o defeito está no contrato de resposta idempotente/recuperação.
+
+Revalidar a referência sob a proteção da liquidação, mantendo a recusa de conteúdo conflitante e de referências distintas acima do devido.
+
+### E09-R04 — importante — relatório omite cobertura do componente frete
+
+Referências: funcional §9.3; E09-06 contrato frete_do_ciclo e A-3/A-4/A-7; E09-08 resumo. Código: `apuracao.py:187`.
+
+O relatório só soma coberturas de Despesa(deficit_frete). Prova `test_frete_coberto`: efetivo 30,00, arrecadado 20,00, déficit inicial 10,00 coberto; pagar frete 30,00; criar obrigação posterior exclusivamente de frete 5,00, financiar pela reserva e liquidar. **Déficit 15,00, todo coberto, mas deficit_coberto informa 10,00 em vez de 15,00.**
+
+Confirma a pendência declarada pelo implementador. O caso não exige rateio: há apenas frete. Para cobertura parcial de obrigação mista, documentar a regra derivada ou devolver a ambiguidade residual ao especificador; não presumir uma regra comercial nem omitir a parcela inteira. O esclarecimento residual não impede corrigir/testar o caso inequívoco.
+
+### E09-R05 — importante — avaliação periódica da reserva ausente
+
+Referências: funcional §9.4; E09-05 spec, obrigações sem cobertura (avaliar_reserva também na tarefa do invariante); integração E09-07. Código: `tarefas.py:22`, `invariante.py:57`.
+
+A tarefa chama verificar_invariante_agora, que não avalia a reserva. Prova `test_tarefa_avalia_reserva`: despesa pendente 10,00, reserva zero, provedor acessível e sem violação do invariante de terceiros. Após verificar, **nenhum alerta reserva_insuficiente**. Tarifas pendentes podem surgir sem uma operação manual de reserva que execute a avaliação.
+
+Implementar/testar abertura e resolução periódicas, preservando a atomicidade e o tratamento especificado de indisponibilidade.
+
+### E09-R06 — importante — identificação válida aborta a conciliação
+
+Referências: E09-05 identificação até 64 caracteres; E09-07 A-13/A-17 e chave inversa; E09-03 limite da chave. Código: `conciliacao.py:228`.
+
+Prova `test_identificador_64_conciliavel`: aporte com identificação de 64 caracteres, aceito pelo serviço; conciliar sem movimento correspondente. O prefixo livro: gera 70 caracteres e o serviço de alerta lança **ValueError: a chave do alerta deve ter de 1 a 64 caracteres**. O dia é desfeito e a tarefa não avança.
+
+Compatibilizar as chaves derivadas sem truncamento com colisões, preservar a identificação original e não restringir silenciosamente entradas válidas. A representação técnica estável pode ser resolvida autonomamente.
+
+### E09-R07 — importante — janelas temporais incorretas na conciliação
+
+Referências: E09-07 decisões técnicas, janela inversa de D−3 dias até fim de D e fórmula até referente_a; A-13/A-14/A-15/A-23. Código: `conciliacao.py:119` e `conciliacao.py:149`.
+
+A consulta ampla é reaproveitada sem os recortes próprios:
+
+1. `test_conciliacao_respeita_referente_a`: saldo zero referente às 10h de D, ajuste +10,00 às 12h; diferença naquele instante deveria ser zero, mas informa **−10,00**, abrindo alerta de saldo indevido além do alerta legítimo do ajuste.
+2. `test_conciliacao_nao_parea_movimento_futuro`: aporte de D, depósito com mesmo ID somente em D+1, execução em D+1. O depósito fora da janela é aceito como par de D, produzindo **ok e sem_par=0**, em vez de ausência de par no período prescrito.
+
+Separar recorte da diferença, janela inversa e movimentos do dia. O registro imutável não pode consolidar um ok falso ou uma diferença falsa.
+
+### E09-R08 — bloqueador de processo — TDD não demonstrado
+
+Referências: AGENTS §§3/4/8 e prevenção E08-R06. Evidência: registros do implementador preservados nas fatias.
+
+- E09-01: extrato escrito antes do teste; mutação posterior não demonstra Red histórico. A-2 falhou por conta inexistente no andaime, não por permitir mutação; conferir a cronologia das proteções ORM/SQL, que são comportamento testável.
+- E09-06 A-17–A-19: travas introduzidas com a implementação, sem Red concorrente sobre comportamento funcional, expressamente declarado. Mutações posteriores detectam A-17/A-18; A-19 nem detecta retirar as travas da apuração.
+- E09-07 A-20: UNIQUE/tratamento da corrida escritos antes do Red específico, expressamente declarado.
+
+Decisões excepcionais de entregas anteriores não dispensam o TDD da E09. Encaminhar evidência histórica verificável onde existir; para desvios irreversíveis, obter tratamento explícito do responsável pelo projeto. Não recriar andaime e chamá-lo de Red histórico. As novas correções precisam de falha pelo defeito real antes de alterar produção. Mesmo eventual tratamento de R08 não aprova R01–R07/R09.
+
+### E09-R09 — bloqueador — fontes desatualizadas durante a apuração
+
+Referências: funcional §9.3; infraestrutura 3.2/P-2; E09-06 A-1/A-6/A-7 e concorrência; AGENTS §6. Código: `obrigacoes.py:129`, `apuracao.py:89`.
+
+A obrigação lê apurado e escolhe as fontes antes das travas. Prova `test_obrigacao_concorrente_apuracao`: X pago, produtos 100,00; obrigação de produtos 25,00 lê ainda não apurado e pausa; apuração conclui, movendo 100,00 ao fornecedor; obrigação retoma usando custódia vazia. Ambas concluem, mas a obrigação fica **25,00 sem cobertura**, apesar de haver saldo na própria rodada; depois_da_apuracao permanece falso.
+
+Em qualquer ordem serial, os 25,00 sairiam da custódia ou da obrigação com fornecedor. Serializar a decisão de estado/fontes com a apuração, respeitando a ordem global. A-19 atual cobre entrada versus apuração, não obrigação versus apuração.
+
+## Encaminhamento
+
+Corrigir R01–R07/R09 com Red específico, tratar R08 explicitamente e submeter nova revisão. E09 não atende à Definition of Done. M-5 (desempenho), M-6 e M-7 existentes não encerram esses achados. O registro central tem dois itens M-5, preservados sem apagar histórico alheio. Acrescentada M-8 para o literal de A-3 da E09-08.
+
+As provas usam serviços reais e transações PostgreSQL. Nas corridas, o monkeypatch apenas pausa a execução; não remove travas, validações ou efeitos. O provedor é substituído por dublê do protocolo nas provas temporais, conforme a fase 1. O estado inicial usa apoios do projeto. Essas provas demonstram defeitos atuais, não o TDD histórico.
+
+## Reprodução independente
+
+Salvar o bloco Python abaixo como `$env:TEMP/test_revisao_e09.py` e, na raiz do repositório, executar:
+
+```powershell
+uv run pytest "$env:TEMP/test_revisao_e09.py" -q -c pyproject.toml --tb=short
+```
+
+Esperado em 34f9547: **9 failed**, pelos motivos acima. A primeira tentativa de montar três provas concorrentes passou uma lista onde o apoio exige argumentos posicionais; o script temporário foi corrigido antes de contabilizar resultados. A prova de cobertura foi também reforçada com o lançamento real da tarifa. O resultado final acima é da versão completa abaixo, sem alteração do produto.
+
+<!-- INICIO_PROVAS_E09 -->
+```python
+from datetime import timedelta
+from decimal import Decimal as D
+from threading import Barrier, Event
+from types import SimpleNamespace
+import pytest
+from django.db import transaction
+from apps.financeiro import reserva as r, obrigacoes as o, apuracao as a, conciliacao as c, invariante as inv
+from apps.financeiro.livro import saldo, EXTERIOR
+from apps.financeiro.models import *
+from apps.financeiro.liquidez import registrar_saida
+from apps.pagamentos.provedor import SaldoNoProvedor
+from tests.apoio.financeiro import *
+from tests.apoio.concorrencia import executar_em_paralelo
+from tests.conftest import relogio, simulador_pagamentos
+from apps.nucleo.auditoria import SISTEMA
+pytestmark = pytest.mark.django_db(transaction=True, databases=['default','simulador_pagamentos'])
+
+def test_cobertura_cruzada(monkeypatch):
+    with transaction.atomic():
+        m=montar_mundo(); caixa=reserva(); receita=receita_de(m.ra)
+        semear(m,caixa,'100'); semear(m,receita,'100')
+        desp=despesa_de_tarifa('10',m.ra); mover(TipoDeMovimento.TARIFA,despesas(),EXTERIOR,'10',origem=desp.pagamento)
+    leu=Event(); cobriu=Event(); original=r.pendente_da_despesa
+    def pausa(d):
+        v=original(d)
+        if not leu.is_set():
+            leu.set(); assert cobriu.wait(10)
+        return v
+    monkeypatch.setattr(r,'pendente_da_despesa',pausa)
+    def primeira(b):
+        with transaction.atomic(): return r.utilizar_reserva(m.admin,desp,D('10'),'teste')
+    def segunda(b):
+        assert leu.wait(10)
+        try:
+            with transaction.atomic(): return a.cobrir_despesa(m.admin,desp,fonte=('receita',m.ra),valor=D('10'),justificativa='teste')
+        finally: cobriu.set()
+
+
+
+    resultados=executar_em_paralelo(primeira,segunda)
+    erros=[repr(x.excecao) for x in resultados]
+    from django.db.models import Sum
+    total=TransferenciaFinanceira.objects.filter(movimento__origem_tipo='financeiro.despesa',movimento__origem_id=str(desp.pk)).aggregate(s=Sum('valor'))['s']
+    assert total<=D('10'), (total,erros)
+
+def test_ordem_designacao_liquidacao(monkeypatch):
+    with transaction.atomic():
+        m=montar_mundo(); obrig=obrigacao_de_teste('50'); dest=o.conta_da_obrigacao(obrig)
+        semear(m,dest,'25'); caixa=reserva(); semear(m,caixa,'100')
+    assert dest.pk<caixa.pk
+    barreira=Barrier(2); original=r._travar_conta
+    def trava_reserva(pk):
+        original(pk)
+        if pk==caixa.pk: barreira.wait(10)
+    def trava_obrigacao(pk):
+        original(pk)
+        if pk==dest.pk: barreira.wait(10)
+    monkeypatch.setattr(r,'_travar_conta',trava_reserva)
+    monkeypatch.setattr(o,'_travar_conta',trava_obrigacao)
+    def designar(b):
+        with transaction.atomic(): return r.designar_reserva(m.admin,obrig,D('25'),'teste')
+    def liquidar(b):
+        with transaction.atomic(): return o.liquidar_obrigacao(obrig,D('25'),referencia='dev-lock')
+    resultados=executar_em_paralelo(designar,liquidar)
+    assert all(x.excecao is None for x in resultados), [repr(x.excecao) for x in resultados]
+
+def test_mesma_referencia_concorrente(monkeypatch):
+    with transaction.atomic():
+        m=montar_mundo(); obrig=obrigacao_de_teste('25'); dest=o.conta_da_obrigacao(obrig)
+        semear(m,dest,'25'); reserva()
+    barreira=Barrier(2); original=o._ja_liquidada
+    def pausa(*args):
+        v=original(*args); barreira.wait(10); return v
+    monkeypatch.setattr(o,'_ja_liquidada',pausa)
+    def liquidar(b):
+        with transaction.atomic(): return o.liquidar_obrigacao(obrig,D('25'),referencia='mesma')
+    resultados=executar_em_paralelo(liquidar,liquidar)
+    assert all(x.excecao is None for x in resultados), [repr(x.excecao) for x in resultados]
+    assert resultados[0].valor.pk==resultados[1].valor.pk
+
+def test_frete_coberto(relogio,simulador_pagamentos):
+    ap=montar_ap(); pagar_pedido(ap,ap.x,simulador_pagamentos,relogio,timedelta(hours=1))
+    with transaction.atomic():
+        r.registrar_aporte(ap.admin,D('100'),'deposito','teste')
+        a.registrar_apuracao_no_livro(ap.ciclo,[ap.x],autor=SISTEMA)
+        desp=Despesa.objects.get(tipo=TipoDeDespesa.DEFICIT_DE_FRETE,ciclo=ap.ciclo)
+        r.utilizar_reserva(ap.admin,desp,D('10'),'teste')
+        registrar_saida(ap.admin,tipo='pagamento_do_frete',conta=frete_de(ap.rodada),valor=D('30'),identificacao='frete',justificativa='teste')
+        obrig,_=o.registrar_obrigacao_com_comprador(origem=ap.x,rodada=ap.rodada,ciclo=ap.ciclo,comprador=ap.b,pedido=ap.x,motivo='teste',produtos=D('0'),servico=D('0'),frete=D('5'))
+        r.designar_reserva(ap.admin,obrig,D('5'),'teste')
+        o.liquidar_obrigacao(obrig,D('5'),referencia='dev-frete')
+    resultado=a.frete_do_ciclo(ap.ciclo)
+    assert resultado.deficit_coberto==D('15'),resultado
+
+def test_tarefa_avalia_reserva(monkeypatch,relogio):
+    relogio.congelar(T0)
+    montar_mundo(); despesa_de_tarifa('10')
+    monkeypatch.setattr(inv,'obter_provedor',lambda:SimpleNamespace(consultar_saldo=lambda:SaldoNoProvedor(D('0'),D('0'),T0,T0)))
+    inv.verificar_invariante_agora()
+    assert AlertaFinanceiro.objects.filter(tipo=TipoDeAlerta.RESERVA_INSUFICIENTE,resolvido_em__isnull=True).exists()
+
+def test_identificador_64_conciliavel(monkeypatch,relogio):
+    relogio.congelar(T0); m=montar_mundo()
+    with transaction.atomic(): r.registrar_aporte(m.admin,D('100'),'x'*64,'teste')
+    relogio.avancar(timedelta(days=1))
+    monkeypatch.setattr(c,'obter_provedor',lambda:SimpleNamespace(consultar_saldo=lambda:SaldoNoProvedor(D('0'),D('0'),T0+timedelta(days=1),T0+timedelta(days=1)),listar_movimentos=lambda *args:[]))
+    c.conciliar_dia(T0.date())
+
+
+def test_conciliacao_respeita_referente_a(monkeypatch,relogio):
+    from apps.pagamentos.provedor import MovimentoNoProvedor, TipoDeMovimentoNoProvedor as P
+    from datetime import datetime, UTC
+    dia=T0.date(); inicio,fim=c.limites_do_dia(dia)
+    referencia=inicio+timedelta(hours=10); ocorrido=inicio+timedelta(hours=12)
+    relogio.congelar(fim+timedelta(hours=1)); montar_mundo()
+    mov=MovimentoNoProvedor('ajuste-tarde',P.AJUSTE,'ajuste',D('10'),None,ocorrido,ocorrido)
+    monkeypatch.setattr(c,'obter_provedor',lambda:SimpleNamespace(consultar_saldo=lambda:SaldoNoProvedor(D('0'),D('0'),referencia,fim),listar_movimentos=lambda *args:[mov]))
+    resultado=c.conciliar_dia(dia)
+    assert D(resultado.resumo['diferenca'])==D('0'),resultado.resumo
+
+def test_conciliacao_nao_parea_movimento_futuro(monkeypatch,relogio):
+    from apps.pagamentos.provedor import MovimentoNoProvedor, TipoDeMovimentoNoProvedor as P
+    dia=T0.date(); inicio,fim=c.limites_do_dia(dia)
+    relogio.congelar(inicio+timedelta(hours=12)); m=montar_mundo()
+    with transaction.atomic(): r.registrar_aporte(m.admin,D('100'),'futuro','teste')
+    instante=fim+timedelta(hours=2); ocorrido=fim+timedelta(hours=1)
+    relogio.congelar(instante)
+    mov=MovimentoNoProvedor('futuro',P.DEPOSITO,'deposito',D('100'),None,ocorrido,ocorrido)
+    monkeypatch.setattr(c,'obter_provedor',lambda:SimpleNamespace(consultar_saldo=lambda:SaldoNoProvedor(D('100'),D('0'),instante,instante),listar_movimentos=lambda *args:[mov]))
+    resultado=c.conciliar_dia(dia)
+    assert resultado.resumo['sem_par']==1,resultado.resumo
+
+def test_obrigacao_concorrente_apuracao(monkeypatch,relogio,simulador_pagamentos):
+    ap=montar_ap(); pagar_pedido(ap,ap.x,simulador_pagamentos,relogio,timedelta(hours=1))
+    escolheu=Event(); apurou=Event(); original=o._fontes
+    def pausa(rodada,ciclo,comprador,depois):
+        assert depois is False
+        escolheu.set(); assert apurou.wait(10)
+        return original(rodada,ciclo,comprador,depois)
+    monkeypatch.setattr(o,'_fontes',pausa)
+    def obrigacao(b):
+        with transaction.atomic():
+            return o.registrar_obrigacao_com_comprador(origem=ap.x,rodada=ap.rodada,ciclo=ap.ciclo,comprador=ap.b,pedido=ap.x,motivo='teste',produtos=D('25'),servico=D('0'),frete=D('0'))
+    def apuracao(b):
+        assert escolheu.wait(10)
+        try:
+            with transaction.atomic(): return a.registrar_apuracao_no_livro(ap.ciclo,[ap.x],autor=SISTEMA)
+        finally: apurou.set()
+    resultados=executar_em_paralelo(obrigacao,apuracao)
+    assert all(x.excecao is None for x in resultados),[repr(x.excecao) for x in resultados]
+    assert resultados[0].valor.sem_cobertura==D('0'),resultados[0].valor
+
+
+```
+<!-- FIM_PROVAS_E09 -->
+
+---
+
 # E09-08 — Registro do implementador (2026-10-22)
 
 Agente 2. Este arquivo traz a evidência da implementação; a aprovação é do agente 3.
