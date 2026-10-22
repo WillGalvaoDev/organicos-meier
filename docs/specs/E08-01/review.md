@@ -1,3 +1,207 @@
+# E08 — Terceira revisão independente do agente 3 — 2026-10-22
+
+**Veredito final: APROVADO sobre `fe8dffa8a2be08424eb96d5467c445e3fc96332d`, branch `e08-implementacao`.** R06 e R08 estão encerrados. R01–R05 permanecem encerrados, sem regressão observada. Não há achado impeditivo aberto na E08. As melhorias M-3 e M-4 continuam para a revisão final, conforme a política do projeto; não foram implementadas nesta revisão. A aprovação é da entrega da fase 1 com simulador e deste commit, sem afirmar integração em main nem autorização para dinheiro real.
+
+## Escopo e fontes
+
+Lidas antes do código as correções de especificação e aceitação de `a41b44f`, especialmente E08-03 A-29–A-34 e a decisão expressa do responsável sobre o A-11 reescrito em E08-06. Conferidos os registros de `fe8dffa`, o diff de produção/testes de `6118ae4`, AGENTS.md e o histórico desta revisão. Mantidas as fontes superiores da revisão anterior (funcional v1.6 e infraestrutura v1.7); elas não foram alteradas neste intervalo. A decisão de estender o tratamento de R06 está registrada pelo especificador e não precisa ser solicitada novamente.
+
+## Matriz consolidada
+
+| Fatia | Critérios atuais | Veredito | Revalidação |
+|---|---|---|---|
+| E08-01 | A-1 a A-12 | APROVADO | Cálculo e validações sem alteração; suíte completa verde. |
+| E08-02 | A-1 a A-27 | APROVADO | Abertura, congelamento, valor mínimo e rateio preservados; R04 e tratamento antigo de R06 continuam encerrados. M-3 não impede aprovação. |
+| E08-03 | A-1 a A-34 | APROVADO | R08 corrigido: consultas individuais, combinação de agendamentos, rollback, indisponibilidade e concorrência. A-23/A-24 preservam as asserções e ajustam somente o momento de observação autorizado. |
+| E08-04 | A-1 a A-17 | APROVADO | Quitação/duplicidade preservadas; reconsulta não cria segundo destino. M-4 continua não impeditiva. |
+| E08-05 | A-1 a A-28 | APROVADO | Reconsulta de todos os estados, recuperação de órfãs e fronteiras preservadas; corrida da margem com recuperação passa. |
+| E08-06 | A-1 a A-15 | APROVADO | Tratamento autorizado de R06 cumprido; A-11 nas duas ordens e demais cenários concorrentes verdes após a mutação de controle. |
+| E08-07 | A-1 a A-9 | APROVADO | Fronteiras, políticas e simulador preservados; suíte completa sem exclusões. |
+
+As matrizes atuais somam **142 critérios**. A revisão anterior foi preservada como evidência histórica; seu veredito sobre o commit anterior não é o veredito atual.
+
+## Evidências executadas pelo revisor
+
+| Comando | Resultado |
+|---|---|
+| `uv run pytest -q` (sem filtro nem exclusão) | **2166 passed in 220.50s (0:03:40)** |
+| `uv run ruff check .` | **All checks passed!** |
+| `uv run ruff format --check .` | **291 files already formatted** |
+| `uv run mypy .` | **Success: no issues found in 342 source files** |
+| `uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test` | **No changes detected** |
+| `uv run pytest -c pyproject.toml "$env:TEMP/test_review_e08_fe8dffa.py" -q --tb=short` | **8 passed in 5.63s** |
+| Arquivo concorrente inteiro com mutação A-11 em memória | **1 failed, 19 passed in 9.59s** (falha esperada por asserção) |
+| Arquivo concorrente inteiro com mutação R08 em memória | **3 failed, 17 passed in 38.38s** (falhas esperadas por asserção) |
+| `uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider`, sem plugin/mutação | **20 passed in 9.50s** |
+
+Logs locais: `%TEMP%/om_e08_fe8dffa_suite.log`, `om_e08_fe8dffa_probes.log`, `om_e08_fe8dffa_mut_a11.log`, `om_e08_fe8dffa_mut_r08.log` e `om_e08_fe8dffa_concorrencia_restaurada.log`.
+
+Docker Desktop estava parado: iniciado com `docker desktop start`, seguido de `docker compose up -d db`. Testes de banco executados sequencialmente, com PostgreSQL 17 e simulador reais da aplicação. As mutações alteraram apenas objetos Python em memória por `monkeypatch`, em processos de teste separados; nenhum arquivo de produção ou teste versionado foi editado. A árvore permaneceu limpa até a escrita destes pareceres.
+
+As oito provas independentes incluem os seis casos anteriores de R01–R03 e dois controles novos de R08 (aviso e margem). Os seis casos foram extraídos do bloco Python de `c1d38ec:docs/specs/E08-01/review.md`, sem mudar as asserções, retirando apenas a função antiga de R04, já substituída pela decisão de cadastro e por A-22–A-27. O controle R08 original pausava uma chamada de sincronização que deixou de existir na recuperação; não foi executado para produzir um falso timeout. Foi substituído por pausa após o `falhou`, ainda dentro da transação, como autoriza a nova spec. Os controles novos verificam a conclusão concorrente, a obtenção imediata de P1 e da situação por `nowait`, os dois destinos, a tentativa recusada e a ausência de cobrança nova; código abaixo.
+
+## R08 — ENCERRADO
+
+`apps/pedidos/operacoes.py`, `_criacao_falhou`, agenda `consultar_pagamento` para cada resultado da busca, em ordem `(criado_em, id_externo)`, com origem `busca`. O laço não sincroniza pagamentos nem adquire a situação do pedido. As consultas e os cancelamentos das órfãs são gravados na mesma transação da marcação da tentativa; uma falha local desfaz todo esse conjunto.
+
+Cada consulta é processada em sua própria transação, pela operação existente da E07. Assim não há mais aquisição de P2 enquanto a recuperação retém a situação adquirida ao sincronizar P1. Conferidos por busca de chamadores: criação, cancelamento e consulta agendada sincronizam um pagamento por chamada; `consultar_antes_de_decidir` mantém transação individual por pagamento. Não foi encontrado outro laço que viole a invariante no código de produção atual.
+
+A-29/A-30 e as provas independentes confirmam que aviso e margem terminam enquanto a recuperação está parada, sem travas financeiras retidas. A-31 confere os agendamentos e sua ordem; A-32 demonstra rollback e repetição; A-33 confirma absorção da consulta já pendente; A-34 demonstra recuperação após indisponibilidade. A suíte conserva os cenários de aprovação encontrada, cancelamento da órfã e proibição de nova criação após 24h.
+
+**Sensibilidade independente, não Red histórico:** substituí em memória somente o corpo de `_criacao_falhou` pelo de `584b323`. No arquivo concorrente inteiro, falharam exatamente A-29 (aviso não terminou com recuperação parada), A-30 (margem não terminou) e A-33 (faltou consulta agendada para P1). As falhas foram asserções do comportamento, não deadlocks nem timeout da infraestrutura. Sem a mutação, os vinte casos passaram.
+
+**Evidência de TDD da correção:** o registro do implementador declara os comandos de arquivos inteiros, duas falhas em tentativas e três em concorrência antes da alteração, seguido da correção e do Green. A interpretação de A-31 é válida: suas asserções funcionais estavam antes da estrutural e passaram no código anterior; somente a exigência nova de agendamento falhou. Isso demonstra o controle funcional anterior à proteção, embora o teste completo tenha também uma parte estrutural vermelha. A-29/A-30 demonstraram as corridas separadamente. A-32 era proteção herdada do rollback, explicitamente declarada inicialmente verde; não se exige fabricar falha. A confirmação de sensibilidade feita nesta revisão complementa a evidência e não é apresentada como cronologia histórica.
+
+Os dois ajustes nos testes antigos correspondem exatamente à autorização: A-23 observa o pagamento após a consulta enfileirada; A-24 processa a consulta antes de contar o cancelamento. Nenhuma asserção de negócio foi eliminada ou afrouxada.
+
+## R06 — ENCERRADO por tratamento expressamente autorizado
+
+A seção “Correção E08-R06, segunda revisão” de E08-06/spec.md registra a decisão de 2026-10-21: o mesmo tratamento dos critérios antigos vale para o A-11 reescrito. O complemento de E08-02/spec.md explicita essa extensão. Essa decisão resolve a pendência da revisão anterior, sem reescrever a história.
+
+O registro de E08-06 preserva a declaração verdadeira de teste escrito depois da proteção, referencia a decisão, descreve a mutação, sua falha por asserção e o Green após restauração, além de registrar a causa e a prevenção adicional. Nesta revisão, retirei em memória apenas o ramo `pedido_cancelado` de `_motivo_da_recusa` e rodei o arquivo concorrente inteiro: a variante `pagamento_antes` falhou exatamente com `('criada', '')` em vez de `('nao_criada', 'pedido_cancelado')`; os outros dezenove casos passaram. Sem mutação, os vinte passaram, incluindo as duas ordens do A-11.
+
+Estão atendidos registro, sensibilidade e prova concorrente verde exigidos pela decisão. A não conformidade histórica continua documentada; seu tratamento está encerrado. Não se trata de dispensa para outras entregas.
+
+## Preservação, limites e próximo gate
+
+Conferência automática: os sete review.md de `93d3220` estavam integralmente preservados em `fe8dffa`. Todo o conteúdo de `fe8dffa`, inclusive registros do implementador, é mantido como sufixo nesta atualização. Alterados somente os sete review.md; docs/melhorias.md permanece intacto, com M-3/M-4 pendentes conforme a decisão do projeto.
+
+Verificação com cliente Django, threads e serviços da aplicação; sem navegador, provedor externo, dinheiro real ou worker como processo separado. Não se antecipa a aprovação das próximas etapas de livro-razão, estornos, apuração ou produção. **A E08 pode seguir ao próximo gate previsto pelo projeto, sem correção impeditiva remanescente nesta revisão.**
+
+## Reprodução dos controles novos de R08
+
+Salvar o bloco em um arquivo de teste temporário e executar `uv run pytest -c pyproject.toml <arquivo> -q --tb=short`. Ele contém as duas variantes novas; os seis testes anteriores estão no histórico indicado acima.
+
+```python
+from datetime import timedelta
+from decimal import Decimal
+import pytest
+from django.db import transaction
+from apps.contas.moderacao import suspender, remover
+from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.consulta import consultar_antes_de_decidir
+from apps.pedidos.models import DestinoDoPagamento, SituacaoDoPedido
+from apps.pedidos.pagamento import pedir_pagamento
+from apps.pedidos.tarefas import reconsultar_pagamentos_da_margem_agora, bloquear_tentativas_vencidas_agora
+from apps.simulador_pagamentos import controle as sim
+from apps.simulador_pagamentos.models import CobrancaSimulada
+from tests.apoio.pedidos import T0, pedido_aberto, tentativa_criada, sincronizar
+from tests.conftest import RelogioControlado
+
+pytestmark = pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+
+@pytest.fixture(autouse=True)
+def relogio():
+    r=RelogioControlado()
+    sim.reiniciar()
+    yield r
+    r.parar()
+    sim.reiniciar()
+
+@pytest.mark.parametrize('origem',['aviso','margem'])
+def test_recuperacao_sem_reter_pagamento_ou_pedido(relogio,monkeypatch,origem):
+    from threading import Event
+    from apps.pagamentos.chamadas import OPERACOES,Operacao,_tentar
+    from tests.apoio.concorrencia import executar_em_paralelo
+    arranjo,pedido=pedido_aberto(relogio)
+    primeira=tentativa_criada(pedido)
+    sim.expirar(primeira.id_externo)
+    sincronizar(primeira.id_externo)
+    relogio.congelar(T0+timedelta(hours=2))
+    segunda=tentativa_criada(pedido)
+    sim.expirar(segunda.id_externo)
+    sincronizar(segunda.id_externo)
+    terceira=pedir_pagamento(arranjo.a,pedido)
+    relogio.congelar(T0+timedelta(hours=3))
+    sim.aprovar(primeira.id_externo)
+    sim.aprovar(segunda.id_externo)
+    relogio.congelar(T0+timedelta(hours=25))
+    original=OPERACOES['criar_cobranca']
+    parou,liberar,terminou=Event(),Event(),Event()
+    def pausa(chamada,erro):
+        original.falhou(chamada,erro)
+        parou.set()
+        assert liberar.wait(20)
+    monkeypatch.setitem(OPERACOES,'criar_cobranca',Operacao(original.executar,original.concluir,pausa,original.combinar))
+    def recuperar(barreira):
+        barreira.wait(timeout=10)
+        with transaction.atomic():
+            chamada=ChamadaAoProvedor.objects.select_for_update().get(operacao='criar_cobranca',alvo=f't{terceira.pk}')
+            _tentar(chamada)
+    def consultar(barreira):
+        barreira.wait(timeout=10)
+        assert parou.wait(10)
+        if origem=='aviso':
+            sincronizar(segunda.id_externo,'aviso')
+        else:
+            reconsultar_pagamentos_da_margem_agora()
+        terminou.set()
+    def conferir(barreira):
+        barreira.wait(timeout=10)
+        try:
+            assert parou.wait(10)
+            assert terminou.wait(8), 'consulta espera a recuperacao parada'
+            with transaction.atomic():
+                PagamentoNoProvedor.objects.select_for_update(nowait=True).get(id_externo=primeira.id_externo)
+                SituacaoDoPedido.objects.select_for_update(nowait=True).get(pedido=pedido)
+        finally:
+            liberar.set()
+    resultados=executar_em_paralelo(recuperar,consultar,conferir)
+    assert all(r.excecao is None for r in resultados),[repr(r.excecao) for r in resultados]
+    processar_chamadas()
+    assert sorted(DestinoDoPagamento.objects.filter(pedido=pedido).values_list('destino','motivo'))==[('devolucao','duplicidade'),('quita','')]
+    terceira.refresh_from_db()
+    assert (terceira.situacao,terceira.codigo_da_falha)==('nao_criada','prazo_encerrado')
+    assert not CobrancaSimulada.objects.filter(chave_idempotencia=terceira.chave_idempotencia).exists()
+    processar_chamadas()
+    assert DestinoDoPagamento.objects.filter(pedido=pedido).count()==2
+```
+
+## Reprodução das mutações em memória
+
+O plugin abaixo é salvo em `%TEMP%/review_e08_mutation.py`. Para a variante R08, `review_e08_old_falhou.txt`, na mesma pasta, contém apenas a função `_criacao_falhou` extraída de `git show 584b323:apps/pedidos/operacoes.py` (por `ast.get_source_segment` sobre o nó da função). O plugin não escreve no repositório e restaura o objeto ao final de cada teste.
+
+Com `%TEMP%` acrescentado temporariamente a `PYTHONPATH`, executar separadamente:
+
+```
+uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider -p review_e08_mutation --review-mutation=a11 --tb=short
+uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider -p review_e08_mutation --review-mutation=r08 --tb=short
+uv run pytest tests/tecnicos/test_pedidos_concorrencia.py -q -p no:cacheprovider
+```
+
+As duas primeiras execuções devem falhar como registrado; a terceira, sem mutação, deve passar.
+
+```python
+import inspect
+from pathlib import Path
+import pytest
+
+def pytest_addoption(parser):
+    parser.addoption('--review-mutation',choices=['a11','r08'])
+
+@pytest.fixture(autouse=True)
+def review_mutation(request,monkeypatch):
+    from apps.pedidos import operacoes
+    escolha=request.config.getoption('--review-mutation')
+    if escolha=='a11':
+        f=operacoes._motivo_da_recusa
+        s=inspect.getsource(f)
+        trecho='    if situacao == SituacaoDePagamento.CANCELADO:\n        return "pedido_cancelado"\n'
+        assert trecho in s
+        s=s.replace(trecho,'')
+    else:
+        f=operacoes._criacao_falhou
+        s=Path(__file__).with_name('review_e08_old_falhou.txt').read_text(encoding='utf-8')
+    ns=dict(operacoes.__dict__)
+    exec(compile(s,'<review-mutation>','exec'),ns)
+    monkeypatch.setattr(f,'__code__',ns[f.__name__].__code__)
+```
+
+---
+
+## Histórico integralmente preservado
+
 # E08 — Nova revisão independente do agente 3 — 2026-10-21
 
 **Veredito global: REPROVADO sobre `584b323c8ec2da97a147642f25757592323da6be`, branch `e08-implementacao`.** R01 a R05 estão corrigidos nos cenários apontados. O tratamento dos critérios antigos de R06 foi registrado conforme a decisão de 2026-10-21, mas o A-11 reescrito da E08-06 descumpriu novamente o ciclo expressamente exigido. Há também um novo achado importante, R08: impasse na recuperação de vários pagamentos. Não foi demonstrada perda definitiva de dinheiro; a repetição após o rollback recuperou os destinos.

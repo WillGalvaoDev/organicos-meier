@@ -1,3 +1,17 @@
+# E08-03 — Terceira revisão independente — 2026-10-22
+
+**APROVADO sobre `fe8dffa`.** Matriz: A-1 a A-34. **A E08 integrada está APROVADA**, com R06/R08 encerrados, conforme [parecer consolidado](../E08-01/review.md).
+
+R08 encerrado: uma consulta agendada por pagamento, sem reter situação e depois adquirir outro pagamento. A-29–A-34, provas independentes de aviso/margem e controle de mutação confirmam concorrência, rollback, recuperação e idempotência. A-23/A-24 tiveram somente o ponto de observação ajustado, conforme autorização. Registro Red/Green aceito com a distinção entre asserções funcionais e estruturais de A-31; A-32 é regressão herdada.
+
+Verificação independente: suíte completa sem filtro, **2166 passed in 220.50s**; Ruff, formatação, mypy e migrações sem pendências. Oito provas independentes passaram. Mutações de controle A-11 e R08 falharam pelos motivos esperados; arquivo concorrente inteiro sem mutações: **20 passed in 9.50s**. Comandos, reprodução, evidências de TDD e limites estão no parecer consolidado.
+
+Os textos anteriores do revisor e do implementador foram conferidos e preservados integralmente abaixo. Nenhuma alteração em produção ou teste versionado. Aprovação restrita à entrega e ao commit revisado, sem afirmar integração em main. Melhorias M-3/M-4 seguem a política de revisão final.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-03 — Nova revisão independente — 2026-10-21
 
 **REPROVADO sobre `584b323`.** Matriz: A-1 a A-28. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).

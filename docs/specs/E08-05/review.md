@@ -1,3 +1,17 @@
+# E08-05 — Terceira revisão independente — 2026-10-22
+
+**APROVADO sobre `fe8dffa`.** Matriz: A-1 a A-28. **A E08 integrada está APROVADA**, com R06/R08 encerrados, conforme [parecer consolidado](../E08-01/review.md).
+
+Reconsulta de todos os pedidos, bloqueio das órfãs e fronteiras preservados. A reconsulta da margem termina enquanto a recuperação está parada e não duplica destinos.
+
+Verificação independente: suíte completa sem filtro, **2166 passed in 220.50s**; Ruff, formatação, mypy e migrações sem pendências. Oito provas independentes passaram. Mutações de controle A-11 e R08 falharam pelos motivos esperados; arquivo concorrente inteiro sem mutações: **20 passed in 9.50s**. Comandos, reprodução, evidências de TDD e limites estão no parecer consolidado.
+
+Os textos anteriores do revisor e do implementador foram conferidos e preservados integralmente abaixo. Nenhuma alteração em produção ou teste versionado. Aprovação restrita à entrega e ao commit revisado, sem afirmar integração em main. Melhorias M-3/M-4 seguem a política de revisão final.
+
+---
+
+## Histórico integralmente preservado
+
 # E08-05 — Nova revisão independente — 2026-10-21
 
 **APROVADO no escopo local sobre `584b323`.** Matriz: A-1 a A-28. A E08 integrada continua **REPROVADA**, por R06 e R08, conforme o parecer consolidado em [E08-01/review.md](../E08-01/review.md).
