@@ -21,6 +21,8 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-13 | E08-07 A-9 | positivo | as rotas de `config/urls.py` | o teste de fronteira | as rotas de `apps.simulador_pagamentos` são exatamente as sete; as de `apps.pagamentos` continuam `{"pagamentos_avisos"}` |
 | A-14 | E07-01 | concorrência | C pendente, com a tarifa do A-1 | duas aprovações de C em paralelo pelo controle | um único movimento `pagamento` e um único `tarifa` |
 | A-16 | Coerência com o Mercado Pago | positivo | o simulador às `T0 + 2h` | `consultar_saldo()` | `referente_a == consultado_em == T0 + 2h`; nenhum movimento do simulador tem o tipo `outro` |
+| A-17 | L-11, decisão de 2026-10-22 | positivo | um dublê do provedor que guarda os argumentos de `verificar_aviso` | `POST /pagamentos/avisos/?data.id=123&type=payment` com um corpo válido | o dublê recebe os parâmetros `{"data.id": "123", "type": "payment"}`, o corpo e os cabeçalhos; o resultado é o da E07-05 |
+| A-18 | E07-05 | negativo | o simulador configurado | os avisos da E07-05 (válido, repetido, assinatura errada, corpo grande), agora com uma query string qualquer | os mesmos códigos e registros da E07-05; nenhum log leva a query string |
 | A-15 | Interface | positivo | `reiniciar()` depois do A-4 | `listar_movimentos` e `consultar_saldo` | lista vazia e saldo zero; os planos de tarifa e liberação de volta a zero |
 
 ## Mapeamento para testes
@@ -30,4 +32,5 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-1 a A-7, A-11, A-14 a A-16 | `tests/tecnicos/test_pagamentos_simulador.py` |
 | A-8 a A-10 | `tests/tecnicos/test_pagamentos_sincronizacao.py` |
 | A-12 | `tests/tecnicos/test_simulador_pagamentos_tela.py` |
+| A-17 e A-18 | `tests/tecnicos/test_pagamentos_avisos.py` |
 | A-13 | `tests/tecnicos/test_pagamentos_fronteiras.py` |

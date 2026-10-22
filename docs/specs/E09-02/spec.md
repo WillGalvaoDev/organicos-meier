@@ -38,6 +38,7 @@ Esta fatia acrescenta isso à interface `Provedor` e ao simulador, sem presumir 
 - Os métodos `consultar_saldo` e `listar_movimentos` no protocolo e no simulador.
 - Os controles do simulador para tarifa, liberação, depósito, saída e divergência.
 - Dois formulários novos na tela do simulador (E08-07): depositar e registrar saída.
+- Os parâmetros da URL no recebimento dos avisos: `verificar_aviso` passa a receber a query string (decisão do responsável em 2026-10-22).
 
 **Fora:**
 
@@ -90,6 +91,13 @@ Valores com `float`, zero ou negativos em depósito e saída são recusados com 
 - "Registrar saída da conta" (valor e descrição), para repasse ou retirada.
 
 Valem as mesmas políticas e o mesmo 404 sem o simulador configurado da E08-07. O teste de fronteira de rotas (E08-07 A-9) passa a listar as sete rotas do simulador.
+
+**Parâmetros da URL nos avisos.** A assinatura do Mercado Pago (`x-signature`, com `ts` e `v1`) é calculada sobre um texto que inclui o `data.id` da query string e o cabeçalho `x-request-id` (L-11). A interface da E07-05 não recebia a query string. A correção:
+
+- **Protocolo:** passa a ser `verificar_aviso(corpo, cabecalhos, parametros)`, onde `parametros` é um `Mapping[str, str]` com a query string.
+- **Recebimento:** passa a ser `receber_aviso(corpo, cabecalhos, parametros)`, e a view entrega `request.GET`.
+- **Simulador:** continua conferindo só a assinatura que já usa e ignora os parâmetros. O comportamento do recebimento não muda: 200, 400 e 401 como na E07-05, nada do corpo vira estado e nenhum log leva corpo, cabeçalhos ou parâmetros.
+- **Testes da E07-05:** continuam passando. O único ajuste permitido é a chamada direta a `receber_aviso` ou `verificar_aviso` com o argumento novo, e cada teste ajustado é listado no registro.
 
 ## Interfaces
 
