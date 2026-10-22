@@ -75,3 +75,41 @@ Na primeira execução, 10 das falhas (o A-8 parametrizado) não eram por asser�
 ## Correção posterior (2026-10-22)
 
 A suíte completa, rodada depois do commit da fatia, acusou `tests/tecnicos/test_pagamentos_fronteiras.py::test_so_a_sincronizacao_escreve_nos_registros_de_pagamento`: a heurística da melhoria M-2 (coocorrência do texto `PagamentoNoProvedor` com uma chamada de escrita) pegou o docstring de `apps/financeiro/livro.py`, que citava a classe. Corrigi só o texto do docstring (agora diz "o pagamento no provedor"), sem mudar o teste nem o comportamento. O teste passa de novo. É o mesmo atrito já registrado na M-2: os módulos que escrevem precisam evitar citar essas classes.
+
+## Não conformidade de TDD (E09-R08)
+
+Tratamento decidido pelo responsável pelo projeto em 2026-10-22: o mesmo das correções E05-R04, E06-R05 e E08-R06. O registro anterior fica como estava.
+
+| Critério | O que aconteceu |
+|---|---|
+| `extrato` (sem critério próprio) | escrito junto com `saldo`; o teste veio depois |
+| A-2 | o Red falhou porque a conta do andaime não existia, e não porque a mutação fosse permitida; a ordem em que a recusa do ORM e a trigger entraram não está registrada |
+
+**Evidência histórica procurada (passo 1 do tratamento).** Verifiquei o histórico git (os commits de origem das fatias (`cbe5ae3` no livro, `917f375` nas obrigações, `3f7e6e7` na conciliação) trazem testes e produção juntos, sem commit só de testes antes do código), os logs guardados e o registro anterior deste arquivo. Não há saída registrada no momento que mostre o teste falhando pelo motivo do critério antes do código de produção correspondente. Nenhum critério saiu da lista.
+
+**Nenhum texto desta seção afirma que houve Red nesses critérios.** O que existe é a prova de sensibilidade abaixo, que **não é Red**: ela mostra que o teste de hoje detecta a remoção da proteção, não que ele tenha falhado antes de ela existir.
+
+Mutações refeitas sobre o código de `1ad1944`. Em cada uma: o trecho é alterado, o comando roda com os arquivos inteiros e sem `-k`, a falha é registrada e o arquivo volta ao original (conferido com `git status` limpo e a execução verde de novo).
+
+### Sensibilidade (mutação), não Red
+
+Comando das cinco mutações: `uv run pytest tests/tecnicos/test_financeiro_livro.py tests/tecnicos/test_financeiro_concorrencia.py tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py -q -p no:cacheprovider`. Restaurado, o comando dá **86 passed** (confirmado depois de cada mutação).
+
+| Critério | Trecho mudado | Resultado mutado |
+|---|---|---|
+| `extrato` | `apps/financeiro/livro.py`: `return linhas` → `return []` | **1 failed, 85 passed**: `test_extrato_lista_as_transferencias_da_conta_com_o_saldo_acumulado`, `assert [] == [(98, Decimal...mal('75.00'))]` |
+| `extrato` | `apps/financeiro/livro.py`: `.order_by("movimento__pk", "pk")` → `.order_by("-movimento__pk", "-pk")` | **1 failed, 85 passed**: o mesmo teste, `assert [(100, ...)] == [(98, ...)]` |
+| A-2, caminho do ORM | `apps/financeiro/models.py`: `MovimentoFinanceiro` ganha `save()` que chama `models.Model.save` direto (sem a recusa) | **1 failed, 85 passed**: `test_movimentos_e_transferencias_so_aceitam_insercao`. Limite declarado: quem barrou foi a trigger do banco (`IntegrityError: tabela financeiro_movimentofinanceiro só aceita inserção`) e o teste, que espera `RegistroImutavel`, falhou por exceção de outro tipo, e não por `assert` |
+| A-2, caminho do SQL | `apps/financeiro/migrations/0001_livro_razao.py`: retirada a linha `instalar_protecao_so_insercao('financeiro_movimentofinanceiro')` | **1 failed, 85 passed, 1 error**: o mesmo teste, `Failed: DID NOT RAISE DatabaseError` (linha 136). O erro extra é um `ForeignKeyViolation` na limpeza do banco de teste, que só aparece com a mutação; restaurado, não há erro |
+
+## Correção E09 (2026-10-22): Red → Green dos critérios novos
+
+Critérios desta fatia: **A-19, A-20 e A-21** (a guarda da ordem das travas e a regra única).
+
+- **Andaime (exceção técnica, sem comportamento):** no commit do Red, `e3733ad`, a classe `OrdemDeTravasViolada` foi criada em `apps/financeiro/livro.py` (+4 linhas), só para o teste importar. A guarda em si não existia.
+- **Red** (`e3733ad`, código ainda no estado de `34f9547`): rodei os seis arquivos de teste financeiros inteiros, sem `-k`: **18 failed, 129 passed**. Log guardado em `scratchpad/red_e09.log` (fora do repositório). Para esta fatia: A-19 `test_travar_fora_de_ordem_e_recusado_antes_de_travar`: `Failed: DID NOT RAISE OrdemDeTravasViolada`.
+- **A-20 passou já no Red.** `test_travar_de_novo_e_o_registro_recomeca_em_cada_transacao` é o lado positivo da guarda e o código antigo já aceitava travar de novo. Declaro que ele não teve Red; o Red da guarda vem do A-19.
+- **Green:** `742a679` (guarda no `_travar_conta`, `travar_contas`) fez o A-19 e o A-20 passarem. `a66a663` aplicou a regra única às operações.
+- **A-21 (suíte completa com a guarda ativa):** a guarda acusou inversões reais, corrigidas no código: a apuração, na cobertura automática, não travava `despesas_a_cobrir` no conjunto; e o receptor travava a entrada e só depois a tarifa. Acusou também setups de teste que juntavam várias operações numa transação só; dividi cada um em transações separadas (`_tres_contas` no livro, a fixture `dia` da conciliação, o A-16 da concorrência e o `semear` do apoio, que agora trava o conjunto antes). Mudou ainda a asserção do cenário 39, de "nenhuma conta de receita" para "nenhuma com saldo diferente de zero", porque a regra "criar antes de travar" cria a conta vazia. Nenhum teste foi afrouxado quanto ao que exige.
+- **Limite da guarda:** em teste do tipo `TestCase`, sem transação própria, a guarda fica desligada (só o bloco do próprio `TestCase` existe). Os testes de concorrência usam transações reais e ficam cobertos.
+- **Verificação (`1ad1944`):** `uv run pytest -q -p no:cacheprovider` sem filtro: **2418 passed**.

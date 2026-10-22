@@ -70,3 +70,41 @@ Antes do Red: o modelo `ConciliacaoDiaria` e a migração; `liquidez.py`, `invar
 Os arquivos da fatia e `tests/aceitacao`: **62 passed**. A suíte completa, sem filtro, e as verificações estáticas estão no fim deste arquivo.
 
 **Suíte completa, sem filtro, com o estado da fatia:** `uv run pytest -q -p no:cacheprovider` → **2364 passed in 210.56s**; `ruff check`, `ruff format --check`, `mypy` (388 arquivos) e `makemigrations --check`: limpos.
+
+## Não conformidade de TDD (E09-R08)
+
+Tratamento decidido pelo responsável pelo projeto em 2026-10-22: o mesmo das correções E05-R04, E06-R05 e E08-R06. O registro anterior fica como estava.
+
+| Critério | O que aconteceu |
+|---|---|
+| A-20 | o `UNIQUE` da data e o tratamento do conflito vieram antes do Red específico; havia só a prova por mutação |
+
+**Evidência histórica procurada (passo 1 do tratamento).** Verifiquei o histórico git (os commits de origem das fatias (`cbe5ae3` no livro, `917f375` nas obrigações, `3f7e6e7` na conciliação) trazem testes e produção juntos, sem commit só de testes antes do código), os logs guardados e o registro anterior deste arquivo. Não há saída registrada no momento que mostre o teste falhando pelo motivo do critério antes do código de produção correspondente. Nenhum critério saiu da lista.
+
+**Nenhum texto desta seção afirma que houve Red nesses critérios.** O que existe é a prova de sensibilidade abaixo, que **não é Red**: ela mostra que o teste de hoje detecta a remoção da proteção, não que ele tenha falhado antes de ela existir.
+
+Mutações refeitas sobre o código de `1ad1944`. Em cada uma: o trecho é alterado, o comando roda com os arquivos inteiros e sem `-k`, a falha é registrada e o arquivo volta ao original (conferido com `git status` limpo e a execução verde de novo).
+
+### Sensibilidade (mutação), não Red
+
+Comando: `uv run pytest tests/tecnicos/test_financeiro_conciliacao.py tests/tecnicos/test_financeiro_concorrencia.py -q -p no:cacheprovider`. Restaurado: **40 passed**.
+
+| Critério | Trecho mudado | Resultado mutado |
+|---|---|---|
+| A-20 | `apps/financeiro/conciliacao.py`: `except IntegrityError:` → `except ZeroDivisionError:` (sem o tratamento do conflito) | **1 failed, 39 passed**: `test_duas_conciliacoes_do_mesmo_dia`, `AssertionError: ['None', 'IntegrityError(\'duplicate key value violates unique constraint "financeiro_conciliacaodiaria_data_key"...` |
+
+## Correção E09 (2026-10-22): Red → Green dos critérios novos
+
+Critérios: **A-24 a A-27**.
+
+**Red** (`e3733ad`, código no estado de `34f9547`; seis arquivos inteiros, sem `-k`: **18 failed, 129 passed**; log em `scratchpad/red_e09.log`, fora do repositório):
+
+| Critério | Teste | Falha observada |
+|---|---|---|
+| A-24 | `test_a_tarefa_do_invariante_avalia_a_reserva` | `ValueError: not enough values to unpack (expected 1, got 0)`: o teste desempacota o alerta de reserva que a tarefa deveria ter aberto e não abriu. É falha pelo efeito ausente, não por `assert` |
+| A-25 | `test_identificacao_de_64_caracteres_e_conciliavel` | `ValueError: a chave do alerta deve ter de 1 a 64 caracteres` |
+| A-26 (i) | `test_a_diferenca_respeita_o_instante_do_saldo` | `assert Decimal('-10.00') == Decimal('0.00')` |
+| A-26 (ii) | `test_pagamento_lancado_depois_do_instante_do_saldo_nao_cria_diferenca` | `assert Decimal('125.00') == Decimal('0.00')` |
+| A-27 | `test_movimento_do_provedor_depois_do_dia_nao_e_par_de_um_aporte_do_dia` | `assert ConciliacaoDiaria.Resultado.OK == 'divergente'` |
+
+**Green:** `1ad1944` (R05, R06 e R07: a reserva avaliada sob a trava, chave do alerta até 80 caracteres com a migração `0010`, e a leitura em três recortes). O A-25 também depende do E09-03 A-13 (limite de 80). O E09-03 A-6 reescrito (81 caracteres) já passava no Red; o Red do par vem do A-13 (`test_chave_de_80_caracteres_e_aceita_e_resolvida_inteira`: `ValueError: a chave do alerta deve ter de 1 a 64 caracteres`). Verificação em `1ad1944`: suíte completa sem filtro, **2418 passed**; as provas do parecer não substituídas (`test_frete_coberto`, `test_tarefa_avalia_reserva`, `test_identificador_64_conciliavel`, `test_conciliacao_respeita_referente_a`, `test_conciliacao_nao_parea_movimento_futuro`) passaram, a primeira depois de dividir as operações dela em transações separadas por causa da guarda.

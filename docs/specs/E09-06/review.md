@@ -67,3 +67,49 @@ Restaurado cada arquivo, o arquivo de concorrência volta a **12 passed**. Sobre
 ## Verificação
 
 Os quatro arquivos da fatia e `tests/aceitacao`: **50 passed**. Suíte completa, sem filtro, com o estado da fatia: `uv run pytest -q -p no:cacheprovider` → **2334 passed in 295.76s**; `ruff check`, `ruff format --check` (318 arquivos), `mypy` (380 arquivos) e `makemigrations --check`: limpos.
+
+## Não conformidade de TDD (E09-R08)
+
+Tratamento decidido pelo responsável pelo projeto em 2026-10-22: o mesmo das correções E05-R04, E06-R05 e E08-R06. O registro anterior, inclusive o "Desvio de processo declarado", fica como estava.
+
+| Critério | O que aconteceu |
+|---|---|
+| A-17, A-18 e A-19 | as travas foram escritas junto com as operações, sem a sequência "verde funcional sem a trava → Red da corrida → trava". A mutação do registro anterior detectava A-17 e A-18, mas não A-19 |
+
+**Evidência histórica procurada (passo 1 do tratamento).** Verifiquei o histórico git (os commits de origem das fatias (`cbe5ae3` no livro, `917f375` nas obrigações, `3f7e6e7` na conciliação) trazem testes e produção juntos, sem commit só de testes antes do código), os logs guardados e o registro anterior deste arquivo. Não há saída registrada no momento que mostre o teste falhando pelo motivo do critério antes do código de produção correspondente. Nenhum critério saiu da lista.
+
+**Nenhum texto desta seção afirma que houve Red nesses critérios.** O que existe é a prova de sensibilidade abaixo, que **não é Red**: ela mostra que o teste de hoje detecta a remoção da proteção, não que ele tenha falhado antes de ela existir.
+
+Mutações refeitas sobre o código de `1ad1944`. Em cada uma: o trecho é alterado, o comando roda com os arquivos inteiros e sem `-k`, a falha é registrada e o arquivo volta ao original (conferido com `git status` limpo e a execução verde de novo).
+
+### Sensibilidade (mutação), não Red
+
+Comando das três mutações: `uv run pytest tests/tecnicos/test_financeiro_apuracao_e_obrigacoes.py tests/tecnicos/test_financeiro_concorrencia.py -q -p no:cacheprovider`. Restaurado, o comando dá **43 passed**.
+
+| Critério | Trecho mudado | Resultado mutado |
+|---|---|---|
+| A-17 | `apps/financeiro/obrigacoes.py`: retirada a linha `travar_contas(*_contas_candidatas(rodada, ciclo, comprador))` de `registrar_obrigacao_com_comprador` | **6 failed, 37 passed**. O A-17 (`test_duas_obrigacoes_do_mesmo_comprador_disputam_a_mesma_custodia`) falha porque as operações levantam `OrdemDeTravasViolada` (a guarda acusa a trava tardia da conta nova), e não por saldo; o `assert Decimal('25.00') == Decimal('0.00')` aparece no A-24 (i). Falham também A-18 antigo, A-23 (i) e (ii) e A-24 (i) e (ii) |
+| A-18 | `apps/financeiro/obrigacoes.py`: retirada a linha `travar_contas(destino, caixa)` de `liquidar_obrigacao` | **1 failed, 42 passed**: `test_duas_liquidacoes_da_mesma_obrigacao`, `AssertionError: SaldoInsuficiente('obrigacao_comprador:o19')` (as duas liquidações passam juntas) |
+| A-19 | `apps/financeiro/apuracao.py`: retirada a chamada `travar_contas(*destinos.values(), conta(DESPESAS_A_COBRIR), *custódias)` de `registrar_apuracao_no_livro` | **4 failed, 39 passed**. O **A-19 em si não falha**: o limite continua declarado. Falham `test_dois_repasses_que_juntos_passam_do_liberado`, `test_duas_conciliacoes_do_mesmo_dia` e, o que importa, **os dois testes do A-24 (ii)** (`test_apuracao_que_le_os_saldos_e_a_obrigacao_se_serializam`, `AssertionError: ("OrdemDeTravasViolada('a conta 289 foi pedida depois da 292...')", 'None')`) e A-24 (i). Falha por exceção da guarda dentro da corrida |
+
+**A-19 e a M-6.** Não existe Red real possível para o A-19: a proteção já existe e a entrada concorrente na custódia de um pedido já quitado não acontece pelas regras (destino `quita` e entrada saem na mesma transação, E09-04). A trava da apuração passa a ser provada pelo A-24 (ii): retirá-la o faz falhar, como acima. Com isso a M-6 foi movida para "Encerradas" em `docs/melhorias.md`.
+
+## Correção E09 (2026-10-22): Red → Green dos critérios novos
+
+Critérios: **A-20 a A-26**.
+
+**Red** (`e3733ad`, código no estado de `34f9547`; seis arquivos inteiros, sem `-k`: **18 failed, 129 passed**; log em `scratchpad/red_e09.log`, fora do repositório). Em todos, a corrida ou a conta já eram exercitadas em série pelos 129 testes que passavam (o verde funcional); o Red da corrida é o teste novo:
+
+| Critério | Teste | Falha observada |
+|---|---|---|
+| A-20 | `test_reserva_e_receita_nao_cobrem_a_mesma_despesa_duas_vezes` | `AssertionError: [None, None]`, `assert 2 == 1` |
+| A-21 | `test_receita_e_reserva_nao_cobrem_a_mesma_despesa_duas_vezes` | `AssertionError: [None, None]`, `assert 2 == 1` |
+| A-22 | `test_cobertura_automatica_e_reserva_nao_cobrem_a_mesma_despesa` | `assert False = isinstance(None, CoberturaExcedente)` |
+| A-23 (i) | `test_a_mesma_referencia_devolve_o_mesmo_movimento` | `LiquidacaoRecusada('o valor passa do que falta devolver')` no lugar de `None` |
+| A-23 (ii) | `test_a_mesma_referencia_com_valor_diferente_e_conflito` | `isinstance(LiquidacaoRecusada(...), MovimentoConflitante)` falso |
+| A-24 (i) | `test_obrigacao_que_le_o_estado_da_apuracao_e_a_apuracao_se_serializam` | `assert Decimal('25.00') == Decimal('0.00')` |
+| A-24 (ii) | `test_apuracao_que_le_os_saldos_e_a_obrigacao_se_serializam` | `assert Decimal('25.00') == Decimal('0.00')` |
+| A-25 | `test_cobertura_da_obrigacao_so_de_frete_entra_no_deficit_coberto` | `assert [..10.00] == [..15.00]` |
+| A-26 | `test_o_que_falta_da_obrigacao_mista_e_atribuido_primeiro_ao_frete` | `assert [..10.00] == [..13.00]` |
+
+**Green:** `a66a663` (regra única de travas: A-20 a A-24) e `ca616ce` (R04, atribuição conservadora do frete: A-25 e A-26). Verificação em `1ad1944`: suíte completa sem filtro, **2418 passed**.
