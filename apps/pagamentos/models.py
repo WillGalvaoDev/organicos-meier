@@ -18,6 +18,10 @@ from apps.pagamentos.provedor import (
     SituacaoNoProvedor,
 )
 
+# Referência por texto para as chaves estrangeiras de outros apps (E08-02): quem aponta para o
+# pagamento não precisa citar a classe, que só a sincronização escreve (cenário 37).
+PAGAMENTO_REGISTRADO = "pagamentos.PagamentoNoProvedor"
+
 SITUACOES = [situacao.value for situacao in SituacaoNoProvedor]
 SITUACOES_ESCOLHAS = [(valor, valor) for valor in SITUACOES]
 

@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "apps.catalogo",
     "apps.interesses",
     "apps.notificacoes",
+    "apps.pedidos",
     "apps.pagamentos",
     "apps.simulador_pagamentos",
 ]

@@ -73,3 +73,36 @@ def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProve
             provedor=provedor.nome, referencia_externa=referencia_externa
         ).order_by("criado_no_provedor_em", "id_externo")
     )
+
+
+def situacao_registrada(id_externo: str | None) -> str | None:
+    """A situação que o sistema tem do pagamento, ou `None` se ainda não o conhece. Só leitura."""
+    return (
+        PagamentoNoProvedor.objects.filter(id_externo=id_externo)
+        .values_list("situacao", flat=True)
+        .first()
+    )
+
+
+def aprovados_da_referencia(referencia_externa: str) -> list[PagamentoNoProvedor]:
+    """Os pagamentos aprovados da referência, por criação e id. Só leitura."""
+    return list(
+        PagamentoNoProvedor.objects.filter(
+            referencia_externa=referencia_externa, situacao="aprovado"
+        ).order_by("criado_no_provedor_em", "id_externo")
+    )
+
+
+def pendentes_das_referencias(referencias: list[str]) -> list[PagamentoNoProvedor]:
+    """Os pagamentos pendentes de qualquer das referências, por criação e id. Só leitura."""
+    return list(
+        PagamentoNoProvedor.objects.filter(
+            referencia_externa__in=referencias, situacao="pendente"
+        ).order_by("criado_no_provedor_em", "id_externo")
+    )
+
+
+def travar_pagamento(pk: int) -> PagamentoNoProvedor:
+    """Relê o pagamento com a linha travada (exige transação). É o primeiro item da ordem das
+    travas: pagamento, situação do pedido, tentativa."""
+    return PagamentoNoProvedor.objects.select_for_update().get(pk=pk)

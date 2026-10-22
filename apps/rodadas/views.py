@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -16,6 +17,11 @@ from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
+from apps.nucleo.valores import ValorInvalido, cabe_em_dinheiro, ler_decimal_digitado
+from apps.pedidos.abertura import abrir_pagamento
+from apps.pedidos.acompanhamento import devolucoes_devidas, situacao_dos_pedidos
+from apps.pedidos.models import AberturaDoPagamento
+from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
@@ -72,6 +78,7 @@ def _pagina_do_estoque(
     status: int = 200,
     submetido: Submetido | None = None,
     termino: tuple[str, str | None] | None = None,
+    frete: tuple[str, str] | None = None,
 ) -> HttpResponse:
     """Um erro que tem linha correspondente aparece no formulário dela, com o valor digitado;
     os demais ficam no aviso do topo."""
@@ -110,7 +117,7 @@ def _pagina_do_estoque(
         )
     editavel = status != 409 and rodada.etapa == Etapa.INTERESSE
     progresso = progresso_da_rodada(rodada)
-    bloco = _bloco_do_fechamento(rodada, progresso.atingido, termino)
+    bloco = _bloco_do_fechamento(rodada, progresso.atingido, termino, frete)
     if termino is not None and (bloco is None or bloco["tipo"] != "prorrogar"):
         erro = f"Prorrogar fechamento: {termino[1]}"  # sem formulário para receber a mensagem
     contexto = {
@@ -195,8 +202,16 @@ def _data_hora(instante: datetime) -> str:
     return f"{no_fuso_da_operacao(instante):%d/%m/%Y %H:%M}"
 
 
+def _data_e_hora(instante: datetime) -> str:
+    local = no_fuso_da_operacao(instante)
+    return f"{local:%d/%m/%Y} às {local:%H:%M}"
+
+
 def _bloco_do_fechamento(
-    rodada: Rodada, atingido: bool, termino: tuple[str, str | None] | None
+    rodada: Rodada,
+    atingido: bool,
+    termino: tuple[str, str | None] | None,
+    frete: tuple[str, str] | None = None,
 ) -> dict[str, object] | None:
     """O que a página de estoque mostra do fechamento, conforme a etapa e o prazo (E06-07)."""
     historico: list[dict[str, str]] = []
@@ -214,6 +229,16 @@ def _bloco_do_fechamento(
     if rodada.etapa == Etapa.INTERESSE:
         bloco["tipo"] = "iniciar" if atingido else "aguardando_minimo"
         return bloco
+    if rodada.etapa == Etapa.PAGAMENTO:
+        abertura = AberturaDoPagamento.objects.filter(rodada=rodada).order_by("-pk").first()
+        if abertura is not None:
+            bloco["tipo"] = "pagamento"
+            bloco["t0"] = _data_e_hora(abertura.t0)
+            bloco["prazo_de_pagamento"] = _data_e_hora(prazo_de_pagamento(abertura))
+            bloco["fim_da_margem"] = _data_e_hora(fim_da_margem(abertura))
+            bloco["pedidos"] = situacao_dos_pedidos(abertura)
+            bloco["devolucoes"] = devolucoes_devidas(abertura)
+        return bloco
     if rodada.etapa not in (Etapa.FECHAMENTO, Etapa.FECHAMENTO_ENCERRADO):
         return bloco if historico else None
     prazo = prazo_do_fechamento(rodada)
@@ -223,6 +248,8 @@ def _bloco_do_fechamento(
     bloco["prazo_campo"] = f"{no_fuso_da_operacao(prazo):%Y-%m-%dT%H:%M}"
     if rodada.etapa == Etapa.FECHAMENTO_ENCERRADO:
         bloco["tipo"] = "encerrado"
+        bloco["frete"] = frete[0] if frete else ""
+        bloco["erro_do_frete"] = frete[1] if frete else None
     elif prazo_encerrado(agora(), prazo):
         bloco["tipo"] = "vencido"
     else:
@@ -274,4 +301,44 @@ def fechamento_prorrogar(request: HttpRequest, pk: int) -> HttpResponse:
         "Prazo do fechamento prorrogado para "
         f"{local:%d/%m/%Y} às {local:%H:%M} (horário de Brasília).",
     )
+    return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+MENSAGEM_DO_FRETE = "Informe o frete em reais, com até duas casas decimais, por exemplo 40,00."
+
+
+def _ler_frete(texto: str) -> Decimal | None:
+    try:
+        valor = ler_decimal_digitado(texto, 2)
+    except ValorInvalido:
+        return None
+    return valor if valor >= 0 and cabe_em_dinheiro(valor) else None
+
+
+@somente_administrador
+@require_POST
+def pagamento_abrir(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    texto = request.POST.get("frete", "")[:30]
+    frete = _ler_frete(texto)
+    if frete is None:
+        return _pagina_do_estoque(request, rodada, status=400, frete=(texto, MENSAGEM_DO_FRETE))
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        resultado = abrir_pagamento(autor, rodada, frete)
+    except TransicaoRecusada as erro:
+        atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+        return _pagina_do_estoque(request, atual, erro.mensagem, status=409)
+    if resultado.abertura is None:
+        messages.warning(
+            request,
+            "O mínimo não foi atingido na abertura do pagamento. "
+            "A rodada voltou para a fase de interesse.",
+        )
+    else:
+        prazo = no_fuso_da_operacao(prazo_de_pagamento(resultado.abertura))
+        messages.success(
+            request,
+            f"Pagamento aberto. Prazo: {prazo:%d/%m/%Y} às {prazo:%H:%M} (horário de Brasília).",
+        )
     return redirect("rodadas_estoque", pk=rodada.pk)

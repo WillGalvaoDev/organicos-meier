@@ -53,6 +53,38 @@
       <p>Prazo do fechamento encerrado em {{ fechamento.prazo }}. O encerramento será processado automaticamente.</p>
     {% elif fechamento.tipo == "encerrado" %}
       <p>Fechamento encerrado em {{ fechamento.prazo }}. Aguardando a autorização do pagamento.</p>
+      <form method="post" action="{% url 'rodadas_pagamento_abrir' pk=rodada.pk %}">
+        {% csrf_token %}
+        <label for="frete">Frete total (R$)</label>
+        <input type="text" id="frete" name="frete" value="{{ fechamento.frete }}" inputmode="decimal">
+        <button type="submit">Abrir pagamento</button>
+        {% if fechamento.erro_do_frete %}<p role="alert">{{ fechamento.erro_do_frete }}</p>{% endif %}
+      </form>
+    {% elif fechamento.tipo == "pagamento" %}
+      <p>Pagamento aberto em {{ fechamento.t0 }} (horário de Brasília).</p>
+      <p>Prazo de pagamento até {{ fechamento.prazo_de_pagamento }}. Margem até {{ fechamento.fim_da_margem }}. A apuração só pode começar depois disso, com a sua autorização.</p>
+      <h3>Pedidos</h3>
+      <table>
+        <thead><tr><th>Comprador</th><th>Total</th><th>Situação</th></tr></thead>
+        <tbody>
+          {% for linha in fechamento.pedidos %}
+            <tr><td>{{ linha.comprador }}</td><td>{{ linha.total|reais }}</td><td>{{ linha.situacao }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h3>Devoluções devidas</h3>
+      {% if fechamento.devolucoes %}
+        <table>
+          <thead><tr><th>Pagamento</th><th>Valor</th><th>Motivo</th></tr></thead>
+          <tbody>
+            {% for devolucao in fechamento.devolucoes %}
+              <tr><td>{{ devolucao.id_externo }}</td><td>{{ devolucao.valor|reais }}</td><td>{{ devolucao.motivo }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>Nenhuma devolução devida.</p>
+      {% endif %}
     {% endif %}
     {% if fechamento.historico %}
       <h3>Histórico de prazos</h3>

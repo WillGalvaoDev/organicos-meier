@@ -29,12 +29,22 @@ from apps.nucleo.valores import (
 from apps.rodadas.condicoes import travar_condicoes
 
 PRECO_MINIMO = Decimal("0.01")
+# §9 arredonda cada subtotal uma vez: abaixo de meio centavo, a menor quantidade valeria zero.
+CUSTO_MINIMO_DA_MENOR_QUANTIDADE = Decimal("0.005")
+MENSAGEM_PRECO_ABAIXO_DO_MINIMO = (
+    "Com este preço e este incremento, a menor quantidade custaria menos de R$ 0,01. "
+    "Aumente o preço ou o incremento."
+)
 CAMPOS_EDITAVEIS = ("nome", "descricao", "preco", "disponivel")
 
 
 def _exigir_administrador(autor: Conta | None) -> None:
     if getattr(autor, "papel", None) != Papel.ADMINISTRADOR:
         raise PermissionDenied
+
+
+def _menor_quantidade_custa_um_centavo(preco: Decimal, incremento: Decimal) -> bool:
+    return preco * incremento >= CUSTO_MINIMO_DA_MENOR_QUANTIDADE
 
 
 def _nome(valor: Any) -> str:
@@ -126,6 +136,8 @@ def criar_produto(
             "disponivel": disponivel,
         }
     )
+    if not _menor_quantidade_custa_um_centavo(dados["preco"], incremento_valido):
+        raise ValidationError({"preco": [MENSAGEM_PRECO_ABAIXO_DO_MINIMO]})
     with transaction.atomic():
         produto = Produto.objects.create(
             fornecedor_id=fornecedor.pk,
@@ -160,6 +172,10 @@ def editar_produto(autor: Conta, produto: Produto, **campos: Any) -> Produto:
     novos = _limpar(campos)
     with transaction.atomic():
         atual = Produto.objects.select_for_update().get(pk=produto.pk)
+        if "preco" in novos and not _menor_quantidade_custa_um_centavo(
+            novos["preco"], atual.incremento
+        ):
+            raise ValidationError({"preco": [MENSAGEM_PRECO_ABAIXO_DO_MINIMO]})
         alterados = [
             nome
             for nome in CAMPOS_EDITAVEIS
@@ -227,13 +243,15 @@ _MENSAGENS_INCOMPATIVEL = {
         "O novo incremento não é compatível com quantidades já registradas deste produto."
     ),
     "multiplo": "O múltiplo do produto não é divisível pelo novo incremento.",
+    "centavo": "Com este incremento, a menor quantidade custaria menos de R$ 0,01 ao preço atual.",
 }
 
 
 class IncrementoIncompativel(Exception):
     """O novo incremento não combina com o que já está registrado.
 
-    `codigo`: `quantidade` (alguma reserva ou pendência deixaria de ser múltipla) ou `multiplo`.
+    `codigo`: `quantidade` (alguma reserva ou pendência deixaria de ser múltipla), `multiplo` ou
+    `centavo` (a menor quantidade custaria menos de R$ 0,01 ao preço atual).
     A mensagem não identifica compradores.
     """
 
@@ -247,7 +265,8 @@ def alterar_incremento(autor: Conta, produto: Produto, novo: Any) -> Produto:
 
     Ordem de travas: fornecedor e rodada (`travar_condicoes`), produto e parcelas (por
     sequência). As recusas, nesta ordem: fase, valor inválido, quantidades em uso (reservadas e
-    pendentes, inclusive as da fila) e múltiplo. Qualquer recusa desfaz a transação inteira.
+    pendentes, inclusive as da fila), múltiplo e valor mínimo da menor quantidade.
+    Qualquer recusa desfaz a transação inteira.
     """
     _exigir_administrador(autor)
     with transaction.atomic():
@@ -261,6 +280,8 @@ def alterar_incremento(autor: Conta, produto: Produto, novo: Any) -> Produto:
             raise IncrementoIncompativel("quantidade")
         if atual.multiplo is not None and not eh_multiplo(atual.multiplo, incremento):
             raise IncrementoIncompativel("multiplo")
+        if not _menor_quantidade_custa_um_centavo(atual.preco, incremento):
+            raise IncrementoIncompativel("centavo")
         anterior = atual.incremento
         atual.incremento = incremento
         atual.save(update_fields=["incremento"])

@@ -20,6 +20,7 @@ from django.db.transaction import TransactionManagementError
 from apps.nucleo.tempo import agora, prazo_encerrado, somar_horas
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import (
+    PagamentoConsultado,
     PagamentoNaoEncontrado,
     Provedor,
     ProvedorIndisponivel,
@@ -42,6 +43,19 @@ class FalhaTemporaria(Exception):
     def __init__(self, codigo: str) -> None:
         super().__init__(codigo)
         self.codigo = codigo
+
+
+class FalhaDefinitiva(Exception):
+    """A operação recusa antes de chamar o provedor (E08-03): é tratada como uma
+    `RecusaDoProvedor`, com a chamada em `falhou` e o `codigo` curto como último erro.
+
+    `encontrados` leva os pagamentos que a operação achou no provedor ao recusar (a busca pela
+    referência): o `falhou` da operação os sincroniza e cancela o que ficou sem dono."""
+
+    def __init__(self, codigo: str, *, encontrados: tuple[PagamentoConsultado, ...] = ()) -> None:
+        super().__init__(codigo)
+        self.codigo = codigo
+        self.encontrados = encontrados
 
 
 @dataclass(frozen=True)
@@ -157,7 +171,7 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
             chamada.proxima_em.isoformat(),
         )
         return
-    except RecusaDoProvedor as erro:
+    except (RecusaDoProvedor, FalhaDefinitiva) as erro:
         chamada.tentativas += 1
         chamada.situacao = SituacaoDaChamada.FALHOU
         chamada.ultimo_erro = erro.codigo
@@ -208,15 +222,20 @@ def processar_chamadas(*, limite: int = 100) -> int:
     return tentadas
 
 
+def nao_encontrado(chamada: ChamadaAoProvedor) -> Exception:
+    """O pagamento não existe no provedor ainda: pode ser atraso de consistência (L-6), e só
+    depois de 24 horas a chamada desiste. Devolve a exceção que a operação deve levantar."""
+    limite = somar_horas(chamada.criada_em, HORAS_PARA_DESISTIR_DA_CONSULTA)
+    if prazo_encerrado(agora(), limite):
+        return RecusaDoProvedor("nao_encontrado")
+    return FalhaTemporaria("nao_encontrado")
+
+
 def _consultar(provedor: Provedor, chamada: ChamadaAoProvedor) -> Any:
     try:
         return provedor.consultar_pagamento(chamada.alvo)
     except PagamentoNaoEncontrado:
-        # pode ser atraso de consistência (L-6): só depois de 24 horas a chamada desiste
-        limite = somar_horas(chamada.criada_em, HORAS_PARA_DESISTIR_DA_CONSULTA)
-        if prazo_encerrado(agora(), limite):
-            raise RecusaDoProvedor("nao_encontrado") from None
-        raise FalhaTemporaria("nao_encontrado") from None
+        raise nao_encontrado(chamada) from None
 
 
 def _concluir_consulta(chamada: ChamadaAoProvedor, resultado: Any) -> None:

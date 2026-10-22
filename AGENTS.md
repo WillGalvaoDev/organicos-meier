@@ -46,6 +46,7 @@ docs/specs/<id>/
   acceptance.md    # cenários Given/When/Then ou equivalentes, incluindo negativos
   review.md        # achados, evidências, decisão e revalidação do agente 3
 Não criar documentação adicional sem necessidade. Registrar no review.md os comandos de teste, resultados e limitações de verificação.
+Melhorias não impeditivas (decisão do responsável pelo projeto em 2026-10-20): além de citadas no review.md, são registradas em docs/melhorias.md, conforme as regras desse documento, e revistas no fim da implantação do projeto. Não são implementadas por conta própria dentro de outra tarefa.
 6. Regras transversais obrigatórias
 - Servidor é autoridade: permissões, prazos, valores e transições são validados no backend.
 - Dinheiro: representação decimal exata, lançamentos auditáveis e imutáveis, idempotência, segregação por destinação, nenhuma devolução duplicada.
