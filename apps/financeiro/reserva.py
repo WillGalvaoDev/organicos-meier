@@ -279,6 +279,9 @@ def registrar_aporte(
         origem=caixa,
         chave=chave,
     )
+    resolver_alerta(
+        TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO, identificacao, motivo="aporte registrado no livro"
+    )
     avaliar_reserva()
     return movimento
 

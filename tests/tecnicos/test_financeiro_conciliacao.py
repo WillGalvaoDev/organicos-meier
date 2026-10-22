@@ -1,0 +1,305 @@
+"""E09-07: conciliação diária com o provedor (acceptance A-11 a A-18, A-21 e A-23)."""
+
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from django.db import transaction
+
+from apps.financeiro.alertas import abrir_alerta
+from apps.financeiro.conciliacao import (
+    ConciliacaoDiaria,
+    conciliar_dia,
+    conciliar_dias_pendentes_agora,
+)
+from apps.financeiro.liquidez import registrar_saida
+from apps.financeiro.livro import EXTERIOR
+from apps.financeiro.models import AlertaFinanceiro, MovimentoFinanceiro, TipoDeMovimento
+from apps.financeiro.reserva import registrar_aporte
+from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
+from apps.pagamentos.models import ChamadaAoProvedor, PagamentoNoProvedor
+from apps.pagamentos.provedor import (
+    MovimentoNoProvedor,
+    NovaCobranca,
+    SaldoNoProvedor,
+    TipoDeMovimentoNoProvedor,
+    obter_provedor,
+)
+from apps.simulador_pagamentos.provedor import ProvedorSimulado
+from tests.apoio.financeiro import custodia, montar_l, montar_mundo, mover, obrigacao_de
+from tests.apoio.pedidos import T0, administrador
+from tests.conftest import RelogioControlado
+
+pytestmark = pytest.mark.django_db
+
+D = Decimal
+H = timedelta(hours=1)
+DIA = date(2026, 11, 2)  # em Brasília: de 2026-11-02 03:00Z a 2026-11-03 03:00Z
+DEPOIS_DO_DIA = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+
+
+@dataclass
+class Dia:
+    a: Any
+    b: Any
+    sim: Any
+    relogio: RelogioControlado
+    id_deposito: str
+    id_repasse: str
+
+
+def _alertas(tipo: str) -> list[AlertaFinanceiro]:
+    return list(AlertaFinanceiro.objects.filter(tipo=tipo, resolvido_em=None).order_by("pk"))
+
+
+@pytest.fixture
+def dia(relogio: RelogioControlado, simulador_pagamentos: Any) -> Dia:
+    """O dia D (2026-11-02) conciliável: o pagamento de XA (às `T0 + 1h`), o depósito e o aporte
+    registrado, e um repasse de 50,00 de B (liberado), registrado no simulador e no livro. O
+    relógio fica no dia seguinte, depois do fim de D."""
+    a, b = montar_l(simulador_pagamentos, relogio)
+    relogio.congelar(T0 + 3 * H)
+    id_deposito = simulador_pagamentos.depositar(D("1000.00"))
+    id_repasse = simulador_pagamentos.registrar_saida(D("50.00"), descricao="repasse")
+    with transaction.atomic():
+        registrar_aporte(administrador(), D("1000.00"), id_deposito, "Aporte inicial")
+        registrar_saida(
+            administrador(),
+            tipo="repasse",
+            conta=obrigacao_de(b.fornecedor, b.rodada),
+            valor=D("50.00"),
+            identificacao=id_repasse,
+            justificativa="Repasse manual por Pix",
+        )
+    relogio.congelar(DEPOIS_DO_DIA)
+    return Dia(a, b, simulador_pagamentos, relogio, id_deposito, id_repasse)
+
+
+def test_dia_sem_diferencas_concilia_ok_sem_alertas(dia: Dia) -> None:  # A-11
+    conciliacao = conciliar_dia(DIA)
+    assert conciliacao.data == DIA
+    assert conciliacao.resultado == "ok"
+    assert conciliacao.resumo["sem_par"] == 0
+    assert D(str(conciliacao.resumo["diferenca"])) == D("0.00")
+    assert conciliacao.resumo["movimentos"] == 3  # o pagamento de XA, o depósito e a saída
+    assert AlertaFinanceiro.objects.count() == 0
+
+
+def _pagamento_nunca_sincronizado(dia: Dia) -> str:
+    dia.relogio.congelar(T0 + 4 * H)
+    nova = NovaCobranca(
+        chave_idempotencia="k-sem-sync",
+        referencia_externa="ref-desconhecida",
+        valor=D("40.00"),
+        descricao="Sem sincronizar",
+        expira_em=T0 + 24 * H,
+    )
+    id_externo = obter_provedor().criar_cobranca(nova).pagamento.id_externo
+    dia.sim.aprovar(id_externo)
+    dia.relogio.congelar(DEPOIS_DO_DIA)
+    return id_externo
+
+
+def test_pagamento_aprovado_e_nunca_sincronizado_alerta_e_agenda_a_consulta(dia: Dia) -> None:
+    id_externo = _pagamento_nunca_sincronizado(dia)  # A-12, A-21
+    movimentos = MovimentoFinanceiro.objects.count()
+    conciliacao = conciliar_dia(DIA)
+    assert conciliacao.resultado == "divergente"
+    (alerta,) = _alertas("pagamento_sem_conciliacao")
+    assert alerta.chave == id_externo
+    consulta = ChamadaAoProvedor.objects.get(operacao="consultar_pagamento", alvo=id_externo)
+    assert consulta.situacao == "pendente"
+    assert MovimentoFinanceiro.objects.count() == movimentos  # a conciliação não lança nada (A-21)
+    processar_chamadas()
+    assert (
+        MovimentoFinanceiro.objects.filter(tipo=TipoDeMovimento.ENTRADA_PARA_DEVOLUCAO).count() == 1
+    )
+    assert _alertas("pagamento_sem_conciliacao") == []
+    assert PagamentoNoProvedor.objects.filter(id_externo=id_externo).exists()
+
+
+def test_deposito_sem_aporte_e_aporte_sem_deposito(dia: Dia) -> None:  # A-13
+    dia.relogio.congelar(T0 + 5 * H)
+    id_novo = dia.sim.depositar(D("200.00"))
+    with transaction.atomic():
+        registrar_aporte(administrador(), D("50.00"), "inexistente", "Aporte sem depósito")
+    dia.relogio.congelar(DEPOIS_DO_DIA)
+    conciliar_dia(DIA)
+    chaves = sorted(a.chave for a in _alertas("divergencia_na_conciliacao"))
+    assert chaves == sorted([id_novo, "livro:inexistente"])
+    with transaction.atomic():
+        registrar_aporte(administrador(), D("200.00"), id_novo, "Aporte do depósito")
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["livro:inexistente"]
+
+
+def test_ajuste_do_provedor_e_divergencia_mas_a_diferenca_esta_explicada(dia: Dia) -> None:
+    dia.relogio.congelar(T0 + 5 * H)  # A-14
+    id_ajuste = dia.sim.ajustar_saldo(D("-0.50"))
+    dia.relogio.congelar(DEPOIS_DO_DIA)
+    conciliar_dia(DIA)
+    (alerta,) = _alertas("divergencia_na_conciliacao")
+    assert alerta.chave == id_ajuste
+    assert alerta.dados["descricao_no_provedor"] == "ajuste"
+    assert not [a for a in AlertaFinanceiro.objects.all() if a.chave.startswith("saldo:")]
+
+
+def test_lancamento_sem_pagamento_no_provedor_deixa_diferenca_inexplicada(dia: Dia) -> None:
+    mundo = montar_mundo()  # A-15 (i)
+    dia.relogio.congelar(T0 + 5 * H)
+    mover(
+        TipoDeMovimento.ENTRADA_DE_PAGAMENTO,
+        EXTERIOR,
+        custodia(mundo.ra, mundo.ca, mundo.x),
+        "10.00",
+    )
+    dia.relogio.congelar(DEPOIS_DO_DIA)
+    conciliar_dia(DIA)
+    (alerta,) = _alertas("divergencia_na_conciliacao")
+    assert alerta.chave == f"saldo:{DIA.isoformat()}"
+    assert D(str(alerta.dados["diferenca"])) == D("-10.00")
+
+
+def test_conciliacao_posterior_sem_diferenca_resolve_o_alerta_de_saldo(dia: Dia) -> None:
+    with transaction.atomic():  # A-15 (ii)
+        abrir_alerta(
+            "divergencia_na_conciliacao",
+            f"saldo:{(DIA - timedelta(days=1)).isoformat()}",
+            {"data": (DIA - timedelta(days=1)).isoformat(), "diferenca": "-3.00"},
+        )
+    conciliar_dia(DIA)
+    assert _alertas("divergencia_na_conciliacao") == []
+
+
+def test_repetir_futuro_e_provedor_fora_do_ar(dia: Dia) -> None:  # A-16
+    primeira = conciliar_dia(DIA)
+    dia.sim.indisponivel()
+    assert conciliar_dia(DIA).pk == primeira.pk  # não consulta o provedor
+    dia.relogio.congelar(datetime(2026, 11, 3, 12, 0, tzinfo=UTC))
+    with pytest.raises(ValueError):  # noqa: PT011
+        conciliar_dia(date(2026, 11, 3))  # hoje, ainda não terminou
+    dia.relogio.congelar(datetime(2026, 11, 4, 12, 0, tzinfo=UTC))
+    with pytest.raises(ConsultaAoProvedorFalhou):
+        conciliar_dia(date(2026, 11, 3))
+    assert ConciliacaoDiaria.objects.count() == 1
+
+
+def _ja_conciliado(data: date) -> None:
+    ConciliacaoDiaria.objects.create(
+        data=data, executada_em=datetime(2026, 11, 1, tzinfo=UTC), resultado="ok", resumo={}
+    )
+
+
+def test_dias_pendentes_sao_conciliados_em_ordem(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-17
+    _ja_conciliado(date(2026, 10, 30))  # D - 3, com D = 02/11
+    relogio.congelar(datetime(2026, 11, 3, 4, 0, tzinfo=UTC))  # 01:00 de D + 1 em Brasília
+    assert conciliar_dias_pendentes_agora() == 3
+    datas = list(ConciliacaoDiaria.objects.order_by("pk").values_list("data", flat=True))
+    assert datas == [date(2026, 10, 30), date(2026, 10, 31), date(2026, 11, 1), date(2026, 11, 2)]
+
+
+def test_o_dia_corrente_nao_e_conciliado(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-18
+    _ja_conciliado(date(2026, 11, 1))
+    relogio.congelar(datetime(2026, 11, 3, 2, 59, tzinfo=UTC))  # 23:59 de 2026-11-02 em Brasília
+    assert conciliar_dias_pendentes_agora() == 0
+    assert not ConciliacaoDiaria.objects.filter(data=DIA).exists()
+
+
+def test_falha_do_provedor_para_a_fila_e_deixa_os_dias_para_a_proxima(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-17
+    from apps.pagamentos.provedor import ProvedorIndisponivel
+
+    _ja_conciliado(date(2026, 10, 30))
+    relogio.congelar(datetime(2026, 11, 3, 4, 0, tzinfo=UTC))
+    original = ProvedorSimulado.listar_movimentos
+    chamadas: list[datetime] = []
+
+    def falha_no_segundo_dia(self: ProvedorSimulado, desde: datetime, ate: datetime) -> Any:
+        chamadas.append(desde)
+        if len(chamadas) == 2:
+            raise ProvedorIndisponivel("fora do ar")
+        return original(self, desde, ate)
+
+    monkeypatch.setattr(ProvedorSimulado, "listar_movimentos", falha_no_segundo_dia)
+    assert conciliar_dias_pendentes_agora() == 1  # D - 2; para em D - 1
+    datas = list(ConciliacaoDiaria.objects.order_by("pk").values_list("data", flat=True))
+    assert datas == [date(2026, 10, 30), date(2026, 10, 31)]
+    monkeypatch.setattr(ProvedorSimulado, "listar_movimentos", original)
+    assert conciliar_dias_pendentes_agora() == 2  # D - 1 e D ficaram para a próxima
+
+
+class _ProvedorComChargeback:
+    def __init__(self, referente_a: datetime) -> None:
+        self.referente_a = referente_a
+
+    def listar_movimentos(self, desde: datetime, ate: datetime) -> list[MovimentoNoProvedor]:
+        return [
+            MovimentoNoProvedor(
+                id_movimento="mp-77",
+                tipo=TipoDeMovimentoNoProvedor.OUTRO,
+                descricao_no_provedor="chargeback",
+                valor=D("-10.00"),
+                id_externo=None,
+                ocorrido_em=datetime(2026, 11, 2, 15, 0, tzinfo=UTC),
+                liberado_em=datetime(2026, 11, 2, 15, 0, tzinfo=UTC),
+            )
+        ]
+
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        return SaldoNoProvedor(D("-10.00"), D("0.00"), self.referente_a, self.referente_a)
+
+
+def test_movimento_desconhecido_do_provedor_e_divergencia_com_o_rotulo(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-23
+    relogio.congelar(DEPOIS_DO_DIA)
+    monkeypatch.setattr(
+        "apps.financeiro.conciliacao.obter_provedor", lambda: _ProvedorComChargeback(DEPOIS_DO_DIA)
+    )
+    conciliar_dia(DIA)
+    (alerta,) = _alertas("divergencia_na_conciliacao")
+    assert alerta.chave == "mp-77"
+    assert alerta.dados["descricao_no_provedor"] == "chargeback"
+
+
+def test_conciliacao_nao_cria_movimento_no_livro(dia: Dia) -> None:  # A-21
+    antes = MovimentoFinanceiro.objects.count()
+    conciliar_dia(DIA)
+    assert MovimentoFinanceiro.objects.count() == antes
+
+
+def test_tarifa_do_provedor_sem_despesa_e_divergencia_ate_a_tarefa_registra(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:
+    from dataclasses import replace
+
+    from apps.financeiro.entradas import registrar_tarifas_pendentes_agora
+    from apps.pagamentos.sincronizacao import sincronizar_pagamento
+    from tests.apoio.financeiro import pedido_composto
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+    from tests.fabricas import ContaFactory
+
+    simulador_pagamentos.definir_tarifa("pix", percentual=D("1.00"), fixa=D("0.00"))
+    relogio.congelar(T0 + H)
+    pedido = pedido_composto(ContaFactory.create())
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    simulador_pagamentos.aprovar(id_externo)
+    completa = obter_provedor().consultar_pagamento(id_externo)
+    with transaction.atomic():
+        sincronizar_pagamento(replace(completa, tarifa=None, liberado_em=None), origem="tarefa")
+    relogio.congelar(DEPOIS_DO_DIA)
+    conciliar_dia(DIA)
+    (alerta,) = _alertas("divergencia_na_conciliacao")
+    assert alerta.dados["tipo"] == "tarifa"
+    assert alerta.dados["id_externo"] == id_externo
+    sincronizar(id_externo)
+    assert registrar_tarifas_pendentes_agora() == 1
+    assert _alertas("divergencia_na_conciliacao") == []

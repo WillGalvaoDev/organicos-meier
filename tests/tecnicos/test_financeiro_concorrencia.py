@@ -1,7 +1,7 @@
 """E09-01: concorrência do livro-razão (acceptance A-14 a A-16)."""
 
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Barrier, BrokenBarrierError, local
 from typing import Any
@@ -12,6 +12,8 @@ from django.db import transaction
 from apps.financeiro import livro
 from apps.financeiro.alertas import abrir_alerta
 from apps.financeiro.apuracao import registrar_apuracao_no_livro
+from apps.financeiro.conciliacao import ConciliacaoDiaria, conciliar_dia
+from apps.financeiro.liquidez import LiquidezInsuficiente, registrar_saida
 from apps.financeiro.livro import (
     EXTERIOR,
     SaldoInsuficiente,
@@ -51,6 +53,7 @@ from tests.apoio.financeiro import (
     despesa_de_tarifa,
     despesas,
     montar_ap,
+    montar_l,
     montar_mundo,
     mover,
     obrigacao_de,
@@ -416,3 +419,59 @@ def test_apuracao_e_quitacao_ao_mesmo_tempo_nunca_movem_so_parte(
     else:  # a apuração chegou antes de X quitar: recusada, sem tocar nada
         assert isinstance(resultados[1].excecao, ValueError), repr(resultados[1].excecao)
         assert custodias == [Decimal("100.00"), Decimal("5.00"), Decimal("20.00")]
+
+
+# --- E09-07: liquidez e conciliação (A-19 e A-20) ---------------------------------------------
+
+
+def test_dois_repasses_que_juntos_passam_do_liberado(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-07, A-19, T-11
+    a, _ = montar_l(simulador_pagamentos, relogio)
+    relogio.congelar(T0 + timedelta(hours=25))
+    conta_de_a = obrigacao_de(a.fornecedor, a.rodada)
+
+    def repassar(identificacao: str) -> Callable[[], Any]:
+        return lambda: registrar_saida(
+            m_admin(),
+            tipo="repasse",
+            conta=conta_de_a,
+            valor=Decimal("60.00"),
+            identificacao=identificacao,
+            justificativa="Repasse",
+        )
+
+    resultados = executar_em_paralelo(
+        segurando(repassar("rep-a")), esperando(_atomica(repassar("rep-b")))
+    )
+    excecoes = [r.excecao for r in resultados]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, LiquidezInsuficiente), recusa
+    assert saldo(conta_de_a) == Decimal("40.00")
+
+
+def m_admin() -> Any:
+    from tests.apoio.pedidos import administrador
+
+    return administrador()
+
+
+def test_duas_conciliacoes_do_mesmo_dia(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-07, A-20
+    montar_l(simulador_pagamentos, relogio)
+    relogio.congelar(T0 + timedelta(hours=3))
+    simulador_pagamentos.depositar(Decimal("200.00"))  # depósito sem aporte: gera divergência
+    relogio.congelar(datetime(2026, 11, 3, 12, 0, tzinfo=UTC))
+
+    def conciliar(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return conciliar_dia(date(2026, 11, 2))
+
+    resultados = executar_em_paralelo(conciliar, conciliar)
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    assert resultados[0].valor.pk == resultados[1].valor.pk
+    assert ConciliacaoDiaria.objects.count() == 1
+    abertos = AlertaFinanceiro.objects.filter(tipo="divergencia_na_conciliacao", resolvido_em=None)
+    assert abertos.count() == 1

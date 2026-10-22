@@ -16,15 +16,17 @@ from typing import Protocol
 
 from django.db import transaction
 
-from apps.financeiro.alertas import abrir_alerta
+from apps.financeiro.alertas import abrir_alerta, resolver_alerta
 from apps.financeiro.apuracao import cobrir_tarifas_pendentes_da_rodada, rodada_apurada
 from apps.financeiro.livro import EXTERIOR, Transferencia, conta, lancar
 from apps.financeiro.models import (
+    AlertaFinanceiro,
     Componente,
     Despesa,
     Destinacao,
     MovimentoFinanceiro,
     ObrigacaoComComprador,
+    TipoDeAlerta,
     TipoDeDespesa,
     TipoDeMovimento,
 )
@@ -146,8 +148,15 @@ def registrar_entrada(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
     """A entrada do destino no livro-razão, uma só por destino (chave `entrada:<destino>`).
     Exige transação, com o pagamento já travado."""
     if destino.destino == DestinoDaDecisao.QUITA:
-        return _entrada_que_quita(destino)
-    return _entrada_para_devolucao(destino)
+        movimento = _entrada_que_quita(destino)
+    else:
+        movimento = _entrada_para_devolucao(destino)
+    resolver_alerta(
+        TipoDeAlerta.PAGAMENTO_SEM_CONCILIACAO,
+        destino.pagamento.id_externo,
+        motivo="lançamento registrado",
+    )
+    return movimento
 
 
 def registrar_tarifa(pagamento: _Pagamento) -> MovimentoFinanceiro | None:
@@ -178,6 +187,14 @@ def registrar_tarifa(pagamento: _Pagamento) -> MovimentoFinanceiro | None:
         origem=destino.pagamento,
         chave=f"tarifa:{pagamento.pk}",
     )
+    abertas = AlertaFinanceiro.objects.filter(
+        tipo=TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO,
+        resolvido_em__isnull=True,
+        dados__tipo="tarifa",
+        dados__id_externo=destino.pagamento.id_externo,
+    )
+    for alerta in list(abertas):
+        resolver_alerta(alerta.tipo, alerta.chave, motivo="tarifa registrada")
     if destino.pedido is not None and rodada_apurada(destino.pedido.abertura.rodada):
         # a receita da rodada já existe: a tarifa nova tenta ser coberta por ela (P-1)
         cobrir_tarifas_pendentes_da_rodada(destino.pedido.abertura.rodada)

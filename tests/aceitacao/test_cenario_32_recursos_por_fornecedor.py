@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from apps.financeiro.liquidez import LiquidezInsuficiente, registrar_saida
 from apps.financeiro.livro import EXTERIOR, MovimentoProibido, saldo
 from apps.financeiro.models import ContaFinanceira, MovimentoFinanceiro, TipoDeMovimento
 from tests.apoio.financeiro import (
@@ -15,6 +16,7 @@ from tests.apoio.financeiro import (
     custodia,
     despesas,
     frete_de,
+    montar_l,
     montar_mundo,
     mover,
     obrigacao_com,
@@ -23,6 +25,8 @@ from tests.apoio.financeiro import (
     reserva,
     semear,
 )
+from tests.apoio.pedidos import administrador
+from tests.conftest import RelogioControlado
 
 pytestmark = [pytest.mark.django_db, pytest.mark.acceptance]
 
@@ -67,3 +71,20 @@ def test_a_devolucao_devida_antes_do_repasse_e_a_unica_ressalva(m: Mundo) -> Non
     obrigacao = obrigacao_com(m.ra, m.ca, m.x)
     mover(T.FINANCIAMENTO_DE_OBRIGACAO, devida, obrigacao, "25.00")
     assert (saldo(devida), saldo(obrigacao)) == (D("75.00"), D("25.00"))
+
+
+def test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E09-07, A-2 (T-11, segunda metade)
+    a, b = montar_l(simulador_pagamentos, relogio)
+    antes = saldo(obrigacao_de(b.fornecedor, b.rodada))
+    with pytest.raises(LiquidezInsuficiente):
+        registrar_saida(
+            administrador(),
+            tipo="repasse",
+            conta=obrigacao_de(a.fornecedor, a.rodada),
+            valor=D("50.00"),
+            identificacao="sim-mov-9",
+            justificativa="Repasse",
+        )
+    assert saldo(obrigacao_de(b.fornecedor, b.rodada)) == antes

@@ -337,6 +337,23 @@ class PedidoApurado(RegistroSoInsercao):
         )
 
 
+class ConciliacaoDiaria(RegistroSoInsercao):
+    """A conciliação de um dia (de 00:00 a 24:00 em Brasília) com o provedor (E09-07): uma por
+    data, e imutável. Guarda o resultado e um resumo; nunca altera o livro-razão."""
+
+    class Resultado(models.TextChoices):
+        OK = "ok", "Sem divergência"
+        DIVERGENTE = "divergente", "Com divergência"
+
+    data = models.DateField(unique=True)
+    executada_em = models.DateTimeField(default=agora)
+    resultado = models.CharField(max_length=10, choices=Resultado.choices)
+    resumo = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
+
+    def __str__(self) -> str:
+        return f"conciliação de {self.data}"
+
+
 class AlertaFinanceiro(models.Model):
     """Um alerta ao administrador: aberto uma vez por situação `(tipo, chave)` e resolvido depois.
     O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""
