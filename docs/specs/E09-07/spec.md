@@ -210,3 +210,23 @@ diferenca = saldo do provedor
   `ajuste`, `outro` e os tipos desconhecidos nunca têm par.
 - **`t` antes do início de D.** As duas somas ficam vazias, e a diferença compara o saldo com o livro-razão até `t`.
 - **O resumo e o resultado.** `sem_par` continua sendo a soma dos sem par do dia: sem lançamento, divergentes e do livro. O resultado é `ok` só com `sem_par = 0` e diferença zero. O registro continua imutável e único por dia.
+
+## Correção da revalidação da E09 sobre 2930ffd (2026-10-22)
+
+Origem: a revalidação em `docs/specs/E09-08/review.md`, R07 residual. Valem a correção E09-R08 e a seção de mesmo título na E09-01. Não há decisão comercial nova. O R07 original continua encerrado nos demais recortes.
+
+### Correção E09-R07 residual: a tarifa pareada pelo instante do lançamento
+
+**Diagnóstico.** No recorte da diferença no instante `t`, o par da tarifa é procurado pela `Despesa(tarifa)` com `criada_em ≤ t`. A regra "Sem par no livro até `t`", porém, pede o movimento da tarifa no livro-razão com `momento ≤ t`.
+
+Em `registrar_tarifa`, a despesa nasce antes do `lancar`, e os dois instantes podem diferir. Com `t` entre eles, o débito ainda não está em `saldo_total_esperado(até t)`, mas a tarifa do provedor é tratada como pareada. A diferença sai −10,00, abre um alerta `saldo:<D>` falso, e o dia fica gravado como divergente para sempre.
+
+**Regras.**
+- **Par da tarifa até `t`.** Exige duas condições:
+  - a `Despesa(tarifa)` do pagamento, com o mesmo valor em módulo, como na classificação do dia;
+  - o movimento `tarifa:<pk do pagamento>`, com `momento ≤ t` e total igual a esse valor.
+
+  Sem o movimento até `t`, a tarifa do provedor entra na soma dos sem par do recorte da diferença. O `criada_em` da despesa não decide o recorte.
+- **A classificação do dia não muda.** O par usa a situação conhecida na execução, pela tabela da classificação. Uma tarifa com despesa e movimento registrados na execução não conta em `sem_par` e não abre `divergencia_na_conciliacao`, mesmo que o movimento tenha nascido depois de `t`.
+- **Os outros pares não mudam.** A entrada, o aporte e a saída do recorte até `t` já usam o `momento` do lançamento.
+- **A E09-08 também se resolve.** A reprovação dela na integração vinha da mesma diferença falsa, e esta correção a fecha.

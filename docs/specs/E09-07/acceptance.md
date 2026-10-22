@@ -62,3 +62,26 @@ Valem as seções das correções no `spec.md` e a correção E09-R08 (E09-01). 
 |---|---|
 | A-24 | `tests/tecnicos/test_financeiro_invariante.py` |
 | A-25 a A-27 | `tests/tecnicos/test_financeiro_conciliacao.py` |
+
+## Correção E09-R07 residual (2026-10-22)
+
+Vale a seção "Correção da revalidação da E09 sobre 2930ffd" do `spec.md`.
+
+- **O pagamento** é real, do simulador.
+- **O provedor da conciliação** é um dublê do protocolo de saldo e de movimentos, como no A-22.
+- **O único monkeypatch permitido** avança o relógio controlado em 10 segundos imediatamente antes do `lancar` do movimento de tarifa. Ele não retira validação nem efeito.
+- **O teste confere os dois instantes gravados:** `Despesa.criada_em = T`, e o `momento` do movimento `tarifa:<pk>` é `T + 10 s`.
+
+**Arranjo T:**
+- um pagamento de 125,00 sincronizado em `T`, no dia `D`, com tarifa fixa de 10,00; a entrada nasce em `T`;
+- os movimentos do provedor `pagamento` +125,00 e `tarifa` −10,00, os dois em `T`;
+- a conciliação de `D` executada à 01:00 de `D + 1`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-28 | Correção R07 residual | negativo | T; o saldo do provedor de 115,00, com `referente_a` em `T + 5 s` | `conciliar_dia(D)` | diferença 0,00 (`115 − 125 − (−10)`); `movimentos = 2`; `sem_par = 0`; resultado `ok`; nenhum alerta `saldo:<D>` nem `divergencia_na_conciliacao`. **Red esperado:** diferença −10,00, resultado `divergente` e o alerta `saldo:<D>` aberto |
+| A-29 | Correção R07 residual | positivo | T; o saldo do provedor de 115,00, com `referente_a` em `T + 15 s`, depois da despesa e do movimento | `conciliar_dia(D)` | diferença 0,00; `sem_par = 0`; resultado `ok`; nenhum alerta. Já passa no código atual: é declarado como regressão, sem Red inventado |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-28 e A-29 | `tests/tecnicos/test_financeiro_conciliacao.py` |

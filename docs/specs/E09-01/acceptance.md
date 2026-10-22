@@ -49,3 +49,25 @@ Valem a "Regra única de travas do financeiro" e a correção E09-R08, no `spec.
 |---|---|
 | A-19 e A-20 | `tests/tecnicos/test_financeiro_livro.py` |
 | A-21 | a suíte completa, com o resultado registrado no `review.md` |
+
+## Correção E09-R10: a vida do registro da guarda (2026-10-22)
+
+Valem a seção "Correções da revalidação da E09 sobre 2930ffd" do `spec.md` e a correção E09-R08. Os testes usam transações PostgreSQL reais (`transaction=True`), sem dublê de banco, exceto o A-27 (iii).
+
+**Arranjo:** duas contas, `menor` e `maior` (por exemplo, `reserva` e `despesas_a_cobrir`), com `menor.pk < maior.pk`, conferido no próprio teste.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-22 | Correção R10 | positivo | o arranjo; um único objeto `escopo = transaction.atomic()` | `with escopo:` trava `maior` e termina com commit; um segundo `with escopo:` trava só `menor` | aceito, sem exceção. Repetir com a primeira execução terminando em rollback (exceção capturada fora do `with`): também aceito. **Red esperado:** `OrdemDeTravasViolada` |
+| A-23 | Correção R10 | negativo | o arranjo; um único objeto `escopo` | `with escopo:` trava `menor` e `maior` e commita; um segundo `with escopo:` trava `maior` e depois pede `menor` | `OrdemDeTravasViolada` no pedido de `menor`, antes de travar. **Red esperado:** nenhuma exceção |
+| A-24 | Correção R10 | positivo e negativo | o arranjo; uma função decorada com `@transaction.atomic` que trava as contas recebidas, na ordem em que as recebe | (i) chamar com `(maior,)` e depois com `(menor,)`; (ii) chamar com `(menor, maior)` e depois com `(maior, menor)` | (i) as duas chamadas aceitas; (ii) a primeira aceita, e a segunda levanta `OrdemDeTravasViolada` ao pedir `menor`. **Red esperado:** em (i), `OrdemDeTravasViolada` na segunda chamada; em (ii), nenhuma exceção |
+| A-25 | Correção R10 | negativo | o arranjo | numa transação, um `atomic` interno trava `menor` e é desfeito por uma exceção capturada; depois a transação trava `maior` e pede `menor` | `OrdemDeTravasViolada` no pedido de `menor`. Controle no mesmo teste: depois do rollback do savepoint e antes de travar `maior`, outra conexão com `lock_timeout = '500ms'` consegue travar `menor`, o que mostra que a trava não está retida. **Red esperado:** nenhuma exceção |
+| A-26 | Correção R10 | positivo | o arranjo | numa transação, um `atomic` interno trava `maior` e é desfeito por uma exceção capturada; depois a transação pede `menor` e, em seguida, `maior` | aceitos, sem exceção, porque a trava de `maior` foi liberada pelo savepoint. Variação aninhada, com o mesmo resultado: dois `atomic` internos, o de dentro trava `maior` e o de fora é desfeito. **Red esperado:** `OrdemDeTravasViolada` no pedido de `menor` |
+| A-27 | Correção R10 | negativo e positivo | o arranjo | (i) numa transação, um `atomic` interno trava `maior` e termina sem erro; depois a transação pede `menor`. (ii) numa transação que trava `maior`, um `atomic` interno trava de novo `maior` e é desfeito; depois a transação pede `menor`. (iii) num `TestCase` do Django, o mesmo objeto `escopo` usado duas vezes, como no A-22 e no A-23 | (i) `OrdemDeTravasViolada`, porque a trava passou para o bloco de fora. (ii) `OrdemDeTravasViolada`, porque `maior` já estava travada antes do savepoint e continua retida. (iii) os resultados do A-22 e do A-23. **Red esperado:** em (iii), os do A-22 e do A-23. Os casos (i) e (ii) já passam no código atual e são declarados como regressão, sem Red inventado |
+
+Depois dos A-22 a A-27, o A-21 é refeito: a suíte inteira roda com a guarda nova, e o resultado fica no `review.md`.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-22 a A-26, A-27 (i) e (ii) | `tests/tecnicos/test_financeiro_livro.py` |
+| A-27 (iii) | `tests/tecnicos/test_financeiro_livro.py`, numa classe `TestCase` |

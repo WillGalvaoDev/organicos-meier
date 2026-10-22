@@ -324,3 +324,50 @@ Os passos 2 e 3 são o tratamento definitivo dos critérios antigos. Mesmo com e
 
 - **Mutação não substitui o Red.** A frase "provei por mutação" só aparece em critério já declarado como não conformidade. Comportamento novo só ganha código de produção depois de um Red observado.
 - **A ordem do registro segue a ordem dos fatos.** O registro de cada critério novo mostra o commit ou a saída do Red antes do commit da produção.
+
+## Correções da revalidação da E09 sobre 2930ffd (2026-10-22)
+
+Origem: a revalidação em `docs/specs/E09-08/review.md`, com dois achados:
+- o R10, desta fatia;
+- o R07 residual, da E09-07, na seção de mesmo título.
+
+Os demais achados foram encerrados e não se reabrem. Valem a "Regra única de travas", o "Padrão das corridas desta correção" e a correção E09-R08. Não há decisão comercial nova.
+
+| Achado | Onde | Critérios novos |
+|---|---|---|
+| R10: a guarda não acompanha a vida real das travas | E09-01 | A-22 a A-27 |
+| R07 residual: a tarifa pareada pela data da despesa | E09-07 | A-28 e A-29 |
+
+Ordem sugerida: o R10 primeiro, porque a guarda sustenta as correções já aprovadas; depois o R07 residual. A suíte inteira roda ao fim (A-21).
+
+### Correção E09-R10: o registro da guarda segue as travas retidas
+
+**Diagnóstico.** O registro das contas travadas é identificado pelo objeto `Atomic` mais externo. Esse objeto não identifica uma execução de transação, porque o mesmo `Atomic` pode ser usado várias vezes. Isso acontece no uso como decorador e no `with` repetido sobre o mesmo objeto.
+
+Além disso, o rollback de um savepoint libera as travas pedidas dentro dele, mas o registro não as retira. O resultado, mostrado pelas provas do parecer, é que a guarda recusa um uso válido e aceita a inversão que deveria recusar.
+
+**Regra (substitui o terceiro item da "Guarda da ordem").** O registro da guarda é, a todo momento, o conjunto das contas cuja trava a transação corrente ainda retém no PostgreSQL:
+
+| Evento | Efeito no registro |
+|---|---|
+| início de uma execução da transação mais externa: cada `with` e cada chamada de função decorada, mesmo com o mesmo objeto `Atomic` | começa vazio |
+| commit ou rollback dessa transação | é descartado; nada passa para a execução seguinte |
+| trava pedida dentro de um savepoint que é desfeito (rollback do `atomic` interno) | a conta sai do registro, a menos que já estivesse travada antes desse savepoint |
+| trava pedida dentro de um savepoint que é liberado (o `atomic` interno termina sem erro) | a conta continua no registro, porque a trava passa para o bloco de fora |
+| savepoints aninhados | o mesmo, nível a nível: desfazer um nível retira as travas pedidas nele e nos níveis internos a ele |
+
+- **Recusa.** Continua igual: pedir uma conta ainda não registrada com `pk` menor que a maior registrada levanta `OrdemDeTravasViolada` antes de travar.
+- **Trava repetida.** Travar de novo uma conta registrada continua permitido.
+- **Conta liberada pelo savepoint.** A conta que saiu do registro pelo rollback de um savepoint é tratada como não travada: pedi-la de novo segue a regra da ordem.
+- **No `TestCase` do Django.** Os blocos do próprio caso de teste continuam fora da guarda. A transação da guarda é cada execução do bloco `atomic` mais externo que não pertence ao caso de teste. Esse bloco é um savepoint. O registro começa vazio a cada execução e é descartado ao fim dela, liberada ou desfeita.
+- **Fora de transação.** Não há registro; o `select_for_update` já é recusado pelo Django.
+
+**Restrições técnicas (decisão técnica).**
+- A identidade do objeto `Atomic`, sozinha, não identifica a execução.
+- Não valem:
+  - monkeypatch do Django;
+  - subclasse de `Atomic` em uso pela aplicação;
+  - recusar formas válidas de `transaction.atomic` (decorador, objeto reutilizado, savepoints, `savepoint=False`);
+  - desligar a guarda ou afrouxar os A-19 a A-21.
+- **Mecanismo sugerido, não obrigatório:** o modelo que o próprio Django documenta para `transaction.on_commit`. Os callbacks são descartados no rollback do savepoint em que foram registrados e somem ao fim da transação. O mecanismo escolhido e a justificativa ficam no `review.md` desta fatia.
+- O custo por trava continua sem consulta extra ao banco além do `select_for_update`, salvo justificativa registrada.
