@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Sum
 from django.db.transaction import TransactionManagementError
 
@@ -411,43 +411,69 @@ def conta_da_obrigacao(obrigacao: ObrigacaoComComprador) -> ContaFinanceira:
     )
 
 
-def _escopo_da_transacao() -> object | None:
-    """O bloco `atomic` mais externo que não é o do caso de teste: a transação das travas. No
-    `TestCase` o único bloco é o do próprio teste, que nunca termina; sem transação própria, não
-    há ordem a guardar."""
-    for bloco in connection.atomic_blocks:
+class _TravaRetida:
+    """Marcador de uma trava, registrado com `transaction.on_commit`. O Django descarta o callback
+    no rollback do savepoint em que ele nasceu e ao fim da transação, exatamente quando o
+    PostgreSQL libera a trava; por isso a presença do marcador espelha a trava retida."""
+
+    def __call__(self) -> None:
+        return None
+
+
+def _escopo_da_transacao() -> tuple[int, object] | None:
+    """O bloco `atomic` mais externo que não é o do caso de teste, com a sua posição: a transação
+    das travas. No `TestCase` o único bloco é o do próprio teste, que nunca termina; sem
+    transação própria, não há ordem a guardar."""
+    for posicao, bloco in enumerate(connection.atomic_blocks):
         if not getattr(bloco, "_from_testcase", False):
-            return bloco
+            return posicao, bloco
     return None
 
 
-def _travadas_da_transacao() -> set[int] | None:
-    """As contas que a transação mais externa já travou; começa vazio em cada transação nova,
-    depois de um commit ou de um rollback."""
-    escopo = _escopo_da_transacao()
-    if escopo is None:
+def _execucao_do_escopo(posicao: int, bloco: object) -> object:
+    """Identifica a execução do bloco, e não o objeto `Atomic`, que pode ser reutilizado. Uma
+    transação real não deixa travas para a seguinte (o Django limpa os callbacks), então basta
+    `None`. Um bloco que é savepoint (o caso do `TestCase`) tem o identificador do savepoint,
+    único na conexão."""
+    if posicao == 0:
         return None
+    savepoint = connection.savepoint_ids[posicao - 1]
+    return savepoint if savepoint is not None else id(bloco)
+
+
+def _travadas_da_transacao() -> dict[int, _TravaRetida] | None:
+    """As contas cuja trava a transação corrente ainda retém (conta -> marcador); `None` fora de
+    transação. Descarta as que o rollback de um savepoint liberou (E09-R10)."""
+    achado = _escopo_da_transacao()
+    if achado is None:
+        return None
+    execucao = _execucao_do_escopo(*achado)
     atual = getattr(connection, "_travas_do_financeiro", None)
-    if atual is None or atual[0] is not escopo:
-        atual = (escopo, set())
+    if atual is None or atual[0] != execucao:
+        atual = (execucao, {})
         connection._travas_do_financeiro = atual  # type: ignore[attr-defined]
-    travadas: set[int] = atual[1]
-    return travadas
+    retidas: dict[int, _TravaRetida] = atual[1]
+    vivos = {id(callback[1]) for callback in connection.run_on_commit}
+    for pk in [pk for pk, marcador in retidas.items() if id(marcador) not in vivos]:
+        del retidas[pk]
+    return retidas
 
 
 def _travar_conta(pk: int) -> ContaFinanceira:
     """O único caminho de trava das contas do livro-razão. A guarda da ordem (E09-R02): pedir uma
     conta de `pk` menor que a maior já travada na transação é um erro de programação, e levanta
     `OrdemDeTravasViolada` antes de travar; travar de novo uma conta já travada é permitido."""
-    travadas = _travadas_da_transacao()
-    if travadas is not None and pk not in travadas and travadas and pk < max(travadas):
+    retidas = _travadas_da_transacao()
+    if retidas is not None and pk not in retidas and retidas and pk < max(retidas):
         raise OrdemDeTravasViolada(
-            f"a conta {pk} foi pedida depois da {max(travadas)}: trave o conjunto de uma vez, "
+            f"a conta {pk} foi pedida depois da {max(retidas)}: trave o conjunto de uma vez, "
             "em ordem crescente de pk"
         )
     travada: ContaFinanceira = ContaFinanceira.objects.select_for_update().get(pk=pk)
-    if travadas is not None:
-        travadas.add(pk)
+    if retidas is not None and pk not in retidas:
+        marcador = _TravaRetida()
+        transaction.on_commit(marcador)
+        retidas[pk] = marcador
     return travada
 
 
