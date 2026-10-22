@@ -27,9 +27,9 @@ from apps.financeiro.livro import (
     MovimentoInvalido,
     MovimentoProibido,
     Transferencia,
-    _travar_conta,
     lancar,
     saldo,
+    travar_contas,
 )
 from apps.financeiro.models import (
     ContaFinanceira,
@@ -145,7 +145,7 @@ def registrar_saida(
     if bloqueada:
         _sem_invariante_violado()
     chave = f"saida:{identificacao}"
-    _travar_conta(conta.pk)  # o limite é calculado sob a trava: duas saídas não passam juntas
+    travar_contas(conta)  # o limite é calculado sob a trava: duas saídas não passam juntas
     if MovimentoFinanceiro.objects.filter(chave=chave).exists():
         raise SaidaRepetida(identificacao)
     if limita_no_liberado:

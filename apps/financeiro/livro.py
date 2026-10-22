@@ -23,6 +23,7 @@ from apps.financeiro.models import (
     ContaFinanceira,
     Destinacao,
     MovimentoFinanceiro,
+    ObrigacaoComComprador,
     TipoDeMovimento,
     TransferenciaFinanceira,
 )
@@ -399,6 +400,17 @@ def saldo_total_esperado(ate: datetime | None = None) -> Decimal:
     return (entrou or ZERO) - (saiu or ZERO)
 
 
+def conta_da_obrigacao(obrigacao: ObrigacaoComComprador) -> ContaFinanceira:
+    """A conta `obrigacao_comprador(o)`, criada se ainda não existir."""
+    return conta(
+        D.OBRIGACAO_COMPRADOR,
+        obrigacao=obrigacao.pk,
+        rodada=obrigacao.rodada_id,
+        ciclo=obrigacao.ciclo_id,
+        comprador=obrigacao.comprador_id,
+    )
+
+
 def _escopo_da_transacao() -> object | None:
     """O bloco `atomic` mais externo que não é o do caso de teste: a transação das travas. No
     `TestCase` o único bloco é o do próprio teste, que nunca termina; sem transação própria, não
@@ -455,6 +467,7 @@ __all__ = [
     "SaldoInsuficiente",
     "Transferencia",
     "conta",
+    "conta_da_obrigacao",
     "extrato",
     "lancar",
     "saldo",

@@ -80,7 +80,8 @@ def test_dois_pagamentos_do_mesmo_pedido_um_quita_e_o_outro_vira_obrigacao(
     assert saldo(conta_da_obrigacao) == D("125.00")
     assert AlertaFinanceiro.objects.filter(tipo="duplicidade", resolvido_em=None).count() == 1
     assert Despesa.objects.filter(tipo="tarifa").count() == 2
-    assert not ContaFinanceira.objects.filter(destinacao="receita_servico").exists()
+    receitas = ContaFinanceira.objects.filter(destinacao="receita_servico")
+    assert [c for c in receitas if saldo(c) != 0] == []  # a conta vazia pode existir (travas)
 
 
 def test_pagamento_aprovado_depois_da_margem_vira_obrigacao_e_alerta(ambiente: Any) -> None:  # A-4

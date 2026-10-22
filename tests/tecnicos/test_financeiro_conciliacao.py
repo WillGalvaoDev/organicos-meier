@@ -66,6 +66,7 @@ def dia(relogio: RelogioControlado, simulador_pagamentos: Any) -> Dia:
     id_repasse = simulador_pagamentos.registrar_saida(D("50.00"), descricao="repasse")
     with transaction.atomic():
         registrar_aporte(administrador(), D("1000.00"), id_deposito, "Aporte inicial")
+    with transaction.atomic():  # uma operação por transação, como em produção
         registrar_saida(
             administrador(),
             tipo="repasse",

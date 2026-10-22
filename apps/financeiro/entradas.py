@@ -18,10 +18,18 @@ from django.db import transaction
 
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
 from apps.financeiro.apuracao import cobrir_tarifas_pendentes_da_rodada, rodada_apurada
-from apps.financeiro.livro import EXTERIOR, Transferencia, conta, lancar
+from apps.financeiro.livro import (
+    EXTERIOR,
+    Transferencia,
+    conta,
+    conta_da_obrigacao,
+    lancar,
+    travar_contas,
+)
 from apps.financeiro.models import (
     AlertaFinanceiro,
     Componente,
+    ContaFinanceira,
     Despesa,
     Destinacao,
     MovimentoFinanceiro,
@@ -45,6 +53,47 @@ class _Pagamento(Protocol):
     id_externo: str
     valor: Decimal
     tarifa: Decimal | None
+
+
+def _contas_da_entrada(destino: DestinoDoPagamento) -> list[ContaFinanceira]:
+    """As contas em que a entrada do destino escreve: as custódias do pedido que quita, ou a
+    conta da obrigação de devolução (criada junto com a obrigação, se ainda não existe)."""
+    if destino.destino == DestinoDaDecisao.QUITA:
+        pedido = destino.pedido
+        if pedido is None:
+            raise ValueError("um destino que quita sempre tem pedido")
+        abertura = pedido.abertura
+        return [
+            conta(
+                Destinacao.CUSTODIA,
+                rodada=abertura.rodada_id,
+                ciclo=abertura.ciclo_id,
+                comprador=pedido.comprador_id,
+                componente=componente,
+            )
+            for componente, valor in (
+                (Componente.PRODUTOS, pedido.produtos),
+                (Componente.SERVICO, pedido.servico),
+                (Componente.FRETE, pedido.frete),
+            )
+            if valor > 0
+        ]
+    obrigacao, _ = _obrigacao_do(destino)
+    return [conta_da_obrigacao(obrigacao)]
+
+
+def _contas_da_tarifa(destino: DestinoDoPagamento) -> list[ContaFinanceira]:
+    """`despesas_a_cobrir` e, havendo rodada, a receita dela (a cobertura automática)."""
+    contas = [conta(Destinacao.DESPESAS_A_COBRIR)]
+    if destino.pedido is not None:
+        contas.append(conta(Destinacao.RECEITA_SERVICO, rodada=destino.pedido.abertura.rodada_id))
+    return contas
+
+
+def contas_do_destino(destino: DestinoDoPagamento) -> list[ContaFinanceira]:
+    """Todas as contas que o destino decidido pode tocar (entrada, tarifa e cobertura), para
+    serem travadas de uma vez, antes de qualquer leitura (regra única de travas)."""
+    return [*_contas_da_entrada(destino), *_contas_da_tarifa(destino)]
 
 
 def _entrada_que_quita(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
@@ -105,7 +154,9 @@ def _obrigacao_do(destino: DestinoDoPagamento) -> tuple[ObrigacaoComComprador, b
 
 
 def _entrada_para_devolucao(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
-    obrigacao, criada = _obrigacao_do(destino)
+    obrigacao, _ = _obrigacao_do(destino)
+    chave = f"entrada:{destino.pk}"
+    nova = not MovimentoFinanceiro.objects.filter(chave=chave).exists()  # sob a trava das contas
     movimento = lancar(
         tipo=TipoDeMovimento.ENTRADA_PARA_DEVOLUCAO,
         transferencias=[
@@ -127,11 +178,11 @@ def _entrada_para_devolucao(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
             "pelo próprio pagamento"
         ),
         origem=destino.pagamento,
-        chave=f"entrada:{destino.pk}",
+        chave=chave,
     )
     # o alerta abre uma vez, junto com a obrigação: repetir o registro não o reabre depois de
     # resolvido
-    if criada and destino.motivo in MOTIVOS_COM_ALERTA:
+    if nova and destino.motivo in MOTIVOS_COM_ALERTA:
         abrir_alerta(
             destino.motivo,
             destino.pagamento.id_externo,
@@ -147,6 +198,7 @@ def _entrada_para_devolucao(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
 def registrar_entrada(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
     """A entrada do destino no livro-razão, uma só por destino (chave `entrada:<destino>`).
     Exige transação, com o pagamento já travado."""
+    travar_contas(*_contas_da_entrada(destino))
     if destino.destino == DestinoDaDecisao.QUITA:
         movimento = _entrada_que_quita(destino)
     else:
@@ -171,6 +223,7 @@ def registrar_tarifa(pagamento: _Pagamento) -> MovimentoFinanceiro | None:
     )
     if destino is None:
         return None
+    travar_contas(*_contas_da_tarifa(destino))
     rodada_id = destino.pedido.abertura.rodada_id if destino.pedido is not None else None
     Despesa.objects.get_or_create(
         pagamento_id=pagamento.pk,

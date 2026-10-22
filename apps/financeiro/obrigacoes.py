@@ -21,10 +21,11 @@ from apps.financeiro.livro import (
     EXTERIOR,
     MovimentoConflitante,
     Transferencia,
-    _travar_conta,
     conta,
+    conta_da_obrigacao,
     lancar,
     saldo,
+    travar_contas,
 )
 from apps.financeiro.models import (
     ApuracaoNoLivro,
@@ -70,20 +71,17 @@ class ObrigacaoRegistrada(NamedTuple):
     sem_cobertura: Decimal
 
 
-def conta_da_obrigacao(obrigacao: ObrigacaoComComprador) -> ContaFinanceira:
-    return conta(
-        Destinacao.OBRIGACAO_COMPRADOR,
-        obrigacao=obrigacao.pk,
-        rodada=obrigacao.rodada_id,
-        ciclo=obrigacao.ciclo_id,
-        comprador=obrigacao.comprador_id,
-    )
+def _ciclo_apurado(ciclo: Ciclo) -> bool:
+    """Se o ciclo já tem a apuração no livro. Só vale lido depois da trava das fontes."""
+    return ApuracaoNoLivro.objects.filter(ciclo=ciclo).exists()
 
 
-def travar_em_ordem(*contas: ContaFinanceira) -> None:
-    """Trava as contas em ordem crescente de `pk`: a ordem global do livro-razão."""
-    for pk in sorted({c.pk for c in contas}):
-        _travar_conta(pk)
+def _contas_candidatas(rodada: Rodada, ciclo: Ciclo, comprador: Conta) -> list[ContaFinanceira]:
+    """As fontes antes e depois da apuração: a decisão entre elas só se lê depois da trava."""
+    return [
+        *_fontes(rodada, ciclo, comprador, False).values(),
+        *_fontes(rodada, ciclo, comprador, True).values(),
+    ]
 
 
 # --- criação da obrigação, financiada pela regra --------------------------------------------
@@ -155,7 +153,10 @@ def registrar_obrigacao_com_comprador(
     origem_tipo, origem_id = origem._meta.label_lower, str(origem.pk)
     if ObrigacaoComComprador.objects.filter(origem_tipo=origem_tipo, origem_id=origem_id).exists():
         raise ValueError("a origem já gerou uma obrigação")
-    apurado = ApuracaoNoLivro.objects.filter(ciclo=ciclo).exists()
+    # regra única de travas: o conjunto das fontes (antes e depois da apuração) é travado de
+    # uma vez, e só depois se lê se o ciclo está apurado e quais são as fontes
+    travar_contas(*_contas_candidatas(rodada, ciclo, comprador))
+    apurado = _ciclo_apurado(ciclo)
     obrigacao = ObrigacaoComComprador.objects.create(
         rodada=rodada,
         ciclo=ciclo,
@@ -170,8 +171,8 @@ def registrar_obrigacao_com_comprador(
         depois_da_apuracao=apurado,
     )
     destino = conta_da_obrigacao(obrigacao)
+    travar_contas(destino)  # conta nova: nasce com o maior `pk`, depois das já travadas
     fontes = _fontes(rodada, ciclo, comprador, apurado)
-    travar_em_ordem(destino, *fontes.values())
     transferencias: list[Transferencia] = []
     do_frete = ZERO
     for componente, valor in valores.items():
@@ -216,7 +217,7 @@ def cobrir_obrigacao_com_receita(
     justificativa = _justificativa(justificativa)
     destino = conta_da_obrigacao(obrigacao)
     receita = conta(Destinacao.RECEITA_SERVICO, rodada=rodada_fonte.pk)
-    travar_em_ordem(destino, receita)
+    travar_contas(destino, receita)
     if valor > sem_cobertura_da_obrigacao(obrigacao):
         raise CoberturaExcedente("o valor passa do que falta cobrir na obrigação")
     movimento = lancar(
@@ -282,7 +283,10 @@ def liquidar_obrigacao(
         return existente
     destino = conta_da_obrigacao(obrigacao)
     caixa = conta(Destinacao.RESERVA)
-    travar_em_ordem(destino, caixa)
+    travar_contas(destino, caixa)
+    existente = _ja_liquidada(chave, obrigacao, valor)  # refeita sob a trava
+    if existente is not None:
+        return existente
     liquidado = _liquidado(destino)
     ativas = _designacoes_ativas(obrigacao)
     disponivel = max(ZERO, saldo(destino)) + sum((resto for _, resto in ativas), ZERO)

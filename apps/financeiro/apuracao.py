@@ -20,6 +20,7 @@ from apps.financeiro.livro import (
     conta,
     lancar,
     saldo,
+    travar_contas,
 )
 from apps.financeiro.models import (
     ApuracaoNoLivro,
@@ -33,7 +34,6 @@ from apps.financeiro.models import (
     TipoDeDespesa,
     TipoDeMovimento,
 )
-from apps.financeiro.obrigacoes import travar_em_ordem
 from apps.financeiro.reserva import (
     CoberturaExcedente,
     _exigir_administrador,
@@ -81,6 +81,13 @@ def _validar_pedidos(ciclo: Ciclo, pedidos: list[Pedido]) -> AberturaDoPagamento
     return abertura
 
 
+def _repetir(existente: ApuracaoNoLivro, conjunto: set[int], ciclo: Ciclo) -> ApuracaoNoLivro:
+    gravado = set(existente.pedidos_validos.values_list("pedido_id", flat=True))
+    if gravado != conjunto:
+        raise MovimentoConflitante(f"o ciclo {ciclo.pk} já foi apurado com outros pedidos")
+    return existente
+
+
 def registrar_apuracao_no_livro(
     ciclo: Ciclo, pedidos_validos: list[Pedido], *, autor: Any
 ) -> ApuracaoNoLivro:
@@ -92,10 +99,7 @@ def registrar_apuracao_no_livro(
     existente: ApuracaoNoLivro | None = ApuracaoNoLivro.objects.filter(ciclo=ciclo).first()
     conjunto = {p.pk for p in pedidos_validos}
     if existente is not None:
-        gravado = set(existente.pedidos_validos.values_list("pedido_id", flat=True))
-        if gravado != conjunto:
-            raise MovimentoConflitante(f"o ciclo {ciclo.pk} já foi apurado com outros pedidos")
-        return existente
+        return _repetir(existente, conjunto, ciclo)
     rodada = ciclo.rodada
     destinos = {
         Componente.PRODUTOS: conta(
@@ -119,7 +123,17 @@ def registrar_apuracao_no_livro(
         for pedido in pedidos
         for componente in (Componente.PRODUTOS, Componente.SERVICO, Componente.FRETE)
     ]
-    travar_em_ordem(*destinos.values(), *(origem for _, origem in origens))
+    # regra única de travas: as custódias, os três destinos e `despesas_a_cobrir` (que a
+    # cobertura automática das tarifas usa) de uma vez; só depois se confere o ciclo e se leem
+    # os saldos
+    travar_contas(
+        *destinos.values(),
+        conta(Destinacao.DESPESAS_A_COBRIR),
+        *(origem for _, origem in origens),
+    )
+    existente = ApuracaoNoLivro.objects.filter(ciclo=ciclo).first()
+    if existente is not None:
+        return _repetir(existente, conjunto, ciclo)
     transferencias: list[Transferencia] = []
     arrecadado = ZERO
     for componente, origem in origens:
@@ -161,7 +175,8 @@ def cobrir_tarifas_pendentes_da_rodada(rodada: Rodada) -> int:
     """Cobre com a receita de serviço da rodada as tarifas dela, na ordem de criação, inteiras ou
     nada (P-1). A que não cabe fica pendente para o administrador. Devolve quantas cobriu."""
     receita = conta(Destinacao.RECEITA_SERVICO, rodada=rodada.pk)
-    travar_em_ordem(receita)
+    a_cobrir = conta(Destinacao.DESPESAS_A_COBRIR)  # o destino de toda tarifa
+    travar_contas(receita, a_cobrir)
     cobertas = 0
     tarifas = Despesa.objects.filter(tipo=TipoDeDespesa.TARIFA, rodada=rodada).order_by("pk")
     for despesa in tarifas:
@@ -170,7 +185,7 @@ def cobrir_tarifas_pendentes_da_rodada(rodada: Rodada) -> int:
             continue
         lancar(
             tipo=TipoDeMovimento.COBERTURA_DE_DESPESA,
-            transferencias=[Transferencia(receita, conta(Destinacao.DESPESAS_A_COBRIR), pendente)],
+            transferencias=[Transferencia(receita, a_cobrir, pendente)],
             autor=SISTEMA,
             justificativa="Tarifa coberta pela receita de serviço da rodada (P-1)",
             origem=despesa,
@@ -233,7 +248,7 @@ def cobrir_despesa(
         destino = conta(Destinacao.DESPESAS_A_COBRIR)
     else:
         destino = conta(Destinacao.FRETE, rodada=despesa.rodada_id)
-    travar_em_ordem(receita, destino)
+    travar_contas(receita, destino)
     if valor > pendente_da_despesa(despesa):
         raise CoberturaExcedente("o valor passa do que falta cobrir na despesa")
     movimento = lancar(

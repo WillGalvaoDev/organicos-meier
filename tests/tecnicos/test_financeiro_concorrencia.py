@@ -27,6 +27,7 @@ from apps.financeiro.livro import (
     MovimentoConflitante,
     SaldoInsuficiente,
     Transferencia,
+    conta_da_obrigacao,
     lancar,
     saldo,
 )
@@ -42,7 +43,6 @@ from apps.financeiro.models import (
 from apps.financeiro.obrigacoes import (
     LiquidacaoRecusada,
     cobrir_obrigacao_com_receita,
-    conta_da_obrigacao,
     liquidar_obrigacao,
     registrar_obrigacao_com_comprador,
 )
@@ -139,10 +139,13 @@ def test_ordem_de_chamada_diferente_nao_causa_impasse(
     m: Mundo, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-16
     receita, reservada, a_cobrir = receita_de(m.ra), reserva(), despesas()
-    with transaction.atomic():
-        semear(m, receita, "10.00")
-        semear(m, reservada, "10.00")
-        mover(T.TARIFA, a_cobrir, EXTERIOR, "3.00")
+    for preparo in (  # cada saldo na sua transação, como em produção (regra única de travas)
+        lambda: semear(m, receita, "10.00"),
+        lambda: semear(m, reservada, "10.00"),
+        lambda: mover(T.TARIFA, a_cobrir, EXTERIOR, "3.00"),
+    ):
+        with transaction.atomic():
+            preparo()
     pausa = Barrier(2)
     estado = local()
     original = livro._travar_conta

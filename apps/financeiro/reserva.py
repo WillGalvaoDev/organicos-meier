@@ -26,10 +26,11 @@ from apps.financeiro.livro import (
     EXTERIOR,
     MovimentoInvalido,
     Transferencia,
-    _travar_conta,
     conta,
+    conta_da_obrigacao,
     lancar,
     saldo,
+    travar_contas,
 )
 from apps.financeiro.models import (
     AlertaFinanceiro,
@@ -231,19 +232,20 @@ def _sem_invariante_violado() -> None:
         raise InvarianteViolado("invariante violado: a reserva não pode ser usada")
 
 
-def _travar_a_reserva() -> ContaFinanceira:
-    """A primeira trava da reserva: calcula-se o livre e decide-se só depois dela."""
+def _travar_a_reserva(*outras: ContaFinanceira) -> ContaFinanceira:
+    """Trava a reserva e as `outras` contas de que a decisão depende, de uma vez e em ordem
+    crescente de `pk` (regra única de travas). Calcula-se o livre e decide-se só depois disso."""
     caixa = conta(Destinacao.RESERVA)
-    _travar_conta(caixa.pk)
+    travar_contas(caixa, *outras)
     return caixa
 
 
-def _travar_a_conta_da_obrigacao(obrigacao: ObrigacaoComComprador) -> None:
-    destino = ContaFinanceira.objects.filter(
-        destinacao=Destinacao.OBRIGACAO_COMPRADOR, chave=f"o{obrigacao.pk}"
-    ).first()
-    if destino is not None:
-        _travar_conta(destino.pk)
+def _destino_da_despesa(despesa: Despesa) -> ContaFinanceira:
+    """A conta que todas as fontes da cobertura travam: `despesas_a_cobrir` para a tarifa e
+    `frete(r)` para o déficit de frete."""
+    if despesa.tipo == TipoDeDespesa.TARIFA:
+        return conta(Destinacao.DESPESAS_A_COBRIR)
+    return conta(Destinacao.FRETE, rodada=despesa.rodada_id)
 
 
 def _exigir_livre(valor: Decimal) -> None:
@@ -294,8 +296,7 @@ def designar_reserva(
     _exigir_administrador(autor)
     valor = _valor(valor)
     justificativa = _justificativa(justificativa)
-    _travar_a_reserva()
-    _travar_a_conta_da_obrigacao(obrigacao)
+    _travar_a_reserva(conta_da_obrigacao(obrigacao))
     _sem_invariante_violado()
     _exigir_livre(valor)
     if valor > sem_cobertura_da_obrigacao(obrigacao):
@@ -347,15 +348,12 @@ def utilizar_reserva(
     _exigir_administrador(autor)
     valor = _valor(valor)
     justificativa = _justificativa(justificativa)
-    caixa = _travar_a_reserva()
+    destino = _destino_da_despesa(despesa)
+    caixa = _travar_a_reserva(destino)
     _sem_invariante_violado()
     _exigir_livre(valor)
     if valor > pendente_da_despesa(despesa):
         raise CoberturaExcedente("o valor passa do que falta cobrir na despesa")
-    if despesa.tipo == TipoDeDespesa.TARIFA:
-        destino = conta(Destinacao.DESPESAS_A_COBRIR)
-    else:
-        destino = conta(Destinacao.FRETE, rodada=despesa.rodada_id)
     movimento = lancar(
         tipo=TipoDeMovimento.COBERTURA_DE_DESPESA,
         transferencias=[Transferencia(caixa, destino, valor)],
