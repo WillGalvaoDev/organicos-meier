@@ -1,3 +1,148 @@
+# E09 — Revalidação independente sobre d365475
+
+**Veredito final: REPROVADO por conformidade técnica residual de R10.** R07 foi encerrado, e as 13 provas da revisão anterior agora passam. Resta a limitação de reutilização de `atomic(savepoint=False)` dentro de `TestCase`, declarada pelo implementador e confirmada independentemente, mas não autorizada como exceção pela especificação. Não foi demonstrado defeito financeiro nos caminhos reais testados.
+
+Revisão executada em 2026-10-22 e concluída em 2026-10-23, base `d365475e68c26f9a2f2e58158a19d643a5aa30b2`, branch `e09-implementacao`. Conferidos os adendos de `5bdc419`, os commits de testes anteriores à produção (`afbe7c0` e `d6a09d3`), as correções e seus registros. O histórico anterior foi preservado integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2428 passed in 361.92s**; Ruff lint passou, formatação de 329 arquivos conforme, mypy sem erros em 393 arquivos e nenhuma migração pendente. As **13 provas do parecer anterior passaram, sem alteração, em 13.66s**. Controle adicional do limite declarado: **1 failed, 2 passed in 5.01s**. O único insucesso é o isolamento da guarda em `TestCase` com objeto `atomic(savepoint=False)` reutilizado; os controles com transações reais passam. Detalhes e reprodução no [parecer consolidado](../E09-08/review.md).
+
+## Estado dos achados
+
+| Achado | Resultado |
+|---|---|
+| R01 — cobertura duplicada | Encerrado; prova independente novamente verde |
+| R02 — deadlock designação/liquidação | Defeito original encerrado; prova independente novamente verde |
+| R03 — referência concorrente | Encerrado; prova independente novamente verde |
+| R04 — frete coberto | Encerrado; prova independente novamente verde |
+| R05 — avaliação periódica da reserva | Encerrado; prova independente novamente verde |
+| R06 — identificador de 64 caracteres | Encerrado; prova independente novamente verde |
+| R07 — conciliação temporal, incluindo tarifa | Encerrado nesta revisão |
+| R08 — TDD | Tratamento autorizado mantido; os novos ciclos estão registrados separadamente |
+| R09 — fontes na apuração concorrente | Encerrado; prova independente novamente verde |
+| R10 — vida do registro da guarda | Casos anteriores corrigidos; permanece o limite de TestCase/savepoint=False descrito abaixo |
+
+## Matriz das fatias
+
+As matrizes atuais somam 158 critérios. Os testes versionados de todas as fatias passaram. Isso não resolve a restrição mais ampla da spec sobre as formas válidas de `atomic`, que o caso adicional expõe.
+
+| Fatia | Critérios | Veredito local |
+|---|---|---|
+| E09-01 | A-1–A-27 | REPROVADO: R10 residual |
+| E09-02 | A-1–A-18 | APROVADO, mantido |
+| E09-03 | A-1–A-13, A-6 reescrito | APROVADO, mantido |
+| E09-04 | A-1–A-13 | APROVADO, mantido |
+| E09-05 | A-1–A-17 | APROVADO nos fluxos revistos |
+| E09-06 | A-1–A-26 | APROVADO nos fluxos revistos |
+| E09-07 | A-1–A-29 | APROVADO; R07 encerrado |
+| E09-08 | A-1–A-15 | Integração financeira revalidada, mas aceite global pendente de R10 |
+
+A discrepância editorial de A-3 da E09-08 permanece em M-8, conforme tratamento já definido pelo especificador: entrada `1000,00`, sem separador de milhar. As melhorias anteriores não foram reabertas nem implementadas. A falha residual de R10 não foi registrada como melhoria porque conflita diretamente com uma restrição técnica expressa da correção.
+
+## R07 encerrado
+
+Código conferido: `apps/financeiro/conciliacao.py`, `_classificar`, ramo TARIFA. O recorte com `ate` exige a despesa com valor correspondente e `_total("tarifa:<pk>", ate)` de igual valor. A despesa sozinha não torna o débito existente antes do lançamento; sem `ate`, a classificação do dia continua usando o estado conhecido na execução.
+
+A-28 e a prova independente `test_tarifa_pareada_pelo_instante_do_lancamento` passaram: pagamento 125,00 e despesa 10,00 em T, débito em T+10s, saldo 115,00 referente a T+5s, diferença zero. A-29 conserva o caso do saldo depois de ambos os registros. Os demais recortes, pares e identificadores permanecem verdes.
+
+## R10 parcialmente corrigido — importante, limitado ao suporte de testes
+
+**Referência normativa:** `docs/specs/E09-01/spec.md`, “Correção E09-R10”, regras do registro por execução e do TestCase, e a restrição “Não valem [...] recusar formas válidas de transaction.atomic (decorador, objeto reutilizado, savepoints, savepoint=False)”. A-27(iii) cobre TestCase com atomic padrão; a combinação com savepoint=False vem da restrição explícita, não de uma nova regra comercial.
+
+**Código:** `apps/financeiro/livro.py`, `_execucao_do_escopo`: quando o bloco está sob TestCase e `connection.savepoint_ids[posicao - 1]` é None, usa `id(bloco)` como identificador. A mesma instância reutilizada mantém esse identificador e os marcadores do invólucro TestCase.
+
+**Reprodução:** num TestCase, criar contas menor/maior, instanciar `escopo = transaction.atomic(savepoint=False)`, executar `with escopo: _travar_conta(maior.pk)`, terminar o bloco e executar outro `with escopo: _travar_conta(menor.pk)`.
+
+- Esperado pelo contrato artificial de isolamento dos blocos de TestCase: segunda execução começa sem o registro da primeira e é aceita.
+- Obtido: `OrdemDeTravasViolada: a conta 1 foi pedida depois da 2`.
+- A declaração do implementador reconhece exatamente esse limite. O fato de não haver uso na aplicação não cria a exceção na spec por si só.
+
+**Alcance delimitado:** com TestCase e savepoint=False, o bloco não abre uma nova transação nem cria um savepoint físico; as travas permanecem no invólucro externo. O que falha é a convenção adicional de escopos da guarda que a spec exige para o suporte de testes. Não houve demonstração de corrupção financeira ou inversão em produção. Os dois controles independentes reais passaram:
+
+1. reutilização do mesmo atomic(savepoint=False), com reinicialização entre commits e recusa de ordem invertida dentro da execução;
+2. bloco savepoint=False dentro de savepoint externo desfeito, liberando o registro da trava correspondente.
+
+Os três defeitos originais de R10 também passaram sem alteração das provas: reutilização de Atomic, nova execução com ordem invertida e rollback de savepoint com controle em outra conexão. Os testes versionados acrescentam decoradores, savepoints aninhados, liberação sem rollback, repetição de trava anterior e TestCase com savepoint padrão.
+
+**Encaminhamento técnico:** compatibilizar o suporte de TestCase com o contrato exigido ou devolver ao especificador essa incompatibilidade para delimitação explícita do escopo de testes. O revisor não dispensa a restrição por conta própria. Se a especificação mantiver a combinação como obrigatória, o implementador deve tratá-la sem enfraquecer os controles reais já aprovados e sem infringir as demais restrições do mecanismo. Não há decisão comercial ou financeira nova necessária.
+
+## TDD e mecanismo
+
+Conferidos os commits de testes separados da produção:
+
+- R10: `afbe7c0` contém somente testes; registro de arquivo inteiro com **6 failed, 62 passed**, seguido por `4b2d488` e **68 passed**. A-27(i)/(ii) já verdes estão declarados como regressão. O teste combinado A-24 falhava primeiro no caso (i); o (ii) passou a ser exercitado integralmente depois do Green, sem declaração falsa de Red próprio.
+- R07 residual: `d6a09d3` contém somente testes; registro **1 failed, 18 passed**, seguido por `ad3d137` e **19 passed**. A-29 é regressão declarada. `c73de68` ajusta apenas a forma do monkeypatch para tipagem.
+
+O revisor não presenciou os ciclos históricos; conferiu sequência, diffs e registros commitados, e executou a validação atual independentemente. O tratamento excepcional de R08 permanece aceito, conforme decisão já registrada, sem transformar mutações em Red histórico.
+
+Nos caminhos reais, o novo marcador `on_commit` acompanha o descarte de callbacks no rollback de savepoints e no fim da transação; a lista permanece na liberação de savepoint. A consulta da guarda não adiciona ida ao banco além do select_for_update. Conferida a semântica no código instalado do Django. A dependência de `run_on_commit` e `savepoint_ids`, e a varredura da lista de callbacks, permanecem limites técnicos declarados. Não houve monkeypatch do Django ou alteração de produção pelo revisor.
+
+## Comandos e limites de verificação
+
+- `uv run pytest -q`: **2428 passed in 361.92s**.
+- `uv run ruff check .`: passou.
+- `uv run ruff format --check .`: **329 files already formatted**.
+- `uv run mypy .`: **393 source files**, sem erros.
+- `uv run python manage.py makemigrations --check --dry-run`: **No changes detected**.
+- `uv run pytest "$env:TEMP/test_revisao_e09_d365475.py" -q -c pyproject.toml --tb=short`: **13 passed in 13.66s**. Arquivo extraído sem alteração do bloco `INICIO_PROVAS_E09_2930FFD`, preservado abaixo neste mesmo documento.
+- `uv run pytest "$env:TEMP/test_revisao_e09_savepoint_false.py" -q -c pyproject.toml --tb=short`: **1 failed, 2 passed in 5.01s**, pelo limite acima. Código completo abaixo.
+
+Execuções com banco sequenciais, sem interferência entre suítes. Nenhuma mudança em produção, testes versionados, especificações ou regras de negócio. Sem ensaio com dinheiro/provedor real, inspeção visual em navegador ou teste de carga. Não se afirma validação de fases posteriores.
+
+**Próximo gate:** resolver a única incompatibilidade residual de R10 e revalidar seu escopo; os demais achados não precisam ser reabertos sem regressão ou nova evidência. A E09 ainda não recebe aprovação integral no contrato atual.
+
+## Prova adicional e controles
+
+Salvar o bloco como `$env:TEMP/test_revisao_e09_savepoint_false.py` e executar o comando acima. O teste de TestCase falha; os dois testes de transações reais passam.
+
+<!-- INICIO_PROVAS_E09_D365475_LIMITE -->
+```python
+import pytest
+from django.db import transaction
+from django.test import TestCase
+from apps.financeiro.livro import conta, _travar_conta, OrdemDeTravasViolada
+from apps.financeiro.models import Destinacao
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+def contas():
+    menor=conta(Destinacao.RESERVA)
+    maior=conta(Destinacao.DESPESAS_A_COBRIR)
+    assert menor.pk<maior.pk
+    return menor,maior
+
+def test_savepoint_false_em_transacao_real():
+    menor,maior=contas()
+    escopo=transaction.atomic(savepoint=False)
+    with escopo: _travar_conta(maior.pk)
+    with escopo: _travar_conta(menor.pk)
+    with escopo:
+        _travar_conta(maior.pk)
+        with pytest.raises(OrdemDeTravasViolada): _travar_conta(menor.pk)
+
+def test_savepoint_false_dentro_de_savepoint_desfeito():
+    menor,maior=contas()
+    with transaction.atomic():
+        try:
+            with transaction.atomic():
+                with transaction.atomic(savepoint=False): _travar_conta(maior.pk)
+                raise RuntimeError('desfazer savepoint externo')
+        except RuntimeError:
+            pass
+        _travar_conta(menor.pk)
+        _travar_conta(maior.pk)
+
+class TestLimiteDoTestCase(TestCase):
+    def test_savepoint_false_reutilizado(self):
+        menor,maior=contas()
+        escopo=transaction.atomic(savepoint=False)
+        with escopo: _travar_conta(maior.pk)
+        with escopo: _travar_conta(menor.pk)
+
+```
+<!-- FIM_PROVAS_E09_D365475_LIMITE -->
+
+---
+
 # E09 — Revalidação independente das correções sobre 2930ffd
 
 **Veredito final: REPROVADO.** Oito achados anteriores foram encerrados no alcance descrito abaixo. R07 está parcialmente corrigido e há um novo achado importante, R10, na guarda de travas. A E09 ainda não atende à Definition of Done.

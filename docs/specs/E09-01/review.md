@@ -1,3 +1,21 @@
+# E09-01 — Revalidação independente sobre d365475
+
+**Veredito: REPROVADO.**
+
+Revisão executada em 2026-10-22 e concluída em 2026-10-23, base `d365475e68c26f9a2f2e58158a19d643a5aa30b2`, branch `e09-implementacao`. Conferidos os adendos de `5bdc419`, os commits de testes anteriores à produção (`afbe7c0` e `d6a09d3`), as correções e seus registros. O histórico anterior foi preservado integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2428 passed in 361.92s**; Ruff lint passou, formatação de 329 arquivos conforme, mypy sem erros em 393 arquivos e nenhuma migração pendente. As **13 provas do parecer anterior passaram, sem alteração, em 13.66s**. Controle adicional do limite declarado: **1 failed, 2 passed in 5.01s**. O único insucesso é o isolamento da guarda em `TestCase` com objeto `atomic(savepoint=False)` reutilizado; os controles com transações reais passam. Detalhes e reprodução no [parecer consolidado](../E09-08/review.md).
+
+## Matriz e conclusão
+
+A-1–A-27 examinados; testes versionados verdes. Os três defeitos de R10 reproduzidos na revisão anterior estão corrigidos: reutilização de Atomic real, manutenção da ordem na execução seguinte e descarte de trava desfeita por savepoint. Decoradores, savepoints aninhados, liberação e trava anterior retida têm cobertura adicional e passam.
+
+**R10 permanece parcialmente corrigido (importante, conformidade do suporte de testes).** A restrição técnica da spec proíbe recusar formas válidas de `transaction.atomic`, incluindo `savepoint=False`; a regra de TestCase manda reiniciar por execução do bloco externo que não pertence ao caso de teste. `_execucao_do_escopo` retorna `id(bloco)` quando o savepoint é None, repetindo o problema de identidade nesse ambiente. A prova `TestLimiteDoTestCase.test_savepoint_false_reutilizado` falha: primeira execução trava maior, segunda pede somente menor e recebe `OrdemDeTravasViolada` baseada no bloco anterior. Limitação já declarada pelo implementador, mas sem exceção correspondente na spec. Não foi demonstrado defeito financeiro nos caminhos reais; os dois controles reais de savepoint=False passam. A recusa impede afirmar conformidade integral com o contrato técnico atual, e não foi convertida unilateralmente em melhoria.
+
+TDD novo conferido: afbe7c0 contém somente testes, antes de 4b2d488; registro informa 6 failed/62 passed e Green 68 passed. A-27(i)/(ii) foram corretamente declarados regressão já verde. Mantido o tratamento autorizado de R08, sem inventar Red histórico. O uso de callbacks sem efeito é compatível com commit/rollback/savepoints reais; a dependência dos atributos internos da conexão permanece documentada.
+
+---
+
 # E09-01 — Revalidação independente sobre 2930ffd
 
 **Veredito: REPROVADO.**

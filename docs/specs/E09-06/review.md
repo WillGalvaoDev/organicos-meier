@@ -1,3 +1,17 @@
+# E09-06 — Revalidação independente sobre d365475
+
+**Veredito: APROVADO no escopo desta fatia.**
+
+Revisão executada em 2026-10-22 e concluída em 2026-10-23, base `d365475e68c26f9a2f2e58158a19d643a5aa30b2`, branch `e09-implementacao`. Conferidos os adendos de `5bdc419`, os commits de testes anteriores à produção (`afbe7c0` e `d6a09d3`), as correções e seus registros. O histórico anterior foi preservado integralmente abaixo.
+
+Verificação independente: `uv run pytest -q` → **2428 passed in 361.92s**; Ruff lint passou, formatação de 329 arquivos conforme, mypy sem erros em 393 arquivos e nenhuma migração pendente. As **13 provas do parecer anterior passaram, sem alteração, em 13.66s**. Controle adicional do limite declarado: **1 failed, 2 passed in 5.01s**. O único insucesso é o isolamento da guarda em `TestCase` com objeto `atomic(savepoint=False)` reutilizado; os controles com transações reais passam. Detalhes e reprodução no [parecer consolidado](../E09-08/review.md).
+
+## Matriz e conclusão
+
+A-1–A-26: mantida a aprovação dos fluxos revistos. Reexecutadas com sucesso as provas de cobertura, referência concorrente, frete coberto e obrigação pausada após ler o estado da apuração. R01/R03/R04/R09 continuam encerrados. Mantidos o tratamento autorizado de R08 e o encerramento delimitado de M-6. A pendência global é R10 no suporte de TestCase, sem novo achado próprio nesta fatia.
+
+---
+
 # E09-06 — Revalidação independente sobre 2930ffd
 
 **Veredito: APROVADO no escopo desta fatia.**
