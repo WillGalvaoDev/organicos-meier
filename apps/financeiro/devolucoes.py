@@ -11,23 +11,32 @@ livro-razão. Autorização não é dinheiro devolvido: só a conclusão do esto
 
 import logging
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
+from django.core.files.base import ContentFile
 from django.db import transaction
 
 from apps.contas.models import Conta, Papel, Situacao
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
-from apps.financeiro.livro import conta_da_obrigacao, travar_contas
+from apps.financeiro.livro import conta_da_obrigacao, saldo, travar_contas
 from apps.financeiro.models import (
+    ConfirmacaoDeDevolucaoExcepcional,
     HistoricoDaDevolucao,
+    MeioDaDevolucaoExcepcional,
     ObrigacaoComComprador,
     ParcelaDeDevolucao,
     Reembolso,
     SituacaoDaParcela,
     TipoDeAlerta,
 )
-from apps.financeiro.obrigacoes import _liquidado, liquidar_obrigacao
+from apps.financeiro.obrigacoes import (
+    _designacoes_ativas,
+    _liquidado,
+    liquidar_obrigacao,
+    liquidar_obrigacao_fora_do_provedor,
+)
 from apps.financeiro.reserva import sem_cobertura_da_obrigacao
 from apps.nucleo.auditoria import SISTEMA, _Sistema, registrar_auditoria
 from apps.nucleo.tempo import agora
@@ -48,11 +57,13 @@ from apps.pagamentos.provedor import (
     Provedor,
     SaldoInsuficienteParaEstorno,
     SituacaoDoEstorno,
+    obter_provedor,
 )
 from apps.pedidos.models import DestinoDoPagamento, SituacaoDoPedido
 
 logger = logging.getLogger(__name__)
 
+ZERO = Decimal("0.00")
 S = SituacaoDaParcela
 FINAIS = (S.CONCLUIDA, S.CONCLUIDA_FORA_DA_PLATAFORMA)
 ABERTAS = (S.SOLICITADA, S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO)
@@ -513,6 +524,67 @@ def registrar_operacoes() -> None:
     registrar_operacao("verificar_estornos", Operacao(_executar_verificacao, _concluir_verificacao))
 
 
+# --- devolução excepcional (E10-06) ---------------------------------------------------------
+
+TAMANHO_MAXIMO_DO_COMPROVANTE = 10 * 1024 * 1024
+ASSINATURAS_DO_COMPROVANTE = (
+    (b"%PDF-", "application/pdf", ".pdf"),
+    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+)
+MENSAGEM_PENDENTE = "há devolução pendente na plataforma"
+
+
+def _ler_o_comprovante(comprovante: Any) -> tuple[bytes, str, str]:
+    """Os bytes, o tipo e a extensão do comprovante, pelo conteúdo e não pelo nome."""
+    if comprovante is None or not hasattr(comprovante, "read"):
+        raise ValueError("comprovante obrigatório")
+    conteudo = comprovante.read(TAMANHO_MAXIMO_DO_COMPROVANTE + 1)
+    if not isinstance(conteudo, bytes) or not conteudo:
+        raise ValueError("comprovante vazio")
+    if len(conteudo) > TAMANHO_MAXIMO_DO_COMPROVANTE:
+        raise ValueError("comprovante acima de 10 MB")
+    for assinatura, tipo, extensao in ASSINATURAS_DO_COMPROVANTE:
+        if conteudo.startswith(assinatura):
+            return conteudo, tipo, extensao
+    raise ValueError("comprovante deve ser PDF, JPEG ou PNG")
+
+
+def _validar_a_confirmacao(
+    meio: str, identificacao: str, justificativa: str, comprovante: Any
+) -> tuple[bytes, str, str]:
+    if meio not in MeioDaDevolucaoExcepcional.values:
+        raise ValueError("meio deve ser pix ou transferencia")
+    if (
+        not isinstance(identificacao, str)
+        or not 1 <= len(identificacao.strip()) <= 100
+        or len(identificacao) > 100
+        or "\x00" in identificacao
+    ):
+        raise ValueError("identificação da transferência de 1 a 100 caracteres")
+    if not isinstance(justificativa, str) or not 1 <= len(justificativa.strip()) <= 1000:
+        raise ValueError("justificativa de 1 a 1.000 caracteres")
+    return _ler_o_comprovante(comprovante)
+
+
+def _exigir_elegivel(parcela: ParcelaDeDevolucao) -> None:
+    situacao = parcela.situacao
+    if situacao == S.ELEGIVEL_EXCEPCIONAL:
+        return
+    if situacao == S.CONCLUIDA:
+        raise DevolucaoRecusada("já devolvida pela plataforma")
+    if situacao == S.CONCLUIDA_FORA_DA_PLATAFORMA:
+        raise DevolucaoRecusada("já confirmada")
+    raise DevolucaoRecusada(MENSAGEM_PENDENTE)
+
+
+def _cobertura_da_parcela(parcela: ParcelaDeDevolucao) -> bool:
+    destino = conta_da_obrigacao(parcela.obrigacao)
+    ativas = _designacoes_ativas(parcela.obrigacao)
+    disponivel = max(ZERO, saldo(destino)) + sum((resto for _, resto in ativas), ZERO)
+    return bool(disponivel >= parcela.valor)
+
+
 def confirmar_devolucao_excepcional(
     parcela: ParcelaDeDevolucao,
     *,
@@ -521,5 +593,79 @@ def confirmar_devolucao_excepcional(
     identificacao: str,
     justificativa: str,
     comprovante: Any,
-) -> Any:
-    raise NotImplementedError
+) -> ConfirmacaoDeDevolucaoExcepcional:
+    """O administrador confirma que devolveu o dinheiro fora da plataforma. Só vale para a parcela
+    `elegivel_excepcional`, uma vez, sem devolução em andamento no provedor. A obrigação é
+    liquidada pelo F16 e as novas tentativas pela plataforma ficam bloqueadas."""
+    autor_conta = _exigir_autor(autor, aceita_sistema=False)
+    conteudo, tipo, extensao = _validar_a_confirmacao(
+        meio, identificacao, justificativa, comprovante
+    )
+    if parcela.pk is None:
+        raise DevolucaoRecusada("a devolução pela plataforma não foi tentada")
+    atual = ParcelaDeDevolucao.objects.select_related("pagamento", "obrigacao").get(pk=parcela.pk)
+    _exigir_elegivel(atual)
+    consultar_antes_de_decidir(atual.pagamento.referencia_externa)  # ConsultaAoProvedorFalhou
+    _recusar_se_o_provedor_tem_estorno(atual)
+    armazenamento = ConfirmacaoDeDevolucaoExcepcional._meta.get_field("comprovante").storage
+    gravado: str | None = None
+    try:
+        with transaction.atomic():
+            travada = _travar_cadeia(atual.pk)
+            _exigir_elegivel(travada)
+            if not _cobertura_da_parcela(travada):
+                raise DevolucaoRecusada(
+                    "a obrigação não está coberta: é preciso cobrir antes, por designação da "
+                    "reserva, receita de serviço ou aporte"
+                )
+            confirmacao = ConfirmacaoDeDevolucaoExcepcional(
+                parcela=travada,
+                obrigacao=travada.obrigacao,
+                pedido_id=travada.obrigacao.pedido_id,
+                comprador_id=travada.obrigacao.comprador_id,
+                valor=travada.valor,
+                meio=meio,
+                identificacao=identificacao,
+                justificativa=justificativa.strip(),
+                comprovante_nome=str(getattr(comprovante, "name", "") or "comprovante")[-255:],
+                comprovante_tipo=tipo,
+                comprovante_tamanho=len(conteudo),
+                autor=autor_conta,
+            )
+            gravado = armazenamento.save(
+                f"comprovantes/{uuid.uuid4().hex}{extensao}", ContentFile(conteudo)
+            )
+            confirmacao.comprovante.name = gravado
+            confirmacao.save()
+            liquidar_obrigacao_fora_do_provedor(
+                travada.obrigacao, travada.valor, referencia=f"excepcional:{travada.pk}"
+            )
+            transicionar(
+                travada,
+                S.CONCLUIDA_FORA_DA_PLATAFORMA,
+                autor=autor,
+                dados={"meio": meio, "identificacao": identificacao},
+            )
+            _resolver(travada, TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL, "devolução excepcional")
+            registrar_auditoria(
+                autor_conta,
+                "financeiro.devolucao_excepcional_confirmada",
+                confirmacao,
+                {"parcela": travada.pk, "obrigacao": travada.obrigacao_id, "valor": travada.valor},
+                motivo=justificativa.strip(),
+            )
+            return confirmacao
+    except BaseException:
+        if gravado is not None:  # a transação foi desfeita: o arquivo não fica órfão
+            armazenamento.delete(gravado)
+        raise
+
+
+def _recusar_se_o_provedor_tem_estorno(parcela: ParcelaDeDevolucao) -> None:
+    """Estorno não contabilizado em processamento ou concluído: a confirmação é recusada e a
+    verificação agendada, para a parcela adotá-lo (E10-05)."""
+    estornos = obter_provedor().consultar_estornos(parcela.pagamento.id_externo)
+    if _nao_contabilizados(estornos):
+        with transaction.atomic():
+            agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
+        raise DevolucaoRecusada("há devolução em processamento ou concluída no provedor")

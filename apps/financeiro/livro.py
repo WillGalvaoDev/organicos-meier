@@ -197,6 +197,8 @@ def _permitido(tipo: str, de: Ponta, para: Ponta) -> bool:
         return (tipo, de.destinacao) in _PARA_O_EXTERIOR
     if tipo == T.APURACAO:
         return de.destinacao == D.CUSTODIA and _apuracao_permitida(de, para)
+    if tipo == T.DEVOLUCAO_EXCEPCIONAL:  # F16: o único fluxo do tipo
+        return de.destinacao == D.OBRIGACAO_COMPRADOR and para.destinacao == D.RESERVA
     livres = de.destinacao in (D.RECEITA_SERVICO, D.RESERVA) and tipo in _COBERTURAS
     if livres:
         return para.destinacao in (D.DESPESAS_A_COBRIR, D.FRETE, D.OBRIGACAO_COMPRADOR)
