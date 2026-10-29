@@ -6,9 +6,11 @@ class FinanceiroConfig(AppConfig):
     label = "financeiro"
 
     def ready(self) -> None:
+        from apps.financeiro.devolucoes import registrar_operacoes
         from apps.financeiro.receptores import registrar_no_livro_o_destino_decidido
         from apps.pedidos.sinais import destino_do_pagamento_decidido
 
+        registrar_operacoes()
         destino_do_pagamento_decidido.connect(
             registrar_no_livro_o_destino_decidido, dispatch_uid="financeiro.entradas"
         )

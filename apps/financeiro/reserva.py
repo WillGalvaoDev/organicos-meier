@@ -41,6 +41,7 @@ from apps.financeiro.models import (
     Destinacao,
     MovimentoFinanceiro,
     ObrigacaoComComprador,
+    ParcelaDeDevolucao,
     TipoDeAlerta,
     TipoDeDespesa,
     TipoDeMovimento,
@@ -315,12 +316,24 @@ def designar_reserva(
     return designacao
 
 
+def _recusar_se_ha_devolucao_em_curso(designacao: DesignacaoDaReserva) -> None:
+    """A cobertura de uma obrigação com devolução em curso não se desfaz (E10-04): o livro precisa
+    conseguir liquidar o que o provedor devolver."""
+    from apps.financeiro.devolucoes import ABERTAS, DevolucaoRecusada
+
+    if ParcelaDeDevolucao.objects.filter(
+        obrigacao_id=designacao.obrigacao_id, situacao__in=ABERTAS
+    ).exists():
+        raise DevolucaoRecusada("há devolução em curso para esta obrigação")
+
+
 def desfazer_designacao(autor: Conta, designacao: DesignacaoDaReserva, justificativa: str) -> None:
     """Devolve o dinheiro designado ao livre. Uma designação só se desfaz uma vez."""
     _exigir_transacao("desfazer_designacao")
     _exigir_administrador(autor)
     justificativa = _justificativa(justificativa)
     _travar_a_reserva()
+    _recusar_se_ha_devolucao_em_curso(designacao)
     if (
         DesignacaoDesfeita.objects.filter(designacao=designacao).exists()
         or consumido_da_designacao(designacao) >= designacao.valor

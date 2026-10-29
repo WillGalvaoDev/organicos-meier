@@ -25,7 +25,11 @@ from apps.financeiro.models import (
     ParcelaDeDevolucao,
 )
 from apps.financeiro.obrigacoes import _liquidado
-from apps.financeiro.reserva import desfazer_designacao, designar_reserva
+from apps.financeiro.reserva import (
+    desfazer_designacao,
+    designar_reserva,
+    sem_cobertura_da_obrigacao,
+)
 from apps.nucleo.auditoria import SISTEMA
 from apps.nucleo.models import EntradaAuditoria
 from apps.nucleo.tempo import agora
@@ -37,11 +41,10 @@ from apps.pedidos.models import DestinoDoPagamento
 from apps.simulador_pagamentos.models import EstornoSimulado
 from tests.apoio.devolucoes import (
     Arranjo,
-    K,
     arranjo_da_devolucao,
     parcial,
-    pedido_pago_com_itens,
 )
+from tests.apoio.financeiro import chave_nova, custodia, mover, obrigacao_com
 from tests.apoio.pedidos import T0, sincronizar
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
@@ -173,7 +176,7 @@ def test_provedor_fora_do_ar_bloqueia_a_autorizacao(a: Arranjo) -> None:  # A-4
 
 
 def test_so_o_administrador_autoriza(a: Arranjo) -> None:  # A-5
-    fornecedor = ContaFactory.create(papel="fornecedor", nome="Fornecedor")
+    fornecedor = ContaFactory.create(fornecedor=True)
     for autor in (a.comprador, fornecedor):
         with pytest.raises(PermissionDenied):
             autorizar_devolucao(a.o1, autor=autor)
@@ -188,14 +191,20 @@ def test_autorizar_de_novo_devolve_a_mesma_parcela(a: Arranjo) -> None:  # A-6
     assert HistoricoDaDevolucao.objects.count() == 1
 
 
-def _obrigacao_sem_entradas() -> tuple[Any, Any]:
-    """Um pedido pago sem entradas no livro: o reembolso nasce sem cobertura."""
-    pedido, itens = pedido_pago_com_itens(K)
-    return pedido, parcial(itens[0], "0.25").obrigacao
+def _obrigacao_sem_cobertura(a: Arranjo) -> ObrigacaoComComprador:
+    """A custódia do pedido é esvaziada antes do reembolso: a obrigação nasce sem cobertura."""
+    rodada, ciclo = a.pedido.abertura.rodada, a.pedido.abertura.ciclo
+    ralo = obrigacao_com(rodada, ciclo, a.comprador, numero=9999)
+    for componente in ("produtos", "servico", "frete"):
+        conta = custodia(rodada, ciclo, a.comprador, componente)
+        mover("financiamento_de_obrigacao", conta, ralo, saldo(conta), chave=chave_nova())
+    obrigacao: ObrigacaoComComprador = parcial(a.i1, "1").obrigacao
+    assert sem_cobertura_da_obrigacao(obrigacao) == obrigacao.devido
+    return obrigacao
 
 
 def test_obrigacao_sem_cobertura_nao_e_autorizada(a: Arranjo) -> None:  # A-7
-    _, obrigacao = _obrigacao_sem_entradas()
+    obrigacao = _obrigacao_sem_cobertura(a)
     antes = _nada_gravado()
     with transaction.atomic():
         designar_reserva(a.admin, obrigacao, D("1.00"), "cobertura parcial")
@@ -438,7 +447,7 @@ def test_chamada_pendente_de_parcela_encerrada_nao_chama_o_provedor(a: Arranjo) 
 
 
 def test_designacao_da_obrigacao_com_parcela_aberta_nao_se_desfaz(a: Arranjo) -> None:  # A-21
-    _, obrigacao = _obrigacao_sem_entradas()
+    obrigacao = _obrigacao_sem_cobertura(a)
     with transaction.atomic():
         designacao = designar_reserva(a.admin, obrigacao, obrigacao.devido, "cobertura")
     autorizar_devolucao(obrigacao, autor=a.admin)

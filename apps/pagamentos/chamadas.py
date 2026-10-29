@@ -167,6 +167,8 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
         chamada.ultimo_erro = codigo
         chamada.proxima_em = instante + _intervalo(chamada.tentativas)
         chamada.save(update_fields=["tentativas", "ultimo_erro", "proxima_em"])
+        if operacao.adiada is not None:
+            operacao.adiada(chamada, codigo)
         logger.info(
             "Chamada ao provedor %s: %s nova tentativa em %s",
             chamada.pk,
