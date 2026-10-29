@@ -1,3 +1,126 @@
+# E09 — Parecer final sobre 5a8b6b6
+
+**Veredito final: APROVADO.**
+
+Revisão independente em **2026-10-29**, implementação `5a8b6b6acf696de3d546532d8590c2d10fd5ed0d`, branch `e09-implementacao`; HEAD documental `130c113`. **E09 APROVADA; R10 residual encerrado.** A delimitação técnica foi especificada em `6800f22`, antes dos testes (`91f2911`) e da correção (`5a8b6b6`). Nenhuma regra comercial ou financeira foi alterada.
+
+Validação independente: **2433 passed in 308.21s**, suíte completa em banco de testes separado; **19 passed in 13.75s**, provas independentes. Ruff lint passou, 329 arquivos com formatação conforme, mypy sem erros em 393 arquivos, nenhuma migração pendente. As 13 provas anteriores e os três controles do parecer residual foram reexecutados sem alterar suas asserções; mais três controles verificam a composição dos escopos sob TestCase.
+
+## Conclusão e rastreabilidade
+
+**R01 a R10 encerrados**, mantido o tratamento excepcional autorizado de R08. R07 permanece encerrado e sua prova temporal de tarifa passou novamente. A única pendência de `9e6ccab` era R10 residual; ela foi resolvida pela delimitação explícita do especificador e pela implementação correspondente, sem dispensa unilateral do revisor.
+
+Conferidas a especificação funcional v1.6 (§9.3, §9.4 e integridade financeira), a infraestrutura v1.7 (3.1–3.5 e transações), AGENTS.md e os adendos da E09-01. A convenção de TestCase é técnica e não altera os caminhos de aplicação nem a segregação de recursos. Desde a revisão anterior, mudaram somente spec/aceitação da E09-01, cinco testes, a guarda em `livro.py` e o registro de implementação. As demais fatias mantêm o aceite anterior, apoiado pela suíte completa e pelas provas de regressão; não se afirma nova auditoria manual integral de cada linha inalterada.
+
+| Fatia | Matriz vigente | Veredito |
+|---|---|---|
+| E09-01 | A-1 a A-31 | APROVADO; R10 encerrado |
+| E09-02 | A-1 a A-18 | APROVADO, mantido |
+| E09-03 | A-1 a A-13 | APROVADO, mantido |
+| E09-04 | A-1 a A-13 | APROVADO, mantido |
+| E09-05 | A-1 a A-17 | APROVADO, mantido |
+| E09-06 | A-1 a A-26 | APROVADO, mantido |
+| E09-07 | A-1 a A-29 | APROVADO, mantido |
+| E09-08 | A-1 a A-15 | APROVADO; aceite global liberado |
+
+São 162 critérios nas matrizes atuais. Melhorias não impeditivas de `docs/melhorias.md`, inclusive M-8, continuam para o gate previsto; nenhuma nova melhoria ou bloqueador nesta revisão.
+
+## R10 residual e TDD
+
+`_escopo_da_transacao` pula os blocos `_from_testcase`; em posição zero identifica a transação real, preservando a guarda; nos demais níveis seleciona o primeiro identificador de savepoint não nulo. Um bloco sem savepoint sob TestCase não cria registro; um savepoint da aplicação dentro dele passa a ser o escopo. O mecanismo de marcadores `on_commit` foi preservado. Não há monkeypatch do Django, subclasse de Atomic ou consulta adicional ao banco. Conferida a correspondência de `atomic_blocks` e `savepoint_ids` no Django instalado. `id(bloco)` foi removido; o uso remanescente de identidade dos callbacks reconhece marcadores vivos, não execuções.
+
+A-28/A-29 exercitam a convenção explícita nova; A-30 confirma a guarda no savepoint interno; A-31 confirma o comportamento real. Os três controles adicionais verificam: bloco sem savepoint dentro de escopo protegido ainda recusa inversão; blocos excluídos não contaminam execuções seguintes com savepoint; rollback interno retira o registro nessa composição sob TestCase. Todos passaram.
+
+`91f2911` contém apenas testes (+55 linhas), anterior à produção `5a8b6b6`. O registro Red/Green informa **2 failed, 71 passed → 73 passed**, sem inventar Red para A-30/A-31. O revisor verificou sequência e diffs, e executou o Green atual independentemente; não presenciou o Red histórico. O registro estava sem commit ao iniciar a revisão; o responsável autorizou sua preservação/inclusão, e o implementador o commitou em `130c113` durante a validação. Esse commit altera somente E09-01/review.md e foi preservado integralmente.
+
+## Execuções independentes e reprodução
+
+A primeira tentativa (`uv run pytest -q -p no:cacheprovider`) coincidiu com outra suíte já em execução no banco compartilhado e apresentou falhas. Foi interrompido somente o processo iniciado pelo revisor; seu resultado não fundamenta aprovação nem achado da implementação. A execução válida usa banco de teste separado para ambos os aliases, preservando a topologia de conexões no mesmo banco. Suíte e provas do revisor foram executadas sequencialmente nesse banco.
+
+Salvar como `$env:TEMP/om_e09_revisor_runner.py`:
+
+```python
+import os
+import sys
+os.environ['DJANGO_SETTINGS_MODULE'] = 'config.settings.test'
+from django.conf import settings
+for database in settings.DATABASES.values():
+    database.setdefault('TEST', {})['NAME'] = 'test_organicos_revisor_e09_5a8b6b6'
+import pytest
+sys.exit(pytest.main(sys.argv[1:]))
+```
+
+Na raiz, definir `$env:PYTHONPATH = (Get-Location).Path` e executar:
+
+- `uv run python "$env:TEMP/om_e09_revisor_runner.py" -q -p no:cacheprovider --tb=short` → **2433 passed in 308.21s**.
+- `uv run python "$env:TEMP/om_e09_revisor_runner.py" "$env:TEMP/test_revisao_e09_d365475.py" "$env:TEMP/test_revisao_e09_5a8b6b6_limite.py" "$env:TEMP/test_revisao_e09_5a8b6b6_composicao.py" -q -c pyproject.toml -p no:cacheprovider --tb=short` → **19 passed in 13.75s**.
+- `uv run ruff check .` → **All checks passed!**
+- `uv run ruff format --check .` → **329 files already formatted**.
+- `uv run mypy .` → **Success: no issues found in 393 source files**.
+- `uv run python manage.py makemigrations --check --dry-run` → **No changes detected**.
+- `rg -n 'savepoint=False' apps tests` → somente docstring e testes; nenhuma chamada na aplicação.
+
+O primeiro arquivo de provas corresponde ao bloco `INICIO_PROVAS_E09_2930FFD`, preservado abaixo (13 testes). O segundo corresponde ao bloco `INICIO_PROVAS_E09_D365475_LIMITE` (3 testes); a prova residual antes vermelha agora está verde. Ambos conferidos contra os blocos originais, sem alteração das asserções. O terceiro é o bloco novo abaixo (3 testes). Logs locais: `$env:TEMP/om_e09_5a8b6b6_suite_isolada.log` e `$env:TEMP/om_e09_5a8b6b6_provas.log`.
+
+Nenhuma alteração de produção, testes versionados, especificações ou regras de negócio pelo revisor. Sem ensaio com provedor/dinheiro real, carga ou inspeção visual em navegador nesta revalidação; aprovação no escopo da fase 1. Limites técnicos de callbacks e atributos internos permanecem declarados. Próximo gate: integração da E09, com atualização dos dois READMEs por quem abrir o PR conforme AGENTS.md §10; etapas seguintes seguem sua própria especificação/revisão.
+
+## Provas adicionais de composição
+
+<!-- INICIO_PROVAS_E09_5A8B6B6_COMPOSICAO -->
+```python
+import pytest
+from django.db import transaction
+from django.test import TestCase
+from apps.financeiro.livro import conta, _travar_conta, OrdemDeTravasViolada
+from apps.financeiro.models import Destinacao
+
+class TestComposicaoDosEscopos(TestCase):
+    def contas(self):
+        menor = conta(Destinacao.RESERVA)
+        maior = conta(Destinacao.DESPESAS_A_COBRIR)
+        assert menor.pk < maior.pk
+        return menor, maior
+
+    def test_sem_savepoint_dentro_de_savepoint_mantem_guarda(self):
+        menor, maior = self.contas()
+        with transaction.atomic():
+            with transaction.atomic(savepoint=False):
+                _travar_conta(maior.pk)
+            with pytest.raises(OrdemDeTravasViolada):
+                _travar_conta(menor.pk)
+
+    def test_sem_savepoint_fora_nao_contamina_savepoint_seguinte(self):
+        menor, maior = self.contas()
+        with transaction.atomic():
+            _travar_conta(maior.pk)
+        with transaction.atomic(savepoint=False):
+            _travar_conta(maior.pk)
+            _travar_conta(menor.pk)
+            for _ in range(2):
+                with transaction.atomic():
+                    _travar_conta(menor.pk)
+                    _travar_conta(maior.pk)
+        with transaction.atomic():
+            _travar_conta(maior.pk)
+            with pytest.raises(OrdemDeTravasViolada):
+                _travar_conta(menor.pk)
+
+    def test_rollback_interno_retira_trava_sob_testcase(self):
+        menor, maior = self.contas()
+        with transaction.atomic(savepoint=False):
+            with transaction.atomic():
+                with pytest.raises(RuntimeError):
+                    with transaction.atomic():
+                        with transaction.atomic(savepoint=False):
+                            _travar_conta(maior.pk)
+                        raise RuntimeError('rollback')
+                _travar_conta(menor.pk)
+                _travar_conta(maior.pk)
+```
+<!-- FIM_PROVAS_E09_5A8B6B6_COMPOSICAO -->
+
+---
+
 # E09 — Revalidação independente sobre d365475
 
 **Veredito final: REPROVADO por conformidade técnica residual de R10.** R07 foi encerrado, e as 13 provas da revisão anterior agora passam. Resta a limitação de reutilização de `atomic(savepoint=False)` dentro de `TestCase`, declarada pelo implementador e confirmada independentemente, mas não autorizada como exceção pela especificação. Não foi demonstrado defeito financeiro nos caminhos reais testados.

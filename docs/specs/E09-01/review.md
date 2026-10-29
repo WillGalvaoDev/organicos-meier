@@ -1,3 +1,27 @@
+# E09-01 — Revalidação independente sobre 5a8b6b6
+
+**Veredito: APROVADO.**
+
+Revisão independente em **2026-10-29**, implementação `5a8b6b6acf696de3d546532d8590c2d10fd5ed0d`, branch `e09-implementacao`; HEAD documental `130c113`. **E09 APROVADA; R10 residual encerrado.** A delimitação técnica foi especificada em `6800f22`, antes dos testes (`91f2911`) e da correção (`5a8b6b6`). Nenhuma regra comercial ou financeira foi alterada.
+
+Validação independente: **2433 passed in 308.21s**, suíte completa em banco de testes separado; **19 passed in 13.75s**, provas independentes. Ruff lint passou, 329 arquivos com formatação conforme, mypy sem erros em 393 arquivos, nenhuma migração pendente. As 13 provas anteriores e os três controles do parecer residual foram reexecutados sem alterar suas asserções; mais três controles verificam a composição dos escopos sob TestCase.
+
+O escopo sob `TestCase` agora é o primeiro bloco da aplicação que cria savepoint. Sem esse bloco, `atomic(savepoint=False)` fica fora da guarda, conforme a nova especificação; dentro de um escopo protegido pertence ao escopo de fora. Transações reais continuam protegidas, inclusive com `savepoint=False` reutilizado. Removida a identificação da execução por `id(bloco)`. A identidade dos callbacks ainda reconhece marcadores vivos, não identifica execuções.
+
+| Critério | Resultado independente |
+|---|---|
+| A-28 | Reutilização de `atomic(savepoint=False)` sob TestCase aceita; prova antes vermelha agora passa |
+| A-29 | Ordem invertida e blocos sucessivos sem savepoint sob TestCase aceitos, conforme a exclusão explícita da guarda |
+| A-30 | `atomic()` dentro do bloco sem savepoint continua recusando inversão |
+| A-31 | Transações reais reutilizadas reiniciam o registro e recusam inversão; rollback do savepoint externo libera o registro das travas internas |
+| A-19 a A-27 / A-21 | Testes preservados; suíte completa verde, incluindo concorrência e ciclo de vida das travas |
+
+TDD: `91f2911` altera somente testes (+55 linhas), antes da produção em `5a8b6b6`. O registro informa arquivo inteiro com **2 failed, 71 passed** no Red (A-28/A-29), depois **73 passed**; A-30/A-31 são regressões já verdes. O revisor conferiu sequência, diffs e registro, sem alegar ter presenciado o Red histórico. O registro preexistente foi commitado pelo implementador em `130c113` durante esta revisão; foi preservado integralmente.
+
+Os limites já declarados (`run_on_commit`, `savepoint_ids`, varredura dos callbacks) permanecem. Nenhum novo achado impeditivo. Comandos, isolamento do banco, provas e veredito da etapa no [parecer consolidado](../E09-08/review.md).
+
+---
+
 # E09-01 — Revalidação independente sobre d365475
 
 **Veredito: REPROVADO.**

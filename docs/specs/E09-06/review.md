@@ -1,3 +1,15 @@
+# E09-06 — Revalidação independente sobre 5a8b6b6
+
+**Veredito: APROVADO.**
+
+Revisão independente em **2026-10-29**, implementação `5a8b6b6acf696de3d546532d8590c2d10fd5ed0d`, branch `e09-implementacao`; HEAD documental `130c113`. **E09 APROVADA; R10 residual encerrado.** A delimitação técnica foi especificada em `6800f22`, antes dos testes (`91f2911`) e da correção (`5a8b6b6`). Nenhuma regra comercial ou financeira foi alterada.
+
+Validação independente: **2433 passed in 308.21s**, suíte completa em banco de testes separado; **19 passed in 13.75s**, provas independentes. Ruff lint passou, 329 arquivos com formatação conforme, mypy sem erros em 393 arquivos, nenhuma migração pendente. As 13 provas anteriores e os três controles do parecer residual foram reexecutados sem alterar suas asserções; mais três controles verificam a composição dos escopos sob TestCase.
+
+Aceite desta fatia mantido. Sem alteração de implementação ou critérios locais desde o parecer anterior; a guarda compartilhada foi revalidada. Nenhum achado impeditivo remanescente. Detalhes, comandos e limitações no [parecer consolidado](../E09-08/review.md).
+
+---
+
 # E09-06 — Revalidação independente sobre d365475
 
 **Veredito: APROVADO no escopo desta fatia.**
