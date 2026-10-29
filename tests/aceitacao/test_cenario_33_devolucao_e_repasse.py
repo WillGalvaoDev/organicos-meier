@@ -6,14 +6,14 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+
 from apps.financeiro.apuracao import registrar_apuracao_no_livro
+from apps.financeiro.livro import EXTERIOR, saldo
+from apps.financeiro.models import TipoDeMovimento
 from apps.financeiro.obrigacoes import (
     cobrir_obrigacao_com_receita,
     registrar_obrigacao_com_comprador,
 )
-
-from apps.financeiro.livro import EXTERIOR, saldo
-from apps.financeiro.models import TipoDeMovimento
 from apps.financeiro.reserva import designar_reserva, itens_sem_cobertura
 from apps.nucleo.auditoria import SISTEMA
 from tests.apoio.financeiro import (

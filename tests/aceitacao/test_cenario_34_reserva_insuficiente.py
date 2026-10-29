@@ -3,6 +3,8 @@
 from decimal import Decimal
 
 import pytest
+
+from apps.financeiro.models import AlertaFinanceiro
 from apps.financeiro.reserva import (
     ReservaInsuficiente,
     avaliar_reserva,
@@ -10,8 +12,6 @@ from apps.financeiro.reserva import (
     registrar_aporte,
     situacao_da_reserva,
 )
-
-from apps.financeiro.models import AlertaFinanceiro
 from tests.apoio.financeiro import montar_mundo, obrigacao_de_teste, reserva, semear
 
 pytestmark = [pytest.mark.django_db, pytest.mark.acceptance]

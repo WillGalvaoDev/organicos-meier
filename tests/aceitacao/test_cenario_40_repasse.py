@@ -5,8 +5,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from apps.financeiro.liquidez import LiquidezInsuficiente, registrar_saida
 
+from apps.financeiro.liquidez import LiquidezInsuficiente, registrar_saida
 from apps.financeiro.livro import saldo
 from tests.apoio.financeiro import montar_l, obrigacao_de
 from tests.apoio.pedidos import T0, administrador

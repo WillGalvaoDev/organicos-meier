@@ -3,10 +3,10 @@
 from decimal import Decimal
 
 import pytest
-from apps.financeiro.reserva import registrar_aporte, situacao_da_reserva
 
 from apps.financeiro.livro import saldo
 from apps.financeiro.models import ContaFinanceira
+from apps.financeiro.reserva import registrar_aporte, situacao_da_reserva
 from tests.apoio.financeiro import montar_mundo, reserva
 
 pytestmark = [pytest.mark.django_db, pytest.mark.acceptance]

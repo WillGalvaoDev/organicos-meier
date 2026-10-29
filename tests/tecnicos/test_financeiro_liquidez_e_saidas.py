@@ -6,6 +6,10 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+
+from apps.financeiro.alertas import abrir_alerta
 from apps.financeiro.liquidez import (
     Liquidez,
     LiquidezInsuficiente,
@@ -13,10 +17,6 @@ from apps.financeiro.liquidez import (
     liquidez,
     registrar_saida,
 )
-from django.core.exceptions import PermissionDenied
-from django.db import transaction
-
-from apps.financeiro.alertas import abrir_alerta
 from apps.financeiro.livro import (
     MovimentoInvalido,
     MovimentoProibido,
