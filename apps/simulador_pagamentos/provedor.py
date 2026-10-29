@@ -20,8 +20,10 @@ from apps.pagamentos.provedor import (
     AvisoDoProvedor,
     AvisoInvalido,
     CobrancaCriada,
+    EstornoConsultado,
     MovimentoNoProvedor,
     NovaCobranca,
+    NovoEstorno,
     PagamentoConsultado,
     ProvedorIndisponivel,
     RecusaDoProvedor,
@@ -202,6 +204,12 @@ class ProvedorSimulado:
             ]
 
         return _executar("listar_movimentos", listar)
+
+    def estornar(self, novo: NovoEstorno) -> EstornoConsultado:
+        raise NotImplementedError
+
+    def consultar_estornos(self, id_externo: str) -> list[EstornoConsultado]:
+        raise NotImplementedError
 
 
 SIMULADO = ProvedorSimulado()
