@@ -105,3 +105,64 @@ def test_parcial_e_integral_ao_mesmo_tempo_fecham_exatamente(
     obrigacoes = ObrigacaoComComprador.objects.all()
     assert len(obrigacoes) == 2
     assert sum((o.devido for o in obrigacoes), D("0.00")) == D("125.00")
+
+
+# --- E10-04: autorização e acompanhamento em paralelo (A-23 e A-24) -------------------------
+
+
+def test_duas_autorizacoes_da_mesma_obrigacao_geram_uma_parcela(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E10-04, A-23
+    from apps.financeiro.devolucoes import autorizar_devolucao
+    from apps.financeiro.models import ParcelaDeDevolucao
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.devolucoes import arranjo_da_devolucao
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+
+    def autorizar(barreira: Barrier) -> Any:
+        barreira.wait(timeout=10)
+        return autorizar_devolucao(a.o1, autor=a.admin)
+
+    resultados = executar_em_paralelo(autorizar, autorizar)
+    assert [r.excecao for r in resultados] == [None, None]
+    assert resultados[0].valor.pk == resultados[1].valor.pk
+    assert ParcelaDeDevolucao.objects.count() == 1
+    assert ChamadaAoProvedor.objects.filter(operacao="estornar").count() == 1
+
+
+def test_acompanhar_e_verificar_ao_mesmo_tempo_liquidam_uma_vez(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # E10-04, A-24
+    from apps.financeiro.devolucoes import autorizar_devolucao
+    from apps.financeiro.models import MovimentoFinanceiro
+    from apps.pagamentos.chamadas import processar_chamadas
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from apps.simulador_pagamentos.models import EstornoSimulado
+    from tests.apoio.devolucoes import arranjo_da_devolucao
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    simulador_pagamentos.estornos_em_processamento(a.pagamento.id_externo)
+    parcela = autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+    parcela.refresh_from_db()
+    assert parcela.situacao == "em_processamento"
+    simulador_pagamentos.concluir_estorno(EstornoSimulado.objects.get().id_estorno)
+    with transaction.atomic():
+        ChamadaAoProvedor.objects.create(
+            operacao="verificar_estornos",
+            alvo=f"parcela:{parcela.pk}",
+            chave_idempotencia="verificacao-a-mao",
+            provedor="simulador",
+            ambiente="testes",
+        )
+
+    def processar(barreira: Barrier) -> int:
+        barreira.wait(timeout=10)
+        return processar_chamadas()
+
+    resultados = executar_em_paralelo(processar, processar)
+    assert [r.excecao for r in resultados] == [None, None]
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    assert MovimentoFinanceiro.objects.filter(tipo="devolucao").count() == 1
