@@ -79,8 +79,14 @@ def _validar(chave: str, motivo: str, autor: Conta | _Sistema) -> Conta | None:
     raise ValueError("autor inválido: informe uma conta salva ou SISTEMA")
 
 
-def _exigir_pedido_pago(pedido: Pedido) -> None:
-    estado = SituacaoDoPedido.objects.get(pedido=pedido)
+def _travar_o_pedido(pedido: Pedido) -> SituacaoDoPedido:
+    """A trava de todos os reembolsos do pedido: a linha da situação, tomada antes de ler qualquer
+    acumulado. O serviço e o frete são acumulados do pedido, então ela serve a todos os itens. Na
+    ordem global das travas (E09-01) vem depois do pagamento e antes das contas do livro-razão."""
+    return SituacaoDoPedido.objects.select_for_update().get(pedido=pedido)
+
+
+def _exigir_pedido_pago(estado: SituacaoDoPedido) -> None:
     if estado.situacao != SituacaoDePagamento.PAGO:
         raise ReembolsoRecusado("o pedido não está pago")
 
@@ -160,10 +166,11 @@ def reembolso_parcial(
     _exigir_transacao("reembolso_parcial")
     autor_conta = _validar(chave, motivo, autor)
     pedido = item.pedido
+    estado = _travar_o_pedido(pedido)
     existente = _existente(chave, pedido, motivo, {(item.pk, quantidade)})
     if existente is not None:
         return existente
-    _exigir_pedido_pago(pedido)
+    _exigir_pedido_pago(estado)
     if (
         not isinstance(quantidade, Decimal)
         or not quantidade.is_finite()
@@ -212,10 +219,11 @@ def reembolso_integral_do_pedido(
     componente. Sem nada restante, não grava nada e devolve `None`."""
     _exigir_transacao("reembolso_integral_do_pedido")
     autor_conta = _validar(chave, motivo, autor)
+    estado = _travar_o_pedido(pedido)
     existente = _existente(chave, pedido, motivo, None)
     if existente is not None:
         return existente
-    _exigir_pedido_pago(pedido)
+    _exigir_pedido_pago(estado)
     linhas: list[Linha] = []
     for item in pedido.itens.order_by("pk"):
         ja_quantidade, ja_valor = acumulado_do_item(item)
