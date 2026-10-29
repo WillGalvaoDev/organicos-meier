@@ -1,4 +1,4 @@
-"""E09-07: conciliação diária com o provedor (acceptance A-11 a A-18, A-21 e A-23)."""
+"""E09-07 e E10-01: conciliação diária com o provedor."""
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -530,3 +530,229 @@ def test_tarifa_com_movimento_antes_do_instante_do_saldo_e_par(
         monkeypatch, relogio, instante, id_externo, instante + timedelta(seconds=15)
     )
     _confere_conciliacao_sem_divergencia(conciliacao)
+
+
+# --- E10-01: pendências de dias anteriores não repetem a diferença de saldo (A-1 a A-10) --------
+
+D1 = DIA
+D2 = DIA + timedelta(days=1)
+
+
+def _conciliar_o_dia(
+    monkeypatch: pytest.MonkeyPatch,
+    relogio: RelogioControlado,
+    data: date,
+    saldo_: str,
+    movimentos: list[MovimentoNoProvedor] | None = None,
+) -> Any:
+    """Concilia `data` à 01:00 do dia seguinte, com o saldo do provedor lido às 23:00 de `data`."""
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    _, fim = limites_do_dia(data)
+    _usar(monkeypatch, _Dubles(_saldo(saldo_, fim - H), movimentos))
+    relogio.congelar(fim + H)
+    return conciliar_dia(data)
+
+
+def _ajuste(id_movimento: str, valor: str, data: date, hora: int) -> MovimentoNoProvedor:
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    inicio, _ = limites_do_dia(data)
+    return _movimento(TipoDeMovimentoNoProvedor.AJUSTE, id_movimento, valor, inicio + hora * H)
+
+
+def _diferenca(conciliacao: Any) -> Decimal:
+    return D(str(conciliacao.resumo["diferenca"]))
+
+
+def _de_saldo() -> list[AlertaFinanceiro]:
+    return [a for a in AlertaFinanceiro.objects.all() if a.chave.startswith("saldo:")]
+
+
+def test_ajuste_antigo_nao_repete_a_diferenca_nos_dias_seguintes(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-1, E10-01
+    ajuste = _ajuste("ajuste-1", "10.00", D1, 12)
+    primeira = _conciliar_o_dia(monkeypatch, relogio, D1, "10.00", [ajuste])
+    assert _diferenca(primeira) == D("0.00")
+    assert primeira.resumo["sem_par"] == 1
+    assert primeira.resultado == "divergente"
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["ajuste-1"]
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "10.00", [ajuste])
+    assert _diferenca(segunda) == D("0.00")
+    assert segunda.resumo["sem_par"] == 0
+    assert segunda.resultado == "ok"
+    assert _de_saldo() == []
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["ajuste-1"]
+
+
+def _aporte_sem_deposito(relogio: RelogioControlado) -> None:
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    inicio, _ = limites_do_dia(D1)
+    relogio.congelar(inicio + 12 * H)
+    montar_mundo()
+    with transaction.atomic():
+        registrar_aporte(administrador(), D("100.00"), "sem-deposito", "Aporte")
+
+
+def test_aporte_sem_deposito_nao_repete_a_diferenca_nos_dias_seguintes(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-2, E10-01
+    _aporte_sem_deposito(relogio)
+    primeira = _conciliar_o_dia(monkeypatch, relogio, D1, "0.00")
+    assert _diferenca(primeira) == D("0.00")
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["livro:sem-deposito"]
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "0.00")
+    assert _diferenca(segunda) == D("0.00")
+    assert segunda.resultado == "ok"
+    assert _de_saldo() == []
+
+
+def _pagamento_sem_entrada() -> MovimentoNoProvedor:
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    inicio, _ = limites_do_dia(D1)
+    return _movimento(
+        TipoDeMovimentoNoProvedor.PAGAMENTO, "pag-sem-entrada", "125.00", inicio + 12 * H, "ext-1"
+    )
+
+
+def test_pagamento_sem_entrada_nao_repete_a_diferenca_nos_dias_seguintes(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-3, E10-01
+    pagamento = _pagamento_sem_entrada()
+    primeira = _conciliar_o_dia(monkeypatch, relogio, D1, "125.00", [pagamento])
+    assert _diferenca(primeira) == D("0.00")
+    assert [a.chave for a in _alertas("pagamento_sem_conciliacao")] == ["ext-1"]
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "125.00", [pagamento])
+    assert _diferenca(segunda) == D("0.00")
+    assert _de_saldo() == []
+
+
+def test_aporte_cujo_deposito_aparece_depois_e_resolvido(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-4, E10-01
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    _aporte_sem_deposito(relogio)
+    _conciliar_o_dia(monkeypatch, relogio, D1, "0.00")
+    inicio, _ = limites_do_dia(D2)
+    deposito = _movimento(
+        TipoDeMovimentoNoProvedor.DEPOSITO, "sem-deposito", "100.00", inicio + 10 * H
+    )
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "100.00", [deposito])
+    assert _diferenca(segunda) == D("0.00")
+    assert _alertas("divergencia_na_conciliacao") == []
+    resolvido = AlertaFinanceiro.objects.get(chave="livro:sem-deposito")
+    assert resolvido.resolvido_em is not None
+    assert resolvido.motivo_da_resolucao == f"par encontrado na conciliação de {D2.isoformat()}"
+
+
+def test_so_a_parte_nova_do_dia_entra_na_diferenca_e_nos_alertas(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-5, E10-01
+    antigo = _ajuste("ajuste-1", "10.00", D1, 12)
+    _conciliar_o_dia(monkeypatch, relogio, D1, "10.00", [antigo])
+    novo = _ajuste("ajuste-2", "-3.00", D2, 15)
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "7.00", [antigo, novo])
+    assert _diferenca(segunda) == D("0.00")
+    assert segunda.resumo["sem_par"] == 1
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["ajuste-1", "ajuste-2"]
+    assert _de_saldo() == []
+
+
+def test_diferenca_nova_alem_da_pendencia_antiga_abre_so_a_parte_nova(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-6, E10-01
+    antigo = _ajuste("ajuste-1", "10.00", D1, 12)
+    _conciliar_o_dia(monkeypatch, relogio, D1, "10.00", [antigo])
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "15.00", [antigo])
+    assert _diferenca(segunda) == D("5.00")
+    (alerta,) = _de_saldo()
+    assert alerta.chave == f"saldo:{D2.isoformat()}"
+    assert D(str(alerta.dados["diferenca"])) == D("5.00")
+
+
+def test_entrada_lancada_depois_de_t_de_d1_nao_entra_na_soma_de_d2(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-7, E10-01
+    from apps.financeiro.conciliacao import limites_do_dia
+    from tests.apoio.financeiro import pedido_composto
+    from tests.apoio.pedidos import sincronizar, tentativa_criada
+    from tests.fabricas import ContaFactory
+
+    _, fim = limites_do_dia(D1)
+    relogio.congelar(T0 + H)
+    pedido = pedido_composto(ContaFactory.create())
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    relogio.congelar(fim - H)
+    simulador_pagamentos.aprovar(id_externo)
+    relogio.congelar(fim - timedelta(minutes=30))  # a entrada nasce às 23:30 de D1, depois de t
+    sincronizar(id_externo)
+    pagamento = _movimento(
+        TipoDeMovimentoNoProvedor.PAGAMENTO, "pag-1", "125.00", fim - H, id_externo
+    )
+    primeira = _conciliar_o_dia(monkeypatch, relogio, D1, "125.00", [pagamento])
+    assert _diferenca(primeira) == D("0.00")
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "125.00", [pagamento])
+    assert _diferenca(segunda) == D("0.00")
+    assert segunda.resultado == "ok"
+    assert _de_saldo() == []
+    assert _alertas("pagamento_sem_conciliacao") == []
+
+
+def test_movimento_na_lista_do_dia_seguinte_nao_entra_duas_vezes(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-8, E10-01
+    ajuste = _ajuste("ajuste-tarde", "10.00", D1, 22)
+    _conciliar_o_dia(monkeypatch, relogio, D1, "10.00", [ajuste])
+    segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "10.00", [ajuste])
+    assert _diferenca(segunda) == D("0.00")
+    assert _de_saldo() == []
+
+
+def test_alerta_sem_data_nao_entra_na_soma_e_nao_derruba_a_conciliacao(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:  # A-9, E10-01
+    with transaction.atomic():
+        abrir_alerta("divergencia_na_conciliacao", "sem-data", {"valor": "9.00"})
+    with caplog.at_level("WARNING", logger="apps.financeiro.conciliacao"):
+        segunda = _conciliar_o_dia(monkeypatch, relogio, D2, "0.00")
+    assert _diferenca(segunda) == D("0.00")
+    avisos = [r.getMessage() for r in caplog.records if r.name == "apps.financeiro.conciliacao"]
+    assert any("sem data legível" in aviso for aviso in avisos)
+    assert not any("9.00" in aviso for aviso in avisos)
+
+
+class _DublePorDia(_Dubles):
+    """Um saldo de 10,00 por dia, lido às 23:00 do dia que está sendo conciliado."""
+
+    def __init__(self, dias: list[date], movimentos: list[MovimentoNoProvedor]) -> None:
+        super().__init__(_saldo("10.00", datetime(2026, 1, 1, tzinfo=UTC)), movimentos)
+        self._dias = iter(dias)
+
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        from apps.financeiro.conciliacao import limites_do_dia
+
+        _, fim = limites_do_dia(next(self._dias))
+        return _saldo("10.00", fim - H)
+
+
+def test_dias_pendentes_nao_abrem_alerta_de_saldo_pela_pendencia_antiga(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-10, E10-01
+    from apps.financeiro.conciliacao import limites_do_dia
+
+    ajuste = _ajuste("ajuste-1", "10.00", D1, 12)
+    _conciliar_o_dia(monkeypatch, relogio, D1, "10.00", [ajuste])
+    dias = [D1 + timedelta(days=n) for n in (1, 2, 3)]
+    _usar(monkeypatch, _DublePorDia(dias, [ajuste]))
+    _, fim_de_d4 = limites_do_dia(dias[-1])
+    relogio.congelar(fim_de_d4 + H)
+    assert conciliar_dias_pendentes_agora() == 3
+    for dia_ in dias:
+        assert ConciliacaoDiaria.objects.get(data=dia_).resultado == "ok"
+    assert _de_saldo() == []
+    assert [a.chave for a in _alertas("divergencia_na_conciliacao")] == ["ajuste-1"]
