@@ -17,12 +17,15 @@ from django.db import IntegrityError, transaction
 from django.db.models import Sum
 
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
+from apps.financeiro.devolucoes import ABERTAS
 from apps.financeiro.livro import saldo_total_esperado
 from apps.financeiro.models import (
     AlertaFinanceiro,
     ConciliacaoDiaria,
     Despesa,
     MovimentoFinanceiro,
+    ParcelaDeDevolucao,
+    SituacaoDaParcela,
     TipoDeAlerta,
     TipoDeDespesa,
     TipoDeMovimento,
@@ -117,6 +120,11 @@ def _classificar(movimento: MovimentoNoProvedor, ate: datetime | None = None) ->
     if tipo == TipoDeMovimentoNoProvedor.SAIDA:
         total = _total(f"saida:{movimento.id_movimento}", ate)
         return None if total == abs(movimento.valor) else DIVERGENTE
+    if tipo == TipoDeMovimentoNoProvedor.DEVOLUCAO:
+        if not movimento.id_estorno:
+            return DIVERGENTE
+        total = _total(f"devolucao:{movimento.id_estorno}", ate)
+        return None if total == abs(movimento.valor) else DIVERGENTE
     return DIVERGENTE  # ajuste, outro ou um tipo que o livro não conhece
 
 
@@ -193,7 +201,14 @@ def _montar_a_pendencia(alerta: AlertaFinanceiro, antes_de: date) -> _Pendencia 
         return None
     momento = datetime.combine(data, time.min, tzinfo=FUSO_DA_OPERACAO).astimezone(UTC)
     movimento = MovimentoNoProvedor(
-        id_movimento, tipo, tipo.value, valor, id_externo, momento, None
+        id_movimento,
+        tipo,
+        tipo.value,
+        valor,
+        id_externo,
+        momento,
+        None,
+        id_estorno=dados.get("id_estorno"),
     )
     return _Pendencia(alerta.tipo, alerta.chave, valor, movimento=movimento)
 
@@ -348,6 +363,44 @@ def conciliar_dia(data: date) -> ConciliacaoDiaria:
     return conciliacao
 
 
+def _sinalizar_devolucao_tardia(movimento: MovimentoNoProvedor) -> None:
+    """Um estorno concluído no provedor, sem par no livro (E10-05): se o sistema já tinha a
+    parcela como falha definitiva, elegível ou devolvida de forma excepcional, o provedor concluiu
+    tarde o que se dava por não feito. O alerta é crítico; a parcela só adota o estorno se ainda
+    não houve a devolução excepcional."""
+    if not movimento.id_estorno:
+        return
+    parcelas = ParcelaDeDevolucao.objects.filter(pagamento__id_externo=movimento.id_externo)
+    if parcelas.filter(id_estorno=movimento.id_estorno, situacao__in=ABERTAS).exists():
+        return  # o `concluir` da parcela ainda vai lançar o F15
+    parcela = parcelas.filter(
+        id_estorno__isnull=True,
+        situacao__in=(
+            SituacaoDaParcela.FALHA_DEFINITIVA,
+            SituacaoDaParcela.ELEGIVEL_EXCEPCIONAL,
+            SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA,
+        ),
+    ).first()
+    if parcela is None:
+        return
+    em_dobro = parcela.situacao == SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA
+    abrir_alerta(
+        TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE,
+        movimento.id_estorno,
+        {
+            "parcela": parcela.pk,
+            "obrigacao": parcela.obrigacao_id,
+            "situacao": parcela.situacao,
+            "valor": abs(movimento.valor),
+            "id_externo": movimento.id_externo,
+            "id_estorno": movimento.id_estorno,
+            "devolvida_em_dobro": em_dobro,
+        },
+    )
+    if not em_dobro:
+        agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
+
+
 def _abrir_e_resolver_alertas(data: date, achados: _Achados, diferenca: Decimal) -> None:
     for movimento in achados.sem_lancamento:
         id_externo = movimento.id_externo or movimento.id_movimento
@@ -369,8 +422,11 @@ def _abrir_e_resolver_alertas(data: date, achados: _Achados, diferenca: Decimal)
                 "descricao_no_provedor": movimento.descricao_no_provedor,
                 "valor": movimento.valor,
                 "id_externo": movimento.id_externo,
+                "id_estorno": movimento.id_estorno,
             },
         )
+        if movimento.tipo == TipoDeMovimentoNoProvedor.DEVOLUCAO:
+            _sinalizar_devolucao_tardia(movimento)
     for identificacao, valor in achados.livro_sem_par:
         abrir_alerta(
             TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO,

@@ -63,7 +63,7 @@ TRANSICOES: dict[str, tuple[str, ...]] = {
     S.FALHA_TEMPORARIA: (S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO, S.CONCLUIDA, S.FALHA_DEFINITIVA),
     S.EM_PROCESSAMENTO: (S.CONCLUIDA, S.FALHA_DEFINITIVA),
     S.FALHA_DEFINITIVA: (S.ELEGIVEL_EXCEPCIONAL, S.EM_PROCESSAMENTO, S.CONCLUIDA),
-    S.ELEGIVEL_EXCEPCIONAL: (S.CONCLUIDA_FORA_DA_PLATAFORMA,),
+    S.ELEGIVEL_EXCEPCIONAL: (S.CONCLUIDA_FORA_DA_PLATAFORMA, S.CONCLUIDA),
     S.CONCLUIDA: (),
     S.CONCLUIDA_FORA_DA_PLATAFORMA: (),
 }
@@ -431,19 +431,47 @@ def _evidencia_da_reconsulta(estornos: list[EstornoConsultado]) -> dict[str, Any
     }
 
 
-def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoConsultado]) -> None:
-    parcela = _travar_cadeia(_pk_da_parcela(chamada))
-    if parcela.situacao != S.FALHA_DEFINITIVA:
-        return
+def _nao_contabilizados(estornos: list[EstornoConsultado]) -> list[EstornoConsultado]:
     contabilizados = set(
         ParcelaDeDevolucao.objects.exclude(id_estorno=None).values_list("id_estorno", flat=True)
     )
-    nao_contabilizados = [
+    return [
         e
         for e in estornos
         if e.id_estorno not in contabilizados
         and e.situacao in (SituacaoDoEstorno.EM_PROCESSAMENTO, SituacaoDoEstorno.CONCLUIDO)
     ]
+
+
+def _adotar_estorno_tardio(parcela: ParcelaDeDevolucao, estornos: list[EstornoConsultado]) -> None:
+    """O provedor concluiu tarde um estorno que o sistema dava por inviável (E10-05): se ele tem o
+    valor da parcela, a parcela o adota e é liquidada pela via principal."""
+    adotado = next(
+        (
+            e
+            for e in _nao_contabilizados(estornos)
+            if e.situacao == SituacaoDoEstorno.CONCLUIDO and e.valor == parcela.valor
+        ),
+        None,
+    )
+    if adotado is None:
+        return
+    parcela.evidencia = {**parcela.evidencia, "adocao": _evidencia_da_reconsulta(estornos)}
+    parcela.save(update_fields=["evidencia"])
+    _concluir_parcela(parcela, adotado)
+    motivo = "estorno concluído tardiamente pelo provedor e adotado"
+    _resolver(parcela, TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL, motivo)
+    resolver_alerta(TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE, adotado.id_estorno, motivo=motivo)
+
+
+def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoConsultado]) -> None:
+    parcela = _travar_cadeia(_pk_da_parcela(chamada))
+    if parcela.situacao not in (S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL):
+        return
+    if parcela.situacao == S.ELEGIVEL_EXCEPCIONAL:
+        _adotar_estorno_tardio(parcela, estornos)
+        return
+    nao_contabilizados = _nao_contabilizados(estornos)
     parcela.evidencia = {**parcela.evidencia, "reconsulta": _evidencia_da_reconsulta(estornos)}
     outros_valores = [e for e in nao_contabilizados if e.valor != parcela.valor]
     iguais = [e for e in nao_contabilizados if e.valor == parcela.valor]
