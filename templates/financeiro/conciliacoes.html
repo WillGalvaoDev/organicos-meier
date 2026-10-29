@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Conciliações · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Conciliações diárias</h1>
+  {% include "financeiro/_menu.html" %}
+  <table>
+    <thead><tr><th>Data</th><th>Resultado</th><th>Movimentos</th><th>Sem par</th><th>Diferença</th><th>Executada em</th></tr></thead>
+    <tbody>
+      {% for c in pagina %}
+        <tr>
+          <td>{{ c.data|date:"d/m/Y" }}</td>
+          <td>{{ c.get_resultado_display }}</td>
+          <td>{{ c.resumo.movimentos }}</td>
+          <td>{{ c.resumo.sem_par }}</td>
+          <td>{{ c.resumo.diferenca }}</td>
+          <td>{{ c.executada_em|date:"d/m/Y H:i" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">Nenhuma conciliação ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

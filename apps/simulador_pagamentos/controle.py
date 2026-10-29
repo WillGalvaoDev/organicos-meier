@@ -8,14 +8,16 @@ plano de falhas: o plano só afeta as operações da interface.
 import json
 from collections.abc import Callable, Sequence
 from datetime import datetime
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import F
 
 from apps.nucleo.tempo import agora, somar_horas
+from apps.nucleo.valores import ValorInvalido, dinheiro
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.simulador_pagamentos import estado
-from apps.simulador_pagamentos.models import AvisoSimulado
+from apps.simulador_pagamentos.models import AvisoSimulado, MovimentoSimulado
 from apps.simulador_pagamentos.plano import PLANO
 from apps.simulador_pagamentos.roteador import ALIAS
 
@@ -122,7 +124,9 @@ def entregar_avisos(
     if receptor is None:
         from apps.pagamentos.avisos import receber_aviso  # a função que a rota de avisos chama
 
-        receptor = receber_aviso
+        def receptor(corpo: bytes, cabecalhos: dict[str, str]) -> int:
+            return receber_aviso(corpo, cabecalhos, {})  # a entrega não tem query string
+
     codigos: list[int] = []
     for aviso in avisos if avisos is not None else avisos_pendentes():
         for _ in range(vezes):
@@ -158,4 +162,58 @@ def normalizar() -> None:
 
 
 def reiniciar() -> None:
+    """Zera os planos (inclusive tarifa e liberação) e apaga os movimentos da conta."""
     PLANO.reiniciar()
+    MovimentoSimulado.objects.all().delete()
+
+
+def _decimal(valor: object, *, positivo: bool = True) -> Decimal:
+    """Dinheiro do controle: `Decimal` com até duas casas; `float` e valor fora da regra viram
+    `ValueError`. Com `positivo`, zero e negativos também."""
+    if not isinstance(valor, Decimal):
+        raise ValueError("o valor deve ser Decimal")
+    try:
+        convertido = dinheiro(valor)
+    except ValorInvalido as erro:
+        raise ValueError(str(erro)) from None
+    if convertido == 0 or (positivo and convertido < 0):
+        raise ValueError("o valor deve ser maior que zero" if positivo else "o valor é zero")
+    return convertido
+
+
+def definir_tarifa(meio: str, *, percentual: Decimal, fixa: Decimal) -> None:
+    """A tarifa do meio: `percentual` (em %, por exemplo 0,99) do valor mais a parte `fixa`."""
+    if not isinstance(percentual, Decimal) or not isinstance(fixa, Decimal):
+        raise ValueError("percentual e parte fixa devem ser Decimal")
+    if percentual < 0 or fixa < 0:
+        raise ValueError("a tarifa não pode ser negativa")
+    PLANO.definir_tarifa(meio, percentual, fixa)
+
+
+def definir_liberacao(meio: str, *, horas: int) -> None:
+    """O prazo, em horas depois da aprovação, em que o dinheiro do meio fica liberado."""
+    if isinstance(horas, bool) or not isinstance(horas, int) or horas < 0:
+        raise ValueError("as horas devem ser um inteiro não negativo")
+    PLANO.definir_liberacao(meio, horas)
+
+
+def _movimento_avulso(tipo: str, descricao: str, valor: Decimal, em: datetime | None) -> str:
+    instante = _instante(em)
+    movimento = estado.novo_movimento(tipo, descricao, valor, instante, instante)
+    estado.registrar(tipo)
+    return movimento.id_movimento
+
+
+def depositar(valor: Decimal, *, em: datetime | None = None) -> str:
+    """Um depósito (aporte) na conta do provedor, liberado no ato."""
+    return _movimento_avulso("deposito", "deposito", _decimal(valor), em)
+
+
+def registrar_saida(valor: Decimal, *, descricao: str, em: datetime | None = None) -> str:
+    """Uma saída da conta (repasse, retirada), liberada no ato."""
+    return _movimento_avulso("saida", descricao[:50], -_decimal(valor), em)
+
+
+def ajustar_saldo(valor: Decimal, *, em: datetime | None = None) -> str:
+    """Um ajuste que nenhum registro do sistema explica: a divergência de teste da conciliação."""
+    return _movimento_avulso("ajuste", "ajuste", _decimal(valor, positivo=False), em)

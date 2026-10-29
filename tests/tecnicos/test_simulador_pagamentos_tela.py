@@ -3,6 +3,7 @@
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ from apps.contas.permissoes import Politica, politica_da_view, rotas_sem_politic
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pedidos.models import Pedido, SituacaoDoPedido
-from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada
+from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada, MovimentoSimulado
 from tests.apoio.admin_fluxos import administrador_logado
 from tests.apoio.pedidos import (
     T0,
@@ -189,3 +190,89 @@ def test_sem_o_simulador_configurado_as_rotas_nao_existem(
     assert c.cliente.post(f"{BASE}{c.p}/aprovar/").status_code == 404
     assert c.cliente.post(f"{BASE}avisos/entregar/").status_code == 404
     assert _situacao(c.p) == "pendente"
+
+
+# --- E09-02: depositar na conta e registrar saída (A-12) -------------------------------------
+
+
+def _movimentos() -> list[tuple[str, str]]:
+    return list(MovimentoSimulado.objects.order_by("pk").values_list("tipo", "valor"))  # type: ignore[arg-type]
+
+
+def test_a_lista_traz_os_formularios_de_deposito_e_saida(cenario: Cenario) -> None:
+    html = cenario.cliente.get(BASE).content.decode()
+    assert f'action="{BASE}depositar/"' in html
+    assert f'action="{BASE}saida/"' in html
+    assert "Depositar na conta" in html
+    assert "Registrar saída da conta" in html
+
+
+def test_depositar_e_registrar_saida(cenario: Cenario) -> None:  # A-12
+    c = cenario
+    antes = len(_movimentos())
+    resposta = c.cliente.post(f"{BASE}depositar/", {"valor": "1000,00"}, follow=True)
+    assert resposta.redirect_chain[-1][0] == BASE
+    assert "Depósito de R$ 1.000,00 registrado." in resposta.content.decode()
+    resposta = c.cliente.post(
+        f"{BASE}saida/", {"valor": "50.00", "descricao": "repasse"}, follow=True
+    )
+    assert "Saída de R$ 50,00 registrada." in resposta.content.decode()
+    novos = list(MovimentoSimulado.objects.order_by("pk"))[antes:]
+    assert [(m.tipo, m.valor, m.descricao) for m in novos] == [
+        ("deposito", Decimal("1000.00"), "deposito"),
+        ("saida", Decimal("-50.00"), "repasse"),
+    ]
+    (deposito,) = EntradaAuditoria.objects.filter(acao="simulador.depositar")
+    assert deposito.alteracoes == {"valor": "1000.00"}
+    (saida,) = EntradaAuditoria.objects.filter(acao="simulador.registrar_saida")
+    assert saida.alteracoes == {"valor": "50.00"}
+    assert saida.autor_id == str(c.arranjo.admin.pk)
+
+
+@pytest.mark.parametrize("valor", ["1.000,00", "-5", "0", "abc", ""])
+def test_valor_invalido_mostra_o_erro_e_nao_grava(cenario: Cenario, valor: str) -> None:  # A-12
+    c = cenario
+    antes = _movimentos()
+    for caminho, dados in (
+        (f"{BASE}depositar/", {"valor": valor}),
+        (f"{BASE}saida/", {"valor": valor, "descricao": "repasse"}),
+    ):
+        resposta = c.cliente.post(caminho, dados)
+        assert resposta.status_code == 400
+        assert "Informe um valor em reais maior que zero" in resposta.content.decode()
+    resposta = c.cliente.post(f"{BASE}saida/", {"valor": "10,00", "descricao": "  "})
+    assert resposta.status_code == 400
+    assert "Informe a descrição da saída." in resposta.content.decode()
+    assert _movimentos() == antes
+    assert not EntradaAuditoria.objects.filter(acao__startswith="simulador.dep").exists()
+
+
+def test_deposito_e_saida_so_para_o_administrador_e_com_o_simulador(
+    cenario: Cenario, settings: Any
+) -> None:  # A-12
+    c = cenario
+    fornecedor = ContaFactory.create(fornecedor=True)
+    antes = _movimentos()
+    for conta in (c.arranjo.a, fornecedor, None):
+        cliente = Client()
+        if conta is not None:
+            cliente.force_login(conta)
+        for caminho in (f"{BASE}depositar/", f"{BASE}saida/"):
+            resposta = cliente.post(caminho, {"valor": "10,00", "descricao": "x"})
+            assert resposta.status_code in (302, 403), caminho
+    assert c.cliente.get(f"{BASE}depositar/").status_code == 405
+    settings.PROVEDOR_PAGAMENTOS = "mercado_pago"
+    assert c.cliente.post(f"{BASE}depositar/", {"valor": "10,00"}).status_code == 404
+    assert c.cliente.post(f"{BASE}saida/", {"valor": "10,00", "descricao": "x"}).status_code == 404
+    assert _movimentos() == antes
+
+
+def test_as_rotas_novas_declaram_a_politica_de_administrador(cenario: Cenario) -> None:
+    assert rotas_sem_politica() == []
+    for caminho, nome in (
+        (f"{BASE}depositar/", "simulador_pagamentos_depositar"),
+        (f"{BASE}saida/", "simulador_pagamentos_saida"),
+    ):
+        achada = resolve(caminho)
+        assert achada.url_name == nome
+        assert politica_da_view(achada.func) == Politica.ADMINISTRADOR, caminho

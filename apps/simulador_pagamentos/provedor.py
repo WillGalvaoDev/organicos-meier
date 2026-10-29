@@ -8,23 +8,29 @@ controles (`controle.py`) e `cancelar_cobranca`.
 import hmac
 import json
 from collections.abc import Callable, Mapping
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from django.db import IntegrityError, transaction
+from django.db.models import Sum
 
-from apps.nucleo.tempo import agora
+from apps.nucleo.tempo import agora, somar_horas
 from apps.pagamentos.provedor import (
     AvisoDoProvedor,
     AvisoInvalido,
     CobrancaCriada,
+    MovimentoNoProvedor,
     NovaCobranca,
     PagamentoConsultado,
     ProvedorIndisponivel,
     RecusaDoProvedor,
+    SaldoNoProvedor,
     SituacaoNoProvedor,
+    TipoDeMovimentoNoProvedor,
 )
 from apps.simulador_pagamentos import estado
-from apps.simulador_pagamentos.models import CobrancaSimulada
+from apps.simulador_pagamentos.models import CobrancaSimulada, MovimentoSimulado
 from apps.simulador_pagamentos.plano import PLANO
 from apps.simulador_pagamentos.roteador import ALIAS
 
@@ -127,7 +133,10 @@ class ProvedorSimulado:
 
         return _executar("cancelar_cobranca", cancelar)
 
-    def verificar_aviso(self, corpo: bytes, cabecalhos: Mapping[str, str]) -> AvisoDoProvedor:
+    def verificar_aviso(
+        self, corpo: bytes, cabecalhos: Mapping[str, str], parametros: Mapping[str, str]
+    ) -> AvisoDoProvedor:
+        # o simulador confere só a assinatura que já usa e ignora os parâmetros da URL
         def verificar() -> AvisoDoProvedor:
             recebida = next(
                 (
@@ -151,6 +160,48 @@ class ProvedorSimulado:
             )
 
         return _executar("verificar_aviso", verificar)
+
+    def consultar_saldo(self) -> SaldoNoProvedor:
+        def consultar() -> SaldoNoProvedor:
+            instante = agora()
+            movimentos = MovimentoSimulado.objects.all()
+            liberado = movimentos.filter(liberado_em__lte=instante).aggregate(s=Sum("valor"))["s"]
+            a_liberar = movimentos.filter(liberado_em__gt=instante).aggregate(s=Sum("valor"))["s"]
+            estado.registrar("consultar_saldo")
+            return SaldoNoProvedor(
+                liberado=liberado or Decimal("0.00"),
+                a_liberar=a_liberar or Decimal("0.00"),
+                referente_a=instante,  # o simulador é em tempo real
+                consultado_em=instante,
+            )
+
+        return _executar("consultar_saldo", consultar)
+
+    def listar_movimentos(self, desde: datetime, ate: datetime) -> list[MovimentoNoProvedor]:
+        somar_horas(desde, 0)  # InstanteSemFuso se não tiver fuso
+        somar_horas(ate, 0)
+        if desde > ate:
+            raise ValueError("desde não pode ser posterior a ate")
+
+        def listar() -> list[MovimentoNoProvedor]:
+            movimentos = MovimentoSimulado.objects.filter(
+                ocorrido_em__gte=desde, ocorrido_em__lt=ate
+            ).order_by("ocorrido_em", "pk")
+            estado.registrar("listar_movimentos")
+            return [
+                MovimentoNoProvedor(
+                    id_movimento=m.id_movimento,
+                    tipo=TipoDeMovimentoNoProvedor(m.tipo),
+                    descricao_no_provedor=m.descricao,
+                    valor=m.valor,
+                    id_externo=m.id_externo or None,
+                    ocorrido_em=m.ocorrido_em,
+                    liberado_em=m.liberado_em,
+                )
+                for m in movimentos
+            ]
+
+        return _executar("listar_movimentos", listar)
 
 
 SIMULADO = ProvedorSimulado()

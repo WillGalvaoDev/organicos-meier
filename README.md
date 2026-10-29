@@ -12,14 +12,14 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-22, after PR #79 (merge `eea7e79`) |
+| **Last updated** | 2026-10-29, with PR #81 (E09) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 8 of 16 stages delivered (E01–E08), 57 slices, each approved by an independent review |
-| **Last stage delivered** | E08 — Charging: payment opening, frozen orders and deadlines (PR #79) |
-| **Next stage** | E09 — Ledger, reserve and reconciliation (not started) |
-| **Test suite** | 2,166 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
+| **Progress** | 9 of 16 stages delivered (E01–E09), 65 slices, each approved by an independent review |
+| **Last stage delivered** | E09 — Ledger, reserve and reconciliation (PR #81) |
+| **Next stage** | E10 — Refunds (not started) |
+| **Test suite** | 2,433 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
 | **Open blockers** | None |
-| **Non-blocking improvements** | 5 recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
+| **Non-blocking improvements** | 8 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
 **Works today (with the simulator):**
 
@@ -30,8 +30,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Round closing: a 24-hour deadline, extensions and removal of surplus.
 - Payment provider interface and a deterministic simulator. It produces delays, duplicates and failures, and webhooks are idempotent.
 - Payment opening with frozen orders, Pix charges and the `T0`/`T0 + 24h`/`T0 + 48h` timeline. Late or duplicate payments go to refund, and a lost-response recovery cancels charges left without an attempt.
+- Double-entry ledger with immutable movements segregated by destination (custody, supplier obligation, freight, service revenue, reserve), the administrator's reserve with its coverage, buyer obligations, the financial invariant checked every 10 minutes and the daily reconciliation against the provider, with alerts.
 
-**Not built yet:** the ledger and reserve (E09), refunds (E10), final settlement and the pending queue (E11), round cancellation (E12), the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+**Not built yet:** refunds (E10), final settlement and the pending queue (E11), round cancellation (E12), the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -43,8 +44,8 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E06 | Closing and boxes | ✅ Delivered |
 | E07 | Payment simulator and integration | ✅ Delivered |
 | E08 | Charging: opening, frozen orders and deadlines | ✅ Delivered |
-| E09 | Ledger, reserve and reconciliation | ⏳ Next |
-| E10 | Refunds | — |
+| E09 | Ledger, reserve and reconciliation | ✅ Delivered |
+| E10 | Refunds | ⏳ Next |
 | E11 | Final settlement and pending queue | — |
 | E12 | Round cancellation | — |
 | E13 | Formal order, payout and supplier portal | — |
@@ -113,6 +114,7 @@ apps/notificacoes/          site notifications, email queue and announcements
 apps/pagamentos/            provider interface, payment records, outgoing calls, webhooks
 apps/simulador_pagamentos/  deterministic payment simulator (Phase 1 only)
 apps/pedidos/               payment opening, frozen orders, charges, settlement and deadlines
+apps/financeiro/            ledger, reserve, buyer obligations, invariant and reconciliation
 templates/ static/          server-rendered pages
 tests/aceitacao/            acceptance scenarios from the functional specification
 tests/tecnicos/             technical tests (T-n), including concurrency
@@ -121,7 +123,7 @@ docs/specs/                 spec, acceptance criteria and review for every slice
 docs/melhorias.md           non-blocking improvements, reviewed at the end of Phase 1
 ```
 
-The code is about 12,000 lines of application Python and 29,000 lines of tests. The identifiers follow the Brazilian Portuguese domain language.
+The code is about 16,000 lines of application Python and 35,000 lines of tests. The identifiers follow the Brazilian Portuguese domain language.
 
 ### Running locally
 

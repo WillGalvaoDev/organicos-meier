@@ -110,7 +110,18 @@ def simulador_pagamentos() -> Iterator[Any]:
 
 
 BANCOS_DO_SIMULADOR = ["default", "simulador_pagamentos"]
-PREFIXOS_COM_SIMULADOR = ("test_pagamentos_", "test_pedidos_", "test_simulador_pagamentos_")
+PREFIXOS_COM_SIMULADOR = (
+    "test_pagamentos_",
+    "test_pedidos_",
+    "test_simulador_pagamentos_",
+    "test_financeiro_",
+    "test_cenario_30_",
+    "test_cenario_31_",
+    "test_cenario_32_",
+    "test_cenario_33_",
+    "test_cenario_40_",
+    "test_cenario_39_",
+)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

@@ -72,11 +72,14 @@ class PagamentoConsultado:
     aprovado_em: datetime | None
     expira_em: datetime
     consultado_em: datetime
+    # `None` é "o provedor não informou", nunca zero: sem `liberado_em` o valor está a liberar.
+    tarifa: Decimal | None = None
+    liberado_em: datetime | None = None
 
     def __post_init__(self) -> None:
         """Todos os instantes em UTC, com fuso, qualquer que seja o caminho da resposta (R04).
         O instante é o mesmo; muda só a representação. Sem fuso: `InstanteSemFuso`."""
-        for campo in ("criado_em", "aprovado_em", "expira_em", "consultado_em"):
+        for campo in ("criado_em", "aprovado_em", "expira_em", "consultado_em", "liberado_em"):
             instante = getattr(self, campo)
             if instante is not None:
                 object.__setattr__(self, campo, somar_horas(instante, 0))
@@ -106,6 +109,48 @@ class AvisoDoProvedor:
             valor = getattr(self, campo)
             if not isinstance(valor, str) or not 1 <= len(valor) <= limite or "\x00" in valor:
                 raise AvisoInvalido("corpo malformado")
+
+
+class TipoDeMovimentoNoProvedor(StrEnum):
+    PAGAMENTO = "pagamento"
+    TARIFA = "tarifa"
+    DEPOSITO = "deposito"
+    SAIDA = "saida"
+    DEVOLUCAO = "devolucao"
+    AJUSTE = "ajuste"
+    OUTRO = "outro"
+
+
+@dataclass(frozen=True)
+class SaldoNoProvedor:
+    """O saldo da conta no provedor. `referente_a` é o instante a que ele se refere: pode ser
+    anterior a `consultado_em`, porque o provedor real o monta de relatórios assíncronos (L-9)."""
+
+    liberado: Decimal
+    a_liberar: Decimal
+    referente_a: datetime
+    consultado_em: datetime
+
+    def __post_init__(self) -> None:
+        for campo in ("referente_a", "consultado_em"):
+            object.__setattr__(self, campo, somar_horas(getattr(self, campo), 0))
+
+
+@dataclass(frozen=True)
+class MovimentoNoProvedor:
+    id_movimento: str
+    tipo: TipoDeMovimentoNoProvedor
+    descricao_no_provedor: str  # o rótulo original do provedor, até 50 caracteres
+    valor: Decimal  # com sinal, nunca zero
+    id_externo: str | None  # o pagamento, só em `pagamento`, `tarifa` e `devolucao`
+    ocorrido_em: datetime
+    liberado_em: datetime | None
+
+    def __post_init__(self) -> None:
+        for campo in ("ocorrido_em", "liberado_em"):
+            instante = getattr(self, campo)
+            if instante is not None:
+                object.__setattr__(self, campo, somar_horas(instante, 0))
 
 
 class ProvedorIndisponivel(Exception):
@@ -139,7 +184,15 @@ class Provedor(Protocol):
 
     def cancelar_cobranca(self, id_externo: str) -> PagamentoConsultado: ...
 
-    def verificar_aviso(self, corpo: bytes, cabecalhos: Mapping[str, str]) -> AvisoDoProvedor: ...
+    def verificar_aviso(
+        self, corpo: bytes, cabecalhos: Mapping[str, str], parametros: Mapping[str, str]
+    ) -> AvisoDoProvedor:
+        """`parametros` é a query string da URL: a assinatura do Mercado Pago a inclui (L-11)."""
+        ...
+
+    def consultar_saldo(self) -> SaldoNoProvedor: ...
+
+    def listar_movimentos(self, desde: datetime, ate: datetime) -> list[MovimentoNoProvedor]: ...
 
 
 def obter_provedor() -> Provedor:

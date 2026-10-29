@@ -23,14 +23,16 @@ TAMANHO_MAXIMO_DO_AVISO = 64 * 1024
 TIPO_DE_PAGAMENTO = "pagamento"
 
 
-def receber_aviso(corpo: bytes, cabecalhos: Mapping[str, str]) -> int:
+def receber_aviso(
+    corpo: bytes, cabecalhos: Mapping[str, str], parametros: Mapping[str, str]
+) -> int:
     """Devolve o código HTTP: 200 aceito (novo ou repetido), 400 corpo grande demais, 401 aviso
     não autêntico. Os dois últimos não gravam nada."""
     if len(corpo) > TAMANHO_MAXIMO_DO_AVISO:
         return 400
     provedor = obter_provedor()
     try:
-        aviso = provedor.verificar_aviso(corpo, cabecalhos)
+        aviso = provedor.verificar_aviso(corpo, cabecalhos, parametros)
     except AvisoInvalido:
         logger.warning("Aviso de pagamento recusado")
         return 401

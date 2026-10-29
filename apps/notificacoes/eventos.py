@@ -22,6 +22,7 @@ class Evento(models.TextChoices):
     RODADA_CANCELADA = "rodada_cancelada", "Cancelamento da rodada"
     COMUNICADO = "comunicado", "Comunicado"
     FALHA_NO_PEDIDO_FORMAL = "falha_no_pedido_formal", "Falha no pedido formal"
+    ALERTA_FINANCEIRO = "alerta_financeiro", "Alerta financeiro"
 
 
 class Canal(models.TextChoices):
@@ -52,9 +53,12 @@ CANAIS_POR_EVENTO: dict[Evento, frozenset[Canal]] = {
     Evento.RODADA_CANCELADA: _TODOS,
     Evento.COMUNICADO: _TODOS,
     Evento.FALHA_NO_PEDIDO_FORMAL: _SITE_E_EMAIL,
+    Evento.ALERTA_FINANCEIRO: _SITE_E_EMAIL,
 }
 
+_PARA_O_ADMINISTRADOR = frozenset({Evento.FALHA_NO_PEDIDO_FORMAL, Evento.ALERTA_FINANCEIRO})
+
 DESTINATARIO_POR_EVENTO: dict[Evento, Papel] = {
-    evento: Papel.ADMINISTRADOR if evento is Evento.FALHA_NO_PEDIDO_FORMAL else Papel.COMPRADOR
+    evento: Papel.ADMINISTRADOR if evento in _PARA_O_ADMINISTRADOR else Papel.COMPRADOR
     for evento in Evento
 }

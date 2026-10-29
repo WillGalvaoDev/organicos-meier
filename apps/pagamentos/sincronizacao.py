@@ -49,6 +49,12 @@ def _divergencia(pagamento: PagamentoNoProvedor, resposta: PagamentoConsultado) 
     gravado = pagamento.aprovado_no_provedor_em
     if gravado is not None and resposta.aprovado_em not in (None, gravado):
         return DivergenciaDaConsulta.APROVACAO.value
+    # a tarifa e a liberação, uma vez gravadas, não mudam (E09-02)
+    if pagamento.tarifa is not None and resposta.tarifa not in (None, pagamento.tarifa):
+        return DivergenciaDaConsulta.TARIFA.value
+    liberado = pagamento.liberado_no_provedor_em
+    if liberado is not None and resposta.liberado_em not in (None, liberado):
+        return DivergenciaDaConsulta.LIBERACAO.value
     return ""
 
 
@@ -86,6 +92,8 @@ def sincronizar_pagamento(
                     criado_no_provedor_em=consultado.criado_em,
                     expira_em=consultado.expira_em,
                     aprovado_no_provedor_em=consultado.aprovado_em,
+                    tarifa=consultado.tarifa,
+                    liberado_no_provedor_em=consultado.liberado_em,
                     primeiro_aviso_em=aviso_recebido_em,
                     primeira_consulta_em=consultado.consultado_em,
                     ultima_consulta_em=consultado.consultado_em,
@@ -110,7 +118,11 @@ def sincronizar_pagamento(
             preenche = pagamento.aprovado_no_provedor_em is None and (
                 consultado.aprovado_em is not None and (mudou or consultado.situacao == anterior)
             )
-            aplicada = mudou or preenche
+            preenche_tarifa = pagamento.tarifa is None and consultado.tarifa is not None
+            preenche_liberacao = (
+                pagamento.liberado_no_provedor_em is None and consultado.liberado_em is not None
+            )
+            aplicada = mudou or preenche or preenche_tarifa or preenche_liberacao
             campos = ["ultima_consulta_em"]
             if mudou:
                 pagamento.situacao = consultado.situacao.value
@@ -118,6 +130,12 @@ def sincronizar_pagamento(
             if preenche:
                 pagamento.aprovado_no_provedor_em = consultado.aprovado_em
                 campos.append("aprovado_no_provedor_em")
+            if preenche_tarifa:
+                pagamento.tarifa = consultado.tarifa
+                campos.append("tarifa")
+            if preenche_liberacao:
+                pagamento.liberado_no_provedor_em = consultado.liberado_em
+                campos.append("liberado_no_provedor_em")
             pagamento.ultima_consulta_em = max(
                 pagamento.ultima_consulta_em, consultado.consultado_em
             )

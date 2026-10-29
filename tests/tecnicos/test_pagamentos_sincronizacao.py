@@ -331,3 +331,65 @@ def test_os_registros_nao_guardam_dados_do_pagador(
             mensagem = registro_do_log.getMessage()
             for proibido in ("45.90", "ref-1", "SIMULADO-"):
                 assert proibido not in mensagem, mensagem
+
+
+# --- E09-02: tarifa e liberação gravadas pela sincronização (A-8 a A-10) ---------------------
+
+
+def _aprovada_com_tarifa(p: str, relogio: RelogioControlado, sim: Any) -> None:
+    """P aprovada às 13:05 com tarifa de 0,99% (R$ 0,45 sobre R$ 45,90) e liberação em 24h."""
+    sim.definir_tarifa("pix", percentual=D("0.99"), fixa=D("0.00"))
+    sim.definir_liberacao("pix", horas=24)
+    sim.aprovar(p, em=T + timedelta(minutes=5))
+    relogio.congelar(T + timedelta(minutes=20))
+
+
+def test_a_sincronizacao_grava_a_tarifa_e_a_liberacao(
+    p: str, relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-8, cenário 37
+    _aprovada_com_tarifa(p, relogio, simulador_pagamentos)
+    sincronizar(p)
+    pagamento = registro()
+    assert pagamento.tarifa == D("0.45")
+    assert pagamento.liberado_no_provedor_em == T + timedelta(hours=24, minutes=5)
+    assert ConsultaDoPagamento.objects.latest("pk").divergencia == ""
+
+
+def test_tarifa_ja_gravada_nao_muda_e_vira_divergencia(
+    p: str,
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-9
+    _aprovada_com_tarifa(p, relogio, simulador_pagamentos)
+    sincronizar(p)
+    caplog.set_level(logging.INFO)
+    with transaction.atomic():
+        sincronizar_pagamento(replace(consulta(p), tarifa=D("2.00")), origem="tarefa")
+    assert registro().tarifa == D("0.45")
+    assert ConsultaDoPagamento.objects.latest("pk").divergencia == "tarifa"
+    mensagens = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("divergência em tarifa" in m and p in m for m in mensagens)
+    with transaction.atomic():
+        sincronizar_pagamento(
+            replace(consulta(p), liberado_em=T + timedelta(hours=30)), origem="tarefa"
+        )
+    assert registro().liberado_no_provedor_em == T + timedelta(hours=24, minutes=5)
+    assert ConsultaDoPagamento.objects.latest("pk").divergencia == "liberacao"
+
+
+def test_tarifa_e_liberacao_informadas_depois_sao_preenchidas(
+    p: str, relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-10
+    _aprovada_com_tarifa(p, relogio, simulador_pagamentos)
+    completa = consulta(p)
+    with transaction.atomic():
+        sincronizar_pagamento(replace(completa, tarifa=None, liberado_em=None), origem="tarefa")
+    assert (registro().tarifa, registro().liberado_no_provedor_em) == (None, None)
+    with transaction.atomic():
+        sincronizar_pagamento(completa, origem="tarefa")
+    pagamento = registro()
+    assert pagamento.tarifa == D("0.45")
+    assert pagamento.liberado_no_provedor_em == T + timedelta(hours=24, minutes=5)
+    ultima = ConsultaDoPagamento.objects.latest("pk")
+    assert (ultima.divergencia, ultima.aplicada) == ("", True)

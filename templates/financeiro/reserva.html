@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Reserva · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Reserva financeira</h1>
+  {% include "financeiro/_menu.html" %}
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <p>Saldo {{ reserva.saldo|reais }} · Comprometido {{ reserva.comprometido|reais }} · Livre {{ reserva.livre|reais }}</p>
+  {% if aviso_da_reserva %}<p role="alert">{{ aviso_da_reserva }}</p>{% endif %}
+  <p><a href="{% url 'financeiro_aporte' %}">Registrar um depósito da reserva</a></p>
+
+  <h2>Histórico de depósitos</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Valor</th><th>Identificação</th><th>Autor</th><th>Justificativa</th></tr></thead>
+    <tbody>
+      {% for a in aportes %}
+        <tr><td>{{ a.momento }}</td><td>{{ a.valor|reais }}</td><td>{{ a.identificacao }}</td><td>{{ a.autor }}</td><td>{{ a.movimento.justificativa }}</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhum depósito registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Utilizações</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Alvo</th><th>Valor</th><th>Autor</th><th>Justificativa</th></tr></thead>
+    <tbody>
+      {% for u in utilizacoes %}
+        <tr><td>{{ u.momento }}</td><td>{{ u.movimento.origem_tipo }} {{ u.movimento.origem_id }}</td><td>{{ u.valor|reais }}</td><td>{{ u.autor }}</td><td>{{ u.movimento.justificativa }}</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhuma utilização.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Designações</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Alvo</th><th>Valor</th><th>Situação</th><th>Autor</th><th>Justificativa</th><th>Desfazer</th></tr></thead>
+    <tbody>
+      {% for d in designacoes %}
+        <tr>
+          <td>{{ d.momento }}</td>
+          <td>Obrigação {{ d.designacao.obrigacao_id }}</td>
+          <td>{{ d.designacao.valor|reais }}</td>
+          <td>{{ d.situacao }}</td>
+          <td>{{ d.autor }}</td>
+          <td>{{ d.designacao.justificativa }}</td>
+          <td>
+            {% if d.desfeita %}{{ d.desfeita.justificativa }}{% elif d.ativa %}
+              <form method="post" action="{% url 'financeiro_desfazer_designacao' pk=d.designacao.pk %}">
+                {% csrf_token %}
+                <label>Justificativa <input name="justificativa" required></label>
+                <button type="submit">Desfazer designação</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7">Nenhuma designação.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

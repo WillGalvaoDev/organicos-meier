@@ -39,6 +39,8 @@ class DivergenciaDaConsulta(models.TextChoices):
     VALOR = "valor", "Valor"
     CRIACAO = "criacao", "Criação no provedor"
     APROVACAO = "aprovacao", "Aprovação no provedor"
+    TARIFA = "tarifa", "Tarifa"
+    LIBERACAO = "liberacao", "Liberação"
 
 
 class PagamentoNoProvedor(models.Model):
@@ -51,6 +53,9 @@ class PagamentoNoProvedor(models.Model):
     criado_no_provedor_em = models.DateTimeField()
     expira_em = models.DateTimeField()
     aprovado_no_provedor_em = models.DateTimeField(null=True, blank=True)
+    # Informados pelo provedor (E09-02); nulos até ele os informar. Uma vez gravados, não mudam.
+    tarifa = CampoDinheiro(null=True, blank=True)
+    liberado_no_provedor_em = models.DateTimeField(null=True, blank=True)
     primeiro_aviso_em = models.DateTimeField(null=True, blank=True)
     primeira_consulta_em = models.DateTimeField(default=agora)
     ultima_consulta_em = models.DateTimeField(default=agora)

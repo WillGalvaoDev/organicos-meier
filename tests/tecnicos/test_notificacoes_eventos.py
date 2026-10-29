@@ -20,6 +20,7 @@ MATRIZ = [
     ("rodada_cancelada", Papel.COMPRADOR, {S, E, W}),
     ("comunicado", Papel.COMPRADOR, {S, E, W}),
     ("falha_no_pedido_formal", Papel.ADMINISTRADOR, {S, E}),
+    ("alerta_financeiro", Papel.ADMINISTRADOR, {S, E}),  # E09-03
 ]
 
 

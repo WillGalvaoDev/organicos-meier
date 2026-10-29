@@ -26,7 +26,12 @@ from apps.pagamentos.models import (
     ConsultaDoPagamento,
     PagamentoNoProvedor,
 )
-from apps.pagamentos.provedor import NovaCobranca, SituacaoNoProvedor, obter_provedor
+from apps.pagamentos.provedor import (
+    AvisoDoProvedor,
+    NovaCobranca,
+    SituacaoNoProvedor,
+    obter_provedor,
+)
 from apps.pagamentos.sinais import situacao_do_pagamento_mudou
 from apps.simulador_pagamentos.models import AvisoSimulado
 from apps.simulador_pagamentos.provedor import ProvedorSimulado
@@ -448,3 +453,69 @@ def test_aviso_apos_consulta_concluida_atualiza(
     processar_chamadas()
     assert ChamadaAoProvedor.objects.count() == 2
     assert ConsultaDoPagamento.objects.count() == 2
+
+
+# --- E09-02: os parâmetros da URL chegam ao provedor (A-17 e A-18) ----------------------------
+
+QUERY = "?data.id=123&type=payment"
+
+
+def test_o_provedor_recebe_os_parametros_da_url(
+    p: str, aviso: AvisoSimulado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-17, L-11
+    from apps.simulador_pagamentos.controle import corpo_e_cabecalhos
+
+    recebidos: list[tuple[bytes, dict[str, str], Any]] = []
+
+    def duble(
+        self: ProvedorSimulado,
+        corpo: bytes,
+        cabecalhos: Any,
+        parametros: Any = None,
+    ) -> AvisoDoProvedor:
+        recebidos.append(
+            (corpo, dict(cabecalhos), None if parametros is None else dict(parametros))
+        )
+        dados = json.loads(corpo)
+        return AvisoDoProvedor(dados["id_evento"], dados["tipo"], dados["id_externo"])
+
+    monkeypatch.setattr(ProvedorSimulado, "verificar_aviso", duble)
+    corpo, cabecalhos = corpo_e_cabecalhos(aviso)
+    resposta = Client().post(
+        URL + QUERY, data=corpo, content_type="application/json", headers=cabecalhos
+    )
+    assert resposta.status_code == 200
+    assert len(recebidos) == 1
+    corpo_recebido, cabecalhos_recebidos, parametros = recebidos[0]
+    assert parametros == {"data.id": "123", "type": "payment"}
+    assert corpo_recebido == corpo
+    assert cabecalhos_recebidos["X-Simulador-Assinatura"] == cabecalhos["X-Simulador-Assinatura"]
+    assert unico(AvisoRecebido.objects.all()).id_evento == aviso.id_evento
+
+
+def test_a_query_string_nao_muda_o_resultado_dos_avisos_nem_vai_para_o_log(
+    p: str, aviso: AvisoSimulado, caplog: pytest.LogCaptureFixture
+) -> None:  # A-18
+    from apps.simulador_pagamentos.controle import corpo_e_cabecalhos
+
+    consulta = "?data.id=123&type=payment&segredo=xyz-nao-logar"
+    corpo, cabecalhos = corpo_e_cabecalhos(aviso)
+    grande = b"x" * (TAMANHO_MAXIMO_DO_AVISO + 1)
+    caplog.set_level(logging.DEBUG)
+
+    def enviar_com(corpo_: bytes, cabecalhos_: dict[str, str]) -> int:
+        resposta = Client().post(
+            URL + consulta, data=corpo_, content_type="application/json", headers=cabecalhos_
+        )
+        return int(resposta.status_code)
+
+    assert enviar_com(corpo, cabecalhos) == 200
+    assert enviar_com(corpo, cabecalhos) == 200  # repetido
+    assert enviar_com(corpo, {}) == 401  # assinatura ausente
+    assert enviar_com(grande, assinar(grande)) == 400
+    assert AvisoRecebido.objects.count() == 1
+    assert ChamadaAoProvedor.objects.count() == 1
+    for registro in caplog.records:
+        mensagem = registro.getMessage()
+        for proibido in ("xyz-nao-logar", "data.id", "segredo", "123&type"):
+            assert proibido not in mensagem, mensagem
