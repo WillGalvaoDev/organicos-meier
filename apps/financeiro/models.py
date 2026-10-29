@@ -15,7 +15,7 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.so_insercao import RegistroSoInsercao
 from apps.nucleo.tempo import agora
-from apps.nucleo.valores import CampoDinheiro
+from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 from apps.rodadas.models import Ciclo, Rodada
 
 
@@ -377,3 +377,66 @@ class AlertaFinanceiro(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tipo}:{self.chave}"
+
+
+class MotivoDoReembolso(models.TextChoices):
+    MINIMO_NAO_ATINGIDO = "minimo_nao_atingido", "Mínimo não atingido"
+    CAIXA_INVALIDADA = "caixa_invalidada", "Caixa invalidada"
+    OCORRENCIA_DE_ENTREGA = "ocorrencia_de_entrega", "Ocorrência de entrega"
+    CANCELAMENTO_DA_RODADA = "cancelamento_da_rodada", "Cancelamento da rodada"
+
+
+class Reembolso(RegistroSoInsercao):
+    """Uma devolução de parte (ou de todo o restante) de um pedido pago (E10-02). Fica separada do
+    pedido congelado; o acumulado do pedido e dos itens é a soma destes registros. A `chave`
+    identifica o fato que o gerou. `autor` vazio é o sistema."""
+
+    pedido = models.ForeignKey("pedidos.Pedido", on_delete=models.PROTECT, related_name="+")
+    chave = models.CharField(max_length=64, unique=True)
+    motivo = models.CharField(max_length=30, choices=MotivoDoReembolso.choices)
+    produtos = CampoDinheiro()
+    servico = CampoDinheiro()
+    frete = CampoDinheiro()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, null=True, blank=True)
+    criado_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(produtos__gte=0) & Q(servico__gte=0) & Q(frete__gte=0),
+                name="reembolso_componentes_nao_negativos",
+            ),
+            models.CheckConstraint(
+                condition=Q(chave__regex=r"\S"), name="reembolso_chave_preenchida"
+            ),
+        )
+
+    @property
+    def total(self) -> Decimal:
+        return Decimal(self.produtos + self.servico + self.frete)
+
+    def __str__(self) -> str:
+        return f"reembolso {self.pk}"
+
+
+class ItemReembolsado(RegistroSoInsercao):
+    """A parte de um item do pedido devolvida por um reembolso."""
+
+    reembolso = models.ForeignKey(Reembolso, on_delete=models.PROTECT, related_name="itens")
+    item = models.ForeignKey("pedidos.ItemDoPedido", on_delete=models.PROTECT, related_name="+")
+    quantidade = CampoQuantidade()
+    valor = CampoDinheiro()
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["reembolso", "item"], name="item_reembolsado_unico"),
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="item_reembolsado_quantidade_positiva"
+            ),
+            models.CheckConstraint(
+                condition=Q(valor__gte=0), name="item_reembolsado_valor_nao_negativo"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"item reembolsado {self.pk}"
