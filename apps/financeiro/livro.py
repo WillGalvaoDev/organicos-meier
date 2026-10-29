@@ -420,25 +420,20 @@ class _TravaRetida:
         return None
 
 
-def _escopo_da_transacao() -> tuple[int, object] | None:
-    """O bloco `atomic` mais externo que não é o do caso de teste, com a sua posição: a transação
-    das travas. No `TestCase` o único bloco é o do próprio teste, que nunca termina; sem
-    transação própria, não há ordem a guardar."""
+def _escopo_da_transacao() -> tuple[int, str | None] | None:
+    """O bloco `atomic` mais externo que é a transação das travas, com a posição e o identificador
+    do savepoint (`None` numa transação real). Não são escopo os blocos do caso de teste, que
+    nunca terminam, nem um `atomic(savepoint=False)` sob o `TestCase`, que não tem fronteira física
+    (E09-R10 residual): sem escopo, não há ordem a guardar."""
     for posicao, bloco in enumerate(connection.atomic_blocks):
-        if not getattr(bloco, "_from_testcase", False):
-            return posicao, bloco
+        if getattr(bloco, "_from_testcase", False):
+            continue
+        if posicao == 0:
+            return posicao, None
+        savepoint = connection.savepoint_ids[posicao - 1]
+        if savepoint is not None:
+            return posicao, savepoint
     return None
-
-
-def _execucao_do_escopo(posicao: int, bloco: object) -> object:
-    """Identifica a execução do bloco, e não o objeto `Atomic`, que pode ser reutilizado. Uma
-    transação real não deixa travas para a seguinte (o Django limpa os callbacks), então basta
-    `None`. Um bloco que é savepoint (o caso do `TestCase`) tem o identificador do savepoint,
-    único na conexão."""
-    if posicao == 0:
-        return None
-    savepoint = connection.savepoint_ids[posicao - 1]
-    return savepoint if savepoint is not None else id(bloco)
 
 
 def _travadas_da_transacao() -> dict[int, _TravaRetida] | None:
@@ -447,7 +442,7 @@ def _travadas_da_transacao() -> dict[int, _TravaRetida] | None:
     achado = _escopo_da_transacao()
     if achado is None:
         return None
-    execucao = _execucao_do_escopo(*achado)
+    execucao = achado[1]  # None numa transação real: o fim dela limpa os callbacks
     atual = getattr(connection, "_travas_do_financeiro", None)
     if atual is None or atual[0] != execucao:
         atual = (execucao, {})
