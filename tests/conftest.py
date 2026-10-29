@@ -124,6 +124,7 @@ PREFIXOS_COM_SIMULADOR = (
     "test_cenarios_",
     "test_devolucoes_",
     "test_t08_",
+    "test_t09_",
     "test_simulador_estornos",
 )
 

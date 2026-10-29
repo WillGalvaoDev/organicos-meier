@@ -166,3 +166,38 @@ def test_acompanhar_e_verificar_ao_mesmo_tempo_liquidam_uma_vez(
     parcela.refresh_from_db()
     assert parcela.situacao == "concluida"
     assert MovimentoFinanceiro.objects.filter(tipo="devolucao").count() == 1
+
+
+def test_duas_confirmacoes_excepcionais_da_mesma_parcela(
+    relogio: RelogioControlado, simulador_pagamentos: Any, settings: Any, tmp_path: Any
+) -> None:  # E10-06, A-16
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.financeiro.devolucoes import DevolucaoRecusada, confirmar_devolucao_excepcional
+    from apps.financeiro.models import ConfirmacaoDeDevolucaoExcepcional, MovimentoFinanceiro
+    from tests.apoio.devolucoes import arranjo_da_devolucao, levar_a_elegivel
+
+    settings.MEDIA_ROOT = tmp_path
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = levar_a_elegivel(a)
+
+    def confirmar(barreira: Barrier) -> Any:
+        barreira.wait(timeout=10)
+        return confirmar_devolucao_excepcional(
+            parcela,
+            autor=a.admin,
+            meio="pix",
+            identificacao="E2E-123",
+            justificativa="Pix direto ao comprador",
+            comprovante=SimpleUploadedFile("c.pdf", b"%PDF-1.4 conteudo"),
+        )
+
+    resultados = executar_em_paralelo(confirmar, confirmar)
+    excecoes = [r.excecao for r in resultados]
+    assert sum(e is None for e in excecoes) == 1, excecoes
+    (recusa,) = [e for e in excecoes if e is not None]
+    assert isinstance(recusa, DevolucaoRecusada)
+    assert "já confirmada" in str(recusa)
+    assert ConfirmacaoDeDevolucaoExcepcional.objects.count() == 1
+    assert MovimentoFinanceiro.objects.filter(tipo="devolucao_excepcional").count() == 1
+    assert len([p for p in (tmp_path / "comprovantes").glob("*") if p.is_file()]) == 1

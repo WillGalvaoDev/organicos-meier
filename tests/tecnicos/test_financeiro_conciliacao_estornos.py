@@ -231,3 +231,31 @@ def test_estorno_concluido_antes_do_acompanhamento_e_so_pendencia_ate_o_dia_segu
     assert parcela.situacao == "concluida"
     _conciliar(a, DIA + timedelta(days=1))
     assert _alertas("divergencia_na_conciliacao") == []
+
+
+def test_devolucao_excepcional_nao_aparece_na_conciliacao(
+    a: Arranjo, tmp_path: Any, settings: Any
+) -> None:  # A-7
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.financeiro.devolucoes import confirmar_devolucao_excepcional
+    from apps.financeiro.livro import saldo_total_esperado
+    from tests.apoio.devolucoes import levar_a_elegivel
+
+    settings.MEDIA_ROOT = tmp_path
+    parcela = levar_a_elegivel(a)
+    antes = saldo_total_esperado()
+    confirmar_devolucao_excepcional(
+        parcela,
+        autor=a.admin,
+        meio="pix",
+        identificacao="E2E-1",
+        justificativa="Pix direto",
+        comprovante=SimpleUploadedFile("c.pdf", b"%PDF-1.4 x"),
+    )
+    assert saldo_total_esperado() == antes
+    conciliacao = _conciliar(a)
+    assert conciliacao.resumo["sem_par"] == 0
+    assert _diferenca(conciliacao) == D("0.00")
+    assert conciliacao.resultado == "ok"
+    assert _alertas("divergencia_na_conciliacao") == []
