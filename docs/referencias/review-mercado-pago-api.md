@@ -1,3 +1,41 @@
+# Revalidação independente sobre 3ea73a1 — 2026-10-29
+
+**Veredito: APROVADO como material de apoio.** MP-R01 a MP-R04 encerrados. Não há achado impeditivo remanescente nesta revisão. A aprovação não transforma o documento em fonte de regra de negócio, não aprova a fórmula alternativa de vencimento e não encerra as limitações L-n nem autoriza integração produtiva.
+
+Agente 3, branch `docs-referencia-mercado-pago`, pasta `om-docs-mp`. Commit examinado: `3ea73a1ed41a87ee05c5d1145e999ae6f3fca7e8`, posterior ao parecer `be624b7`, sobre a base `ae9bf21`. Conferidos o diff completo, a coerência dos trechos alterados com o restante da referência e os requisitos internos citados no parecer anterior. As fontes oficiais pertinentes foram consultadas novamente em 2026-10-29.
+
+## Resultado por achado
+
+| Achado anterior | Resultado | Evidência da correção |
+|---|---|---|
+| MP-R01 — importante | Encerrado | §4 e §10 preservam `T0 + 24h` como contrato vigente e identificam a fórmula alternativa como proposta não aprovada, dependente de especificação e L-1. O conflito deixa de ser resolvido unilateralmente pelo material de apoio. |
+| MP-R02 — importante | Encerrado | §7 distingue HTTP de estado da devolução, inclui contingência, cabeçalho de exposição de `in_process`, consultas individual/listagem, prazo publicado e saldo disponível. Não autoriza devolução excepcional enquanto houver reembolso em andamento nem trata falta de saldo como inviabilidade definitiva. §10/§11 mantêm a implementação e a validação nos gates próprios. |
+| MP-R03 — importante | Encerrado | §9 separa campos e tipos de Liberações e Dinheiro em conta; não aplica mais `MP_FEE_AMOUNT` a `SETTLEMENT`, identifica `FEE_AMOUNT` como agregado e mantém a extração da tarifa sujeita a validação. Inclui `PAYOUT` e `WITHDRAWAL` como saídas. |
+| MP-R04 — importante | Encerrado | §8 limita a omissão aos segmentos de `data.id` e `x-request-id`, exige `ts`/`v1` e registra normalização de identificadores alfanuméricos para minúsculas. Preserva L-11 para validação de amostras e tolerância. |
+
+## Conferência das fontes e das adições
+
+- **Vencimento:** a [página oficial de Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/integration-configuration/integrate-pix) sustenta a faixa publicada. A infraestrutura 4.5 e a E08-03 continuam sendo a autoridade sobre o vencimento solicitado pelo projeto. A hipótese de adaptação não está aprovada por este parecer.
+- **Reembolso:** a [documentação de contingência Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/refund-pix) confirma o comportamento HTTP 400/201, o cabeçalho e seu uso nas consultas. O exemplo de resposta também contém `contingency` e `e2e_id`, acrescentados pelo autor. São dados do exemplo publicado, não garantia adicional de presença em toda resposta. A [introdução a reembolsos](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/introduction) confirma prazo de 180 dias e necessidade de saldo disponível. A proteção interna permanece a da especificação §9.5 e infraestrutura 4.7: reconsultar pagamento/devoluções e impedir duplicidade.
+- **Relatórios:** confrontados os glossários de [Liberações](https://www.mercadopago.com.br/developers/en/docs/reports/released-money/report-fields) e [Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/report-fields), além do [guia de tipos de operação](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/how-to-use). Conferidos também os campos novos `REAL_AMOUNT`, `SETTLEMENT_DATE` e `MONEY_RELEASE_DATE`; este último é previsão, como o documento agora indica. O mapeamento proposto e a validação de liberação/completude não substituem a confirmação empírica. Não se conclui que os componentes de encargos formem uma identidade contábil universal: a tarifa segue expressamente a confirmar.
+- **Assinatura:** comparada a seção “Without SDKs” da [fonte oficial em Markdown](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks.md). A lista de segmentos removíveis e a normalização correspondem à fonte; a recusa de assinatura incompleta é coerente com o requisito interno de autenticidade.
+- **Saldo:** a afirmação de inexistência foi corretamente restringida às referências consultadas. O caminho de settlement report consta da [documentação de geração via API](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/api); disponibilidade e suficiência dos dados para a conta continuam sujeitas a L-9.
+
+Não foi identificado novo achado bloqueador, importante ou melhoria nesta revalidação. As observações de alcance acima delimitam o uso da referência e não são dispensas de requisitos. O aceite permite citá-la nas especificações da E10; estas ainda precisam definir e testar o comportamento interno, inclusive resposta incerta, retentativa idempotente e devolução em processamento.
+
+## Verificações e limites
+
+- `git status --short`, `git branch --show-current`, `git log -5 --oneline` e `git rev-parse HEAD`: árvore inicialmente limpa e revisão no commit/branch indicados.
+- `git diff be624b7..HEAD --stat`, `--name-only` e diffs completos: somente referência e registro do autor no parecer; nenhuma mudança em código, testes ou fontes de verdade.
+- Leitura UTF-8 e busca dos requisitos internos de vencimento, saldo e reconsulta de devoluções; consulta das fontes oficiais acima. Mantida a cobertura anterior dos trechos inalterados, sem afirmar nova prova empírica da API.
+- `git diff --check` e `git diff --cached --check`: sem erros. Documento revisado preservado, somente este parecer alterado pelo revisor.
+
+Revisão documental, sem pytest/lint/mypy ou ciclo TDD de produção aplicável. Não houve sandbox, chamadas autenticadas, transações financeiras, acesso a segredos ou push. A evidência é a comparação com as fontes oficiais e internas. Histórico do parecer anterior e registro do autor preservados integralmente abaixo.
+
+**Próximo gate:** integração documental; especificação/revisão da E10 e validações L-n nos respectivos escopos. Não há pendência de correção deste documento para o aceite aqui emitido.
+
+---
+
 # Revisão independente — referência da API do Mercado Pago
 
 **Veredito: REPROVADO.** Quatro achados **importantes**, abertos. O documento ainda precisa de correções para servir de referência técnica à E10 e à tradução da fase 2a. Este parecer não reprova novamente a E09 nem demonstra defeito no código de produção: o objeto auditado é o material de apoio.
