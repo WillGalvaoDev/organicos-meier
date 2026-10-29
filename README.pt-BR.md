@@ -12,7 +12,7 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 
 | | |
 |---|---|
-| **Última atualização** | 2026-10-29, com o PR #81 (E09) |
+| **Última atualização** | 2026-10-29, com o PR #82 (referência da API do Mercado Pago para o simulador; só documentação). Última etapa integrada: PR #81 (E09) |
 | **Fase** | Fase 1: plataforma completa rodando contra um **simulador** de pagamentos. Ainda sem dinheiro real e sem implantação em produção. |
 | **Progresso** | 9 de 16 etapas entregues (E01–E09), 65 fatias, cada uma aprovada por revisão independente |
 | **Última etapa entregue** | E09 — Livro-razão, reserva e conciliação (PR #81) |
@@ -121,6 +121,7 @@ tests/tecnicos/             testes técnicos (T-n), inclusive de concorrência
 tests/apoio/                app só de testes: relógio, concorrência, fábricas e utilitários
 docs/specs/                 especificação, critérios de aceitação e revisão de cada fatia
 docs/melhorias.md           melhorias não impeditivas, revistas no fim da fase 1
+docs/referencias/           referências de apoio (padrões da API do Mercado Pago para o simulador)
 ```
 
 O código tem cerca de 16 mil linhas de Python de aplicação e 35 mil de testes. Os nomes seguem a linguagem do domínio, em português.
