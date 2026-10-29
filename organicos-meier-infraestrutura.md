@@ -1,7 +1,7 @@
 # Orgânicos Méier — Recomendação de infraestrutura e fases de implementação
 
-Versão 1.7 · 14 de outubro de 2026
-Base: `organicos-meier-especificacao-funcional.md` (v1.6)
+Versão 1.8 · 29 de outubro de 2026
+Base: `organicos-meier-especificacao-funcional.md` (v1.7)
 
 ### Histórico de versões
 
@@ -15,6 +15,7 @@ Base: `organicos-meier-especificacao-funcional.md` (v1.6)
 | 1.5 | Reflete as decisões 17.4 a 17.11 da especificação v1.4, com 17.2 e 17.3 reconfirmados sem mudança. Novas seções 4.10 a 4.14: interesses, reservas e condições da rodada; contas e banimento; medidas decimais; visibilidade do fornecedor; envio do pedido formal. Seção 4 renomeada para "Pagamentos e fluxos críticos". Testes T-20 a T-29 e limitação L-13. Seções 4, 5, 7, 8, 9 e 11. |
 | 1.6 | Reflete Q-1 a Q-4 e R-1 a R-4 da especificação v1.5: fila de pendentes com a rotina `alocar_pendentes`, e-mail normalizado único e invalidação de sessões, quantidades fracionárias em qualquer unidade com subtotal `ROUND_HALF_UP`, compatibilidade múltiplo/incremento, reenvio manual também depois de sucesso. Seções 4.10, 4.11, 4.12, 4.14, 5, 7, 8, 9 e 11. Testes T-30 a T-41. L-13 mantida. Novas questões Q-5 a Q-7. |
 | 1.7 | Reflete Q-5 a Q-7 e R-5 a R-8 da especificação v1.6: remoção de pendentes pelo comprador, prioridade e isolamento da fila, pendentes fora do mínimo, alteração transacional do incremento, reembolso parcial proporcional ao subtotal com controle acumulado, bloqueio do reenvio durante o ciclo automático, validação de incrementos inteiros e fracionários. Seções 4.9, 4.10, 4.12, 4.14, 7, 8, 9 e 11. Testes T-42 a T-55. Nenhuma questão de implementação aberta. |
+| 1.8 | Reflete Q-8 da especificação v1.7: contestação e devolução forçada do Pix (MED). O fornecedor recebe integralmente, também antes do repasse; a perda é coberta pela receita de serviço da rodada, depois pela reserva e por novo aporte; o comprador é suspenso para análise. Seções 3.2, 4.5, 4.6 e 9.1. Na fase 1, só o simulador reproduz o débito, apontado pela conciliação. |
 
 ### Convenção de classificação
 
@@ -90,6 +91,7 @@ Todo valor tem uma destinação. Todo movimento é um lançamento que só aceita
 | Devolução devida depois do repasse | Obrigação com comprador financiada por receita de serviço, reserva ou novo aporte | P-2, P-3 |
 | Pagamento aprovado depois de `T0 + 48h` ou em duplicidade | Obrigação de devolução integral, financiada pelo próprio pagamento | P-6, Derivado |
 | Déficit de frete | Despesa financiada por receita de serviço, reserva ou novo aporte | P-1, P-2, P-3 |
+| Contestação ou devolução forçada do Pix (MED), antes ou depois do repasse (fase 2a/2b) | Perda da plataforma: coberta pela receita de serviço da rodada, depois pela reserva e por novo aporte; os recursos do fornecedor não mudam | Q-8, P-2, P-3 |
 | Aporte | Entrada na reserva | A1, P-4 |
 | Cancelamento da rodada com reembolso | Uma obrigação de devolução integral por comprador que pagou (valor pago menos devoluções concluídas ou pendentes), financiada como as demais devoluções (antes ou depois do repasse) | 17.2, P-2 |
 | Cancelamento da rodada sem reembolso | Nenhum lançamento novo. Obrigações existentes mantidas. Valores continuam nas destinações em que estavam, e qualquer movimentação posterior segue P-2. | 17.2, P-2 |
@@ -212,6 +214,7 @@ Especificação funcional: §2 a §10. Seções 4.1 a 4.7: pagamentos e devoluç
 - Aprovação depois do vencimento: não presumida possível nem impossível [Validar L-3].
 - **Se a prova de conceito mostrar um intervalo mínimo entre a criação e o vencimento do Pix** (por exemplo, um Pix gerado a poucos minutos de `T0 + 24h` não poder vencer exatamente em `T0 + 24h`), o cancelamento ativo em `T0 + 24h` passa a ser o mecanismo principal. Se o cancelamento também não for viável, a incompatibilidade volta ao responsável pelo projeto como decisão de negócio. A implementação não pode encurtar o prazo do comprador nem estender a janela de pagamento por conta própria.
 - Estorno parcial e integral pela API [Validar L-7].
+- Devolução forçada pelo banco do pagador (MED): o débito na conta é registrado e coberto como a contestação (seção 4.6), pela regra Q-8 [Validar o aviso e o movimento do MED no provedor, E16].
 
 ### 4.6 Cartão de crédito e débito (fase 2b)
 
@@ -222,7 +225,7 @@ Especificação funcional: §2 a §10. Seções 4.1 a 4.7: pagamentos e devoluç
   - `expiration_date_to` = `T0 + 24h` [Validar L-5].
 - Nenhuma preferência nova é criada a partir de `T0 + 24h`. Um pagamento iniciado antes e aprovado até `T0 + 48h` é aceito, conforme P-6.
 - Limite de tentativas por pedido e por usuário, contra testes de cartão.
-- Contestações e mediações: eventos recebidos pelo webhook e confirmados na API, registrados como lançamentos novos. Se o repasse já ocorreu, a perda é coberta por receita de serviço, reserva ou novo aporte, nunca por recursos de fornecedores [P-2, P-3].
+- Contestações e mediações: eventos recebidos pelo webhook e confirmados na API, registrados como lançamentos novos. Antes ou depois do repasse, o fornecedor recebe integralmente; a perda é coberta pela receita de serviço da rodada, depois pela reserva e por novo aporte, nunca por recursos de fornecedores; o comprador é suspenso para análise do admin, sem banimento automático [Q-8, P-2, P-3].
 - Captura adiada: fora da v1. A margem de 48 horas mais a decisão do admin podem ultrapassar o prazo de autorização do cartão.
 
 ### 4.7 Devoluções [P-5]
@@ -566,6 +569,7 @@ Testes técnicos complementares, automatizados contra o simulador:
 | R-6 | Pendentes sem reserva fora do mínimo, dos pedidos e das cobranças | §5.2 | 4.10 |
 | R-7 | Reenvio manual bloqueado durante o ciclo automático | §10 | 4.14 |
 | R-8 | Incremento inteiro ou fracionário, > 0, até 3 casas | §4.2 | 4.12 |
+| Q-8 | Contestação e MED: fornecedor integral, perda pela receita da rodada, reserva e aporte, comprador suspenso para análise | §2, §9.6 | 3.2, 4.5, 4.6 |
 
 ### 9.2 Limitações técnicas a validar (prova de conceito ou documentação)
 
@@ -593,7 +597,7 @@ Também a validar, sem relação com pagamentos:
 
 ### 9.3 Outras questões abertas
 
-Q-1 a Q-7 estão resolvidas (seção 9.1). Não há questão de implementação aberta. Nenhum ponto já resolvido foi reaberto.
+Q-1 a Q-8 estão resolvidas (seção 9.1). Não há questão de implementação aberta. Nenhum ponto já resolvido foi reaberto.
 
 - A parte de 17.12 que é validação técnica (coberta por L-7).
 - Decisões de negócio da fase 2b: taxa por meio de pagamento e prazo de liberação.
