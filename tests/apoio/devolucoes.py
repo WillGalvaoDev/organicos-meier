@@ -15,6 +15,7 @@ from tests.apoio.pedidos import administrador, marcar_pago
 from tests.fabricas import ContaFactory, ProdutoFactory
 
 D = Decimal
+H = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -164,3 +165,88 @@ def levar_a_elegivel(a: Arranjo, obrigacao: Any = None, pagamento: Any = None) -
     parcela.refresh_from_db()
     assert parcela.situacao == "elegivel_excepcional"
     return parcela
+
+
+def montar_tela(client: Any, sim: Any, relogio: Any) -> tuple[Arranjo, bytes]:
+    """O arranjo da E10-04 com o administrador logado por passkey (recente) no `client`."""
+    from tests.apoio.admin_fluxos import administrador_com_passkey, entrar_com_passkey_direta
+    from tests.apoio.pedidos import T0
+
+    relogio.congelar(T0)
+    conta, credencial = administrador_com_passkey(client)
+    a = arranjo_da_devolucao(sim, relogio)
+    assert a.admin.pk == conta.pk
+    entrar_com_passkey_direta(client, credencial, conta)
+    return a, credencial
+
+
+def entrar_de_novo(client: Any, credencial: bytes, conta: Conta) -> None:
+    """Um login novo por passkey no instante corrente: a passkey fica recente."""
+    from tests.apoio.admin_fluxos import entrar_com_passkey_direta
+
+    client.post("/sair/")
+    entrar_com_passkey_direta(client, credencial, conta)
+
+
+def parcela_de_fabrica(
+    a: Arranjo, situacao: str, valor: str = "10.00", *, do_pedido: bool = False
+) -> Any:
+    """Uma obrigação de teste (com o pedido e o comprador de X, se `do_pedido`) com uma parcela na
+    situação dada, gravada direto."""
+    from apps.financeiro.models import ObrigacaoComComprador, ParcelaDeDevolucao
+    from tests.apoio.financeiro import chave_nova, obrigacao_de_teste
+
+    obrigacao = obrigacao_de_teste(valor)
+    if do_pedido:
+        obrigacao = ObrigacaoComComprador.objects.create(
+            rodada=a.pedido.abertura.rodada,
+            ciclo=a.pedido.abertura.ciclo,
+            pedido=a.pedido,
+            comprador=a.comprador,
+            origem_tipo="teste",
+            origem_id=chave_nova(),
+            motivo="ocorrencia_de_entrega",
+            produtos=D(valor),
+        )
+    return ParcelaDeDevolucao.objects.create(
+        obrigacao=obrigacao,
+        pagamento=a.pagamento,
+        valor=D(valor),
+        situacao=situacao,
+        chave_idempotencia=chave_nova()[:64],
+        codigo_da_falha="indisponivel" if situacao.startswith("falha") else "",
+    )
+
+
+def duplicidade(a: Arranjo) -> Any:
+    """Um segundo pagamento aprovado do pedido X (destino `devolucao`, motivo `duplicidade`):
+    devolve o destino decidido e a obrigação integral dele."""
+    from apps.financeiro.models import ObrigacaoComComprador
+    from apps.pagamentos.provedor import NovaCobranca, obter_provedor
+    from apps.pedidos.models import DestinoDoPagamento
+    from tests.apoio.pedidos import T0, sincronizar
+
+    nova = NovaCobranca("k-dup", a.pedido.referencia_externa, a.pedido.total, "Dup", T0 + 24 * H)
+    id_externo = obter_provedor().criar_cobranca(nova).pagamento.id_externo
+    a.sim.aprovar(id_externo)
+    sincronizar(id_externo)
+    destino = DestinoDoPagamento.objects.get(pagamento__id_externo=id_externo)
+    obrigacao = ObrigacaoComComprador.objects.get(
+        origem_tipo="pedidos.destinodopagamento", origem_id=str(destino.pk)
+    )
+    return destino, obrigacao
+
+
+def sem_pedido(a: Arranjo) -> Any:
+    """Um pagamento aprovado que nenhum pedido tem: devolve o pagamento e a obrigação."""
+    from apps.financeiro.models import ObrigacaoComComprador
+    from apps.pagamentos.provedor import NovaCobranca, obter_provedor
+    from apps.pedidos.models import DestinoDoPagamento
+    from tests.apoio.pedidos import T0, sincronizar
+
+    nova = NovaCobranca("k-sp", "ref-desconhecida", D("40.00"), "Sem pedido", T0 + 24 * H)
+    id_externo = obter_provedor().criar_cobranca(nova).pagamento.id_externo
+    a.sim.aprovar(id_externo)
+    sincronizar(id_externo)
+    destino = DestinoDoPagamento.objects.get(pagamento__id_externo=id_externo)
+    return destino.pagamento, ObrigacaoComComprador.objects.get(pedido=None, integral=D("40.00"))
