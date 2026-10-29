@@ -7,7 +7,7 @@ Ele reúne o que a documentação pública do Mercado Pago diz sobre os pontos q
 - **Para o simulador** (`apps.simulador_pagamentos`): ele deve reproduzir os padrões de comportamento do provedor real, como idempotência, estados, avisos, atrasos, saldo e tarifas, sem copiar o formato dele.
 - **Para a tradução da fase 2a:** é ela que transforma o Mercado Pago no vocabulário interno de `apps.pagamentos.provedor`.
 
-**Limites.** A consulta foi feita em 2026-10-22, na referência pública, e algumas páginas vieram truncadas. Nada aqui substitui a prova de conceito no sandbox da fase 0. As limitações L-1 a L-13 da infraestrutura (seção 9.2) continuam abertas até essa prova. O que a documentação não confirmou aparece marcado como **a confirmar**.
+**Limites.** A consulta foi feita em 2026-10-22 e revista em 2026-10-29, depois da revisão independente (`docs/referencias/review-mercado-pago-api.md`), na referência pública. Algumas páginas vieram truncadas. Nada aqui substitui a prova de conceito no sandbox da fase 0. As limitações L-1 a L-13 da infraestrutura (seção 9.2) continuam abertas até essa prova. O que a documentação não confirmou aparece marcado como **a confirmar**.
 
 **Precedência.** Se este documento divergir da especificação funcional, da infraestrutura ou de uma especificação aprovada, valem esses documentos. A divergência é levada ao especificador.
 
@@ -97,7 +97,11 @@ As situações documentadas, com a tradução prevista:
   - o padrão é 24 horas;
   - o valor precisa estar **entre 30 minutos e 30 dias** a partir da emissão;
   - o formato é `yyyy-MM-dd'T'HH:mm:ssz` (erro `23` se inválido).
-- **Consequência para a cobrança perto de `T0 + 24h`** (L-1, infraestrutura 4.5). Uma tentativa criada a menos de 30 minutos do prazo não pode vencer exatamente em `T0 + 24h`. A tradução da fase 2a usa `max(T0 + 24h, emissão + 30 min)`. Quem garante o fim em `T0 + 24h` é a recusa no servidor (E08-03) mais o cancelamento ativo pelo bloqueio (E08-05). Um pagamento criado antes de `T0 + 24h` e aprovado na margem é aceito (P-6). **O simulador hoje aceita qualquer vencimento** (seção 10).
+- **Conflito em aberto com a cobrança perto de `T0 + 24h`** (L-1, infraestrutura 4.5).
+  - **O que vale hoje:** a infraestrutura exige `date_of_expiration = T0 + 24h`, e a E08-03 (`criar_cobranca`) transmite exatamente esse vencimento.
+  - **O conflito:** pela faixa publicada, uma tentativa criada a menos de 30 minutos do prazo não pode vencer em `T0 + 24h`. A recusa de novas tentativas em `T0 + 24h` (E08-03) e a aceitação na margem (P-6) não mudam esse contrato do vencimento externo.
+  - **Proposta, não aprovada:** uma alternativa possível é o vencimento `max(T0 + 24h, emissão + 30 min)`, com o fim em `T0 + 24h` garantido pela recusa no servidor e pelo cancelamento ativo (E08-05). Exemplo: uma emissão em `T0 + 23h50min` venceria em `T0 + 24h20min`, vinte minutos além do valor exigido hoje. **Não é instrução de implementação.** Só vale se o especificador a formalizar nos documentos competentes, depois da validação da L-1.
+  - **O simulador hoje aceita qualquer vencimento** (seção 10).
 - **Repetição com a mesma chave:** a criação não é repetida. O simulador reproduz isso devolvendo a cobrança existente (E07-01).
 
 ## 5. Busca por referência
@@ -132,7 +136,19 @@ A resposta vem paginada (`paging`).
 
 - **Com `amount`:** reembolso parcial.
 - **Sem `amount`:** reembolso total.
-- **Resposta:** inclui `status` (exemplo: `approved`) e `refund_mode` (exemplo: `standard`).
+- **Resposta:** inclui o `id` do reembolso, `status` (exemplo: `approved`) e `refund_mode` (exemplo: `standard`).
+- **Limites publicados** (introdução a reembolsos). A aplicação por meio de pagamento e por conta continua **a confirmar** (L-7).
+  - O pagamento pode ser reembolsado em até **180 dias** depois da data de aprovação.
+  - A conta precisa ter **saldo disponível suficiente**, ou a operação não é concluída. Para o sistema, a falta de saldo é uma condição que o administrador resolve com um aporte (infraestrutura, "Onde fica o dinheiro"). Ela não é, por si só, inviabilidade definitiva (P-5).
+- **Reembolso Pix em processamento (contingência).** Um reembolso Pix pode ficar em processamento por falha durante a transação, por exemplo na comunicação com o Bacen.
+  - **Sem configuração extra,** o Mercado Pago responde **HTTP `400 - Bad Request`**, embora o reembolso **continue em andamento** e possa chegar a `refunded`.
+  - **Com o cabeçalho `X-Render-In-Process-Refunds: true`** na criação, a mesma situação vem como **HTTP `201`** e `status: "in_process"`, com o rótulo `contingency` e um `e2e_id`.
+  - **O mesmo cabeçalho** vale na consulta de um reembolso (`GET /v1/payments/{id}/refunds/{refund_id}`) e na listagem (`GET /v1/payments/{id}/refunds`). Quando for o caso, elas mostram o mesmo `status`.
+  - **Consequência para a tradução e para a E10:**
+    - O código HTTP da resposta, sozinho, não diz em que estado a devolução está. Um erro HTTP na criação, inclusive `400`, não pode ser tratado como recusa definitiva sem antes consultar a listagem de reembolsos do pagamento.
+    - Só um código de recusa documentado, confirmado pela consulta, conta como falha definitiva. É o mesmo princípio da resposta incerta (infraestrutura 4.2) e da proteção contra devolução duplicada.
+    - A devolução excepcional (P-5, especificação §9.5) não pode ser aceita enquanto houver reembolso em andamento na plataforma.
+    - Quais códigos são definitivos, e com que cabeçalho a fase 2a opera, é decidido pela especificação (L-7).
 - **Recusas documentadas** (candidatas a "comprovadamente inviável", P-5, **a confirmar** no sandbox, L-7):
 
   | Código | Mensagem |
@@ -141,8 +157,12 @@ A resposta vem paginada (`paging`).
   | `2024` e `15016` | "Payment-too-old-to-be-refunded" |
   | `4293` | "Invalid-payment-status-to-refund-charges" |
 
-- **A confirmar (L-7):** se o reembolso exige saldo disponível, o prazo máximo, se a tarifa é devolvida e os estados intermediários do reembolso.
-- **No relatório de liberações,** o reembolso aparece como `refund`, e a interface o traduz como movimento `devolucao` (E09-02).
+- **A confirmar (L-7):**
+  - como o prazo e a exigência de saldo se aplicam a cada meio de pagamento e a cada conta;
+  - se a tarifa é devolvida;
+  - quais estados intermediários existem além de `in_process`;
+  - quanto tempo dura a contingência.
+- **Nos relatórios,** o reembolso aparece como `refund` (Liberações) ou `REFUND` (Dinheiro em conta), e a interface o traduz como movimento `devolucao` (E09-02, seção 9).
 
 ## 8. Avisos (webhooks)
 
@@ -169,10 +189,17 @@ A resposta vem paginada (`paging`).
   - o modelo de texto é `id:[data.id da URL];request-id:[x-request-id];ts:[ts];`;
   - a assinatura é um HMAC com SHA256, em hexadecimal, com o segredo da aplicação (painel, seção Webhooks);
   - a comparação com o `v1` precisa ser exata e em tempo constante;
-  - se um dos valores do modelo não vier, ele é retirado do texto;
-  - o `ts` permite uma tolerância de atraso, contra reenvio malicioso.
+  - **segmentos que podem faltar:** só dois, e nesse caso o segmento inteiro é retirado do texto antes do HMAC. Nenhum outro valor pode faltar:
+    - `id`, quando o `data.id` não vem na URL;
+    - `request-id`, quando o cabeçalho `x-request-id` não vem;
+  - **o `ts` e o `v1` são obrigatórios:** sem `x-signature`, sem `ts` ou sem `v1`, o aviso é recusado como não autêntico, sem gravar nada (E07-05);
+  - **normalização:**
+    - um `data.id` alfanumérico com letras maiúsculas entra no texto em minúsculas (por exemplo, `ORD01JQ4S4KY8HWQ6NA5PXB65B3D3` vira `ord01jq4s4ky8hwq6na5pxb65b3d3`);
+    - os ids numéricos dos pagamentos (Payments) não mudam;
+    - os demais valores entram como foram recebidos;
+  - o `ts` permite uma tolerância de atraso, contra reenvio malicioso. A documentação não publica o valor dessa tolerância.
 
-  O texto exato, com o `;` final e a origem do id, está **a confirmar** no sandbox (L-11).
+  A confirmar no sandbox (L-11): amostras reais do texto assinado (inclusive o `;` final), a tolerância de atraso adotada e o alcance da normalização. O que está marcado como a confirmar não autoriza aceitar outros formatos.
 - **Resposta esperada:** HTTP `200` ou `201`, em até **22 segundos**.
 - **Reenvio:**
   - sem confirmação, o Mercado Pago reenvia a cada **15 minutos** até receber resposta;
@@ -189,14 +216,23 @@ A resposta vem paginada (`paging`).
 
 ## 9. Saldo, movimentos e relatórios
 
-**Não há endpoint de saldo em tempo real** na referência pública. O saldo e os movimentos vêm de relatórios gerados de forma assíncrona: a criação devolve uma tarefa, que se consulta até ficar pronta, e o arquivo sai em CSV ou XLSX. A geração pode ser programada.
+**Nas referências consultadas, não foi encontrado endpoint de saldo em tempo real.** Isso não prova que ele não exista, e a L-9 continua aberta.
+
+Nessas referências, o saldo e os movimentos vêm de relatórios gerados de forma assíncrona:
+- a criação devolve uma tarefa, que se consulta até ficar pronta;
+- o arquivo sai em CSV ou XLSX;
+- a geração pode ser programada.
+
+A leitura de um relatório continua sujeita à validação de completude, da data de liberação e do instante de referência (L-8 e L-9).
 
 | Relatório | Caminho | Conteúdo |
 |---|---|---|
 | Liberações (*release report*) | `/v1/account/release_report` | dinheiro liberado e saldo disponível, linha a linha |
-| Dinheiro em conta (*settlement report*) | `/v1/account/settlement_report` (caminho **a confirmar**) | as transações, inclusive o dinheiro ainda não liberado |
+| Dinheiro em conta (*settlement report*) | `/v1/account/settlement_report`, com geração, listagem e download documentados; o uso na conta fica **a confirmar** no sandbox | as transações, inclusive o dinheiro ainda não liberado |
 
-**Colunas do relatório de liberações:**
+Os dois relatórios têm **esquemas diferentes**, com campos, datas e tipos próprios. A tradução lê cada um pelo seu próprio esquema, e um campo de um não vale para o outro.
+
+**Colunas do relatório de Liberações:**
 
 | Coluna | Significado | Uso na tradução |
 |---|---|---|
@@ -207,22 +243,53 @@ A resposta vem paginada (`paging`).
 | `DESCRIPTION` | `payment`, `refund`, `payout` (saque ou transferência), `chargeback`, `dispute`, `shipping`, `shipping_cancel`, `fee_release_in_advance`, `pre_payout_<id>`, `pos_payout_<id>`, `tax_withdholding` (grafia da página, **a confirmar**) | tipo do movimento |
 | `NET_CREDIT_AMOUNT` e `NET_DEBIT_AMOUNT` | crédito e débito no saldo disponível | `valor` com sinal |
 | `GROSS_AMOUNT` | valor bruto | conferência |
-| `MP_FEE_AMOUNT` | comissão do Mercado Pago, com impostos | movimento `tarifa` |
+| `MP_FEE_AMOUNT` | comissão do Mercado Pago, com impostos (só existe neste relatório) | movimento `tarifa` |
 | `BALANCE_AMOUNT` | saldo depois da transação | `SaldoNoProvedor` |
 | `TRANSACTION_DATE` e `TRANSACTION_APPROVAL_DATE` | criação e aprovação | `ocorrido_em` |
 | `TAXES_AMOUNT` e `TAX_DETAIL` | impostos retidos | movimento `outro` (decisão pendente, E16) |
 
-**No relatório "Dinheiro em conta"**, os tipos de transação documentados incluem `SETTLEMENT` (aprovado), `REFUND`, `CHARGEBACK`, `DISPUTE`, `WITHDRAWAL`, `CASHBACK` e variantes de `SHIPPING`.
+**Colunas do relatório Dinheiro em conta** (as principais para a conciliação):
+
+| Coluna | Significado | Uso possível na tradução |
+|---|---|---|
+| `TRANSACTION_TYPE` | o tipo (lista abaixo) | tipo do movimento |
+| `SOURCE_ID` | identificador da transação | `id_externo` ou `id_movimento` |
+| `EXTERNAL_REFERENCE` | referência do integrador (pode vir vazia) | conferência |
+| `TRANSACTION_AMOUNT` | valor bruto | `pagamento` (bruto) |
+| `FEE_AMOUNT` | **soma** das tarifas assumidas pelo vendedor: processamento, frete, financiamento e boleto | **não equivale** ao `MP_FEE_AMOUNT`, porque é um agregado; ver abaixo |
+| `MKP_FEE_AMOUNT`, `FINANCING_FEE_AMOUNT`, `SHIPPING_FEE_AMOUNT` e `TAXES_AMOUNT` | componentes de encargos e impostos | conferência do `FEE_AMOUNT` |
+| `SETTLEMENT_NET_AMOUNT` | valor líquido que afetou o dinheiro em conta | `valor` com sinal |
+| `REAL_AMOUNT` | valor líquido da transação, já descontados estornos, reclamações e devoluções | conferência |
+| `TRANSACTION_DATE` | criação | `ocorrido_em` (a confirmar) |
+| `SETTLEMENT_DATE` | aprovação | `ocorrido_em` (a confirmar) |
+| `MONEY_RELEASE_DATE` | previsão de liberação | `liberado_em` |
+
+**Tipos (`TRANSACTION_TYPE`) do relatório Dinheiro em conta:**
+- `SETTLEMENT` (aprovado);
+- `REFUND` (devolução total ou parcial);
+- `CHARGEBACK` e `DISPUTE`;
+- `WITHDRAWAL` (saque por DOC/TED) e `PAYOUT` (saque por Pix);
+- `CASHBACK`;
+- `SETTLEMENT_SHIPPING`, `REFUND_SHIPPING`, `CHARGEBACK_SHIPPING` e `DISPUTE_SHIPPING`.
+
+O glossário de campos também cita `WITHDRAWAL_CANCEL` e `TRAVA_DE_RECEBIVEL`.
+
+**A tarifa no Dinheiro em conta.** O relatório não traz um campo igual ao `MP_FEE_AMOUNT`.
+- Usar o `FEE_AMOUNT` como tarifa do pagamento só é aceitável se uma amostra da conta mostrar que, num Pix, ele contém só a tarifa de processamento. Até lá, isso fica **a confirmar** (L-8 e L-9).
+- A alternativa é tirar a tarifa do relatório de Liberações ou do próprio pagamento.
+- Em qualquer caso, o movimento `tarifa` continua com valor exato e rastreável ao pagamento (E09-02).
 
 **Tradução para o modelo interno** (E09-02):
 
-| Mercado Pago | Movimento interno |
-|---|---|
-| `payment` / `SETTLEMENT` | `pagamento` (bruto) mais `tarifa` (`MP_FEE_AMOUNT`), com o mesmo `liberado_em` |
-| `refund` / `REFUND` | `devolucao` |
-| `payout` / `WITHDRAWAL` | `saida`; o `SOURCE_ID` é a identificação que o administrador registra |
-| depósito de recursos próprios (aporte) | `deposito`; o rótulo está **a confirmar** (L-9) |
-| `chargeback`, `dispute`, `shipping`, `tax_withdholding` e outros | `outro`, com o rótulo em `descricao_no_provedor` |
+Proposta de mapeamento para cada esquema. O que está marcado como a confirmar depende de amostras (L-8 e L-9).
+
+| Movimento interno | Liberações (`DESCRIPTION`) | Dinheiro em conta (`TRANSACTION_TYPE`) |
+|---|---|---|
+| `pagamento` (bruto) mais `tarifa`, com o mesmo `liberado_em` | `payment`; o bruto em `GROSS_AMOUNT` e a tarifa em `MP_FEE_AMOUNT` | `SETTLEMENT`; o bruto em `TRANSACTION_AMOUNT`; a tarifa segue o parágrafo acima (**a confirmar**) |
+| `devolucao` | `refund` | `REFUND` |
+| `saida`; o `SOURCE_ID` é a identificação que o administrador registra | `payout` | `WITHDRAWAL` (DOC/TED) e `PAYOUT` (Pix); `WITHDRAWAL_CANCEL` fica como `outro` até haver especificação |
+| `deposito` (aporte de recursos próprios) | rótulo **a confirmar** (L-9) | rótulo **a confirmar** (L-9) |
+| `outro`, com o rótulo em `descricao_no_provedor` | `chargeback`, `dispute`, `mediation`, `shipping`, `tax_withdholding` e os demais | `CHARGEBACK`, `DISPUTE`, `CASHBACK`, as variantes de `SHIPPING`, `TRAVA_DE_RECEBIVEL` e os demais |
 
 **Padrões que o simulador reproduz** (E09-02):
 
@@ -238,8 +305,9 @@ A resposta vem paginada (`paging`).
 | Identificador do pagamento | número (`5466310457`) | `sim-<n>` | a interface trata o id como texto opaco; nenhum código pode depender do formato |
 | Corpo e assinatura do aviso | JSON do Mercado Pago; HMAC sobre `id;request-id;ts` com `x-signature` | JSON próprio (`id_evento`, `tipo`, `id_externo`); HMAC SHA256 sobre o corpo, num cabeçalho próprio | a verificação é da implementação do protocolo (`verificar_aviso`); o resto do sistema só vê `AvisoDoProvedor` |
 | Cancelar pagamento terminal | erro `2018` | devolve o estado atual | o contrato interno é devolver o estado; a tradução converte o `2018` |
-| Vencimento do Pix | de 30 minutos a 30 dias | qualquer instante futuro | **possível alinhamento**: o simulador poderia recusar vencimento fora da faixa, e a criação perto do prazo usaria `max(T0 + 24h, emissão + 30 min)`; mudaria a E08-03, por isso só com especificação |
-| Estados intermediários | `in_process` e `authorized` | não existem | a tradução os junta em `pendente` |
+| Vencimento do Pix | de 30 minutos a 30 dias | qualquer instante futuro | **conflito em aberto** (seção 4). O simulador poderia recusar vencimento fora da faixa. A proposta `max(T0 + 24h, emissão + 30 min)` não está aprovada: mudaria a infraestrutura 4.5 e a E08-03, e só vale com especificação, depois da L-1 |
+| Estados intermediários do pagamento | `in_process` e `authorized` | não existem | a tradução os junta em `pendente` |
+| Reembolso Pix em processamento | `400` sem o cabeçalho; `201` com `in_process` usando `X-Render-In-Process-Refunds` | ainda não reproduz (o reembolso é da E10) | a E10 decide como o simulador reproduz a contingência (seção 7) |
 | Reembolso e contestação no `status` | `refunded` e `charged_back` | não existem | o sistema mantém `aprovado` e registra à parte (E10) |
 | Saldo | por relatório assíncrono | instantâneo, com `referente_a = agora` | o sistema já compara pelo `referente_a` (E09-07) |
 | Paginação da busca | `paging` | lista inteira | é responsabilidade da tradução |
@@ -254,11 +322,11 @@ A resposta vem paginada (`paging`).
 | Pix aprovado depois do vencimento, e como aparece | L-3 |
 | Precisão e fuso de `date_approved` | L-4 |
 | Busca por `external_reference` e atraso de consistência | L-6 |
-| Reembolso: parcial, prazo, saldo, tarifa e códigos definitivos | L-7 |
-| Saídas da conta nos relatórios | L-8 |
+| Reembolso: parcial, aplicação do prazo de 180 dias e do saldo, tarifa, contingência `in_process` e códigos definitivos | L-7 |
+| Saídas da conta nos relatórios (`payout`, `WITHDRAWAL` e `PAYOUT`) e a tarifa no Dinheiro em conta (`FEE_AMOUNT`) | L-8 |
 | Saldo e movimentos por relatório; rótulo do depósito de recursos próprios | L-9 |
 | `money_release_date` por meio | L-10 |
-| Texto assinado do `x-signature` e política de reenvio | L-11 |
+| Texto assinado do `x-signature`, normalização do `data.id`, tolerância do `ts` e política de reenvio | L-11 |
 | Retenção de imposto, devolução forçada do Pix (MED) e escolha entre Payments, Preferences e Orders API | milestone E16 |
 
 ## Fontes
@@ -269,10 +337,15 @@ A resposta vem paginada (`paging`).
 - [Criar pagamento](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-payment/post)
 - [Cancelamento](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-cancellation/put)
 - [Reembolso](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-refund/post)
+- [Obter reembolso](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/get-refund/get)
+- [Introdução a cancelamentos e reembolsos](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/introduction)
+- [Reembolsos de transações com Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/refund-pix)
 - [Integrar Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/integration-configuration/integrate-pix)
 - [Situações do pagamento](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/response-handling/collection-results)
 - [Webhooks](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks)
-- [Webhooks, versão em espanhol, com o modelo de assinatura](https://www.mercadopago.com/developers/es/docs/your-integrations/notifications/webhooks)
+- [Webhooks, versão Markdown, seção "Without SDKs", com o modelo de assinatura](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks.md)
 - [Relatórios](https://www.mercadopago.com.br/developers/pt/reference/reports/overview)
 - [Campos do relatório de liberações](https://www.mercadopago.com.br/developers/en/docs/reports/released-money/report-fields)
-- [Relatório Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/how-to-use.md)
+- [Relatório Dinheiro em conta: como usar](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/how-to-use)
+- [Campos do relatório Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/report-fields)
+- [Dinheiro em conta via API](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/api)

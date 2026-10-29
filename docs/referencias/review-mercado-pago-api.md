@@ -90,3 +90,22 @@ A linha 172 permite retirar qualquer valor ausente do modelo, que inclui `ts`. A
 Não houve chamada autenticada, pagamento, reembolso, sandbox, acesso a segredos ou push. Não foram executados pytest/lint/mypy: a entrega contém somente documentação; esses testes não verificariam a fidelidade da API. TDD de produção não se aplica a esta alteração documental. As evidências são leitura comparativa e referências reproduzíveis, não resultados de integração.
 
 Nenhuma correção foi feita em `mercado-pago-api.md`, nas fontes de verdade, em código ou em testes. Não foi criada melhoria não impeditiva; os quatro achados são importantes e devem ser corrigidos antes do aceite. Próximo gate: autor/especificador corrige MP-R01 a MP-R04 e devolve o documento para revalidação independente. L-n permanecem abertas até suas validações próprias.
+
+---
+
+# Registro do autor: correções de MP-R01 a MP-R04 (2026-10-29)
+
+Autor: agente 1 (especificador). Base: `be624b7`. Este parecer não foi editado. As fontes oficiais citadas pelo revisor foram conferidas de novo em 2026-10-29, e os quatro achados se confirmam.
+
+| Achado | Correção em `mercado-pago-api.md` |
+|---|---|
+| MP-R01 | §4: o vencimento virou "conflito em aberto". O que vale hoje é `date_of_expiration = T0 + 24h` (infraestrutura 4.5, E08-03). A fórmula `max(T0 + 24h, emissão + 30 min)` aparece só como proposta não aprovada, com o exemplo das 23h50min e a observação de que não é instrução de implementação. O §10 foi alinhado. |
+| MP-R02 | §7: entraram os limites publicados (180 dias depois da aprovação e saldo disponível suficiente; a falta de saldo não é inviabilidade definitiva) e a contingência do reembolso Pix. Sem o cabeçalho, a resposta é `400` com o reembolso ainda em andamento; com `X-Render-In-Process-Refunds: true`, é `201` com `in_process`. Ficou registrado que o código HTTP não decide o estado da devolução, que a consulta (individual e listagem) vem antes de concluir uma recusa definitiva, e que nada disso libera a devolução excepcional com um reembolso pendente. A L-7 continua aberta. O §10 e o §11 foram atualizados. |
+| MP-R03 | §9: os esquemas foram separados. Liberações usa `DESCRIPTION`, `GROSS_AMOUNT`, `MP_FEE_AMOUNT` e `NET_*`. Dinheiro em conta usa `TRANSACTION_TYPE`, `TRANSACTION_AMOUNT`, `FEE_AMOUNT` (agregado e não equivalente), `SETTLEMENT_NET_AMOUNT`, `SETTLEMENT_DATE` e `MONEY_RELEASE_DATE`. O mapeamento tem uma coluna por esquema, com `PAYOUT` (Pix) e `WITHDRAWAL` (DOC/TED) como `saida`. A tarifa no Dinheiro em conta ficou a confirmar (L-8 e L-9). |
+| MP-R04 | §8: só os segmentos `id` e `request-id` podem faltar. `ts` e `v1` são obrigatórios, e sem eles o aviso é recusado. O `data.id` alfanumérico é normalizado para minúsculas, e os ids numéricos não mudam. A L-11 continua aberta para as amostras e a tolerância. |
+
+**Ajuste além dos achados.** No §9, a frase "não há endpoint de saldo em tempo real" passou a valer só para as referências consultadas, como apontou a tabela de cobertura do parecer. A L-9 continua aberta.
+
+**Verificação.** `git diff --check` sem erro. Este é um documento de apoio, sem código, então pytest, lint e mypy não se aplicam. Nenhuma fonte de verdade, especificação, código ou teste foi alterado. Nenhuma L-n foi dada como resolvida.
+
+Próximo gate: revalidação independente.
