@@ -511,3 +511,15 @@ def registrar_operacoes() -> None:
         "acompanhar_estorno", Operacao(_executar_acompanhamento, _concluir_estorno, _estorno_falhou)
     )
     registrar_operacao("verificar_estornos", Operacao(_executar_verificacao, _concluir_verificacao))
+
+
+def confirmar_devolucao_excepcional(
+    parcela: ParcelaDeDevolucao,
+    *,
+    autor: Conta,
+    meio: str,
+    identificacao: str,
+    justificativa: str,
+    comprovante: Any,
+) -> Any:
+    raise NotImplementedError

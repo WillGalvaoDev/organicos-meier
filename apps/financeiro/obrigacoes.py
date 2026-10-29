@@ -327,3 +327,9 @@ def liquidar_obrigacao(
         resolver_alerta(obrigacao.motivo, id_externo, motivo="devolução concluída")
     avaliar_reserva()
     return movimento
+
+
+def liquidar_obrigacao_fora_do_provedor(
+    obrigacao: ObrigacaoComComprador, valor: Decimal, *, referencia: str
+) -> MovimentoFinanceiro:
+    raise NotImplementedError

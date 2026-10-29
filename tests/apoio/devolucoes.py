@@ -133,3 +133,34 @@ def arranjo_da_devolucao(sim: Any, relogio: Any) -> Arranjo:
     pagamento = SituacaoDoPedido.objects.get(pedido=pedido).quitado_por
     o1 = parcial(i2, "1").obrigacao
     return Arranjo(sim, relogio, admin, comprador, pedido, i1, i2, pagamento, o1)
+
+
+def obrigacao_sem_cobertura(a: Arranjo) -> Any:
+    """A custódia do pedido é esvaziada antes do reembolso: a obrigação nasce sem cobertura."""
+    from apps.financeiro.livro import saldo
+    from apps.financeiro.reserva import sem_cobertura_da_obrigacao
+    from tests.apoio.financeiro import chave_nova, custodia, mover, obrigacao_com
+
+    rodada, ciclo = a.pedido.abertura.rodada, a.pedido.abertura.ciclo
+    ralo = obrigacao_com(rodada, ciclo, a.comprador, numero=9999)
+    for componente in ("produtos", "servico", "frete"):
+        conta = custodia(rodada, ciclo, a.comprador, componente)
+        mover("financiamento_de_obrigacao", conta, ralo, saldo(conta), chave=chave_nova())
+    obrigacao = parcial(a.i1, "1").obrigacao
+    assert sem_cobertura_da_obrigacao(obrigacao) == obrigacao.devido
+    return obrigacao
+
+
+def levar_a_elegivel(a: Arranjo, obrigacao: Any = None, pagamento: Any = None) -> Any:
+    """Autoriza a obrigação (por padrão, O1) com a recusa definitiva `prazo_vencido` do provedor
+    e deixa a reconsulta rodar: a parcela fica `elegivel_excepcional` pelo caminho real."""
+    from apps.financeiro.devolucoes import autorizar_devolucao
+    from apps.pagamentos.chamadas import processar_chamadas
+
+    alvo = obrigacao or a.o1
+    a.sim.recusar_estornos((pagamento or a.pagamento).id_externo, "prazo_vencido")
+    parcela = autorizar_devolucao(alvo, autor=a.admin)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    return parcela

@@ -47,6 +47,7 @@ class TipoDeMovimento(models.TextChoices):
     RETIRADA_DE_RECEITA = "retirada_de_receita", "Retirada de receita"
     PAGAMENTO_DO_FRETE = "pagamento_do_frete", "Pagamento do frete"
     DEVOLUCAO = "devolucao", "Devolução"
+    DEVOLUCAO_EXCEPCIONAL = "devolucao_excepcional", "Devolução excepcional"
 
 
 class TipoDeAlerta(models.TextChoices):
@@ -518,3 +519,47 @@ class HistoricoDaDevolucao(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"{self.parcela_id} {self.situacao}"
+
+
+class MeioDaDevolucaoExcepcional(models.TextChoices):
+    PIX = "pix", "Pix"
+    TRANSFERENCIA = "transferencia", "Transferência"
+
+
+class ConfirmacaoDeDevolucaoExcepcional(RegistroSoInsercao):
+    """A confirmação do administrador de que devolveu o dinheiro fora da plataforma (E10-06).
+    Uma por parcela. O comprovante fica no armazenamento, com nome gerado, e só é servido ao
+    administrador."""
+
+    parcela = models.OneToOneField(
+        ParcelaDeDevolucao, on_delete=models.PROTECT, related_name="confirmacao"
+    )
+    obrigacao = models.ForeignKey(ObrigacaoComComprador, on_delete=models.PROTECT, related_name="+")
+    pedido = models.ForeignKey(
+        "pedidos.Pedido", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    comprador = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    valor = CampoDinheiro()
+    meio = models.CharField(max_length=15, choices=MeioDaDevolucaoExcepcional.choices)
+    identificacao = models.CharField(max_length=100)
+    justificativa = models.TextField()
+    comprovante = models.FileField(upload_to="comprovantes/")
+    comprovante_nome = models.CharField(max_length=255)
+    comprovante_tipo = models.CharField(max_length=30)
+    comprovante_tamanho = models.PositiveIntegerField()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    confirmada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(condition=Q(valor__gt=0), name="confirmacao_valor_positivo"),
+            models.CheckConstraint(
+                condition=Q(justificativa__regex=r"\S") & Q(identificacao__regex=r"\S"),
+                name="confirmacao_textos_preenchidos",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"confirmação da parcela {self.parcela_id}"
