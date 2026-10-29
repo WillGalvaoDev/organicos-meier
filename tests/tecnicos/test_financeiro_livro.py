@@ -739,3 +739,58 @@ class TestGuardaNoTestCase(DjangoTestCase):  # A-27 (iii)
             _travar_conta(maior.pk)
             with pytest.raises(OrdemDeTravasViolada):
                 _travar_conta(menor.pk)
+
+    # --- Correção E09-R10 residual: `savepoint=False` sob o `TestCase` (A-28 a A-30) ------------
+
+    def test_atomic_sem_savepoint_reutilizado_nao_herda_o_registro(self) -> None:  # A-28
+        menor, maior = _menor_e_maior()
+        escopo = transaction.atomic(savepoint=False)
+        with escopo:
+            _travar_conta(maior.pk)
+        with escopo:
+            _travar_conta(menor.pk)
+
+    def test_atomic_sem_savepoint_fica_fora_da_guarda(self) -> None:  # A-29
+        menor, maior = _menor_e_maior()
+        with transaction.atomic(savepoint=False):  # (i) maior e depois menor, no mesmo bloco
+            _travar_conta(maior.pk)
+            _travar_conta(menor.pk)
+        with transaction.atomic(savepoint=False):  # (ii) dois blocos seguidos
+            _travar_conta(maior.pk)
+        with transaction.atomic(savepoint=False):
+            _travar_conta(menor.pk)
+
+    def test_atomic_padrao_dentro_de_sem_savepoint_e_o_escopo_da_guarda(self) -> None:  # A-30
+        menor, maior = _menor_e_maior()
+        with transaction.atomic(savepoint=False):
+            with transaction.atomic():
+                _travar_conta(maior.pk)
+                with pytest.raises(OrdemDeTravasViolada):
+                    _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_atomic_sem_savepoint_em_transacao_real_segue_a_execucao() -> None:  # A-31 (i)
+    menor, maior = _menor_e_maior()
+    escopo = transaction.atomic(savepoint=False)
+    with escopo:
+        _travar_conta(maior.pk)
+    with escopo:
+        _travar_conta(menor.pk)
+    with escopo:
+        _travar_conta(maior.pk)
+        with pytest.raises(OrdemDeTravasViolada):
+            _travar_conta(menor.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_atomic_sem_savepoint_dentro_de_savepoint_desfeito_libera_a_trava() -> None:  # A-31 (ii)
+    menor, maior = _menor_e_maior()
+    with transaction.atomic():
+        with pytest.raises(RuntimeError):  # noqa: PT012
+            with transaction.atomic():
+                with transaction.atomic(savepoint=False):
+                    _travar_conta(maior.pk)
+                raise RuntimeError("desfaz o savepoint de fora")
+        _travar_conta(menor.pk)
+        _travar_conta(maior.pk)
