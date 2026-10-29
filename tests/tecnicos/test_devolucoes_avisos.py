@@ -40,8 +40,7 @@ def test_autorizada_e_concluida_gera_dois_avisos(a: Arranjo) -> None:  # A-15
 
 
 def test_elegivel_avisa_o_comprador_e_a_falha_nao(a: Arranjo) -> None:  # A-16
-    a.sim.falhar_proximas(1, operacao="estornar")
-    levar_a_elegivel(a)
+    levar_a_elegivel(a)  # passa pela falha definitiva, que não avisa o comprador
     avisos = _avisos(a)
     assert [n.titulo for n in avisos] == ["Estorno solicitado", "Estorno em andamento"]
     corpo = avisos[1].corpo

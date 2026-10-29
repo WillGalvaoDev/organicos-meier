@@ -20,6 +20,7 @@ from django.db import transaction
 
 from apps.contas.models import Conta, Papel, Situacao
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
+from apps.financeiro.estornos import avisar_o_comprador
 from apps.financeiro.livro import conta_da_obrigacao, saldo, travar_contas
 from apps.financeiro.models import (
     ConfirmacaoDeDevolucaoExcepcional,
@@ -244,6 +245,7 @@ def autorizar_devolucao(
         agendar_chamada(
             "estornar", f"parcela:{parcela.pk}", chave_idempotencia=parcela.chave_idempotencia
         )
+        avisar_o_comprador(parcela, S.SOLICITADA)
         return parcela
 
 
@@ -294,6 +296,7 @@ def _concluir_parcela(parcela: ParcelaDeDevolucao, estorno: EstornoConsultado) -
     parcela.id_estorno = estorno.id_estorno
     parcela.save(update_fields=["id_estorno"])
     transicionar(parcela, S.CONCLUIDA, autor=SISTEMA, dados={"id_estorno": estorno.id_estorno})
+    avisar_o_comprador(parcela, S.CONCLUIDA)
     liquidar_obrigacao(parcela.obrigacao, parcela.valor, referencia=estorno.id_estorno)
     motivo = "devolução concluída"
     _resolver(parcela, TipoDeAlerta.DEVOLUCAO_COM_FALHA, motivo)
@@ -505,6 +508,7 @@ def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoCons
         agendar_chamada("acompanhar_estorno", f"parcela:{parcela.pk}")
         return
     transicionar(parcela, S.ELEGIVEL_EXCEPCIONAL, autor=SISTEMA, dados={"reconsulta": "vazia"})
+    avisar_o_comprador(parcela, S.ELEGIVEL_EXCEPCIONAL)
     _resolver(parcela, TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA, "falha definitiva comprovada")
     abrir_alerta(
         TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL,
@@ -647,6 +651,7 @@ def confirmar_devolucao_excepcional(
                 dados={"meio": meio, "identificacao": identificacao},
             )
             _resolver(travada, TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL, "devolução excepcional")
+            avisar_o_comprador(travada, S.CONCLUIDA_FORA_DA_PLATAFORMA, meio=meio)
             registrar_auditoria(
                 autor_conta,
                 "financeiro.devolucao_excepcional_confirmada",

@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.catalogo.models import Unidade
 from apps.contas.models import Conta, Situacao
 from apps.contas.permissoes import exige_comprador, exige_comprador_ativo
+from apps.financeiro.estornos import estornos_do_pedido
 from apps.nucleo.tempo import agora
 from apps.pedidos.apresentacao import (
     data_e_hora,
@@ -45,6 +46,7 @@ def _pagina_do_pedido(
         "situacao": texto_da_situacao(pedido, agora()),
         "pagamento": situacao_do_pagamento(pedido, comprador.situacao == Situacao.ATIVA),
         "quitado_em": data_e_hora(quitado_em) if quitado_em else None,
+        "estornos": estornos_do_pedido(pedido),
         "erro": erro,
     }
     return render(request, "pedidos/detalhe.html", contexto, status=status)
