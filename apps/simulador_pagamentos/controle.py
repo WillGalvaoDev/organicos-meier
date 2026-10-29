@@ -17,7 +17,7 @@ from apps.nucleo.tempo import agora, somar_horas
 from apps.nucleo.valores import ValorInvalido, dinheiro
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.simulador_pagamentos import estado
-from apps.simulador_pagamentos.models import AvisoSimulado, MovimentoSimulado
+from apps.simulador_pagamentos.models import AvisoSimulado, EstornoSimulado, MovimentoSimulado
 from apps.simulador_pagamentos.plano import PLANO
 from apps.simulador_pagamentos.roteador import ALIAS
 
@@ -164,6 +164,7 @@ def normalizar() -> None:
 def reiniciar() -> None:
     """Zera os planos (inclusive tarifa e liberação) e apaga os movimentos da conta."""
     PLANO.reiniciar()
+    EstornoSimulado.objects.all().delete()
     MovimentoSimulado.objects.all().delete()
 
 
@@ -217,3 +218,73 @@ def registrar_saida(valor: Decimal, *, descricao: str, em: datetime | None = Non
 def ajustar_saldo(valor: Decimal, *, em: datetime | None = None) -> str:
     """Um ajuste que nenhum registro do sistema explica: a divergência de teste da conciliação."""
     return _movimento_avulso("ajuste", "ajuste", _decimal(valor, positivo=False), em)
+
+
+# --- estornos e contestação (E10-03) -------------------------------------------------------
+
+
+def estornos_em_processamento(id_externo: str) -> None:
+    """Os próximos estornos do pagamento nascem `em_processamento`."""
+    PLANO.estornos_em_processamento(estado.obter(id_externo).pk)
+
+
+def concluir_estorno(id_estorno: str, *, em: datetime | None = None) -> None:
+    """O estorno em processamento termina: o débito entra na conta e ele passa a ser visível."""
+    instante = _instante(em)
+    with transaction.atomic(using=ALIAS):
+        estorno = estado.obter_estorno(id_estorno, travar=True)
+        if estorno.situacao != "em_processamento":
+            raise ValueError("só um estorno em processamento pode ser concluído")
+        estado.concluir(estorno, instante)
+    estado.registrar("concluir_estorno", estorno.cobranca.id_externo)
+
+
+def recusar_estorno(id_estorno: str, codigo: str) -> None:
+    """O estorno em processamento é recusado, sem movimento."""
+    with transaction.atomic(using=ALIAS):
+        estorno = estado.obter_estorno(id_estorno, travar=True)
+        if estorno.situacao != "em_processamento":
+            raise ValueError("só um estorno em processamento pode ser recusado")
+        estorno.situacao = "recusado"
+        estorno.codigo = codigo
+        estorno.visivel = True
+        estorno.save(update_fields=["situacao", "codigo", "visivel"])
+    estado.registrar("recusar_estorno", estorno.cobranca.id_externo)
+
+
+def recusar_estornos(id_externo: str, codigo: str) -> None:
+    """Os próximos estornos do pagamento são recusados com o código."""
+    PLANO.recusar_estornos(estado.obter(id_externo).pk, codigo)
+
+
+def recusar_mas_processar(id_externo: str, codigo: str) -> None:
+    """O próximo estorno é recusado na resposta, mas o provedor o processa: ele fica invisível
+    até `concluir_estorno` (o risco residual da infraestrutura 4.7)."""
+    PLANO.recusar_mas_processar(estado.obter(id_externo).pk, codigo)
+
+
+def sem_estorno_parcial(id_externo: str) -> None:
+    """O pagamento só aceita estorno do restante inteiro."""
+    PLANO.sem_estorno_parcial(estado.obter(id_externo).pk)
+
+
+def contestar(
+    id_externo: str,
+    valor: Decimal | None = None,
+    *,
+    descricao: str = "chargeback",
+    em: datetime | None = None,
+) -> str:
+    """A contestação: um débito `outro` na conta. Nada muda no pagamento nem no sistema."""
+    if descricao not in ("chargeback", "med"):
+        raise ValueError("a descrição deve ser chargeback ou med")
+    cobranca = estado.obter(id_externo)
+    if cobranca.situacao != SituacaoNoProvedor.APROVADO:
+        raise ValueError("só um pagamento aprovado pode ser contestado")
+    debito = cobranca.valor if valor is None else _decimal(valor)
+    if debito > cobranca.valor:
+        raise ValueError("o valor passa do valor do pagamento")
+    instante = _instante(em)
+    movimento = estado.novo_movimento("outro", descricao, -debito, instante, instante, cobranca)
+    estado.registrar("contestar", id_externo)
+    return movimento.id_movimento

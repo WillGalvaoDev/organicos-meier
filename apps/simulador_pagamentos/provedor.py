@@ -8,7 +8,7 @@ controles (`controle.py`) e `cancelar_cobranca`.
 import hmac
 import json
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -27,12 +27,18 @@ from apps.pagamentos.provedor import (
     PagamentoConsultado,
     ProvedorIndisponivel,
     RecusaDoProvedor,
+    SaldoInsuficienteParaEstorno,
     SaldoNoProvedor,
+    SituacaoDoEstorno,
     SituacaoNoProvedor,
     TipoDeMovimentoNoProvedor,
 )
 from apps.simulador_pagamentos import estado
-from apps.simulador_pagamentos.models import CobrancaSimulada, MovimentoSimulado
+from apps.simulador_pagamentos.models import (
+    CobrancaSimulada,
+    EstornoSimulado,
+    MovimentoSimulado,
+)
 from apps.simulador_pagamentos.plano import PLANO
 from apps.simulador_pagamentos.roteador import ALIAS
 
@@ -67,6 +73,78 @@ def _criada(cobranca: CobrancaSimulada) -> CobrancaCriada:
         estado.consultado(cobranca),
         {"pix_copia_e_cola": f"SIMULADO-{cobranca.id_externo}"},
     )
+
+
+PRAZO_DO_ESTORNO = timedelta(days=180)
+
+
+def _consultado(estorno: EstornoSimulado) -> EstornoConsultado:
+    return EstornoConsultado(
+        id_estorno=estorno.id_estorno,
+        id_externo=estorno.cobranca.id_externo,
+        valor=estorno.valor,
+        situacao=SituacaoDoEstorno(estorno.situacao),
+        codigo=estorno.codigo or None,
+        criado_em=estorno.criado_em,
+        concluido_em=estorno.concluido_em,
+    )
+
+
+def _existente(estorno: EstornoSimulado, novo: NovoEstorno) -> EstornoConsultado:
+    if estorno.cobranca.id_externo != novo.id_externo or estorno.valor != novo.valor:
+        raise RecusaDoProvedor("chave_em_uso")
+    return _consultado(estorno)
+
+
+def _estornar(novo: NovoEstorno) -> EstornoConsultado:
+    existente = EstornoSimulado.objects.filter(chave_idempotencia=novo.chave_idempotencia).first()
+    if existente is not None:
+        return _existente(existente, novo)
+    estado.obter(novo.id_externo)  # PagamentoNaoEncontrado, antes de qualquer trava
+    recusa_tardia: str | None = None
+    with transaction.atomic(using=ALIAS):
+        # a cobrança travada serializa os estornos do pagamento: o restante é lido sob a trava
+        cobranca = estado.obter(novo.id_externo, travar=True)
+        existente = EstornoSimulado.objects.filter(
+            chave_idempotencia=novo.chave_idempotencia
+        ).first()
+        if existente is not None:
+            return _existente(existente, novo)
+        agora_ = agora()
+        if cobranca.situacao != SituacaoNoProvedor.APROVADO or cobranca.aprovado_em is None:
+            raise RecusaDoProvedor("estado_invalido")
+        if agora_ - cobranca.aprovado_em > PRAZO_DO_ESTORNO:
+            raise RecusaDoProvedor("prazo_vencido")
+        codigo = PLANO.recusa_de_estorno(cobranca.pk)
+        if codigo is not None:
+            raise RecusaDoProvedor(codigo)
+        em_aberto = cobranca.estornos.filter(situacao__in=("concluido", "em_processamento"))
+        restante = cobranca.valor - (em_aberto.aggregate(s=Sum("valor"))["s"] or Decimal("0.00"))
+        if not PLANO.aceita_estorno_parcial(cobranca.pk) and novo.valor < restante:
+            raise RecusaDoProvedor("parcial_nao_suportado")
+        if novo.valor > restante:
+            raise RecusaDoProvedor("valor_acima_do_disponivel")
+        liberado = MovimentoSimulado.objects.filter(liberado_em__lte=agora_).aggregate(
+            s=Sum("valor")
+        )["s"] or Decimal("0.00")
+        if liberado < novo.valor:
+            raise SaldoInsuficienteParaEstorno("saldo disponível insuficiente")
+        recusa_tardia = PLANO.consumir_recusa_mas_processa(cobranca.pk)
+        em_processamento = recusa_tardia is not None or PLANO.estorno_em_processamento(cobranca.pk)
+        estorno = EstornoSimulado.objects.create(
+            cobranca=cobranca,
+            chave_idempotencia=novo.chave_idempotencia,
+            valor=novo.valor,
+            situacao="em_processamento" if em_processamento else "concluido",
+            criado_em=agora_,
+            visivel=recusa_tardia is None,
+        )
+        if not em_processamento:
+            estado.concluir(estorno, agora_)
+    estado.registrar("estornar", novo.id_externo)
+    if recusa_tardia is not None:
+        raise RecusaDoProvedor(recusa_tardia)
+    return _consultado(estorno)
 
 
 class ProvedorSimulado:
@@ -199,6 +277,7 @@ class ProvedorSimulado:
                     id_externo=m.id_externo or None,
                     ocorrido_em=m.ocorrido_em,
                     liberado_em=m.liberado_em,
+                    id_estorno=m.id_estorno or None,
                 )
                 for m in movimentos
             ]
@@ -206,10 +285,16 @@ class ProvedorSimulado:
         return _executar("listar_movimentos", listar)
 
     def estornar(self, novo: NovoEstorno) -> EstornoConsultado:
-        raise NotImplementedError
+        return _executar("estornar", lambda: _estornar(novo))
 
     def consultar_estornos(self, id_externo: str) -> list[EstornoConsultado]:
-        raise NotImplementedError
+        def consultar() -> list[EstornoConsultado]:
+            cobranca = estado.obter(id_externo)
+            estado.registrar("consultar_estornos", id_externo)
+            visiveis = cobranca.estornos.filter(visivel=True).order_by("criado_em", "pk")
+            return [_consultado(e) for e in visiveis]
+
+        return _executar("consultar_estornos", consultar)
 
 
 SIMULADO = ProvedorSimulado()

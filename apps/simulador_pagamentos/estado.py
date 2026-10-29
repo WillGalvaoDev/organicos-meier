@@ -17,7 +17,12 @@ from apps.pagamentos.provedor import (
     PagamentoNaoEncontrado,
     SituacaoNoProvedor,
 )
-from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada, MovimentoSimulado
+from apps.simulador_pagamentos.models import (
+    AvisoSimulado,
+    CobrancaSimulada,
+    EstornoSimulado,
+    MovimentoSimulado,
+)
 from apps.simulador_pagamentos.plano import PLANO, Anterior
 
 logger = logging.getLogger("apps.simulador_pagamentos")
@@ -106,6 +111,7 @@ def novo_movimento(
     ocorrido_em: datetime,
     liberado_em: datetime,
     cobranca: CobrancaSimulada | None = None,
+    id_estorno: str = "",
 ) -> MovimentoSimulado:
     return MovimentoSimulado.objects.create(
         tipo=tipo,
@@ -114,6 +120,36 @@ def novo_movimento(
         id_externo=cobranca.id_externo if cobranca is not None else "",
         ocorrido_em=ocorrido_em,
         liberado_em=liberado_em,
+        id_estorno=id_estorno,
+    )
+
+
+_ID_DO_ESTORNO = re.compile(r"sim-est-([1-9][0-9]{0,17})")
+
+
+def obter_estorno(id_estorno: str, *, travar: bool = False) -> EstornoSimulado:
+    achado = _ID_DO_ESTORNO.fullmatch(id_estorno)
+    consulta = EstornoSimulado.objects.select_for_update() if travar else EstornoSimulado.objects
+    estorno = consulta.filter(pk=int(achado.group(1))).first() if achado else None
+    if estorno is None:
+        raise ValueError("estorno desconhecido")
+    return estorno
+
+
+def concluir(estorno: EstornoSimulado, instante: datetime) -> None:
+    """Conclui o estorno: ele passa a ser visível e o débito entra na conta."""
+    estorno.situacao = "concluido"
+    estorno.concluido_em = instante
+    estorno.visivel = True
+    estorno.save(update_fields=["situacao", "concluido_em", "visivel"])
+    novo_movimento(
+        "devolucao",
+        "refund",
+        -estorno.valor,
+        instante,
+        instante,
+        estorno.cobranca,
+        id_estorno=estorno.id_estorno,
     )
 
 
