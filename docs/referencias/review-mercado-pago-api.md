@@ -1,0 +1,149 @@
+# Revalidação independente sobre 3ea73a1 — 2026-10-29
+
+**Veredito: APROVADO como material de apoio.** MP-R01 a MP-R04 encerrados. Não há achado impeditivo remanescente nesta revisão. A aprovação não transforma o documento em fonte de regra de negócio, não aprova a fórmula alternativa de vencimento e não encerra as limitações L-n nem autoriza integração produtiva.
+
+Agente 3, branch `docs-referencia-mercado-pago`, pasta `om-docs-mp`. Commit examinado: `3ea73a1ed41a87ee05c5d1145e999ae6f3fca7e8`, posterior ao parecer `be624b7`, sobre a base `ae9bf21`. Conferidos o diff completo, a coerência dos trechos alterados com o restante da referência e os requisitos internos citados no parecer anterior. As fontes oficiais pertinentes foram consultadas novamente em 2026-10-29.
+
+## Resultado por achado
+
+| Achado anterior | Resultado | Evidência da correção |
+|---|---|---|
+| MP-R01 — importante | Encerrado | §4 e §10 preservam `T0 + 24h` como contrato vigente e identificam a fórmula alternativa como proposta não aprovada, dependente de especificação e L-1. O conflito deixa de ser resolvido unilateralmente pelo material de apoio. |
+| MP-R02 — importante | Encerrado | §7 distingue HTTP de estado da devolução, inclui contingência, cabeçalho de exposição de `in_process`, consultas individual/listagem, prazo publicado e saldo disponível. Não autoriza devolução excepcional enquanto houver reembolso em andamento nem trata falta de saldo como inviabilidade definitiva. §10/§11 mantêm a implementação e a validação nos gates próprios. |
+| MP-R03 — importante | Encerrado | §9 separa campos e tipos de Liberações e Dinheiro em conta; não aplica mais `MP_FEE_AMOUNT` a `SETTLEMENT`, identifica `FEE_AMOUNT` como agregado e mantém a extração da tarifa sujeita a validação. Inclui `PAYOUT` e `WITHDRAWAL` como saídas. |
+| MP-R04 — importante | Encerrado | §8 limita a omissão aos segmentos de `data.id` e `x-request-id`, exige `ts`/`v1` e registra normalização de identificadores alfanuméricos para minúsculas. Preserva L-11 para validação de amostras e tolerância. |
+
+## Conferência das fontes e das adições
+
+- **Vencimento:** a [página oficial de Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/integration-configuration/integrate-pix) sustenta a faixa publicada. A infraestrutura 4.5 e a E08-03 continuam sendo a autoridade sobre o vencimento solicitado pelo projeto. A hipótese de adaptação não está aprovada por este parecer.
+- **Reembolso:** a [documentação de contingência Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/refund-pix) confirma o comportamento HTTP 400/201, o cabeçalho e seu uso nas consultas. O exemplo de resposta também contém `contingency` e `e2e_id`, acrescentados pelo autor. São dados do exemplo publicado, não garantia adicional de presença em toda resposta. A [introdução a reembolsos](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/introduction) confirma prazo de 180 dias e necessidade de saldo disponível. A proteção interna permanece a da especificação §9.5 e infraestrutura 4.7: reconsultar pagamento/devoluções e impedir duplicidade.
+- **Relatórios:** confrontados os glossários de [Liberações](https://www.mercadopago.com.br/developers/en/docs/reports/released-money/report-fields) e [Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/report-fields), além do [guia de tipos de operação](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/how-to-use). Conferidos também os campos novos `REAL_AMOUNT`, `SETTLEMENT_DATE` e `MONEY_RELEASE_DATE`; este último é previsão, como o documento agora indica. O mapeamento proposto e a validação de liberação/completude não substituem a confirmação empírica. Não se conclui que os componentes de encargos formem uma identidade contábil universal: a tarifa segue expressamente a confirmar.
+- **Assinatura:** comparada a seção “Without SDKs” da [fonte oficial em Markdown](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks.md). A lista de segmentos removíveis e a normalização correspondem à fonte; a recusa de assinatura incompleta é coerente com o requisito interno de autenticidade.
+- **Saldo:** a afirmação de inexistência foi corretamente restringida às referências consultadas. O caminho de settlement report consta da [documentação de geração via API](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/api); disponibilidade e suficiência dos dados para a conta continuam sujeitas a L-9.
+
+Não foi identificado novo achado bloqueador, importante ou melhoria nesta revalidação. As observações de alcance acima delimitam o uso da referência e não são dispensas de requisitos. O aceite permite citá-la nas especificações da E10; estas ainda precisam definir e testar o comportamento interno, inclusive resposta incerta, retentativa idempotente e devolução em processamento.
+
+## Verificações e limites
+
+- `git status --short`, `git branch --show-current`, `git log -5 --oneline` e `git rev-parse HEAD`: árvore inicialmente limpa e revisão no commit/branch indicados.
+- `git diff be624b7..HEAD --stat`, `--name-only` e diffs completos: somente referência e registro do autor no parecer; nenhuma mudança em código, testes ou fontes de verdade.
+- Leitura UTF-8 e busca dos requisitos internos de vencimento, saldo e reconsulta de devoluções; consulta das fontes oficiais acima. Mantida a cobertura anterior dos trechos inalterados, sem afirmar nova prova empírica da API.
+- `git diff --check` e `git diff --cached --check`: sem erros. Documento revisado preservado, somente este parecer alterado pelo revisor.
+
+Revisão documental, sem pytest/lint/mypy ou ciclo TDD de produção aplicável. Não houve sandbox, chamadas autenticadas, transações financeiras, acesso a segredos ou push. A evidência é a comparação com as fontes oficiais e internas. Histórico do parecer anterior e registro do autor preservados integralmente abaixo.
+
+**Próximo gate:** integração documental; especificação/revisão da E10 e validações L-n nos respectivos escopos. Não há pendência de correção deste documento para o aceite aqui emitido.
+
+---
+
+# Revisão independente — referência da API do Mercado Pago
+
+**Veredito: REPROVADO.** Quatro achados **importantes**, abertos. O documento ainda precisa de correções para servir de referência técnica à E10 e à tradução da fase 2a. Este parecer não reprova novamente a E09 nem demonstra defeito no código de produção: o objeto auditado é o material de apoio.
+
+Revisor: agente 3. Data: **2026-10-29**. Pasta: `om-docs-mp`. Branch: `docs-referencia-mercado-pago`. Base: `ae9bf21272f57fa4d1f9452f3485b7582b3ea157`; commits examinados: `0c88c6b` e `4163af6faf84e47597542b6cfa8c4487abf7256c`. As linhas abaixo referem-se a `docs/referencias/mercado-pago-api.md` em `4163af6`.
+
+## Escopo e método
+
+Leitura integral do documento, AGENTS.md, trechos pertinentes da especificação funcional v1.6 e da infraestrutura v1.7, e contratos E07-01, E07-05, E08-03 e E09-02. Conferência independente da documentação pública oficial do Mercado Pago em 2026-10-29, incluindo páginas adicionais às fontes listadas no documento. Não se usa a implementação como autoridade de negócio.
+
+A revisão distingue: comportamento descrito pela documentação pública, confirmação empírica ainda pendente no sandbox e escolha de tradução interna. Manter L-1 a L-13 abertas é correto; isso não dispensa registrar um comportamento já descrito publicamente nem permite apresentar uma solução ainda não especificada como decisão vigente.
+
+O commit `4163af6` somente renumera a melhoria de desempenho da E09-08 de M-5 para M-9 e registra o identificador histórico. A descrição e o encaminhamento foram preservados; não há achado nessa renumeração.
+
+## Achados
+
+### MP-R01 — Importante — adaptação do vencimento apresentada como regra já definida
+
+**Local:** §4, linha 100; contraste com §10, linha 241. **Referências internas:** AGENTS.md §2; infraestrutura 4.5 e L-1; E08-03, operação `criar_cobranca`, linha 128.
+
+A faixa de 30 minutos a 30 dias e o padrão de 24 horas têm respaldo na [documentação oficial de Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/integration-configuration/integrate-pix). Entretanto, a linha 100 determina que a tradução da fase 2a usa `max(T0 + 24h, emissão + 30 min)`. A infraestrutura ainda exige `date_of_expiration = T0 + 24h`, sujeita à validação L-1; a E08-03 transmite exatamente esse vencimento. O próprio §10 trata a adaptação como possível alinhamento dependente de especificação.
+
+**Evidência reproduzível:** emissão em `T0 + 23h50min` produz vencimento em `T0 + 24h20min` pela fórmula, vinte minutos além do valor exigido atualmente. A faixa publicada comprova a incompatibilidade a tratar; não comprova aprovação dessa solução. A recusa de novas tentativas e a aceitação de pagamentos iniciados no prazo durante a margem não alteram, por si, o contrato do vencimento externo.
+
+**Impacto:** um documento subordinado passa a orientar uma implementação diferente da fonte de verdade, sem que o leitor perceba que a escolha ainda depende de especificação.
+
+**Correção necessária:** manter o limite publicado e o conflito rastreável, mas apresentar a fórmula apenas como proposta, sem instrução de implementação vigente. Eventual adoção deve ser formalizada nos documentos competentes pelo especificador. Não é necessário decidir essa alternativa para corrigir a referência; o revisor não a aprova nem a proíbe comercialmente neste parecer.
+
+### MP-R02 — Importante — reembolso Pix em processamento é omitido embora já documentado
+
+**Local:** §7, linhas 131–145, especialmente 135 e 144. **Referências internas:** especificação §9.2 e §9.5; infraestrutura 4.7; AGENTS.md §6 (nenhuma devolução duplicada e recuperação após falha).
+
+O resumo mostra apenas `approved` como exemplo e relega os estados intermediários a algo ainda não confirmado. A [página oficial de reembolso Pix](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/refund-pix) descreve contingência em processamento que, por padrão, pode retornar HTTP 400. Com `X-Render-In-Process-Refunds: true`, o caso é exposto como HTTP 201 e `status=in_process`; o cabeçalho também se aplica à consulta individual e à listagem de reembolsos. A referência oferece [consulta individual](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/get-refund/get), ausente do resumo.
+
+**Evidência reproduzível:** comparar os parágrafos iniciais de “Reembolsos de transações com Pix” com a linha 144. O cenário documentado é: solicitação recebida, dificuldade no processamento, resposta HTTP 400, reembolso ainda em andamento. Trata-se de informação pública já disponível, e não de uma possibilidade inventada pelo simulador.
+
+**Impacto:** a E10 pode ser especificada sem o cenário em que erro HTTP não significa recusa definitiva, prejudicando a reconciliação de resposta incerta e a proteção contra devolução excepcional enquanto houver operação pendente. Não se afirma que o documento ordena uma segunda devolução; o problema é omitir o comportamento crítico para impedi-la.
+
+**Correção necessária:** resumir esse cenário, cabeçalho e consultas de acompanhamento; distinguir erro de transporte/status HTTP de estado da devolução. Explicitar que o enquadramento de códigos como falha definitiva depende da situação e da reconsulta exigida pelas fontes internas. Manter L-7 aberta para prova empírica. A [introdução oficial a reembolsos](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/cancellations-and-refunds/introduction) também documenta saldo disponível suficiente e prazo de 180 dias após aprovação: registrar esses limites como informação publicada, separadamente da validação por meio/conta. Não apresentar saldo insuficiente como inviabilidade definitiva.
+
+### MP-R03 — Importante — tradução mistura os esquemas de Liberações e Dinheiro em conta
+
+**Local:** §9, linhas 199–225, especialmente 221 e 223. **Referências internas:** infraestrutura 3.1–3.5, L-8/L-9; E09-02, contrato de movimentos e saldo.
+
+A linha 221 aplica `MP_FEE_AMOUNT` tanto a `payment` quanto a `SETTLEMENT`. Esse campo pertence ao [glossário de Liberações](https://www.mercadopago.com.br/developers/en/docs/reports/released-money/report-fields). O [glossário de Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/report-fields) usa `TRANSACTION_AMOUNT`, `FEE_AMOUNT`, `SETTLEMENT_NET_AMOUNT` e `SETTLEMENT_DATE`. `FEE_AMOUNT` agrega categorias de encargos e não pode ser tratado silenciosamente como o mesmo campo/semântica do outro relatório.
+
+Além disso, o [guia de uso de Dinheiro em conta](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/how-to-use) diferencia `WITHDRAWAL` (DOC/TED) de `PAYOUT` (Pix). O mapeamento de saída traz `payout / WITHDRAWAL`, omitindo o `PAYOUT` desse segundo esquema; a regra residual de “outros” pode classificá-lo incorretamente.
+
+**Evidência reproduzível:** procurar `MP_FEE_AMOUNT` no glossário de Dinheiro em conta e comparar com a entrada `FEE_AMOUNT`; depois comparar a linha 223 com as entradas `WITHDRAWAL` e `PAYOUT` no guia. Um parser que siga literalmente a linha 221 exige um campo que não é o documentado para `SETTLEMENT`.
+
+**Impacto:** perda/duplicação de encargos ou falha de leitura na conciliação, e tratamento de saída Pix reconhecível como movimento desconhecido. É uma falha de tradução proposta, não uma divergência financeira observada em produção.
+
+**Correção necessária:** separar os dois esquemas, com campos, datas e tipos próprios; incluir a saída `PAYOUT`. Explicitar o que é demonstrado pela fonte e o que ainda depende de amostras/L-8/L-9, sem presumir equivalência entre encargos agregados e tarifa do pagamento. Preservar o contrato interno de valores exatos e movimentos rastreáveis. A consulta dos relatórios deve continuar sujeita à validação de completude, liberação e instante de referência.
+
+### MP-R04 — Importante — instrução de assinatura amplia indevidamente a omissão de campos
+
+**Local:** §8, linhas 164–175. **Referências internas:** infraestrutura 4.2 e L-11; especificação §15; E07-05 (autenticidade antes de processar).
+
+A linha 172 permite retirar qualquer valor ausente do modelo, que inclui `ts`. A [versão Markdown oficial de Webhooks, seção “Without SDKs”](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks.md) delimita a retirada aos campos `data.id` e `x-request-id`. Ela também determina normalizar identificadores alfanuméricos para minúsculas antes de montar o manifesto, regra omitida pelo documento.
+
+**Evidência reproduzível:** comparar a lista explícita de campos opcionais na fonte com “um dos valores do modelo” na linha 172. Para um ID alfanumérico como `ORDABC`, a fonte usa `ordabc` no manifesto; copiar literalmente o valor recebido produz outra entrada de HMAC. IDs numéricos de Payments não sofrem essa diferença.
+
+**Impacto:** uma tradução literal pode aceitar um formato sem timestamp não respaldado pela documentação ou rejeitar notificações válidas com ID alfanumérico. Não foi demonstrada exploração nem falha do simulador: ele usa outro contrato de assinatura, corretamente registrado no §10.
+
+**Correção necessária:** delimitar quais segmentos podem ser omitidos, não autorizar ausência de `ts`/assinatura e registrar a normalização e seu alcance. Manter L-11 para validar amostras e tolerância temporal; o caráter “a confirmar” não deve transformar uma receita incompleta em algoritmo autorizado.
+
+## Cobertura e pontos sem achado impeditivo adicional
+
+| Área | Resultado da conferência |
+|---|---|
+| Papel do documento e fases | A declaração de apoio, precedência e manutenção das limitações está correta; MP-R01 é a exceção material encontrada. Não é autorização de produção. |
+| Autenticação/idempotência | Bearer e chave obrigatória são sustentados por [Criar pagamento](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-payment/post) e [Criar reembolso](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-refund/post). Repetir a mesma operação com a mesma chave é coerente com infraestrutura 4.2. Não foi validada retenção temporal da chave no sandbox. |
+| Estados de pagamento | Os principais pares da tabela correspondem às [mensagens oficiais](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/response-handling/collection-results/introduction). A conservação do fato de aprovação é tradução interna, não afirmação de que o status externo não muda. |
+| Pix | QR, dados de pagamento e faixa de vencimento conferidos; a solução do conflito de prazo é MP-R01. |
+| Busca | Endpoint, filtros e paginação conferidos na [referência de busca](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/search-payments/get). “Todos” deve ser lido como contrato interno de completude dentro do recorte: a API descreve últimos doze meses e erro 9062 para intervalo de 365 dias ou mais. Não houve teste de atraso real. |
+| Cancelamento | `status=cancelled` e erro 2018 para estados diferentes de pending/in_process/authorized constam da [referência específica](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-api-payments/create-cancellation/put). Transformar esse erro em consulta é decisão da interface, não resposta nativa da API. A corrida continua L-2. |
+| Webhooks | Corpo de exemplo, resposta 200/201, espera de 22 segundos e reenvios com intervalo ampliado após a terceira tentativa conferidos na [documentação oficial](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks). O tratamento interno rápido e idempotente corresponde à E07-05. Ressalva MP-R04. |
+| Relatórios | A [geração via API](https://www.mercadopago.com.br/developers/pt/docs/reports/account-money/api) documenta `/v1/account/settlement_report`, listagem e download. O endpoint pode ser identificado documentalmente mesmo sem validar a conta no sandbox. Não foi estabelecida prova de inexistência universal de API de saldo; a conclusão deve permanecer limitada às referências consultadas e a L-9 aberta. Ressalva MP-R03. |
+| Diferenças do simulador | Separar vocabulário/formato interno da tradução externa é coerente com E07/E09. Controles determinísticos de falha/atraso não comprovam frequência ou garantia de comportamento do provedor real. |
+
+## Verificações executadas e limites
+
+- `git status --short`: árvore limpa no início.
+- `git branch --show-current`, `git log -4 --oneline`, `git rev-parse HEAD` e `git merge-base HEAD ae9bf21`: branch, commits e base conferidos.
+- `git diff ae9bf21..4163af6 --stat` e diff de `docs/melhorias.md`: somente os dois documentos previstos; nenhuma implementação nessa entrega.
+- Leitura UTF-8 e buscas `rg` por requisitos, limitações, prazos, reembolsos e contratos internos.
+- Abertura e comparação das fontes oficiais linkadas neste parecer. A página de listagem de reembolsos retornou erro ao navegador de pesquisa; sua existência e o uso do cabeçalho são documentados pela página de reembolso Pix. O link de assinatura sem domínio nacional falhou; a versão oficial `.com.br` e sua versão Markdown foram consultadas. Não se tratam falhas de obtenção de página como ausência de recurso da API.
+- `git diff --check`: sem erro no parecer.
+
+Não houve chamada autenticada, pagamento, reembolso, sandbox, acesso a segredos ou push. Não foram executados pytest/lint/mypy: a entrega contém somente documentação; esses testes não verificariam a fidelidade da API. TDD de produção não se aplica a esta alteração documental. As evidências são leitura comparativa e referências reproduzíveis, não resultados de integração.
+
+Nenhuma correção foi feita em `mercado-pago-api.md`, nas fontes de verdade, em código ou em testes. Não foi criada melhoria não impeditiva; os quatro achados são importantes e devem ser corrigidos antes do aceite. Próximo gate: autor/especificador corrige MP-R01 a MP-R04 e devolve o documento para revalidação independente. L-n permanecem abertas até suas validações próprias.
+
+---
+
+# Registro do autor: correções de MP-R01 a MP-R04 (2026-10-29)
+
+Autor: agente 1 (especificador). Base: `be624b7`. Este parecer não foi editado. As fontes oficiais citadas pelo revisor foram conferidas de novo em 2026-10-29, e os quatro achados se confirmam.
+
+| Achado | Correção em `mercado-pago-api.md` |
+|---|---|
+| MP-R01 | §4: o vencimento virou "conflito em aberto". O que vale hoje é `date_of_expiration = T0 + 24h` (infraestrutura 4.5, E08-03). A fórmula `max(T0 + 24h, emissão + 30 min)` aparece só como proposta não aprovada, com o exemplo das 23h50min e a observação de que não é instrução de implementação. O §10 foi alinhado. |
+| MP-R02 | §7: entraram os limites publicados (180 dias depois da aprovação e saldo disponível suficiente; a falta de saldo não é inviabilidade definitiva) e a contingência do reembolso Pix. Sem o cabeçalho, a resposta é `400` com o reembolso ainda em andamento; com `X-Render-In-Process-Refunds: true`, é `201` com `in_process`. Ficou registrado que o código HTTP não decide o estado da devolução, que a consulta (individual e listagem) vem antes de concluir uma recusa definitiva, e que nada disso libera a devolução excepcional com um reembolso pendente. A L-7 continua aberta. O §10 e o §11 foram atualizados. |
+| MP-R03 | §9: os esquemas foram separados. Liberações usa `DESCRIPTION`, `GROSS_AMOUNT`, `MP_FEE_AMOUNT` e `NET_*`. Dinheiro em conta usa `TRANSACTION_TYPE`, `TRANSACTION_AMOUNT`, `FEE_AMOUNT` (agregado e não equivalente), `SETTLEMENT_NET_AMOUNT`, `SETTLEMENT_DATE` e `MONEY_RELEASE_DATE`. O mapeamento tem uma coluna por esquema, com `PAYOUT` (Pix) e `WITHDRAWAL` (DOC/TED) como `saida`. A tarifa no Dinheiro em conta ficou a confirmar (L-8 e L-9). |
+| MP-R04 | §8: só os segmentos `id` e `request-id` podem faltar. `ts` e `v1` são obrigatórios, e sem eles o aviso é recusado. O `data.id` alfanumérico é normalizado para minúsculas, e os ids numéricos não mudam. A L-11 continua aberta para as amostras e a tolerância. |
+
+**Ajuste além dos achados.** No §9, a frase "não há endpoint de saldo em tempo real" passou a valer só para as referências consultadas, como apontou a tabela de cobertura do parecer. A L-9 continua aberta.
+
+**Verificação.** `git diff --check` sem erro. Este é um documento de apoio, sem código, então pytest, lint e mypy não se aplicam. Nenhuma fonte de verdade, especificação, código ou teste foi alterado. Nenhuma L-n foi dada como resolvida.
+
+Próximo gate: revalidação independente.

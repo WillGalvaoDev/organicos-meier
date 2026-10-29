@@ -12,7 +12,7 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-29, with PR #81 (E09) |
+| **Last updated** | 2026-10-29, with PR #82 (Mercado Pago API reference for the simulator; documentation only). Last stage merged: PR #81 (E09) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
 | **Progress** | 9 of 16 stages delivered (E01–E09), 65 slices, each approved by an independent review |
 | **Last stage delivered** | E09 — Ledger, reserve and reconciliation (PR #81) |
@@ -121,6 +121,7 @@ tests/tecnicos/             technical tests (T-n), including concurrency
 tests/apoio/                test-only app: clock, concurrency harness, factories and helpers
 docs/specs/                 spec, acceptance criteria and review for every slice
 docs/melhorias.md           non-blocking improvements, reviewed at the end of Phase 1
+docs/referencias/           supporting references (Mercado Pago API patterns for the simulator)
 ```
 
 The code is about 16,000 lines of application Python and 35,000 lines of tests. The identifiers follow the Brazilian Portuguese domain language.
