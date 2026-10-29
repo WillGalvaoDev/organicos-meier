@@ -68,6 +68,9 @@ class Operacao:
     falhou: Callable[[ChamadaAoProvedor, Exception], None] | None = None
     # Junta os parâmetros de um novo agendamento aos da chamada pendente que o absorve (R02).
     combinar: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
+    # Gancho da falha temporária (E10-04): roda depois de gravar `tentativas`, `ultimo_erro` e
+    # `proxima_em`, na mesma transação, com o código da falha.
+    adiada: Callable[[ChamadaAoProvedor, str], None] | None = None
 
 
 OPERACOES: dict[str, Operacao] = {}

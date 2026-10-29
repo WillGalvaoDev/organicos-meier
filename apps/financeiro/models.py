@@ -56,6 +56,19 @@ class TipoDeAlerta(models.TextChoices):
     DIVERGENCIA_NA_CONCILIACAO = "divergencia_na_conciliacao", "Divergência na conciliação"
     APROVADO_APOS_A_MARGEM = "aprovado_apos_a_margem", "Aprovado depois da margem"
     DUPLICIDADE = "duplicidade", "Duplicidade"
+    DEVOLUCAO_COM_FALHA = "devolucao_com_falha", "Devolução com falha"
+    DEVOLUCAO_EM_FALHA_DEFINITIVA = (
+        "devolucao_em_falha_definitiva",
+        "Devolução em falha definitiva",
+    )
+    DEVOLUCAO_ELEGIVEL_EXCEPCIONAL = (
+        "devolucao_elegivel_excepcional",
+        "Devolução elegível para excepcional",
+    )
+    DEVOLUCAO_CONCLUIDA_TARDIAMENTE = (
+        "devolucao_concluida_tardiamente",
+        "Devolução concluída tardiamente",
+    )
 
 
 class Gravidade(models.TextChoices):
@@ -358,7 +371,7 @@ class AlertaFinanceiro(models.Model):
     """Um alerta ao administrador: aberto uma vez por situação `(tipo, chave)` e resolvido depois.
     O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""
 
-    tipo = models.CharField(max_length=30, choices=TipoDeAlerta.choices)
+    tipo = models.CharField(max_length=40, choices=TipoDeAlerta.choices)
     chave = models.CharField(max_length=80)
     gravidade = models.CharField(max_length=10, choices=Gravidade.choices)
     dados = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
@@ -440,3 +453,68 @@ class ItemReembolsado(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"item reembolsado {self.pk}"
+
+
+class SituacaoDaParcela(models.TextChoices):
+    SOLICITADA = "solicitada", "Solicitada"
+    FALHA_TEMPORARIA = "falha_temporaria", "Falha temporária"
+    EM_PROCESSAMENTO = "em_processamento", "Em processamento"
+    FALHA_DEFINITIVA = "falha_definitiva", "Falha definitiva"
+    ELEGIVEL_EXCEPCIONAL = "elegivel_excepcional", "Elegível para devolução excepcional"
+    CONCLUIDA = "concluida", "Concluída"
+    CONCLUIDA_FORA_DA_PLATAFORMA = "concluida_fora_da_plataforma", "Concluída fora da plataforma"
+
+
+class ParcelaDeDevolucao(models.Model):
+    """A devolução de uma obrigação pela plataforma (E10-04): uma por obrigação. Registro de
+    estado, como a tentativa de pagamento: cada mudança de situação também vira uma linha do
+    histórico. A chave de idempotência é gravada na autorização, antes de qualquer chamada."""
+
+    obrigacao = models.OneToOneField(
+        ObrigacaoComComprador, on_delete=models.PROTECT, related_name="parcela"
+    )
+    pagamento = models.ForeignKey(
+        "pagamentos.PagamentoNoProvedor", on_delete=models.PROTECT, related_name="+"
+    )
+    valor = CampoDinheiro()
+    situacao = models.CharField(max_length=30, choices=SituacaoDaParcela.choices)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    id_estorno = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    codigo_da_falha = models.CharField(max_length=40, blank=True, default="")
+    evidencia = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    autorizada_por = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    autorizada_em = models.DateTimeField(default=agora)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(valor__gt=0), name="parcela_devolucao_valor_positivo"
+            ),
+            models.CheckConstraint(
+                condition=Q(situacao__in=SituacaoDaParcela.values),
+                name="parcela_devolucao_situacao_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"parcela {self.pk}"
+
+
+class HistoricoDaDevolucao(RegistroSoInsercao):
+    """Uma linha por mudança de situação da parcela, com o autor e os dados da mudança."""
+
+    parcela = models.ForeignKey(
+        ParcelaDeDevolucao, on_delete=models.PROTECT, related_name="historico"
+    )
+    situacao = models.CharField(max_length=30, choices=SituacaoDaParcela.choices)
+    momento = models.DateTimeField(default=agora)
+    autor = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    dados = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+
+    def __str__(self) -> str:
+        return f"{self.parcela_id} {self.situacao}"

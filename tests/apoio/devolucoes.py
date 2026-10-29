@@ -1,6 +1,7 @@
 """Apoio dos testes das devoluções (E10): pedidos pagos com itens de valores explícitos."""
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -92,3 +93,43 @@ def componentes(registrado: Any) -> tuple[Decimal, Decimal, Decimal]:
     """Os produtos, o serviço e o frete do reembolso registrado."""
     r = registrado.reembolso
     return r.produtos, r.servico, r.frete
+
+
+@dataclass
+class Arranjo:
+    """O arranjo da E10-04: X pago por P1 (125,00, com as entradas na custódia), um aporte de
+    1.000,00 no simulador e no livro, e O1, a obrigação do parcial de 1 unidade do item I2 de X
+    (31,25)."""
+
+    sim: Any
+    relogio: Any
+    admin: Conta
+    comprador: Conta
+    pedido: Pedido
+    i1: ItemDoPedido
+    i2: ItemDoPedido
+    pagamento: Any
+    o1: Any
+
+
+def arranjo_da_devolucao(sim: Any, relogio: Any) -> Arranjo:
+    from apps.financeiro.reserva import registrar_aporte
+    from apps.pedidos.models import SituacaoDoPedido
+    from tests.apoio.pedidos import T0, sincronizar, tentativa_criada
+
+    relogio.congelar(T0 + timedelta(hours=1))
+    comprador = ContaFactory.create(nome="Comprador B")
+    pedido = pedido_composto(comprador)
+    id_externo = tentativa_criada(pedido).id_externo
+    assert id_externo is not None
+    sim.aprovar(id_externo)
+    sincronizar(id_externo)
+    i1, i2 = itens_do_pedido(pedido, N[3])
+    admin = administrador()
+    id_deposito = sim.depositar(D("1000.00"))
+    with transaction.atomic():
+        registrar_aporte(admin, D("1000.00"), id_deposito, "Aporte")
+    relogio.congelar(T0 + timedelta(hours=2))
+    pagamento = SituacaoDoPedido.objects.get(pedido=pedido).quitado_por
+    o1 = parcial(i2, "1").obrigacao
+    return Arranjo(sim, relogio, admin, comprador, pedido, i1, i2, pagamento, o1)
