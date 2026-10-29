@@ -371,3 +371,31 @@ Além disso, o rollback de um savepoint libera as travas pedidas dentro dele, ma
   - desligar a guarda ou afrouxar os A-19 a A-21.
 - **Mecanismo sugerido, não obrigatório:** o modelo que o próprio Django documenta para `transaction.on_commit`. Os callbacks são descartados no rollback do savepoint em que foram registrados e somem ao fim da transação. O mecanismo escolhido e a justificativa ficam no `review.md` desta fatia.
 - O custo por trava continua sem consulta extra ao banco além do `select_for_update`, salvo justificativa registrada.
+
+## Correção da revalidação da E09 sobre d365475 (2026-10-29)
+
+Origem: a revalidação em `docs/specs/E09-08/review.md`, "R10 parcialmente corrigido". Os demais achados, incluindo o R07, estão encerrados e não se reabrem. Valem a correção E09-R08 e a seção "Correção E09-R10" acima, com a delimitação abaixo. Não há decisão comercial nova.
+
+### Correção E09-R10 residual: `savepoint=False` sob o `TestCase`
+
+**Diagnóstico.** Sob o `TestCase`, o bloco `atomic(savepoint=False)` mais externo da aplicação não abre transação nem savepoint. As travas pedidas nele ficam retidas pela transação do próprio caso de teste até o fim do teste. Sem nada físico que marque a execução, a implementação usa `id(bloco)` como identificador. Por isso, o mesmo objeto reutilizado herda o registro da execução anterior, e o caso da revisão recebe `OrdemDeTravasViolada`.
+
+A regra "No `TestCase` do Django" da correção E09-R10 supunha que esse bloco é sempre um savepoint ("Esse bloco é um savepoint"). Com `savepoint=False`, ele não é. A lacuna é da especificação, que pedia isolamento por execução para um bloco que não tem execução física própria.
+
+**Regra (delimita o item "No `TestCase` do Django" da correção E09-R10).**
+- **Escopo da guarda sob o `TestCase`.** É cada execução do bloco `atomic` mais externo que não pertence ao caso de teste **e que cria um savepoint**. O registro começa vazio a cada execução e é descartado ao fim dela, liberada ou desfeita. Fica como estava para o `atomic()` padrão (A-27 iii).
+- **Sem bloco desse tipo, a trava fica fora da guarda.** É o caso de um bloco `atomic(savepoint=False)` aninhado só em blocos do caso de teste. Ele não tem registro, como os blocos do próprio caso de teste: a trava é aceita sem verificação de ordem e não fica registrada. Um `atomic()` padrão aberto dentro desse bloco cria um savepoint e passa a ser o escopo da guarda, pela regra anterior.
+- **`savepoint=False` dentro de um escopo da guarda.** As travas pertencem ao escopo do bloco de fora, como já acontece. Isso vale numa transação real (`transaction=True`) e dentro de um savepoint da aplicação sob o `TestCase`. O rollback do bloco de fora as retira do registro (segundo controle do revisor).
+- **Transações reais.** Nada muda: cada execução da transação mais externa é o escopo, também com `savepoint=False` reutilizado (primeiro controle do revisor).
+
+**Justificativa (decisão técnica).**
+- A guarda existe para impedir impasse entre transações da aplicação, e o `TestCase` nunca roda em produção.
+- Sob o `TestCase`, um bloco `savepoint=False` não tem fronteira física: não há commit, rollback nem savepoint que limite as travas dele. Exigir isolamento por execução obrigaria a guarda a inventar uma fronteira que o banco não tem.
+- Deixar esse bloco fora da guarda segue a mesma convenção já aprovada para os blocos do próprio caso de teste.
+- Nenhum código da aplicação nem dos testes usa `savepoint=False`. A busca é `grep -rn "savepoint=False" apps tests`, sem resultados em `d365475`.
+- A restrição "não vale recusar formas válidas de `transaction.atomic`" continua valendo integralmente. O `savepoint=False` passa a ser aceito sem recusa indevida nos dois ambientes.
+
+**Restrições técnicas (somam-se às da correção E09-R10).**
+- A identificação da execução não usa `id()` de objeto, que pode ser reaproveitado pelo Python depois da coleta. Ela usa só o que o banco e o Django marcam por execução: a transação real, o identificador do savepoint e os marcadores do `on_commit`.
+- Não muda nada nos caminhos com transação real nem nos A-19 a A-27, que continuam verdes sem alteração.
+- O `review.md` desta fatia registra a delimitação e mantém declarados os limites técnicos já aceitos (`run_on_commit`, `savepoint_ids` e a varredura da lista).

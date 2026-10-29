@@ -71,3 +71,21 @@ Depois dos A-22 a A-27, o A-21 é refeito: a suíte inteira roda com a guarda no
 |---|---|
 | A-22 a A-26, A-27 (i) e (ii) | `tests/tecnicos/test_financeiro_livro.py` |
 | A-27 (iii) | `tests/tecnicos/test_financeiro_livro.py`, numa classe `TestCase` |
+
+## Correção E09-R10 residual: `savepoint=False` sob o `TestCase` (2026-10-29)
+
+Valem a seção "Correção da revalidação da E09 sobre d365475" do `spec.md`, a correção E09-R08 e o arranjo do A-22: as contas `menor` e `maior`, com `menor.pk < maior.pk`, conferido no próprio teste.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-28 | Correção R10 residual | positivo | o arranjo, num `TestCase` do Django; um único objeto `escopo = transaction.atomic(savepoint=False)` | `with escopo:` trava `maior`; termina; um segundo `with escopo:` trava `menor` | aceito, sem exceção. É a prova `test_savepoint_false_reutilizado` do revisor. **Red esperado:** `OrdemDeTravasViolada` |
+| A-29 | Correção R10 residual | positivo | o arranjo, num `TestCase`; cada bloco com um objeto `transaction.atomic(savepoint=False)` novo | (i) num mesmo bloco, travar `maior` e depois `menor`; (ii) dois blocos seguidos, o primeiro travando `maior` e o segundo `menor` | aceitos, sem exceção: o bloco fica fora da guarda. **Red esperado:** em (i), `OrdemDeTravasViolada` |
+| A-30 | Correção R10 residual | negativo | o arranjo, num `TestCase` | dentro de um `atomic(savepoint=False)`, um `atomic()` padrão trava `maior` e depois pede `menor` | `OrdemDeTravasViolada` no pedido de `menor`, antes de travar: o savepoint é o escopo da guarda. Já passa no código atual; é declarado como regressão, sem Red inventado |
+| A-31 | Correção R10 residual | positivo e negativo | o arranjo, em transações PostgreSQL reais (`transaction=True`) | (i) o mesmo `atomic(savepoint=False)` usado três vezes: trava `maior`; trava `menor`; trava `maior` e pede `menor`. (ii) numa transação, um `atomic()` interno contém um `atomic(savepoint=False)` que trava `maior`; o interno é desfeito por uma exceção capturada; depois a transação trava `menor` e `maior` | (i) a primeira e a segunda execuções aceitas; na terceira, `OrdemDeTravasViolada` ao pedir `menor`. (ii) aceitos, sem exceção. São os dois controles do revisor, que já passam; declarados como regressão, sem Red inventado |
+
+Depois dos A-28 a A-31, a suíte inteira roda de novo com a guarda (A-21), e o resultado é registrado no `review.md`.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-28 a A-30 | `tests/tecnicos/test_financeiro_livro.py`, na classe `TestCase` do A-27 (iii) |
+| A-31 | `tests/tecnicos/test_financeiro_livro.py` |
