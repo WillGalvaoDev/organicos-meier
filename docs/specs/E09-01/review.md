@@ -178,3 +178,24 @@ O controle do A-25 (outra conexão com `lock_timeout = '500ms'` consegue travar 
 **A-21 refeito (a suíte inteira com a guarda nova):** ver a verificação no fim desta seção.
 
 **Verificação final (A-21 refeito, sobre `c73de68`):** `uv run pytest -q -p no:cacheprovider`, sem filtro: **2428 passed in 338.20s** (com a guarda nova, sem inversão nova nem teste alterado); `ruff check .`, `ruff format --check .` (329 arquivos), `mypy .` (393 arquivos) e `makemigrations --check --dry-run`: limpos. O mesmo resultado vale para a E09-07 (A-28 e A-29).
+
+## Correção E09-R10 residual (2026-10-29): `savepoint=False` sob o `TestCase`
+
+Critérios: **A-28 a A-31**. Testes em `tests/tecnicos/test_financeiro_livro.py` (A-28 a A-30 na classe `TestGuardaNoTestCase`).
+
+**Red** (commit só de testes, antes da produção). Comando: `uv run pytest tests/tecnicos/test_financeiro_livro.py -q -p no:cacheprovider` (arquivo inteiro, sem `-k`): **2 failed, 71 passed**.
+
+| Critério | Teste | Resultado do Red |
+|---|---|---|
+| A-28 | `test_atomic_sem_savepoint_reutilizado_nao_herda_o_registro` | falha: `OrdemDeTravasViolada: a conta 207 foi pedida depois da 208` na segunda execução |
+| A-29 | `test_atomic_sem_savepoint_fica_fora_da_guarda` | falha: `OrdemDeTravasViolada: a conta 205 foi pedida depois da 206` em (i), maior e depois menor no mesmo bloco |
+| A-30 | `test_atomic_padrao_dentro_de_sem_savepoint_e_o_escopo_da_guarda` | **passou já no Red**: regressão declarada, sem Red inventado |
+| A-31 (i) e (ii) | `test_atomic_sem_savepoint_em_transacao_real_segue_a_execucao`, `test_atomic_sem_savepoint_dentro_de_savepoint_desfeito_libera_a_trava` | **passaram já no Red**: os dois controles do revisor, regressão declarada |
+
+**Green.** `_escopo_da_transacao` passou a devolver, para cada bloco que não é do caso de teste, a posição e o identificador do savepoint dele. É escopo o bloco da posição 0 (transação real) ou o que criou um savepoint. Um `atomic(savepoint=False)` sob o `TestCase` não é escopo: a trava dele fica fora da guarda, como a dos blocos do próprio caso de teste. Um `atomic()` padrão aberto dentro dele passa a ser o escopo (A-30). Um `savepoint=False` dentro de um escopo da guarda pertence ao escopo de fora (A-31 (ii)). Foi retirado o uso de `id(bloco)` como identificador, como a especificação pede; a execução é identificada só pela transação real, pelo identificador do savepoint e pelos marcadores do `on_commit`. Mesmo comando: **73 passed**.
+
+**Busca pedida na justificativa:** `grep -rn "savepoint=False" apps tests` só encontra o texto do docstring de `livro.py` e os testes novos; nenhum código da aplicação usa a forma.
+
+**Limites que continuam declarados** (os da correção E09-R10, acima): uso de `run_on_commit` e `savepoint_ids`, a varredura da lista a cada pedido e o marcador sem efeito executado no commit. O limite do `savepoint=False` reutilizado sob o `TestCase` deixou de existir.
+
+**Verificação final (A-21 refeito, sobre `5a8b6b6`):** `uv run pytest -q -p no:cacheprovider`, sem filtro: **2433 passed in 296.65s**; `ruff check .`, `ruff format --check .` (329 arquivos), `mypy .` (393 arquivos) e `makemigrations --check --dry-run`: limpos. Uma primeira execução da suíte, feita enquanto um processo de pytest anterior (que eu havia interrompido) ainda encerrava, teve 9 falhas e 140 erros `database "test_organicos" does not exist`: o banco de teste foi apagado pela saída desse processo. Não é defeito do código; repeti a suíte sozinha, com o resultado acima. O container `om-db-1` estava parado e foi religado com `docker start om-db-1`.
