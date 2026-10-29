@@ -12,14 +12,14 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 
 | | |
 |---|---|
-| **Última atualização** | 2026-10-22, depois do PR #79 (merge `eea7e79`) |
+| **Última atualização** | 2026-10-29, com o PR #81 (E09) |
 | **Fase** | Fase 1: plataforma completa rodando contra um **simulador** de pagamentos. Ainda sem dinheiro real e sem implantação em produção. |
-| **Progresso** | 8 de 16 etapas entregues (E01–E08), 57 fatias, cada uma aprovada por revisão independente |
-| **Última etapa entregue** | E08 — Cobrança: abertura, congelamento e prazos (PR #79) |
-| **Próxima etapa** | E09 — Livro-razão, reserva e conciliação (não iniciada) |
-| **Suíte de testes** | 2.166 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
+| **Progresso** | 9 de 16 etapas entregues (E01–E09), 65 fatias, cada uma aprovada por revisão independente |
+| **Última etapa entregue** | E09 — Livro-razão, reserva e conciliação (PR #81) |
+| **Próxima etapa** | E10 — Devoluções (não iniciada) |
+| **Suíte de testes** | 2.433 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
 | **Bloqueadores abertos** | Nenhum |
-| **Melhorias não impeditivas** | 5 registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
+| **Melhorias não impeditivas** | 8 abertas (1 encerrada) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
 
 **Funciona hoje (com o simulador):**
 
@@ -30,8 +30,9 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 - Fechamento da rodada: prazo de 24h, prorrogação e remoção de excedentes.
 - Interface do provedor de pagamentos e simulador determinístico. Ele reproduz atrasos, duplicidade e falhas, e os avisos (webhooks) são idempotentes.
 - Abertura do pagamento com pedidos congelados, cobrança Pix e a linha do tempo `T0`/`T0 + 24h`/`T0 + 48h`. Pagamentos tardios ou duplicados vão para devolução, e a recuperação de resposta perdida cancela cobranças que ficaram sem tentativa.
+- Livro-razão de partidas dobradas, com movimentos imutáveis e segregados por destinação (custódia, obrigação com o fornecedor, frete, receita do serviço, reserva), a reserva do administrador e suas coberturas, as obrigações com compradores, o invariante financeiro verificado a cada 10 minutos e a conciliação diária com o provedor, com alertas.
 
-**Ainda não construído:** o livro-razão e a reserva (E09), as devoluções (E10), a apuração final e a fila de pendentes (E11), o cancelamento da rodada (E12), o pedido formal e o repasse ao fornecedor (E13), a retirada e as ocorrências de entrega (E14), o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
+**Ainda não construído:** as devoluções (E10), a apuração final e a fila de pendentes (E11), o cancelamento da rodada (E12), o pedido formal e o repasse ao fornecedor (E13), a retirada e as ocorrências de entrega (E14), o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
 
 | Etapa | Escopo | Estado |
 |---|---|---|
@@ -43,8 +44,8 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 | E06 | Fechamento e caixas | ✅ Entregue |
 | E07 | Simulador de pagamentos e integração | ✅ Entregue |
 | E08 | Cobrança: abertura, congelamento e prazos | ✅ Entregue |
-| E09 | Livro-razão, reserva e conciliação | ⏳ Próxima |
-| E10 | Devoluções | — |
+| E09 | Livro-razão, reserva e conciliação | ✅ Entregue |
+| E10 | Devoluções | ⏳ Próxima |
 | E11 | Apuração final e fila de pendentes | — |
 | E12 | Cancelamento da rodada | — |
 | E13 | Pedido formal, repasse e portal do fornecedor | — |
@@ -113,6 +114,7 @@ apps/notificacoes/          notificações no site, fila de e-mails e comunicado
 apps/pagamentos/            interface do provedor, registro dos pagamentos, chamadas, avisos
 apps/simulador_pagamentos/  simulador determinístico de pagamentos (só na fase 1)
 apps/pedidos/               abertura do pagamento, pedidos congelados, cobrança, quitação e prazos
+apps/financeiro/            livro-razão, reserva, obrigações com compradores, invariante e conciliação
 templates/ static/          telas renderizadas no servidor
 tests/aceitacao/            cenários de aceitação da especificação funcional
 tests/tecnicos/             testes técnicos (T-n), inclusive de concorrência
@@ -121,7 +123,7 @@ docs/specs/                 especificação, critérios de aceitação e revisã
 docs/melhorias.md           melhorias não impeditivas, revistas no fim da fase 1
 ```
 
-O código tem cerca de 12 mil linhas de Python de aplicação e 29 mil de testes. Os nomes seguem a linguagem do domínio, em português.
+O código tem cerca de 16 mil linhas de Python de aplicação e 35 mil de testes. Os nomes seguem a linguagem do domínio, em português.
 
 ### Ambiente de desenvolvimento
 
