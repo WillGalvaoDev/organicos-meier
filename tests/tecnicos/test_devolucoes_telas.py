@@ -263,3 +263,69 @@ def test_so_o_administrador_baixa_o_comprovante(
         cliente = Client()
         cliente.force_login(conta)
         assert cliente.get(f"{BASE}{a.o1.pk}/comprovante/").status_code == 403
+
+
+# --- E10-R10 e R06: tentativas da falha definitiva e consulta de estornos fora do ar -----------
+
+
+def _linha_da_obrigacao(html: str, obrigacao_id: int) -> str:
+    achado = re.search(rf'<tr data-obrigacao="{obrigacao_id}".*?</tr>', html, re.DOTALL)
+    assert achado is not None, f"sem a linha da obrigação {obrigacao_id}"
+    return " ".join(re.sub(r"<[^>]+>", " ", achado.group(0)).split())
+
+
+def test_lista_informa_tentativas_e_o_que_vem_depois_nas_falhas(
+    client: Client, a: Arranjo
+) -> None:  # A-21 (R10)
+    from django.utils import timezone
+
+    a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+    definitiva = ParcelaDeDevolucao.objects.get(obrigacao=a.o1)
+    assert definitiva.situacao == "falha_definitiva"
+    temporaria = parcela_de_fabrica(a, "falha_temporaria")
+    proxima = agora() + timedelta(minutes=15)
+    ChamadaAoProvedor.objects.create(
+        operacao="estornar",
+        alvo=f"parcela:{temporaria.pk}",
+        chave_idempotencia="fabrica-temporaria",
+        provedor="simulador",
+        ambiente="testes",
+        tentativas=2,
+        proxima_em=proxima,
+    )
+    sem_chamada = parcela_de_fabrica(a, "falha_definitiva")
+
+    html = client.get(BASE).content.decode()
+    linha_o1 = _linha_da_obrigacao(_secao(html, "falhas"), a.o1.pk)
+    assert "prazo_vencido" in linha_o1
+    assert "tentativas 1" in linha_o1
+    assert "reconsulta agendada" in linha_o1
+    linha_temporaria = _linha_da_obrigacao(_secao(html, "falhas"), temporaria.obrigacao_id)
+    assert "indisponivel" in linha_temporaria
+    assert "tentativas 2" in linha_temporaria
+    esperado = timezone.localtime(proxima).strftime("%d/%m/%Y %H:%M")
+    assert f"próxima {esperado}" in linha_temporaria
+    linha_sem_chamada = _linha_da_obrigacao(_secao(html, "falhas"), sem_chamada.obrigacao_id)
+    assert "sem nova tentativa agendada" in linha_sem_chamada
+
+    processar_chamadas()  # a reconsulta roda e a parcela passa a elegível
+    html = client.get(BASE).content.decode()
+    assert f'data-obrigacao="{a.o1.pk}"' not in _secao(html, "falhas")
+    assert f'data-obrigacao="{a.o1.pk}"' in _secao(html, "elegiveis")
+
+
+def test_consulta_de_estornos_fora_do_ar_na_confirmacao_responde_503(
+    client: Client, a: Arranjo, credencial: bytes, midia: Path
+) -> None:  # A-22 (R06)
+    parcela = levar_a_elegivel(a)
+    entrar_de_novo(client, credencial, a.admin)
+    a.sim.falhar_proximas(1, operacao="consultar_estornos")
+    resposta = client.post(f"{BASE}{a.o1.pk}/excepcional/", _dados())
+    assert resposta.status_code == 503
+    assert "Não foi possível consultar o provedor; tente de novo" in resposta.content.decode()
+    assert ConfirmacaoDeDevolucaoExcepcional.objects.count() == 0
+    assert not [p for p in midia.rglob("*") if p.is_file()]
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
