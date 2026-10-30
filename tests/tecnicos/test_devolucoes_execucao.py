@@ -431,6 +431,141 @@ def test_estorno_nao_contabilizado_de_outro_valor_deixa_inconclusivo(a: Arranjo)
     assert _alertas("devolucao_elegivel_excepcional") == []
 
 
+# --- E10-R11: a reconsulta inconclusiva encerra a verificação, não a reconsulta ------------------
+
+
+def _arranjo_i(a: Arranjo, *, mas_processar: bool = False) -> ParcelaDeDevolucao:
+    """O arranjo I: um estorno avulso de 10,00 concluído, a recusa da parcela e a primeira
+    reconsulta (inconclusiva)."""
+    obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo, D("10.00"), "avulso"))
+    if mas_processar:
+        a.sim.recusar_mas_processar(a.pagamento.id_externo, "meio_nao_permite_estorno")
+    else:
+        a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    parcela = _autorizar(a)
+    processar_chamadas(limite=1)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    return parcela
+
+
+def test_inconclusiva_mantem_a_mesma_reconsulta_pendente(a: Arranjo) -> None:  # A-36
+    parcela = _arranjo_i(a)
+    assert (parcela.situacao, parcela.codigo_da_falha) == (
+        "falha_definitiva",
+        "verificacao_inconclusiva",
+    )
+    assert parcela.evidencia["reconsulta"]
+    assert len(_alertas("devolucao_em_falha_definitiva")) == 1
+    assert _alertas("devolucao_com_falha") == []
+    chamada = _verificacao(parcela)
+    assert (chamada.situacao, chamada.tentativas, chamada.ultimo_erro) == (
+        "pendente",
+        1,
+        "verificacao_inconclusiva",
+    )
+    assert chamada.proxima_em == agora() + timedelta(minutes=1)
+
+
+def test_inconclusiva_repete_com_os_intervalos_sem_novo_alerta(a: Arranjo) -> None:  # A-37
+    parcela = _arranjo_i(a)
+    chave = _verificacao(parcela).chave_idempotencia
+    pk = _verificacao(parcela).pk
+    historicos = HistoricoDaDevolucao.objects.filter(parcela=parcela).count()
+    for tentativa, espera, depois in ((2, 1, 5), (3, 5, 15), (4, 15, 60), (5, 60, 60)):
+        a.relogio.avancar(timedelta(minutes=espera))
+        processar_chamadas()
+        chamada = _verificacao(parcela)
+        assert (chamada.pk, chamada.chave_idempotencia) == (pk, chave)
+        assert (chamada.situacao, chamada.tentativas) == ("pendente", tentativa)
+        assert chamada.ultimo_erro == "verificacao_inconclusiva"
+        assert chamada.proxima_em == agora() + timedelta(minutes=depois)
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.codigo_da_falha) == (
+        "falha_definitiva",
+        "verificacao_inconclusiva",
+    )
+    assert parcela.evidencia["reconsulta"]
+    assert _alertas("devolucao_com_falha") == []
+    assert HistoricoDaDevolucao.objects.filter(parcela=parcela).count() == historicos
+
+
+def test_inconclusiva_adota_o_proprio_estorno_que_conclui_depois(a: Arranjo) -> None:  # A-38
+    parcela = _arranjo_i(a, mas_processar=True)
+    assert parcela.situacao == "falha_definitiva"
+    propria = EstornoSimulado.objects.order_by("pk").last()
+    assert propria is not None and propria.valor == parcela.valor
+    a.sim.concluir_estorno(propria.id_estorno)
+    a.relogio.avancar(timedelta(minutes=1))
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    assert parcela.id_estorno == propria.id_estorno
+    assert [m.chave for m in _f15()] == [f"devolucao:{propria.id_estorno}"]
+    assert _alertas("devolucao_em_falha_definitiva") == []
+    assert _verificacao(parcela).situacao == "concluida"
+
+
+def test_inconclusiva_resolve_o_alerta_da_reconsulta_e_segue_ate_ficar_elegivel(
+    a: Arranjo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-39
+    a.sim.estornos_em_processamento(a.pagamento.id_externo)
+    avulso = obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo, D("10.00"), "avulso"))
+    a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    parcela = _autorizar(a)
+    processar_chamadas(limite=1)
+    _recusar_a_reconsulta(monkeypatch)
+    for minutos in (1, 2, 6):
+        a.relogio.avancar(timedelta(minutes=minutos))
+        processar_chamadas()
+    assert len(_alertas("devolucao_com_falha")) == 1
+    monkeypatch.undo()
+    a.relogio.avancar(timedelta(minutes=60))
+    processar_chamadas()
+    assert _alertas("devolucao_com_falha") == []
+    assert (
+        AlertaFinanceiro.objects.get(tipo="devolucao_com_falha").motivo_da_resolucao
+        == "reconsulta concluída"
+    )
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.codigo_da_falha) == (
+        "falha_definitiva",
+        "verificacao_inconclusiva",
+    )
+    assert _verificacao(parcela).situacao == "pendente"
+    a.sim.recusar_estorno(avulso.id_estorno, "estado_invalido")
+    a.relogio.avancar(timedelta(minutes=60))
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    assert _verificacao(parcela).situacao == "concluida"
+
+
+def test_inconclusiva_em_parcela_elegivel_termina_a_chamada(a: Arranjo) -> None:  # A-41
+    from apps.pagamentos.chamadas import agendar_chamada
+
+    a.sim.recusar_mas_processar(a.pagamento.id_externo, "meio_nao_permite_estorno")
+    parcela = _autorizar(a)
+    processar_chamadas()  # a verificação não vê o estorno invisível: a parcela fica elegível
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo, D("10.00"), "avulso"))
+    with transaction.atomic():
+        agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.codigo_da_falha) == (
+        "elegivel_excepcional",
+        "verificacao_inconclusiva",
+    )
+    assert (
+        ChamadaAoProvedor.objects.filter(
+            operacao="verificar_estornos", alvo=f"parcela:{parcela.pk}", situacao="pendente"
+        ).count()
+        == 0
+    )
+
+
 def test_estorno_em_processamento_e_acompanhado_ate_concluir(a: Arranjo) -> None:  # A-16
     a.sim.estornos_em_processamento(a.pagamento.id_externo)
     parcela = _autorizar(a)

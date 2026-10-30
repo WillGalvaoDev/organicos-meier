@@ -355,3 +355,25 @@ def test_detalhe_da_falha_definitiva_mostra_o_erro_e_as_tentativas_da_reconsulta
     texto = " ".join(re.sub(r"<[^>]+>", " ", html).split())
     assert "reconsulta agendada" in texto
     assert "reconsulta: estado_invalido · tentativas 1" in texto
+
+
+def test_lista_e_detalhe_da_falha_inconclusiva_mostram_a_reconsulta(
+    client: Client, a: Arranjo
+) -> None:  # A-40 (R11)
+    from decimal import Decimal
+
+    from apps.pagamentos.provedor import NovoEstorno, obter_provedor
+
+    obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo, Decimal("10.00"), "avulso"))
+    a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+    processar_chamadas()
+    html = client.get(BASE).content.decode()
+    linha = _linha_da_obrigacao(_secao(html, "falhas"), a.o1.pk)
+    assert "verificacao_inconclusiva" in linha
+    assert "reconsulta agendada" in linha
+    assert "sem nova tentativa agendada" not in linha
+    detalhe = client.get(f"{BASE}{a.o1.pk}/").content.decode()
+    texto = " ".join(re.sub(r"<[^>]+>", " ", detalhe).split())
+    assert "reconsulta: verificacao_inconclusiva · tentativas 1" in texto
