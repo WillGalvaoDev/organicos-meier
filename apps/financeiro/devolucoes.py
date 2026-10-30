@@ -50,7 +50,11 @@ from apps.pagamentos.chamadas import (
     nao_encontrado,
     registrar_operacao,
 )
-from apps.pagamentos.consulta import consultar_antes_de_decidir, travar_pagamento
+from apps.pagamentos.consulta import (
+    consultar_antes_de_decidir,
+    travar_pagamento,
+    traduzindo_falhas,
+)
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import (
     EstornoConsultado,
@@ -625,6 +629,7 @@ def confirmar_devolucao_excepcional(
     `elegivel_excepcional`, uma vez, sem devolução em andamento no provedor. A obrigação é
     liquidada pelo F16 e as novas tentativas pela plataforma ficam bloqueadas."""
     autor_conta = _exigir_autor(autor, aceita_sistema=False)
+    _exigir_fora_de_transacao()
     conteudo, tipo, extensao = _validar_a_confirmacao(
         meio, identificacao, justificativa, comprovante
     )
@@ -637,7 +642,9 @@ def confirmar_devolucao_excepcional(
     armazenamento = ConfirmacaoDeDevolucaoExcepcional._meta.get_field("comprovante").storage
     gravado: str | None = None
     try:
-        with transaction.atomic():
+        # Durável: o arquivo gravado aqui só fica se a transação for a última a confirmar. Dentro
+        # de uma transação de quem chama, um rollback dela deixaria o arquivo órfão (E10-R07).
+        with transaction.atomic(durable=True):
             travada = _travar_cadeia(atual.pk)
             _exigir_elegivel(travada)
             if not _cobertura_da_parcela(travada):
@@ -689,10 +696,18 @@ def confirmar_devolucao_excepcional(
         raise
 
 
+def _exigir_fora_de_transacao() -> None:
+    """Recusa, antes de qualquer gravação, a chamada dentro de transação de quem chama: o bloco
+    durável vazio levanta o `RuntimeError` do Django (aceito na transação de teste do Django)."""
+    with transaction.atomic(durable=True):
+        pass
+
+
 def _recusar_se_o_provedor_tem_estorno(parcela: ParcelaDeDevolucao) -> None:
     """Estorno sem baixa em processamento ou concluído, inclusive o do ID da própria parcela: a
     confirmação é recusada e a verificação agendada, para a parcela adotá-lo (E10-05)."""
-    estornos = obter_provedor().consultar_estornos(parcela.pagamento.id_externo)
+    with traduzindo_falhas(parcela.pagamento.referencia_externa):  # ConsultaAoProvedorFalhou
+        estornos = obter_provedor().consultar_estornos(parcela.pagamento.id_externo)
     if _estornos_sem_baixa(estornos):
         with transaction.atomic():
             agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")

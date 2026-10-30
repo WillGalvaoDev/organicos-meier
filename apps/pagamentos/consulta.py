@@ -9,6 +9,8 @@ já registrados (a busca pode atrasar, L-6) e sincroniza tudo. Se o provedor nã
 """
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from django.db import transaction
 
@@ -41,12 +43,25 @@ _MOTIVOS: tuple[tuple[type[Exception], str], ...] = (
 )
 
 
+@contextmanager
+def traduzindo_falhas(referencia_externa: str) -> Iterator[None]:
+    """Traduz as falhas do provedor numa consulta em `ConsultaAoProvedorFalhou`: o contrato de
+    erro único de quem decide (infraestrutura 4.2). Vale para toda consulta feita antes de uma
+    decisão, não só para `consultar_antes_de_decidir`."""
+    try:
+        yield
+    except (ProvedorIndisponivel, RecusaDoProvedor, PagamentoNaoEncontrado) as erro:
+        motivo = next(m for tipo, m in _MOTIVOS if isinstance(erro, tipo))
+        logger.warning("Consulta antes de decidir: %s %s", referencia_externa, motivo)
+        raise ConsultaAoProvedorFalhou(referencia_externa, motivo) from erro
+
+
 def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProvedor]:
     """Sincroniza todos os pagamentos da referência e devolve os registros, relidos do banco,
     por `criado_no_provedor_em` e `id_externo`. Cada pagamento é sincronizado numa transação
     curta própria; o que já foi sincronizado fica gravado mesmo se uma consulta depois falhar."""
     provedor = obter_provedor()
-    try:
+    with traduzindo_falhas(referencia_externa):
         encontrados = provedor.buscar_por_referencia(referencia_externa)
         vistos = set()
         for resposta in encontrados:
@@ -64,10 +79,6 @@ def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProve
             resposta = provedor.consultar_pagamento(registro.id_externo)
             with transaction.atomic():
                 sincronizar_pagamento(resposta, origem="decisao")
-    except (ProvedorIndisponivel, RecusaDoProvedor, PagamentoNaoEncontrado) as erro:
-        motivo = next(m for tipo, m in _MOTIVOS if isinstance(erro, tipo))
-        logger.warning("Consulta antes de decidir: %s %s", referencia_externa, motivo)
-        raise ConsultaAoProvedorFalhou(referencia_externa, motivo) from erro
     return list(
         PagamentoNoProvedor.objects.filter(
             provedor=provedor.nome, referencia_externa=referencia_externa
