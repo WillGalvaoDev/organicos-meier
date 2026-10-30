@@ -18,6 +18,7 @@ from apps.financeiro.models import (
     MotivoDoReembolso,
     ObrigacaoComComprador,
     Reembolso,
+    TipoDoReembolso,
 )
 from apps.financeiro.obrigacoes import registrar_obrigacao_com_comprador
 from apps.financeiro.reserva import _exigir_transacao, sem_cobertura_da_obrigacao
@@ -92,18 +93,28 @@ def _exigir_pedido_pago(estado: SituacaoDoPedido) -> None:
 
 
 def _existente(
-    chave: str, pedido: Pedido, motivo: str, linhas: set[tuple[int, Decimal]] | None
+    chave: str,
+    pedido: Pedido,
+    motivo: str,
+    tipo: str,
+    linhas: set[tuple[int, Decimal]] | None,
 ) -> ReembolsoRegistrado | None:
     """O reembolso já gravado com essa chave, se o conteúdo é o mesmo; conteúdo diferente é
-    conflito. `linhas` (item, quantidade) só é conferido no parcial: a integral recalcula o
-    restante, que depois de feita é vazio."""
+    conflito. O conteúdo é o pedido, o motivo, o tipo e, no parcial, as linhas (item e
+    quantidade): uma chave identifica uma única solicitação (E10-R01). Na integral as linhas não
+    entram, porque a repetição legítima recalcularia um restante vazio."""
     reembolso = Reembolso.objects.filter(chave=chave).first()
     if reembolso is None:
         return None
     mesmas = linhas is None or linhas == {
         (linha.item_id, linha.quantidade) for linha in reembolso.itens.all()
     }
-    if reembolso.pedido_id != pedido.pk or reembolso.motivo != motivo or not mesmas:
+    if (
+        reembolso.pedido_id != pedido.pk
+        or reembolso.motivo != motivo
+        or reembolso.tipo != tipo
+        or not mesmas
+    ):
         raise ReembolsoConflitante(f"a chave {chave!r} já existe com outro conteúdo")
     obrigacao = ObrigacaoComComprador.objects.filter(
         origem_tipo=Reembolso._meta.label_lower, origem_id=str(reembolso.pk)
@@ -120,6 +131,7 @@ def _gravar(
     *,
     chave: str,
     motivo: str,
+    tipo: str,
     autor: Conta | None,
     linhas: list[Linha],
     servico: Decimal,
@@ -130,6 +142,7 @@ def _gravar(
         pedido=pedido,
         chave=chave,
         motivo=motivo,
+        tipo=tipo,
         produtos=produtos,
         servico=servico,
         frete=frete,
@@ -167,7 +180,7 @@ def reembolso_parcial(
     autor_conta = _validar(chave, motivo, autor)
     pedido = item.pedido
     estado = _travar_o_pedido(pedido)
-    existente = _existente(chave, pedido, motivo, {(item.pk, quantidade)})
+    existente = _existente(chave, pedido, motivo, TipoDoReembolso.PARCIAL, {(item.pk, quantidade)})
     if existente is not None:
         return existente
     _exigir_pedido_pago(estado)
@@ -205,6 +218,7 @@ def reembolso_parcial(
         pedido,
         chave=chave,
         motivo=motivo,
+        tipo=TipoDoReembolso.PARCIAL,
         autor=autor_conta,
         linhas=[(item, quantidade, valor)],
         servico=servico,
@@ -220,7 +234,7 @@ def reembolso_integral_do_pedido(
     _exigir_transacao("reembolso_integral_do_pedido")
     autor_conta = _validar(chave, motivo, autor)
     estado = _travar_o_pedido(pedido)
-    existente = _existente(chave, pedido, motivo, None)
+    existente = _existente(chave, pedido, motivo, TipoDoReembolso.INTEGRAL, None)
     if existente is not None:
         return existente
     _exigir_pedido_pago(estado)
@@ -238,6 +252,7 @@ def reembolso_integral_do_pedido(
         pedido,
         chave=chave,
         motivo=motivo,
+        tipo=TipoDoReembolso.INTEGRAL,
         autor=autor_conta,
         linhas=linhas,
         servico=servico,

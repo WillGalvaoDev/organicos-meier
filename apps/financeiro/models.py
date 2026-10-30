@@ -400,6 +400,11 @@ class MotivoDoReembolso(models.TextChoices):
     CANCELAMENTO_DA_RODADA = "cancelamento_da_rodada", "Cancelamento da rodada"
 
 
+class TipoDoReembolso(models.TextChoices):
+    PARCIAL = "parcial", "Parcial"
+    INTEGRAL = "integral", "Integral"
+
+
 class Reembolso(RegistroSoInsercao):
     """Uma devolução de parte (ou de todo o restante) de um pedido pago (E10-02). Fica separada do
     pedido congelado; o acumulado do pedido e dos itens é a soma destes registros. A `chave`
@@ -408,6 +413,7 @@ class Reembolso(RegistroSoInsercao):
     pedido = models.ForeignKey("pedidos.Pedido", on_delete=models.PROTECT, related_name="+")
     chave = models.CharField(max_length=64, unique=True)
     motivo = models.CharField(max_length=30, choices=MotivoDoReembolso.choices)
+    tipo = models.CharField(max_length=10, choices=TipoDoReembolso.choices)
     produtos = CampoDinheiro()
     servico = CampoDinheiro()
     frete = CampoDinheiro()
