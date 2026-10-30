@@ -63,3 +63,22 @@ As provas `test_autorizacao_versus_desfazer_cobertura` e `test_retentativa_manua
 |---|---|
 | A-26, A-27, A-29 e A-30 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
 | A-28 | `tests/tecnicos/test_devolucoes_execucao.py` |
+
+## Complemento das correções: pontos do implementador (2026-10-30)
+
+Valem a seção "Complemento das correções" do `spec.md` e a correção E10-R08 (E10-07, `spec.md`). O A-30 passa a rodar a nova tentativa com `a_atomica=False`, sem outra mudança.
+
+**Dublê da recusa na reconsulta:** `consultar_estornos` do provedor simulado substituída por monkeypatch, para levantar `RecusaDoProvedor("estado_invalido")` enquanto o teste quiser. O dublê só troca a resposta do provedor, e não muda trava nem serviço.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-31 | P1, E07-06 | negativo | a parcela de O1 em `falha_temporaria` (arranjo do A-29), num teste com `transaction=True` | `tentar_devolucao_de_novo(parcela, autor=ADM)` dentro de `transaction.atomic()` aberto pelo teste | `RuntimeError`; nenhuma consulta ao provedor registrada no simulador; a chamada pendente com o mesmo `proxima_em`; nenhum histórico novo. **Red esperado:** a função consulta o provedor e antecipa a chamada |
+| A-32 | P1 | positivo | o arranjo do A-29, num teste sem `transaction=True` (dentro da transação de teste do Django) | `tentar_devolucao_de_novo(parcela, autor=ADM)` | aceita, como no A-18. Regressão: esperado verde, sem Red |
+| A-33 | P4 | positivo | `recusar_estornos(P1, "prazo_vencido")`; O1 autorizada e `processar_chamadas(limite=1)`: a parcela `falha_definitiva`, com a `verificar_estornos` pendente; o dublê da recusa ativo | `processar_chamadas()` | a `verificar_estornos` continua `pendente`, com `tentativas = 1`, `ultimo_erro = "estado_invalido"` e `proxima_em` 1 minuto depois; a parcela continua `falha_definitiva`. **Red esperado:** a chamada termina `falhou`, sem nenhuma pendente |
+| A-34 | P4 | positivo | o A-33 | avançar o relógio e processar até a terceira tentativa; depois, retirar o dublê, avançar 60 minutos e processar | da terceira tentativa em diante, `devolucao_com_falha` aberto (chave `parcela:<pk>`, código `reconsulta:estado_invalido`, 3 tentativas), um só; sem o dublê, a parcela passa a `elegivel_excepcional` e o alerta é resolvido com "reconsulta concluída". **Red esperado:** nenhum alerta, e a parcela parada em `falha_definitiva` |
+| A-35 | P4 | positivo | o arranjo do A-33 sem o dublê; o `consultar_pagamento` do simulador levantando `PagamentoNaoEncontrado` (dublê); o relógio 25 horas depois da criação da chamada | `processar_chamadas()` | a chamada continua `pendente`, com `ultimo_erro = "nao_encontrado"`. **Red esperado:** `falhou` com `nao_encontrado` |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-31 e A-32 | `tests/tecnicos/test_devolucoes_execucao.py` |
+| A-33 a A-35 | `tests/tecnicos/test_devolucoes_execucao.py` |

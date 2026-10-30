@@ -50,3 +50,15 @@ A prova `test_rollback_externo_remove_comprovante` do parecer passa com a corre�
 | Critério | Arquivo de teste |
 |---|---|
 | A-18 a A-21 | `tests/tecnicos/test_devolucoes_excepcional.py` |
+
+## Complemento das correções: arranjo do A-10 (2026-10-30)
+
+Origem: o ponto P3 do relatório do implementador sobre `60b2412` (E10-07, `spec.md`, "Complemento das correções").
+
+O arranjo original do A-10 criava a falta de cobertura numa parcela elegível desfazendo a designação depois da elegibilidade. Com a correção E10-R03, `desfazer_designacao` recusa nesse estado. Nenhum fluxo atual conhecido deixa uma parcela elegível com a obrigação sem cobertura: a autorização exige cobertura total, a designação não se desfaz enquanto houver parcela não final, e só a liquidação reduz o financiado. A conferência de cobertura na confirmação passa a ser uma **guarda defensiva**.
+
+**O A-10 passa a ser:**
+- **Dado:** uma parcela `elegivel_excepcional` criada por fábrica, com a obrigação de 10,00 sem cobertura. A fábrica não chama `desfazer_designacao` e não contorna nenhuma recusa de serviço.
+- **Quando e Então:** os mesmos de antes. A confirmação é recusada com a mensagem de cobrir antes; depois de `designar_reserva` de 10,00, a confirmação é aceita, e o consumo da designação (F11) e o F16 deixam a reserva com o saldo de antes.
+
+A troca do arranjo é aceita: ela não retira nem afrouxa asserção. O implementador registra no `review.md` da E10-06 a troca, o motivo (a R03) e o commit.

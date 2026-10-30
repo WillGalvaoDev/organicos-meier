@@ -246,3 +246,43 @@ A especificação original também deixou de fora dois estados: `desfazer_design
 - `elegivel_excepcional` → `em_processamento` ou `concluida` (estorno adotado pela reconsulta, E10-05), ou `concluida_fora_da_plataforma` (E10-06).
 
 As regras da adoção na elegível estão na E10-05, "Correção E10-R05 e R09". A adoção na elegível não gera aviso ao comprador, porque `em_processamento` é estado intermediário; a conclusão gera o aviso "Estorno concluído" da E10-07.
+
+## Complemento das correções: pontos do implementador (2026-10-30)
+
+Origem: o relatório do implementador sobre as correções R01 a R10 (commit `60b2412`), antes da revisão. Vale o resumo na E10-07 (`spec.md`, "Complemento das correções"). Nenhuma regra comercial muda.
+
+### P1 — a nova tentativa manual chamada dentro de uma transação de quem chama
+
+**Diagnóstico.** A prova `test_retentativa_manual_versus_worker` do parecer roda a nova tentativa pela `Corrida` sem `b_atomica=False`, e por isso dentro de uma transação aberta pelo arranjo. Nessa transação, a sincronização feita pela consulta ao provedor (`consultar_antes_de_decidir`) trava o `PagamentoNoProvedor` e mantém essa trava até o fim da transação de fora. A nova tentativa chega então à trava da chamada já segurando o pagamento, e a ordem "chamada → cadeia" fica invertida de novo.
+
+A rota não abre transação de fora (`ATOMIC_REQUESTS = False`). Nela, a trava da consulta acaba com a transação curta da sincronização, e a mesma corrida passa (E10-04 A-29).
+
+O contrato da consulta (E07-06, infraestrutura 4.2) já diz que ela é feita **antes** da transação da decisão e **sem segurar travas**. O arranjo da prova viola esse contrato. A correção é tornar o contrato explícito e verificável, e não mudar a ordem das travas.
+
+**Regras.**
+- `tentar_devolucao_de_novo` só aceita ser chamada **fora de transação**. A conferência vem no início da função, antes da consulta ao provedor. Ela usa a mesma condição do bloco durável do Django: nenhum bloco atômico aberto além do da transação de teste. Dentro de outra transação, a função levanta `RuntimeError`, sem consultar o provedor e sem gravar nada. A forma é escolha do implementador; o caminho mais simples é abrir a transação da função com `transaction.atomic(durable=True)` e fazer a mesma conferência antes da consulta.
+- A ordem das travas da correção E10-R04 não muda: consulta fora de transação, depois chamada → cadeia.
+- **Alternativas descartadas:**
+  - **Travar a chamada antes da consulta:** manteria uma trava do banco durante a chamada ao provedor, contra a infraestrutura 4.2. Na fase 2a, isso seria uma chamada de rede.
+  - **`nowait` na trava da chamada:** troca a espera por uma recusa. Esconde a violação do contrato em vez de impedi-la, e muda o comportamento da rota sem necessidade.
+- **`autorizar_devolucao` não recebe a guarda.** Ela agenda a chamada de uma parcela nova, cujo alvo nenhuma execução pode estar segurando. Por isso não há espera de trava de chamada dentro dela. Quem a chamar com `SISTEMA` nas etapas seguintes (E11, E12 e E14) segue o mesmo contrato da consulta: consulta fora da transação da decisão. Essas especificações devem dizer isso.
+- **Apoio das corridas:** `Corrida.rodar` ganha `a_atomica`, simétrico ao `b_atomica`, para rodar a operação A sem a transação de fora. O E10-04 A-30, em que a nova tentativa é a operação A, passa a usar `a_atomica=False`. O A-29 já usa `b_atomica=False`. Nenhuma asserção muda.
+- **A prova do parecer fica substituída** pelo E10-04 A-29: é a mesma corrida, com a nova tentativa no contexto da rota. Com a guarda, a prova como está recebe `RuntimeError` na operação B. A substituição se justifica porque o arranjo dela chama a função num contexto que o contrato proíbe, e esse contexto passa a ser recusado e testado (A-31).
+
+### P4 — a reconsulta que falha de forma definitiva não é reagendada
+
+**Diagnóstico.** A operação `verificar_estornos` não tem `falhou`. Uma `RecusaDoProvedor` na consulta, ou o `nao_encontrado` depois de 24 horas (`nao_encontrado`, E07), encerra a chamada como `falhou`. A parcela fica em `falha_definitiva` sem reconsulta pendente. Ela nunca chega a `elegivel_excepcional`, e a devolução fica parada sem caminho, nem pelo provedor nem fora dele.
+
+A parcela não pode passar a elegível sem uma reconsulta que responda, porque a via excepcional exige a inviabilidade comprovada (§9.5, infraestrutura 4.7) e a decisão fica bloqueada quando a consulta falha (infraestrutura 4.2). O risco estava registrado pelo implementador desde a primeira entrega.
+
+**Regras.**
+- **A reconsulta não desiste.** Em `verificar_estornos`, `executar` traduz em `FalhaTemporaria` toda falha do provedor nas duas consultas:
+  - `PagamentoNaoEncontrado`, com o código `nao_encontrado`, sem o limite de 24 horas;
+  - `RecusaDoProvedor`, com o código da recusa.
+
+  `ProvedorIndisponivel` já é temporária. A chamada continua pendente, com os intervalos de `processar_chamadas`; o último intervalo, de 60 minutos, se repete.
+- **Gancho `adiada` de `verificar_estornos`:** a partir da terceira tentativa, abre `devolucao_com_falha` (chave `parcela:<pk>`) com o código `reconsulta:<codigo>` e as tentativas. O alerta é resolvido quando a reconsulta conclui, qualquer que seja o resultado (adoção, elegível ou inconclusiva), com o motivo "reconsulta concluída".
+- A parcela não muda de situação por causa da falha da reconsulta. Na `elegivel_excepcional`, a confirmação continua com as próprias consultas (E10-06, passo 4), que bloqueiam se o provedor falhar.
+- **Na tela (R10):** a falha definitiva com a reconsulta pendente continua com "reconsulta agendada". O detalhe mostra também o último erro e as tentativas da reconsulta.
+
+**Invariante acrescentado.** Toda parcela em `falha_definitiva` tem uma `verificar_estornos` pendente, até sair desse estado.

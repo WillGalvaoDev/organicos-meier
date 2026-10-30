@@ -236,3 +236,44 @@ Os passos 2 e 3 são o tratamento definitivo dos critérios antigos. Mesmo com e
 
 - **Validação observável não é andaime.** Recusa de entrada, mensagem ou exceção que um teste pode observar é comportamento, mesmo quando fica na interface ou num `dataclass`. Ela só entra depois do Red.
 - **A trava vem depois do Red da corrida.** Para cada proteção de concorrência, o registro mostra três passos: o verde funcional sem a trava, o Red da corrida e só então a trava.
+
+## Complemento das correções: pontos do implementador (2026-10-30)
+
+Origem: o relatório do implementador sobre as correções R01 a R10 (`60b2412`), com quatro pontos para decisão ou atenção antes da revisão. Os quatro se resolvem com regras técnicas derivadas. Nenhuma regra comercial muda, e não há decisão nova do responsável.
+
+| Ponto | Decisão | Onde está a especificação | Critérios |
+|---|---|---|---|
+| P1 — a prova `test_retentativa_manual_versus_worker` falha quando a nova tentativa roda dentro de uma transação do arranjo | O arranjo da prova viola o contrato da consulta (fora de transação, sem travas). A nova tentativa passa a recusar ser chamada dentro de outra transação. Sem trava antes da consulta e sem `nowait`. A prova fica substituída pelo A-29 | E10-04, "Complemento das correções", P1 | E10-04 A-31 e A-32; A-30 com `a_atomica=False` |
+| P2 — o Red tardio dos critérios E10-07 A-22 e A-23 | Não conformidade de TDD tratada pela correção E10-R08 (decisão do responsável de 2026-10-30), com uma causa da especificação. Detalhe abaixo | esta seção | nenhum novo |
+| P3 — o arranjo do E10-06 A-10 trocado por uma parcela elegível de fábrica | Aceito. O estado não é alcançável pelos fluxos depois da R03, e a conferência é uma guarda defensiva | E10-06, `acceptance.md`, "Complemento das correções" | E10-06 A-10 (arranjo novo) |
+| P4 — a reconsulta que falha de forma definitiva não é reagendada | A reconsulta não desiste: as falhas do provedor nela são temporárias. Alerta a partir da terceira tentativa | E10-04, "Complemento das correções", P4 | E10-04 A-33 a A-35 |
+
+Com isso, das dez provas do parecer:
+- duas ficam substituídas: a do saldo compartilhado pelo E10-03 A-21, e a da nova tentativa contra a tarefa pelo E10-04 A-29;
+- as outras oito têm de passar como estão.
+
+### P2 — Red tardio do E10-07 A-22 e A-23
+
+**Diagnóstico.** Os testes do A-22 (R06 pela rota) e do A-23 (R05 pela tela) foram escritos no commit `085ccd8`, depois das correções de serviço que os fazem passar (`ee375bd` e a do R05). O Red foi conferido executando os testes contra o código de produção anterior (`44727d1`).
+
+Parte da causa é da especificação. A ordem sugerida punha R05 e R06 antes, e os critérios de tela desses achados ficaram na E10-07, separados dos critérios de serviço. Seguir a ordem levava a escrever o teste de tela depois da correção do serviço.
+
+**Tratamento** (o da correção E10-R08, sem decisão nova):
+1. Registrar no `review.md` da E10-07, na seção "Não conformidade de TDD":
+   - os dois critérios;
+   - a sequência real dos commits;
+   - o tratamento aplicado.
+2. A execução contra `44727d1` é registrada com o título "sensibilidade (execução contra o código anterior), não Red". O registro traz:
+   - o comando com o arquivo de teste inteiro, sem `-k`;
+   - o commit de produção usado;
+   - a falha por asserção ou exceção esperada (`ProvedorIndisponivel` no A-22; `'elegivel_excepcional' == 'em_processamento'` no A-23);
+   - a execução verde no código atual.
+
+   O registro já feito em `review.md` é preservado e completado; ele não pode dar a entender que houve Red antes do código.
+3. Nenhum código de produção é revertido para refazer o ciclo.
+
+**Prevenção (especificador).** Quando um achado tiver critérios de serviço e de tela, a ordem sugerida põe os dois juntos, e o teste de tela é escrito e visto falhar antes da correção do serviço.
+
+### Verificação final
+
+O implementador repete a verificação final da seção "Ordem e regras comuns". As provas do parecer passam a ser as oito indicadas acima.
