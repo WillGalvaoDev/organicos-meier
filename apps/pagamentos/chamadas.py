@@ -59,12 +59,21 @@ class FalhaDefinitiva(Exception):
 
 
 @dataclass(frozen=True)
+class Reagendar:
+    """O que `concluir` devolve para a chamada continuar pendente sem desfazer o que ele gravou
+    (E10-R11): `_tentar` a trata como uma falha temporária com este `codigo`, depois que a
+    transação de `concluir` terminou."""
+
+    codigo: str
+
+
+@dataclass(frozen=True)
 class Operacao:
     """`executar` fala com o provedor; `concluir` aplica o resultado no banco, na mesma
     transação; `falhou` (opcional) trata a falha definitiva."""
 
     executar: Callable[[Provedor, ChamadaAoProvedor], Any]
-    concluir: Callable[[ChamadaAoProvedor, Any], None]
+    concluir: Callable[[ChamadaAoProvedor, Any], Reagendar | None]
     falhou: Callable[[ChamadaAoProvedor, Exception], None] | None = None
     # Junta os parâmetros de um novo agendamento aos da chamada pendente que o absorve (R02).
     combinar: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None
@@ -150,6 +159,22 @@ def _intervalo(tentativas: int) -> timedelta:
     return timedelta(minutes=INTERVALOS_EM_MINUTOS[indice])
 
 
+def _adiar(chamada: ChamadaAoProvedor, operacao: Operacao, codigo: str, instante: datetime) -> None:
+    """A chamada continua pendente: conta a tentativa, grava o erro e marca a próxima."""
+    chamada.tentativas += 1
+    chamada.ultimo_erro = codigo
+    chamada.proxima_em = instante + _intervalo(chamada.tentativas)
+    chamada.save(update_fields=["tentativas", "ultimo_erro", "proxima_em"])
+    if operacao.adiada is not None:
+        operacao.adiada(chamada, codigo)
+    logger.info(
+        "Chamada ao provedor %s: %s nova tentativa em %s",
+        chamada.pk,
+        chamada.operacao,
+        chamada.proxima_em.isoformat(),
+    )
+
+
 def _tentar(chamada: ChamadaAoProvedor) -> None:
     """Executa a chamada com a linha travada e grava o resultado, na transação corrente."""
     operacao = OPERACOES[chamada.operacao]
@@ -160,21 +185,10 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
         # ou nada.
         resultado = operacao.executar(obter_provedor(), chamada)
         with transaction.atomic():
-            operacao.concluir(chamada, resultado)
+            reagendar = operacao.concluir(chamada, resultado)
     except (ProvedorIndisponivel, FalhaTemporaria) as erro:
         codigo = erro.codigo if isinstance(erro, FalhaTemporaria) else "indisponivel"
-        chamada.tentativas += 1
-        chamada.ultimo_erro = codigo
-        chamada.proxima_em = instante + _intervalo(chamada.tentativas)
-        chamada.save(update_fields=["tentativas", "ultimo_erro", "proxima_em"])
-        if operacao.adiada is not None:
-            operacao.adiada(chamada, codigo)
-        logger.info(
-            "Chamada ao provedor %s: %s nova tentativa em %s",
-            chamada.pk,
-            chamada.operacao,
-            chamada.proxima_em.isoformat(),
-        )
+        _adiar(chamada, operacao, codigo, instante)
         return
     except (RecusaDoProvedor, FalhaDefinitiva) as erro:
         chamada.tentativas += 1
@@ -187,6 +201,9 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
         logger.info(
             "Chamada ao provedor %s: %s falhou %s", chamada.pk, chamada.operacao, erro.codigo
         )
+        return
+    if reagendar is not None:
+        _adiar(chamada, operacao, reagendar.codigo, instante)
         return
     chamada.tentativas += 1
     chamada.situacao = SituacaoDaChamada.CONCLUIDA

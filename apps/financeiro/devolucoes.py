@@ -46,6 +46,7 @@ from apps.pagamentos.chamadas import (
     FalhaDefinitiva,
     FalhaTemporaria,
     Operacao,
+    Reagendar,
     agendar_chamada,
     nao_encontrado,
     registrar_operacao,
@@ -77,6 +78,7 @@ ABERTAS = (S.SOLICITADA, S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO)
 # Parcelas não finais: o provedor ainda pode devolver (ou ser adotado), e o livro precisa liquidar.
 EM_CURSO = (*ABERTAS, S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL)
 TENTATIVAS_PARA_ALERTAR = 3
+CODIGO_INCONCLUSIVO = "verificacao_inconclusiva"
 
 TRANSICOES: dict[str, tuple[str, ...]] = {
     S.SOLICITADA: (S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO, S.CONCLUIDA, S.FALHA_DEFINITIVA),
@@ -457,8 +459,8 @@ def _executar_verificacao(
 
 def _verificacao_adiada(chamada: ChamadaAoProvedor, codigo: str) -> None:
     """A partir da terceira tentativa sem resposta, alerta; a parcela não muda de situação."""
-    if chamada.tentativas < TENTATIVAS_PARA_ALERTAR:
-        return
+    if codigo == CODIGO_INCONCLUSIVO or chamada.tentativas < TENTATIVAS_PARA_ALERTAR:
+        return  # o provedor respondeu: o alerta em vigor é o da falha definitiva
     parcela = _travar_cadeia(_pk_da_parcela(chamada))
     abrir_alerta(
         TipoDeAlerta.DEVOLUCAO_COM_FALHA,
@@ -533,27 +535,30 @@ def _adotar_estorno(parcela: ParcelaDeDevolucao, adotado: EstornoConsultado) -> 
     agendar_chamada("acompanhar_estorno", f"parcela:{parcela.pk}")
 
 
-def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoConsultado]) -> None:
+def _concluir_verificacao(
+    chamada: ChamadaAoProvedor, estornos: list[EstornoConsultado]
+) -> Reagendar | None:
     """A reconsulta da parcela em `falha_definitiva` ou `elegivel_excepcional`, com as mesmas
-    regras de adoção nos dois estados (E10-R05 e R09)."""
+    regras de adoção nos dois estados (E10-R05 e R09). Inconclusiva na `falha_definitiva`, a
+    reconsulta continua: devolve `Reagendar`, e o que foi gravado aqui não se desfaz (E10-R11)."""
     parcela = _travar_cadeia(_pk_da_parcela(chamada))
     _resolver(parcela, TipoDeAlerta.DEVOLUCAO_COM_FALHA, "reconsulta concluída")
     if parcela.situacao not in (S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL):
-        return
+        return None
     sem_baixa = _estornos_sem_baixa(estornos)
     parcela.evidencia = {**parcela.evidencia, "reconsulta": _evidencia_da_reconsulta(estornos)}
     do_valor = [e for e in sem_baixa if e.valor == parcela.valor]
     if do_valor:
         parcela.save(update_fields=["evidencia"])
         _adotar_estorno(parcela, _escolher_o_estorno(parcela, do_valor))
-        return
+        return None
     if sem_baixa:  # só estornos de outro valor: inconclusivo, a parcela fica como está
-        parcela.codigo_da_falha = "verificacao_inconclusiva"
+        parcela.codigo_da_falha = CODIGO_INCONCLUSIVO
         parcela.save(update_fields=["evidencia", "codigo_da_falha"])
-        return
+        return Reagendar(CODIGO_INCONCLUSIVO) if parcela.situacao == S.FALHA_DEFINITIVA else None
     parcela.save(update_fields=["evidencia"])
     if parcela.situacao == S.ELEGIVEL_EXCEPCIONAL:
-        return
+        return None
     transicionar(parcela, S.ELEGIVEL_EXCEPCIONAL, autor=SISTEMA, dados={"reconsulta": "vazia"})
     avisar_o_comprador(parcela, S.ELEGIVEL_EXCEPCIONAL)
     _resolver(parcela, TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA, "falha definitiva comprovada")
@@ -562,6 +567,7 @@ def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoCons
         _chave_do_alerta(parcela),
         _dados_do_alerta(parcela),
     )
+    return None
 
 
 def registrar_operacoes() -> None:

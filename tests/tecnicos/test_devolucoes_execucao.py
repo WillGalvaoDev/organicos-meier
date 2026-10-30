@@ -494,7 +494,8 @@ def test_inconclusiva_adota_o_proprio_estorno_que_conclui_depois(a: Arranjo) -> 
     parcela = _arranjo_i(a, mas_processar=True)
     assert parcela.situacao == "falha_definitiva"
     propria = EstornoSimulado.objects.order_by("pk").last()
-    assert propria is not None and propria.valor == parcela.valor
+    assert propria is not None
+    assert propria.valor == parcela.valor
     a.sim.concluir_estorno(propria.id_estorno)
     a.relogio.avancar(timedelta(minutes=1))
     processar_chamadas()
