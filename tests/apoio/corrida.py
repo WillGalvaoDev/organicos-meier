@@ -59,11 +59,17 @@ class Corrida:
 
     # --- as operações ---------------------------------------------------------------------------
 
-    def operacao_a(self, trabalho: Callable[[], Any]) -> Callable[[Any], Any]:
+    def operacao_a(
+        self, trabalho: Callable[[], Any], *, atomica: bool = True
+    ) -> Callable[[Any], Any]:
+        """`atomica=False` roda A sem a transação externa, como uma rota (E10-04, P1)."""
+
         def executa(barreira: Any) -> Any:
             barreira.wait(timeout=10)
             self._local.e_a = True
             try:
+                if not atomica:
+                    return trabalho()
                 with transaction.atomic():
                     return trabalho()
             finally:
@@ -106,11 +112,16 @@ class Corrida:
         return executa
 
     def rodar(
-        self, a: Callable[[], Any], b: Callable[[], Any], *, b_atomica: bool = True
+        self,
+        a: Callable[[], Any],
+        b: Callable[[], Any],
+        *,
+        a_atomica: bool = True,
+        b_atomica: bool = True,
     ) -> tuple[Resultado, Resultado]:
         """Roda A (que pausa) e B juntas; devolve os resultados de A e de B."""
         resultados = executar_em_paralelo(
-            self.operacao_a(a),
+            self.operacao_a(a, atomica=a_atomica),
             self.operacao_b(b, atomica=b_atomica),
             self.controlador(),
             tempo_limite=60,

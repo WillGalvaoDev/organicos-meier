@@ -281,6 +281,7 @@ def test_nova_tentativa_manual_depois_da_cadeia_contra_a_tarefa(
     ra, rb = corrida.rodar(
         lambda: devolucoes.tentar_devolucao_de_novo(parcela, autor=a.admin),
         lambda: processar_chamadas(limite=1),
+        a_atomica=False,  # a nova tentativa só é aceita fora de transação (E10-04, P1)
     )
     assert ra.excecao is None, ra.excecao
     assert rb.excecao is None, rb.excecao

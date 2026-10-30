@@ -401,6 +401,53 @@ def test_nova_tentativa_antecipa_a_chamada_com_a_mesma_chave(a: Arranjo) -> None
     assert parcela.situacao == "concluida"
 
 
+def _em_falha_temporaria(a: Arranjo) -> ParcelaDeDevolucao:
+    a.sim.falhar_proximas(1, operacao="estornar")
+    parcela = _autorizar(a)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "falha_temporaria"
+    a.relogio.avancar(timedelta(minutes=2))
+    return parcela
+
+
+def test_nova_tentativa_dentro_de_transacao_de_quem_chama_e_aceita_no_teste(
+    a: Arranjo,
+) -> None:  # A-32 (regressão: esperado verde)
+    parcela = _em_falha_temporaria(a)
+    tentar_devolucao_de_novo(parcela, autor=a.admin)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_nova_tentativa_dentro_de_transacao_de_quem_chama_e_recusada(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-31
+    from apps.financeiro import devolucoes
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = _em_falha_temporaria(a)
+    chamada = ChamadaAoProvedor.objects.get(operacao="estornar")
+    proxima = chamada.proxima_em
+    historicos = HistoricoDaDevolucao.objects.count()
+    consultas: list[str] = []
+    original = devolucoes.consultar_antes_de_decidir
+    monkeypatch.setattr(
+        devolucoes,
+        "consultar_antes_de_decidir",
+        lambda referencia: (consultas.append(referencia), original(referencia))[1],
+    )
+    with pytest.raises(RuntimeError, match="durable"):
+        with transaction.atomic():
+            tentar_devolucao_de_novo(parcela, autor=a.admin)
+    assert consultas == []
+    chamada.refresh_from_db()
+    assert (chamada.situacao, chamada.proxima_em) == ("pendente", proxima)
+    assert HistoricoDaDevolucao.objects.count() == historicos
+
+
 def test_nova_tentativa_so_em_falha_temporaria(a: Arranjo) -> None:  # A-19
     solicitada = _autorizar(a)
     with pytest.raises(DevolucaoRecusada):

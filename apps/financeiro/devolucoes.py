@@ -266,6 +266,9 @@ def tentar_devolucao_de_novo(
 ) -> ParcelaDeDevolucao:
     """Antecipa a próxima tentativa de uma parcela em falha temporária, com a mesma chave."""
     autor_conta = _exigir_autor(autor, aceita_sistema=False)
+    # A consulta ao provedor vem antes da transação e sem travas (E07-06): dentro de transação de
+    # quem chama, a trava do pagamento ficaria presa e inverteria a ordem chamada -> cadeia.
+    _exigir_fora_de_transacao()
     atual = ParcelaDeDevolucao.objects.select_related("pagamento").get(pk=parcela.pk)
     if atual.situacao != S.FALHA_TEMPORARIA:
         raise DevolucaoRecusada("só uma devolução com falha temporária pode ser tentada de novo")
