@@ -371,16 +371,22 @@ def _sinalizar_devolucao_tardia(movimento: MovimentoNoProvedor) -> None:
     if not movimento.id_estorno:
         return
     parcelas = ParcelaDeDevolucao.objects.filter(pagamento__id_externo=movimento.id_externo)
-    if parcelas.filter(id_estorno=movimento.id_estorno, situacao__in=ABERTAS).exists():
-        return  # o `concluir` da parcela ainda vai lançar o F15
-    parcela = parcelas.filter(
-        id_estorno__isnull=True,
+    if parcelas.filter(
+        id_estorno=movimento.id_estorno, situacao__in=(*ABERTAS, SituacaoDaParcela.CONCLUIDA)
+    ).exists():
+        return  # a parcela assume o estorno: o `concluir` dela vai lançar o F15 (ou já lançou)
+    sem_baixa = parcelas.filter(
         situacao__in=(
             SituacaoDaParcela.FALHA_DEFINITIVA,
             SituacaoDaParcela.ELEGIVEL_EXCEPCIONAL,
             SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA,
-        ),
-    ).first()
+        )
+    )
+    # A do mesmo ID primeiro (o estorno recusado que concluiu tarde); senão, uma sem ID (E10-R09).
+    parcela = (
+        sem_baixa.filter(id_estorno=movimento.id_estorno).first()
+        or sem_baixa.filter(id_estorno__isnull=True).first()
+    )
     if parcela is None:
         return
     em_dobro = parcela.situacao == SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA

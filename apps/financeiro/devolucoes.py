@@ -78,7 +78,7 @@ TRANSICOES: dict[str, tuple[str, ...]] = {
     S.FALHA_TEMPORARIA: (S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO, S.CONCLUIDA, S.FALHA_DEFINITIVA),
     S.EM_PROCESSAMENTO: (S.CONCLUIDA, S.FALHA_DEFINITIVA),
     S.FALHA_DEFINITIVA: (S.ELEGIVEL_EXCEPCIONAL, S.EM_PROCESSAMENTO, S.CONCLUIDA),
-    S.ELEGIVEL_EXCEPCIONAL: (S.CONCLUIDA_FORA_DA_PLATAFORMA, S.CONCLUIDA),
+    S.ELEGIVEL_EXCEPCIONAL: (S.CONCLUIDA_FORA_DA_PLATAFORMA, S.EM_PROCESSAMENTO, S.CONCLUIDA),
     S.CONCLUIDA: (),
     S.CONCLUIDA_FORA_DA_PLATAFORMA: (),
 }
@@ -458,67 +458,76 @@ def _evidencia_da_reconsulta(estornos: list[EstornoConsultado]) -> dict[str, Any
     }
 
 
-def _nao_contabilizados(estornos: list[EstornoConsultado]) -> list[EstornoConsultado]:
-    contabilizados = set(
-        ParcelaDeDevolucao.objects.exclude(id_estorno=None).values_list("id_estorno", flat=True)
+def _estornos_sem_baixa(estornos: list[EstornoConsultado]) -> list[EstornoConsultado]:
+    """Os estornos `em_processamento` ou `concluido` que nenhuma parcela assume (E10-R09). Uma
+    parcela assume o estorno do seu `id_estorno` enquanto `solicitada`, `falha_temporaria` ou
+    `em_processamento` (o acompanhamento o liquida) e quando `concluida` (o F15 já o liquidou).
+    Em `falha_definitiva`, `elegivel_excepcional` ou `concluida_fora_da_plataforma`, o ID guardado
+    na parcela não é baixa nenhuma: o estorno recusado pode ter concluído depois."""
+    assumidos = set(
+        ParcelaDeDevolucao.objects.filter(situacao__in=(*ABERTAS, S.CONCLUIDA))
+        .exclude(id_estorno=None)
+        .values_list("id_estorno", flat=True)
     )
     return [
         e
         for e in estornos
-        if e.id_estorno not in contabilizados
+        if e.id_estorno not in assumidos
         and e.situacao in (SituacaoDoEstorno.EM_PROCESSAMENTO, SituacaoDoEstorno.CONCLUIDO)
     ]
 
 
-def _adotar_estorno_tardio(parcela: ParcelaDeDevolucao, estornos: list[EstornoConsultado]) -> None:
-    """O provedor concluiu tarde um estorno que o sistema dava por inviável (E10-05): se ele tem o
-    valor da parcela, a parcela o adota e é liquidada pela via principal."""
-    adotado = next(
-        (
-            e
-            for e in _nao_contabilizados(estornos)
-            if e.situacao == SituacaoDoEstorno.CONCLUIDO and e.valor == parcela.valor
-        ),
-        None,
+def _escolher_o_estorno(
+    parcela: ParcelaDeDevolucao, candidatos: list[EstornoConsultado]
+) -> EstornoConsultado:
+    """O da própria parcela primeiro; depois o mais antigo, e no empate o de menor `id_estorno`."""
+    return min(
+        candidatos, key=lambda e: (e.id_estorno != parcela.id_estorno, e.criado_em, e.id_estorno)
     )
-    if adotado is None:
-        return
-    parcela.evidencia = {**parcela.evidencia, "adocao": _evidencia_da_reconsulta(estornos)}
-    parcela.save(update_fields=["evidencia"])
-    _concluir_parcela(parcela, adotado)
-    motivo = "estorno concluído tardiamente pelo provedor e adotado"
-    _resolver(parcela, TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL, motivo)
+
+
+def _adotar_estorno(parcela: ParcelaDeDevolucao, adotado: EstornoConsultado) -> None:
+    """A parcela adota um estorno do provedor sem baixa e do seu valor: concluído, é liquidada
+    pela via principal; em processamento, passa a acompanhá-lo. Resolve os alertas dela e o do
+    estorno tardio (E10-05)."""
+    motivo = "estorno encontrado no provedor e adotado"
+    tipo = (
+        TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL
+        if parcela.situacao == S.ELEGIVEL_EXCEPCIONAL
+        else TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA
+    )
+    _resolver(parcela, tipo, motivo)
     resolver_alerta(TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE, adotado.id_estorno, motivo=motivo)
+    if adotado.situacao == SituacaoDoEstorno.CONCLUIDO:
+        _concluir_parcela(parcela, adotado)
+        return
+    parcela.id_estorno = adotado.id_estorno
+    parcela.save(update_fields=["id_estorno"])
+    transicionar(
+        parcela, S.EM_PROCESSAMENTO, autor=SISTEMA, dados={"id_estorno": adotado.id_estorno}
+    )
+    agendar_chamada("acompanhar_estorno", f"parcela:{parcela.pk}")
 
 
 def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoConsultado]) -> None:
+    """A reconsulta da parcela em `falha_definitiva` ou `elegivel_excepcional`, com as mesmas
+    regras de adoção nos dois estados (E10-R05 e R09)."""
     parcela = _travar_cadeia(_pk_da_parcela(chamada))
     if parcela.situacao not in (S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL):
         return
-    if parcela.situacao == S.ELEGIVEL_EXCEPCIONAL:
-        _adotar_estorno_tardio(parcela, estornos)
-        return
-    nao_contabilizados = _nao_contabilizados(estornos)
+    sem_baixa = _estornos_sem_baixa(estornos)
     parcela.evidencia = {**parcela.evidencia, "reconsulta": _evidencia_da_reconsulta(estornos)}
-    outros_valores = [e for e in nao_contabilizados if e.valor != parcela.valor]
-    iguais = [e for e in nao_contabilizados if e.valor == parcela.valor]
-    if outros_valores:
+    do_valor = [e for e in sem_baixa if e.valor == parcela.valor]
+    if do_valor:
+        parcela.save(update_fields=["evidencia"])
+        _adotar_estorno(parcela, _escolher_o_estorno(parcela, do_valor))
+        return
+    if sem_baixa:  # só estornos de outro valor: inconclusivo, a parcela fica como está
         parcela.codigo_da_falha = "verificacao_inconclusiva"
         parcela.save(update_fields=["evidencia", "codigo_da_falha"])
         return
     parcela.save(update_fields=["evidencia"])
-    if iguais:
-        adotado = iguais[0]
-        if adotado.situacao == SituacaoDoEstorno.CONCLUIDO:
-            _concluir_parcela(parcela, adotado)
-            return
-        parcela.id_estorno = adotado.id_estorno
-        parcela.save(update_fields=["id_estorno"])
-        transicionar(
-            parcela, S.EM_PROCESSAMENTO, autor=SISTEMA, dados={"id_estorno": adotado.id_estorno}
-        )
-        _resolver(parcela, TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA, "estorno adotado")
-        agendar_chamada("acompanhar_estorno", f"parcela:{parcela.pk}")
+    if parcela.situacao == S.ELEGIVEL_EXCEPCIONAL:
         return
     transicionar(parcela, S.ELEGIVEL_EXCEPCIONAL, autor=SISTEMA, dados={"reconsulta": "vazia"})
     avisar_o_comprador(parcela, S.ELEGIVEL_EXCEPCIONAL)
@@ -681,10 +690,10 @@ def confirmar_devolucao_excepcional(
 
 
 def _recusar_se_o_provedor_tem_estorno(parcela: ParcelaDeDevolucao) -> None:
-    """Estorno não contabilizado em processamento ou concluído: a confirmação é recusada e a
-    verificação agendada, para a parcela adotá-lo (E10-05)."""
+    """Estorno sem baixa em processamento ou concluído, inclusive o do ID da própria parcela: a
+    confirmação é recusada e a verificação agendada, para a parcela adotá-lo (E10-05)."""
     estornos = obter_provedor().consultar_estornos(parcela.pagamento.id_externo)
-    if _nao_contabilizados(estornos):
+    if _estornos_sem_baixa(estornos):
         with transaction.atomic():
             agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
         raise DevolucaoRecusada("há devolução em processamento ou concluída no provedor")
