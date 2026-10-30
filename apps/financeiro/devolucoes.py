@@ -21,9 +21,10 @@ from django.db import transaction
 from apps.contas.models import Conta, Papel, Situacao
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
 from apps.financeiro.estornos import avisar_o_comprador
-from apps.financeiro.livro import conta_da_obrigacao, saldo, travar_contas
+from apps.financeiro.livro import conta, conta_da_obrigacao, saldo, travar_contas
 from apps.financeiro.models import (
     ConfirmacaoDeDevolucaoExcepcional,
+    Destinacao,
     HistoricoDaDevolucao,
     MeioDaDevolucaoExcepcional,
     ObrigacaoComComprador,
@@ -68,6 +69,8 @@ ZERO = Decimal("0.00")
 S = SituacaoDaParcela
 FINAIS = (S.CONCLUIDA, S.CONCLUIDA_FORA_DA_PLATAFORMA)
 ABERTAS = (S.SOLICITADA, S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO)
+# Parcelas não finais: o provedor ainda pode devolver (ou ser adotado), e o livro precisa liquidar.
+EM_CURSO = (*ABERTAS, S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL)
 TENTATIVAS_PARA_ALERTAR = 3
 
 TRANSICOES: dict[str, tuple[str, ...]] = {
@@ -210,7 +213,9 @@ def autorizar_devolucao(
         if existente is not None:
             return existente
         destino = conta_da_obrigacao(obrigacao)
-        travar_contas(destino)
+        # A cobertura depende das designações, que a trava da reserva protege (E09-R02): as duas
+        # contas juntas, em ordem de pk, antes de ler o liquidado e o que falta cobrir (E10-R03).
+        travar_contas(destino, conta(Destinacao.RESERVA))
         valor = obrigacao.devido - _liquidado(destino)
         if valor <= 0:
             raise DevolucaoRecusada("não há nada a devolver nesta obrigação")
@@ -592,6 +597,7 @@ def _exigir_elegivel(parcela: ParcelaDeDevolucao) -> None:
 
 def _cobertura_da_parcela(parcela: ParcelaDeDevolucao) -> bool:
     destino = conta_da_obrigacao(parcela.obrigacao)
+    travar_contas(destino, conta(Destinacao.RESERVA))  # depois da cadeia (E10-R03)
     ativas = _designacoes_ativas(parcela.obrigacao)
     disponivel = max(ZERO, saldo(destino)) + sum((resto for _, resto in ativas), ZERO)
     return bool(disponivel >= parcela.valor)

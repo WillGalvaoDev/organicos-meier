@@ -40,7 +40,7 @@ from apps.financeiro.models import (
     TransferenciaFinanceira,
 )
 from apps.financeiro.obrigacoes import _liquidado, liquidar_obrigacao_fora_do_provedor
-from apps.financeiro.reserva import desfazer_designacao, designar_reserva
+from apps.financeiro.reserva import designar_reserva
 from apps.nucleo.models import EntradaAuditoria
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
@@ -52,7 +52,7 @@ from tests.apoio.devolucoes import (
     Arranjo,
     arranjo_da_devolucao,
     levar_a_elegivel,
-    obrigacao_sem_cobertura,
+    parcela_de_fabrica,
 )
 from tests.apoio.financeiro import chave_nova, mover
 from tests.apoio.pedidos import T0, sincronizar
@@ -290,12 +290,10 @@ def test_formatos_aceitos_sao_reconhecidos_pelo_conteudo(a: Arranjo) -> None:  #
 
 
 def test_obrigacao_sem_cobertura_exige_cobrir_antes(a: Arranjo) -> None:  # A-10
-    obrigacao = obrigacao_sem_cobertura(a)
-    with transaction.atomic():
-        designacao = designar_reserva(a.admin, obrigacao, obrigacao.devido, "cobertura")
-    parcela = levar_a_elegivel(a, obrigacao)
-    with transaction.atomic():
-        desfazer_designacao(a.admin, designacao, "desistência")
+    # Depois da E10-R03 a designação de uma obrigação com parcela não final não se desfaz; a
+    # parcela elegível sem cobertura vem de fábrica (a asserção é a mesma da versão anterior).
+    parcela = parcela_de_fabrica(a, "elegivel_excepcional", "10.00")
+    obrigacao = parcela.obrigacao
     with pytest.raises(DevolucaoRecusada, match="cobrir"):
         _confirmar(a, parcela)
     with transaction.atomic():

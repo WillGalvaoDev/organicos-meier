@@ -319,10 +319,10 @@ def designar_reserva(
 def _recusar_se_ha_devolucao_em_curso(designacao: DesignacaoDaReserva) -> None:
     """A cobertura de uma obrigação com devolução em curso não se desfaz (E10-04): o livro precisa
     conseguir liquidar o que o provedor devolver."""
-    from apps.financeiro.devolucoes import ABERTAS, DevolucaoRecusada
+    from apps.financeiro.devolucoes import EM_CURSO, DevolucaoRecusada
 
     if ParcelaDeDevolucao.objects.filter(
-        obrigacao_id=designacao.obrigacao_id, situacao__in=ABERTAS
+        obrigacao_id=designacao.obrigacao_id, situacao__in=EM_CURSO
     ).exists():
         raise DevolucaoRecusada("há devolução em curso para esta obrigação")
 
