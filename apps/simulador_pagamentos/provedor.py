@@ -96,6 +96,12 @@ def _existente(estorno: EstornoSimulado, novo: NovoEstorno) -> EstornoConsultado
     return _consultado(estorno)
 
 
+def _saldo_liberado(instante: datetime) -> Decimal:
+    """A soma dos movimentos da conta já liberados no instante: o saldo que um estorno consome."""
+    soma = MovimentoSimulado.objects.filter(liberado_em__lte=instante).aggregate(s=Sum("valor"))
+    return Decimal(soma["s"] or Decimal("0.00"))
+
+
 def _estornar(novo: NovoEstorno) -> EstornoConsultado:
     existente = EstornoSimulado.objects.filter(chave_idempotencia=novo.chave_idempotencia).first()
     if existente is not None:
@@ -124,10 +130,7 @@ def _estornar(novo: NovoEstorno) -> EstornoConsultado:
             raise RecusaDoProvedor("parcial_nao_suportado")
         if novo.valor > restante:
             raise RecusaDoProvedor("valor_acima_do_disponivel")
-        liberado = MovimentoSimulado.objects.filter(liberado_em__lte=agora_).aggregate(
-            s=Sum("valor")
-        )["s"] or Decimal("0.00")
-        if liberado < novo.valor:
+        if _saldo_liberado(agora_) < novo.valor:
             raise SaldoInsuficienteParaEstorno("saldo disponível insuficiente")
         recusa_tardia = PLANO.consumir_recusa_mas_processa(cobranca.pk)
         em_processamento = recusa_tardia is not None or PLANO.estorno_em_processamento(cobranca.pk)
