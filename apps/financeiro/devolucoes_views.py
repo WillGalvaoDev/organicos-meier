@@ -82,13 +82,14 @@ def _acompanhamento_da_falha(parcela: ParcelaDeDevolucao) -> dict[str, Any]:
     pendentes = chamadas.filter(situacao=SituacaoDaChamada.PENDENTE)
     proxima = pendentes.filter(operacao__in=("estornar", "acompanhar_estorno")).first()
     reconsulta = pendentes.filter(operacao="verificar_estornos").exists()
+    proxima_em = None
     if parcela.situacao == S.FALHA_TEMPORARIA and proxima is not None:
-        depois = ("proxima", proxima.proxima_em)
+        depois, proxima_em = "proxima", proxima.proxima_em
     elif parcela.situacao == S.FALHA_DEFINITIVA and reconsulta:
-        depois = ("reconsulta", None)
+        depois = "reconsulta"
     else:
-        depois = ("nenhuma", None)
-    return {"tentativas": tentativas, "depois": depois[0], "proxima_em": depois[1]}
+        depois = "nenhuma"
+    return {"tentativas": tentativas, "depois": depois, "proxima_em": proxima_em}
 
 
 def _linha(obrigacao: ObrigacaoComComprador) -> dict[str, Any]:

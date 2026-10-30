@@ -52,8 +52,8 @@ from apps.pagamentos.chamadas import (
 )
 from apps.pagamentos.consulta import (
     consultar_antes_de_decidir,
-    travar_pagamento,
     traduzindo_falhas,
+    travar_pagamento,
 )
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import (
