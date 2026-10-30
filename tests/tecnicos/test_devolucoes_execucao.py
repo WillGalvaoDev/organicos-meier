@@ -478,3 +478,22 @@ def test_auditoria_e_historico_da_devolucao(a: Arranjo) -> None:  # A-25
     assert [linha.situacao for linha in linhas] == ["solicitada", "concluida"]
     assert all(linha.momento is not None and linha.dados is not None for linha in linhas)
     assert saldo(conta_da_obrigacao(a.o1)) == D("0.00")
+
+
+def test_designacao_nao_se_desfaz_na_falha_definitiva_nem_na_elegivel(a: Arranjo) -> None:  # A-28
+    obrigacao = _obrigacao_sem_cobertura(a)
+    with transaction.atomic():
+        designacao = designar_reserva(a.admin, obrigacao, obrigacao.devido, "cobertura")
+    a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    parcela = autorizar_devolucao(obrigacao, autor=a.admin)
+    processar_chamadas(limite=1)
+    parcela.refresh_from_db()
+    assert parcela.situacao == "falha_definitiva"
+    with pytest.raises(DevolucaoRecusada, match="devolução em curso"), transaction.atomic():
+        desfazer_designacao(a.admin, designacao, "desistência")
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    with pytest.raises(DevolucaoRecusada, match="devolução em curso"), transaction.atomic():
+        desfazer_designacao(a.admin, designacao, "desistência")
+    assert not DesignacaoDesfeita.objects.filter(designacao=designacao).exists()

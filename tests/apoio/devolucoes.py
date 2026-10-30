@@ -146,10 +146,22 @@ def obrigacao_sem_cobertura(a: Arranjo) -> Any:
     ralo = obrigacao_com(rodada, ciclo, a.comprador, numero=9999)
     for componente in ("produtos", "servico", "frete"):
         conta = custodia(rodada, ciclo, a.comprador, componente)
-        mover("financiamento_de_obrigacao", conta, ralo, saldo(conta), chave=chave_nova())
+        with transaction.atomic():
+            mover("financiamento_de_obrigacao", conta, ralo, saldo(conta), chave=chave_nova())
     obrigacao = parcial(a.i1, "1").obrigacao
     assert sem_cobertura_da_obrigacao(obrigacao) == obrigacao.devido
     return obrigacao
+
+
+def obrigacao_designada(a: Arranjo) -> tuple[Any, Any]:
+    """Arranjo D (E10-R03): a obrigação sem cobertura, coberta só por uma designação da reserva,
+    feita numa transação própria."""
+    from apps.financeiro.reserva import designar_reserva
+
+    obrigacao = obrigacao_sem_cobertura(a)
+    with transaction.atomic():
+        designacao = designar_reserva(a.admin, obrigacao, obrigacao.devido, "Cobrir a devolução")
+    return obrigacao, designacao
 
 
 def levar_a_elegivel(a: Arranjo, obrigacao: Any = None, pagamento: Any = None) -> Any:

@@ -281,3 +281,53 @@ def test_nova_tentativa_manual_depois_da_cadeia_contra_a_tarefa(
     assert "OperationalError" not in caplog.text
     processar_chamadas()
     _estorno_concluido_uma_vez(parcela)
+
+
+# --- E10-R03: a autorização contra a retirada da própria cobertura (A-26 e A-27) -----------------
+
+
+def test_autorizacao_contra_desfazer_a_designacao(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E10-04, A-26
+    from apps.financeiro import devolucoes, reserva
+    from apps.financeiro.models import ParcelaDeDevolucao
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.devolucoes import arranjo_da_devolucao, obrigacao_designada
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    od, designacao = obrigacao_designada(a)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, devolucoes, "sem_cobertura_da_obrigacao")
+    ra, rb = corrida.rodar(
+        lambda: devolucoes.autorizar_devolucao(od, autor=a.admin),
+        lambda: reserva.desfazer_designacao(a.admin, designacao, "Desfazer"),
+    )
+    assert ra.excecao is None, ra.excecao
+    assert isinstance(rb.excecao, devolucoes.DevolucaoRecusada), rb.excecao
+    assert "há devolução em curso para esta obrigação" in str(rb.excecao)
+    assert ParcelaDeDevolucao.objects.filter(situacao="solicitada").count() == 1
+    assert ChamadaAoProvedor.objects.filter(operacao="estornar").count() == 1
+    assert reserva.sem_cobertura_da_obrigacao(od) == D("0.00")
+
+
+def test_desfazer_a_designacao_contra_a_autorizacao(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E10-04, A-27
+    from apps.financeiro import devolucoes, reserva
+    from apps.financeiro.models import ParcelaDeDevolucao
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.devolucoes import arranjo_da_devolucao, obrigacao_designada
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    od, designacao = obrigacao_designada(a)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, reserva, "_recusar_se_ha_devolucao_em_curso")
+    ra, rb = corrida.rodar(
+        lambda: reserva.desfazer_designacao(a.admin, designacao, "Desfazer"),
+        lambda: devolucoes.autorizar_devolucao(od, autor=a.admin),
+    )
+    assert ra.excecao is None, ra.excecao
+    assert isinstance(rb.excecao, devolucoes.DevolucaoRecusada), rb.excecao
+    assert "cobrir antes" in str(rb.excecao)
+    assert not ParcelaDeDevolucao.objects.exists()
+    assert not ChamadaAoProvedor.objects.filter(operacao="estornar").exists()
