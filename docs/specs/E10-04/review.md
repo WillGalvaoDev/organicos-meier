@@ -80,3 +80,18 @@ Registro anterior preservado: não houve Red das corridas (travas escritas com o
 |---|---|
 | A-23: `autorizar_devolucao` sem `travar_pagamento` e sem a trava da `SituacaoDoPedido` | 1 failed, `test_duas_autorizacoes_da_mesma_obrigacao_geram_uma_parcela` (`IntegrityError` no lugar de `None`) |
 | A-24: `_concluir_verificacao` e `_aplicar_estorno` com só a releitura | o teste existente **não falhou** (11 passed). Reforçado (`20695e8`, `8eac7e0`) com duas corridas: `test_verificacao_contra_confirmacao_excepcional_nunca_devolve_duas_vezes` e `test_conclusao_contra_recusa_da_mesma_parcela_fica_concluida_sem_falha_no_historico`. Com a mutação: 2 failed (`LiquidacaoRecusada` e histórico com `falha_definitiva`); sem ela: 13 passed |
+
+## Complemento das correções (P1 e P4) — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-31 e A-32; `Corrida.rodar(a_atomica=...)`; A-30 com `a_atomica=False` | `7998530` | `uv run pytest tests/tecnicos/test_devolucoes_execucao.py tests/tecnicos/test_devolucoes_concorrencia.py` | **Red: 1 failed.** A-31: `DID NOT RAISE RuntimeError` (a função consultava o provedor e antecipava a chamada). A-32 passou (regressão, sem Red, como a spec prevê) |
+| `tentar_devolucao_de_novo`: `_exigir_fora_de_transacao()` logo depois da conferência do autor, antes da consulta ao provedor | `7998530` | os mesmos e `test_devolucoes_telas.py` | 61 passed |
+| Testes A-33, A-34, A-35 (dublê na classe `ProvedorSimulado`, com `RecusaDoProvedor("estado_invalido")` e `PagamentoNaoEncontrado`) | `1634081` | `uv run pytest tests/tecnicos/test_devolucoes_execucao.py` | **Red: 3 failed.** Nos três a chamada `verificar_estornos` terminou `falhou` em vez de `pendente` (`'falhou' != 'pendente'`; no A-34, `tentativas` 1 e nenhum alerta; no A-35, `nao_encontrado` depois de 25 horas) |
+| `_executar_verificacao` traduz `PagamentoNaoEncontrado` e `RecusaDoProvedor` em `FalhaTemporaria`; gancho `adiada` (`_verificacao_adiada`: alerta `devolucao_com_falha`, código `reconsulta:<codigo>`, a partir da 3ª tentativa); `_concluir_verificacao` resolve o alerta com "reconsulta concluída" | `1634081` | o mesmo arquivo | 31 passed |
+
+**Decisão técnica.** O dublê da recusa usa `monkeypatch.setattr(ProvedorSimulado, ...)` (a classe), e não a instância `SIMULADO`: na instância, o `undo` deixava um atributo de instância residual e os espiões de `test_pagamentos_concorrencia.py` falhavam em suíte completa (2 failed em duas execuções; corrigido em `45a91e5`).
+
+**Ponto de atenção para o revisor (invariante "toda parcela em `falha_definitiva` tem uma `verificar_estornos` pendente").** O caminho `verificacao_inconclusiva` (A-15: só estornos de outro valor) conclui a chamada e deixa a parcela em `falha_definitiva` sem reconsulta pendente. A spec do P4 não trata esse caso, e o A-15 existente exige que a parcela fique como está. Não alterei o comportamento; fica para decisão do especificador.
+
+**Prova do parecer `test_retentativa_manual_versus_worker`:** substituída pelo A-29, como manda o complemento; executada como está, a operação B recebe `RuntimeError` (a guarda do A-31).

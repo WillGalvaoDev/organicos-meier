@@ -365,3 +365,36 @@ uv run python manage.py makemigrations --check --dry-run   # No changes detected
 Provas do parecer (arquivo temporário, não commitado): 8 das 10 passam. `test_saldo_compartilhado_em_estornos_concorrentes` foi substituída pelo E10-03 A-21 (a barreira esgota o tempo, como a spec previu). `test_retentativa_manual_versus_worker` falha só pelo arranjo (ver "Ponto para o revisor" na E10-04); sem a transação externa em B, passa.
 
 Riscos remanescentes: a decisão acima; `verificar_estornos` que falha de forma definitiva no provedor não é reagendada; armazenamento do comprovante local até a E16.
+
+## Complemento das correções (P2 e tela do P4) — agente 2 — 2026-10-30
+
+**P2 — Red tardio do A-22 e do A-23 (E10-R08).** Sequência real dos commits: as correções de serviço R06 (`ee375bd`) e R05 vieram antes dos testes de tela (`085ccd8`), porque a ordem pedida punha R05/R06 antes de R10. Não houve Red antes do código de produção desses dois critérios. Nenhum código foi revertido.
+
+**Sensibilidade (execução contra o código anterior), não Red.** Comando, com os dois arquivos inteiros e sem `-k`, executado em um worktree descartável com o código de produção de `44727d1` e os testes do commit atual:
+
+```
+uv run pytest tests/tecnicos/test_devolucoes_telas.py tests/tecnicos/test_pedidos_estornos_do_comprador.py
+# 4 failed, 20 passed
+```
+
+- A-22 (`test_consulta_de_estornos_fora_do_ar_na_confirmacao_responde_503`): `apps.pagamentos.provedor.ProvedorIndisponivel: falha simulada do provedor` (500 em vez de 503).
+- A-23 (`test_estorno_adotado_em_processamento_aparece_em_processamento`): `assert 'elegivel_excepcional' == 'em_processamento'`.
+- Falharam também, pela ausência de tentativas na tela, o A-21 (`'tentativas 1'` ausente) e o teste do P4 abaixo.
+
+No código atual: `test_devolucoes_telas.py` e `test_pedidos_estornos_do_comprador.py` passam (suíte completa verde). O worktree foi removido.
+
+**P4 — regra de tela.** O detalhe da falha definitiva com a reconsulta pendente mostra "reconsulta: <último erro> · tentativas N". O teste `test_detalhe_da_falha_definitiva_mostra_o_erro_e_as_tentativas_da_reconsulta` teve Red antes do código (o texto não aparecia, no `uv run pytest tests/tecnicos/test_devolucoes_telas.py`), e passa depois (`_acompanhamento_da_falha` devolve a chamada de reconsulta; `devolucao.html`). Commit `1634081`. A lista continua com "reconsulta agendada".
+
+## Verificação final do complemento
+
+```
+uv run pytest                                 # 2633 passed in 350.78s, sem filtro
+uv run ruff check . --no-cache                # All checks passed
+uv run ruff format --check .                  # 347 files already formatted
+uv run mypy .                                 # Success: no issues found in 416 source files
+uv run python manage.py makemigrations --check --dry-run   # No changes detected
+```
+
+Provas do parecer (arquivo temporário, não commitado): 9 passam e 2 falham, as duas substituídas pela spec: `test_saldo_compartilhado_em_estornos_concorrentes` (E10-03 A-21) e `test_retentativa_manual_versus_worker` (E10-04 A-29; a operação B recebe `RuntimeError` da guarda, A-31).
+
+Riscos remanescentes: a parcela em `verificacao_inconclusiva` fica sem reconsulta pendente (ver E10-04); armazenamento do comprovante local até a E16.

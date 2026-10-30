@@ -59,3 +59,7 @@ Nenhum teste existente chamava a confirmação dentro de `atomic` próprio. A le
 ## Não conformidade de TDD (R08) — E10-06 A-16
 
 Registro anterior preservado: sem Red da corrida (trava escrita com o código). Busca de evidência: nada em `dabe910`/`deccdce` nem nos logs. **Sensibilidade (mutação), não Red** — `uv run pytest tests/tecnicos/test_devolucoes_concorrencia.py`, com `confirmar_devolucao_excepcional` lendo a parcela sem a trava da cadeia: 1 failed, `test_duas_confirmacoes_excepcionais_da_mesma_parcela` (`'já confirmada'` não está na mensagem recebida, que passa a ser a de cobertura); restaurado. O reforço da corrida verificação × confirmação (E10-04) também cobre essa trava.
+
+## Complemento: arranjo do A-10 (P3) — agente 2 — 2026-10-30
+
+Registro da troca aceita pelo especificador (`65e3698`, `acceptance.md`, "Complemento das correções: arranjo do A-10"). O arranjo original criava a falta de cobertura desfazendo a designação depois da elegibilidade; com a E10-R03 (commit `5940418`), `desfazer_designacao` recusa nesse estado. O A-10 usa agora uma parcela `elegivel_excepcional` criada por fábrica (`parcela_de_fabrica(a, "elegivel_excepcional", "10.00")`), que não chama `desfazer_designacao` nem contorna recusa de serviço. Asserções iguais às de antes: confirmação recusada com a mensagem de cobrir antes; depois de `designar_reserva` de 10,00, aceita; o consumo da designação (F11) e o F16 deixam a reserva com o saldo de antes. A conferência de cobertura na confirmação é guarda defensiva.
