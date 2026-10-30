@@ -82,12 +82,13 @@ def test_tres_parciais_ao_mesmo_tempo_respeitam_o_pago(relogio: RelogioControlad
     assert frete <= D("1.60")
 
 
+@pytest.mark.parametrize("quem_pausa", ["parcial", "integral"])
 def test_parcial_e_integral_ao_mesmo_tempo_fecham_exatamente(
-    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
-) -> None:  # A-16
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch, quem_pausa: str
+) -> None:  # A-16 (reescrito, E10-R01): as duas ordens, cada uma forçada pela pausa
     pedido, (_, i2) = pedido_pago_com_itens(N)
     corrida = Corrida()
-    corrida.depois_de(monkeypatch, reembolsos_modulo, "acumulado_do_pedido")
+    corrida.depois_de(monkeypatch, reembolsos_modulo, "_travar_o_pedido")
     admin = administrador()
 
     def parcial() -> Any:
@@ -98,13 +99,18 @@ def test_parcial_e_integral_ao_mesmo_tempo_fecham_exatamente(
             pedido, chave=chave_nova(), motivo="cancelamento_da_rodada", autor=admin
         )
 
-    a, b = corrida.rodar(parcial, integral)
+    primeiro, segundo = (parcial, integral) if quem_pausa == "parcial" else (integral, parcial)
+    a, b = corrida.rodar(primeiro, segundo)
     assert a.excecao is None, a.excecao
-    assert b.excecao is None, b.excecao
     assert acumulado_do_pedido(pedido) == (D("100.00"), D("5.00"), D("20.00"))
     obrigacoes = ObrigacaoComComprador.objects.all()
-    assert len(obrigacoes) == 2
     assert sum((o.devido for o in obrigacoes), D("0.00")) == D("125.00")
+    if quem_pausa == "parcial":  # parcial primeiro: dois reembolsos, duas obrigações
+        assert b.excecao is None, b.excecao
+        assert Reembolso.objects.count() == len(obrigacoes) == 2
+    else:  # integral primeiro: um só, e o parcial seguinte não cabe mais
+        assert isinstance(b.excecao, ReembolsoRecusado), b.excecao
+        assert Reembolso.objects.count() == len(obrigacoes) == 1
 
 
 # --- E10-04: autorização e acompanhamento em paralelo (A-23 e A-24) -------------------------

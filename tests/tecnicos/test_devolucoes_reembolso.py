@@ -254,3 +254,53 @@ def test_pedido_sem_frete_nunca_devolve_frete(relogio: RelogioControlado) -> Non
     assert segundo.obrigacao is not None
     assert primeiro.obrigacao.frete == D("0.00")
     assert segundo.obrigacao.frete == D("0.00")
+
+
+# --- E10-R01: o tipo (parcial ou integral) faz parte do conteúdo da chave (A-18 a A-20) --------
+
+
+def test_integral_com_a_chave_de_um_parcial_e_conflito(relogio: RelogioControlado) -> None:  # A-18
+    from apps.financeiro.reembolsos import reembolso_integral_do_pedido
+
+    pedido, (item,) = pedido_pago_com_itens(K)
+    parcial_feito = _parcial(
+        item, "0.25", chave="mesma-chave", motivo="cancelamento_da_rodada"
+    ).reembolso
+    antes = acumulado_do_pedido(pedido)
+    with pytest.raises(ReembolsoConflitante), transaction.atomic():
+        reembolso_integral_do_pedido(
+            pedido, chave="mesma-chave", motivo="cancelamento_da_rodada", autor=administrador()
+        )
+    assert _total_de_registros() == (1, 1, 1)
+    assert Reembolso.objects.get().tipo == "parcial"
+    assert Reembolso.objects.get().pk == parcial_feito.pk
+    assert acumulado_do_pedido(pedido) == antes
+
+
+def test_parcial_com_a_chave_de_uma_integral_e_conflito(relogio: RelogioControlado) -> None:  # A-19
+    pedido, (item,) = pedido_pago_com_itens(K)
+    feito = _integral(pedido, chave="int-1").reembolso
+    (linha,) = feito.itens.all()
+    assert linha.quantidade == item.quantidade
+    antes = _total_de_registros()
+    with pytest.raises(ReembolsoConflitante), transaction.atomic():
+        reembolso_parcial(
+            item,
+            linha.quantidade,
+            chave="int-1",
+            motivo="cancelamento_da_rodada",
+            autor=administrador(),
+        )
+    assert _total_de_registros() == antes
+
+
+def test_integral_repetida_devolve_o_mesmo_reembolso_com_o_tipo(
+    relogio: RelogioControlado,
+) -> None:  # A-20
+    pedido, _ = pedido_pago_com_itens(K)
+    primeiro = _integral(pedido, chave="int-1")
+    antes = _total_de_registros()
+    repetido = _integral(pedido, chave="int-1")
+    assert repetido.reembolso.pk == primeiro.reembolso.pk
+    assert repetido.reembolso.tipo == "integral"
+    assert _total_de_registros() == antes
