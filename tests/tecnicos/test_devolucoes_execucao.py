@@ -337,6 +337,87 @@ def test_estorno_invisivel_ainda_em_processamento_nao_e_visto(a: Arranjo) -> Non
     assert parcela.situacao == "elegivel_excepcional"  # o risco residual que a E10-05 detecta
 
 
+def _recusar_a_reconsulta(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dublê da recusa na reconsulta: só troca a resposta do provedor (E10-04, A-33)."""
+    from apps.pagamentos.provedor import RecusaDoProvedor
+    from apps.simulador_pagamentos.provedor import SIMULADO
+
+    def recusa(id_externo: str) -> Any:
+        raise RecusaDoProvedor("estado_invalido")
+
+    monkeypatch.setattr(SIMULADO, "consultar_estornos", recusa)
+
+
+def _verificacao(parcela: ParcelaDeDevolucao) -> ChamadaAoProvedor:
+    return ChamadaAoProvedor.objects.get(
+        operacao="verificar_estornos", alvo=f"parcela:{parcela.pk}"
+    )
+
+
+def test_reconsulta_recusada_continua_pendente_e_tenta_de_novo(
+    a: Arranjo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-33 (P4)
+    parcela = _levar_a_falha_definitiva(a)
+    _recusar_a_reconsulta(monkeypatch)
+    inicio = agora()
+    a.relogio.avancar(timedelta(minutes=1))
+    processar_chamadas()
+    chamada = _verificacao(parcela)
+    assert (chamada.situacao, chamada.tentativas, chamada.ultimo_erro) == (
+        "pendente",
+        1,
+        "estado_invalido",
+    )
+    assert chamada.proxima_em == agora() + timedelta(minutes=1)
+    assert inicio < agora()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "falha_definitiva"
+
+
+def test_reconsulta_alerta_na_terceira_tentativa_e_resolve_ao_concluir(
+    a: Arranjo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-34 (P4)
+    parcela = _levar_a_falha_definitiva(a)
+    _recusar_a_reconsulta(monkeypatch)
+    for minutos in (1, 2, 6):
+        a.relogio.avancar(timedelta(minutes=minutos))
+        processar_chamadas()
+        if minutos < 6:
+            assert _alertas("devolucao_com_falha") == []
+    chamada = _verificacao(parcela)
+    assert (chamada.situacao, chamada.tentativas) == ("pendente", 3)
+    (alerta,) = _alertas("devolucao_com_falha")
+    assert alerta.chave == f"parcela:{parcela.pk}"
+    assert alerta.dados["codigo"] == "reconsulta:estado_invalido"
+    assert alerta.dados["tentativas"] == 3
+    monkeypatch.undo()
+    a.relogio.avancar(timedelta(minutes=60))
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    assert _alertas("devolucao_com_falha") == []
+    resolvido = AlertaFinanceiro.objects.get(tipo="devolucao_com_falha", chave=alerta.chave)
+    assert resolvido.motivo_da_resolucao == "reconsulta concluída"
+
+
+def test_reconsulta_com_pagamento_nao_encontrado_nao_desiste_apos_24_horas(
+    a: Arranjo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-35 (P4)
+    from apps.pagamentos.provedor import PagamentoNaoEncontrado
+    from apps.simulador_pagamentos.provedor import SIMULADO
+
+    parcela = _levar_a_falha_definitiva(a)
+
+    def nao_achou(id_externo: str) -> Any:
+        raise PagamentoNaoEncontrado(id_externo)
+
+    monkeypatch.setattr(SIMULADO, "consultar_pagamento", nao_achou)
+    a.relogio.avancar(timedelta(hours=25))
+    processar_chamadas()
+    chamada = _verificacao(parcela)
+    assert (chamada.situacao, chamada.ultimo_erro) == ("pendente", "nao_encontrado")
+
+
 def test_estorno_nao_contabilizado_de_outro_valor_deixa_inconclusivo(a: Arranjo) -> None:  # A-15
     obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo, D("10.00"), "avulso"))
     parcela = _levar_a_falha_definitiva(a)
@@ -426,6 +507,7 @@ def test_nova_tentativa_dentro_de_transacao_de_quem_chama_e_recusada(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-31
     from apps.financeiro import devolucoes
+    from apps.pagamentos import consulta
 
     a = arranjo_da_devolucao(simulador_pagamentos, relogio)
     parcela = _em_falha_temporaria(a)
@@ -433,12 +515,13 @@ def test_nova_tentativa_dentro_de_transacao_de_quem_chama_e_recusada(
     proxima = chamada.proxima_em
     historicos = HistoricoDaDevolucao.objects.count()
     consultas: list[str] = []
-    original = devolucoes.consultar_antes_de_decidir
-    monkeypatch.setattr(
-        devolucoes,
-        "consultar_antes_de_decidir",
-        lambda referencia: (consultas.append(referencia), original(referencia))[1],
-    )
+    original = consulta.consultar_antes_de_decidir
+
+    def espiar(referencia: str) -> Any:
+        consultas.append(referencia)
+        return original(referencia)
+
+    monkeypatch.setattr(devolucoes, "consultar_antes_de_decidir", espiar)
     with pytest.raises(RuntimeError, match="durable"):
         with transaction.atomic():
             tentar_devolucao_de_novo(parcela, autor=a.admin)

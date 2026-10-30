@@ -23,6 +23,9 @@
       {% if falha.depois == "proxima" %} · próxima {{ falha.proxima_em|date:"d/m/Y H:i" }}
       {% elif falha.depois == "reconsulta" %} · reconsulta agendada
       {% else %} · sem nova tentativa agendada{% endif %}</p>
+    {% if falha.reconsulta and falha.reconsulta.tentativas %}
+      <p>reconsulta: {{ falha.reconsulta.ultimo_erro }} · tentativas {{ falha.reconsulta.tentativas }}</p>
+    {% endif %}
   {% endif %}
   {% if parcela and parcela.evidencia %}<h2>Evidência</h2><pre>{{ parcela.evidencia }}</pre>{% endif %}
   {% if pode_autorizar %}

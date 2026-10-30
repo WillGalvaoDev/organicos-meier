@@ -61,6 +61,7 @@ from apps.pagamentos.provedor import (
     NovoEstorno,
     PagamentoNaoEncontrado,
     Provedor,
+    RecusaDoProvedor,
     SaldoInsuficienteParaEstorno,
     SituacaoDoEstorno,
     obter_provedor,
@@ -442,12 +443,28 @@ def _executar_acompanhamento(
 def _executar_verificacao(
     provedor: Provedor, chamada: ChamadaAoProvedor
 ) -> list[EstornoConsultado]:
+    """A reconsulta não desiste: toda falha do provedor nas duas consultas é temporária (E10-04,
+    P4). A parcela só sai de `falha_definitiva` quando o provedor responde."""
     parcela = ParcelaDeDevolucao.objects.select_related("pagamento").get(pk=_pk_da_parcela(chamada))
     try:
         provedor.consultar_pagamento(parcela.pagamento.id_externo)
         return provedor.consultar_estornos(parcela.pagamento.id_externo)
     except PagamentoNaoEncontrado:
-        raise nao_encontrado(chamada) from None
+        raise FalhaTemporaria("nao_encontrado") from None
+    except RecusaDoProvedor as recusa:
+        raise FalhaTemporaria(recusa.codigo) from None
+
+
+def _verificacao_adiada(chamada: ChamadaAoProvedor, codigo: str) -> None:
+    """A partir da terceira tentativa sem resposta, alerta; a parcela não muda de situação."""
+    if chamada.tentativas < TENTATIVAS_PARA_ALERTAR:
+        return
+    parcela = _travar_cadeia(_pk_da_parcela(chamada))
+    abrir_alerta(
+        TipoDeAlerta.DEVOLUCAO_COM_FALHA,
+        _chave_do_alerta(parcela),
+        _dados_do_alerta(parcela, codigo=f"reconsulta:{codigo}", tentativas=chamada.tentativas),
+    )
 
 
 def _evidencia_da_reconsulta(estornos: list[EstornoConsultado]) -> dict[str, Any]:
@@ -520,6 +537,7 @@ def _concluir_verificacao(chamada: ChamadaAoProvedor, estornos: list[EstornoCons
     """A reconsulta da parcela em `falha_definitiva` ou `elegivel_excepcional`, com as mesmas
     regras de adoção nos dois estados (E10-R05 e R09)."""
     parcela = _travar_cadeia(_pk_da_parcela(chamada))
+    _resolver(parcela, TipoDeAlerta.DEVOLUCAO_COM_FALHA, "reconsulta concluída")
     if parcela.situacao not in (S.FALHA_DEFINITIVA, S.ELEGIVEL_EXCEPCIONAL):
         return
     sem_baixa = _estornos_sem_baixa(estornos)
@@ -554,7 +572,10 @@ def registrar_operacoes() -> None:
     registrar_operacao(
         "acompanhar_estorno", Operacao(_executar_acompanhamento, _concluir_estorno, _estorno_falhou)
     )
-    registrar_operacao("verificar_estornos", Operacao(_executar_verificacao, _concluir_verificacao))
+    registrar_operacao(
+        "verificar_estornos",
+        Operacao(_executar_verificacao, _concluir_verificacao, adiada=_verificacao_adiada),
+    )
 
 
 # --- devolução excepcional (E10-06) ---------------------------------------------------------

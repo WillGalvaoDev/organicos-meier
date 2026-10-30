@@ -333,3 +333,25 @@ def test_consulta_de_estornos_fora_do_ar_na_confirmacao_responde_503(
     assert not [p for p in midia.rglob("*") if p.is_file()]
     parcela.refresh_from_db()
     assert parcela.situacao == "elegivel_excepcional"
+
+
+def test_detalhe_da_falha_definitiva_mostra_o_erro_e_as_tentativas_da_reconsulta(
+    client: Client, a: Arranjo, monkeypatch: pytest.MonkeyPatch
+) -> None:  # P4, "Na tela"
+    from apps.pagamentos.provedor import RecusaDoProvedor
+    from apps.simulador_pagamentos.provedor import SIMULADO
+
+    a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
+    autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+
+    def recusa(id_externo: str) -> Any:
+        raise RecusaDoProvedor("estado_invalido")
+
+    monkeypatch.setattr(SIMULADO, "consultar_estornos", recusa)
+    a.relogio.avancar(timedelta(minutes=1))
+    processar_chamadas()
+    html = client.get(f"{BASE}{a.o1.pk}/").content.decode()
+    texto = " ".join(re.sub(r"<[^>]+>", " ", html).split())
+    assert "reconsulta agendada" in texto
+    assert "reconsulta: estado_invalido · tentativas 1" in texto
