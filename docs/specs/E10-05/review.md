@@ -57,3 +57,10 @@ Histórico funcional: `3aaf01e → fe06cbe`; A-7 acrescentado em `deccdce`, sem 
 | `_estornos_sem_baixa`, `_escolher_o_estorno`, `_adotar_estorno` (mesmas regras em falha definitiva e elegível), transição `elegivel → em_processamento`, conciliação com parcela do mesmo ID | `1d3b9da` | o arquivo e `test_devolucoes_execucao.py`, `test_devolucoes_excepcional.py`, `test_devolucoes_telas.py`, `test_financeiro_conciliacao.py` | 120 passed |
 
 O dublê da conclusão tardia (`update(situacao="em_processamento")` + `concluir_estorno`) exercita o risco residual da infraestrutura 4.7; não afirma que a API real reverte uma recusa (L-7).
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**APROVADO no escopo revalidado. R05 e R09 encerrados.** A adoção de estorno em processamento após elegibilidade agora agenda acompanhamento. Um identificador já conhecido em parcela recusada não equivale a baixa contabilizada: a conclusão tardia impede confirmação excepcional ou gera alerta de possível duplicidade quando ela já ocorreu. As reproduções anteriores correspondentes passaram; A-10 a A-16 integram a suíte reexecutada. A aprovação desta fatia não encerra a etapa, devido a R02 e R11.

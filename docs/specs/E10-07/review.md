@@ -398,3 +398,96 @@ uv run python manage.py makemigrations --check --dry-run   # No changes detected
 Provas do parecer (arquivo temporário, não commitado): 9 passam e 2 falham, as duas substituídas pela spec: `test_saldo_compartilhado_em_estornos_concorrentes` (E10-03 A-21) e `test_retentativa_manual_versus_worker` (E10-04 A-29; a operação B recebe `RuntimeError` da guarda, A-31).
 
 Riscos remanescentes: a parcela em `verificacao_inconclusiva` fica sem reconsulta pendente (ver E10-04); armazenamento do comprovante local até a E16.
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**Veredito final da E10: REPROVADO.** R02 residual e R11 impedem o encerramento. Os demais achados anteriores foram resolvidos ou tiveram o tratamento histórico expressamente autorizado pelo responsável na especificação.
+
+| Achado anterior | Resultado desta revisão |
+|---|---|
+| R01 — chave parcial/integral | Encerrado; natureza da obrigação validada |
+| R02 — saldo compartilhado | **Aberto, importante:** déficit no ciclo assíncrono; E10-03 |
+| R03 — cobertura versus autorização | Encerrado; serialização da reserva |
+| R04 — retentativa versus worker | Encerrado; ordem de travas e contrato P1 verificados |
+| R05 — adoção após elegibilidade | Encerrado; acompanhamento agendado |
+| R06 — consulta de estorno versus 503 | Encerrado; tradução de falha |
+| R07 — comprovante e rollback externo | Encerrado; fronteira durável e recusa prévia |
+| R08 — ausência histórica de Red | Tratamento autorizado conferido; a ausência histórica continua explicitamente registrada |
+| R09 — identificador conhecido concluído tardiamente | Encerrado; baixa contabilizada distinta de identificador conhecido |
+| R10 — tentativas na tela | Encerrado; reprodução da listagem passou |
+| R11 — reconsulta inconclusiva sem chamada pendente | **Novo, importante:** viola invariante P4; E10-04 |
+
+### Evidência independente e limites
+
+Leitura dos ajustes de spec/acceptance, código, testes e registros Red/Green das sete fatias. Conferidos os commits separados das correções e o tratamento de R08/P2 na especificação: busca histórica e sensibilidade não equivalem a Red anterior. As mutações documentadas pelo implementador **não foram reexecutadas** nesta rodada. Foram reexecutados os testes atuais, inclusive os cenários substitutos autorizados, sem enfraquecer os critérios.
+
+Suíte completa independente: **2633 passed em 288,48 s**, sem seleção de testes. Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e10.py" -q -p no:cacheprovider --tb=short`. O runner apenas definiu `DJANGO_SETTINGS_MODULE=config.settings.test`, configurou `TEST.NAME=test_organicos_revisor_e10_9ce04ad` nos bancos para isolamento e chamou `pytest.main(sys.argv[1:])`; `PYTHONPATH` apontou para a raiz do projeto. O nome histórico do banco não altera a revisão auditada (`74b38c0`). A coleta ocorreu antes da criação das duas provas novas, executadas separadamente abaixo.
+
+Verificações independentes via `.venv/Scripts/python.exe`: `-m ruff check .` passou; `-m ruff format --check .` passou (347 arquivos); `-m mypy .` passou (416 arquivos); `manage.py makemigrations --check --dry-run` sem mudanças. Executadas antes da criação do arquivo temporário de reprodução.
+
+Provas adicionais: arquivo temporário `tests/tecnicos/test_devolucoes_revisao_temporaria.py`, com oito reproduções anteriores preservadas e as duas abaixo: **8 passed, 2 failed em 8,46 s**. As falhas foram exatamente R02 residual (saldo `Decimal('-60.00')`) e R11 (nenhuma reconsulta pendente). As duas reproduções antigas substituídas pela spec (barreira de saldo e retentativa com transação externa) não foram usadas como critérios de reprovação.
+
+Os testes adicionais usaram o mesmo runner, com banco separado `test_organicos_revisor_e10_extra_74b38c0`, para não interferir na suíte. Arquivo temporário removido após registro; nenhum código de produção ou teste permanente foi alterado. As evidências anteriores dos sete review.md foram preservadas byte a byte como prefixo.
+
+### R02 residual — importante — E10-03
+
+Referência: E10-03/spec.md:176. O saldo não pode ficar negativo por combinação de estornos aceitos. `apps/simulador_pagamentos/provedor.py:111` considera somente os movimentos; a trava protege aceitação imediata, mas estornos em processamento não comprometem esse saldo. `apps/simulador_pagamentos/controle.py:231` conclui sem verificar a suficiência global. Duas cobranças de R$ 80,00 e saída de R$ 60,00 deixam R$ 100,00; aceitar e concluir dois estornos pendentes de R$ 80,00 resulta em −R$ 60,00. Corrigir o ciclo completo e acrescentar teste Red/Green com esta reprodução.
+
+### R11 — importante — E10-04
+
+Referência: E10-04/spec.md:288 (invariante P4). `apps/financeiro/devolucoes.py:550` mantém `falha_definitiva` com `verificacao_inconclusiva`, mas encerra a verificação sem outra chamada pendente. Um estorno avulso de outro valor reproduz o problema sem falha de rede. O implementador já registrou a limitação; o registro não é autorização para descumprir o invariante. Manter a análise administrativa exigida na linha 150 não impede manter a reconsulta. Corrigir com Red/Green, ou obter especificação aprovada se for pretendida uma exceção ao P4.
+
+### Reproduções novas preservadas
+
+Salvar o bloco abaixo em arquivo temporário em `tests/tecnicos/` e executar com pytest no ambiente de testes do projeto. São provas independentes, não uma correção silenciosa da implementação.
+
+```python
+from decimal import Decimal as D
+from datetime import timedelta
+import pytest
+from apps.financeiro import devolucoes as dev
+from apps.pagamentos.chamadas import processar_chamadas
+from apps.pagamentos.models import ChamadaAoProvedor
+from tests.apoio.devolucoes import arranjo_da_devolucao
+
+pytestmark = pytest.mark.django_db(
+    transaction=True, databases=['default', 'simulador_pagamentos']
+)
+
+def test_saldo_nao_negativo_depois_de_processamentos(relogio, simulador_pagamentos):
+    from tests.apoio.pedidos import T0
+    from apps.pagamentos.provedor import NovaCobranca, NovoEstorno, obter_provedor
+    sim=simulador_pagamentos
+    relogio.congelar(T0)
+    provedor=obter_provedor()
+    ids=[]
+    for n in range(2):
+        c=provedor.criar_cobranca(NovaCobranca(f'c{n}',f'r{n}',D('80.00'),'Pedido',T0+timedelta(days=1)))
+        sim.aprovar(c.pagamento.id_externo)
+        sim.estornos_em_processamento(c.pagamento.id_externo)
+        ids.append(c.pagamento.id_externo)
+    sim.registrar_saida(D('60.00'),descricao='saida')
+    assert provedor.consultar_saldo().liberado==D('100.00')
+    e1=provedor.estornar(NovoEstorno(ids[0],D('80.00'),'k0'))
+    e2=provedor.estornar(NovoEstorno(ids[1],D('80.00'),'k1'))
+    sim.concluir_estorno(e1.id_estorno)
+    sim.concluir_estorno(e2.id_estorno)
+    assert provedor.consultar_saldo().liberado>=0
+
+def test_inconclusiva_mantem_reconsulta_pendente(relogio, simulador_pagamentos):
+    from apps.pagamentos.provedor import NovoEstorno, obter_provedor
+    a=arranjo_da_devolucao(simulador_pagamentos,relogio)
+    obter_provedor().estornar(NovoEstorno(a.pagamento.id_externo,D('10.00'),'avulso'))
+    a.sim.recusar_estornos(a.pagamento.id_externo,'prazo_vencido')
+    p=dev.autorizar_devolucao(a.o1,autor=a.admin)
+    processar_chamadas()
+    p.refresh_from_db()
+    assert p.situacao=='falha_definitiva'
+    assert p.codigo_da_falha=='verificacao_inconclusiva'
+    assert ChamadaAoProvedor.objects.filter(operacao='verificar_estornos',alvo=f'parcela:{p.pk}',situacao='pendente').exists()
+```
+
+Próximo gate: implementação dos dois achados com evidência Red/Green, seguida de nova revisão independente. Nenhuma nova melhoria não impeditiva foi aberta; não houve mudança em docs/melhorias.md. Sem push e sem alteração dos documentos de regra de negócio.

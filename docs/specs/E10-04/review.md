@@ -95,3 +95,16 @@ Registro anterior preservado: não houve Red das corridas (travas escritas com o
 **Ponto de atenção para o revisor (invariante "toda parcela em `falha_definitiva` tem uma `verificar_estornos` pendente").** O caminho `verificacao_inconclusiva` (A-15: só estornos de outro valor) conclui a chamada e deixa a parcela em `falha_definitiva` sem reconsulta pendente. A spec do P4 não trata esse caso, e o A-15 existente exige que a parcela fique como está. Não alterei o comportamento; fica para decisão do especificador.
 
 **Prova do parecer `test_retentativa_manual_versus_worker`:** substituída pelo A-29, como manda o complemento; executada como está, a operação B recebe `RuntimeError` (a guarda do A-31).
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**REPROVADO pelo novo R11 (importante). R03 e R04 encerrados.** As travas de cobertura e a ordem chamada → cadeia corrigem as disputas anteriores. A retentativa dentro de transação externa é recusada explicitamente, como autorizado no P1; as corridas A-29/A-30 e a guarda A-31/A-32 integram a suíte reexecutada. A reprodução anterior de autorização contra desfazer cobertura passou. A antiga reprodução com transação externa em B foi substituída conforme a spec, não tratada como regressão.
+
+**R11 — verificação inconclusiva deixa falha definitiva sem reconsulta.** Referência: spec.md:288, invariante P4: toda parcela em `falha_definitiva` tem `verificar_estornos` pendente até sair desse estado. Em `apps/financeiro/devolucoes.py:550`, um estorno não contabilizado de outro valor grava `verificacao_inconclusiva` e retorna; a chamada termina sem agendar outra. Reprodução: estorno avulso de R$ 10,00, recusa definitiva da parcela autorizada e processamento das chamadas. A parcela permanece em `falha_definitiva`, código `verificacao_inconclusiva`, mas a consulta por reconsulta pendente retorna vazia. A asserção do invariante falhou.
+
+O problema já foi declarado pelo implementador no registro do complemento. A regra anterior de manter estado e alerta para análise (spec.md:150) não dispensa expressamente o novo invariante. Preservar esse estado e manter reconsulta são compatíveis; não se autoriza ignorar o P4. Se a intenção for excluir este caso do invariante, a alteração deve passar pelo gate de especificação, sem o revisor presumir uma exceção. As falhas de consulta do provedor tratadas por A-33 a A-35 estão cobertas e não são o cenário que falhou.
+
+R08: tratamento histórico e registros de sensibilidade conferidos conforme autorização da E10-07/spec.md; sem repetir mutações nesta rodada.

@@ -59,3 +59,10 @@ Histórico: `2c8329c → ae25659` (funcional) e `80c4a9b → dd57ba6` (corridas)
 | `Reembolso.tipo`, migração `0014_tipo_do_reembolso`, `_existente` compara pedido, motivo, tipo e linhas (parcial) | `417a3cd` | os mesmos arquivos e `tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py` | 39 passed |
 
 Migração: linhas existentes recebem `parcial` (`preserve_default=False`). `makemigrations --check`: sem mudanças.
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**APROVADO. R01 encerrado.** A distinção imutável entre obrigação parcial e integral impede reaproveitar a mesma chave com outra natureza; mantém a repetição integral legítima. A reprodução anterior de colisão passou. Os cenários A-16 e A-18 a A-20 integram a suíte reexecutada.

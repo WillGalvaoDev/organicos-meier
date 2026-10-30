@@ -63,3 +63,10 @@ Registro anterior preservado: sem Red da corrida (trava escrita com o código). 
 ## Complemento: arranjo do A-10 (P3) — agente 2 — 2026-10-30
 
 Registro da troca aceita pelo especificador (`65e3698`, `acceptance.md`, "Complemento das correções: arranjo do A-10"). O arranjo original criava a falta de cobertura desfazendo a designação depois da elegibilidade; com a E10-R03 (commit `5940418`), `desfazer_designacao` recusa nesse estado. O A-10 usa agora uma parcela `elegivel_excepcional` criada por fábrica (`parcela_de_fabrica(a, "elegivel_excepcional", "10.00")`), que não chama `desfazer_designacao` nem contorna recusa de serviço. Asserções iguais às de antes: confirmação recusada com a mensagem de cobrir antes; depois de `designar_reserva` de 10,00, aceita; o consumo da designação (F11) e o F16 deixam a reserva com o saldo de antes. A conferência de cobertura na confirmação é guarda defensiva.
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**APROVADO. R06 e R07 encerrados; interação com R09 revalidada.** Falhas na consulta isolada de estornos são traduzidas pela interface de consulta. A confirmação excepcional recusa transação externa antes de gerar arquivo e usa fronteira durável; a reprodução de rollback externo passou, assim como a de indisponibilidade isolada. A-18 a A-21 integram a suíte reexecutada. O limite declarado de arquivo órfão após queda do processo e o armazenamento local até E16 não são apresentados como resolvidos por esta correção. R08: tratamento histórico autorizado e evidência registrada conferidos, sem repetir mutações nesta rodada.

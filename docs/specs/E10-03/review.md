@@ -62,3 +62,16 @@ O registro anterior fica preservado. **Não houve Red** para: A-17 (as validaç�
 | chave sem o mínimo de 1 caractere | 1 failed (`[valor3-]`) |
 | chave sem o máximo de 64 | 1 failed (`[valor4-xxxx…]`) |
 | `estornar` sem `travar=True` na cobrança | 1 failed, `test_dois_estornos_concorrentes_com_a_mesma_chave`: `IntegrityError` na chave de idempotência no lugar de `None` |
+
+
+## Nova revisão independente das correções — agente 3 — 2026-10-30
+
+Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
+
+**REPROVADO. R02 permanece aberto (importante), agora no caminho assíncrono.** A trava global resolve a disputa entre estornos que concluem imediatamente, incluindo A-21/A-22, mas não protege o saldo comprometido por estornos em processamento.
+
+Referência: spec.md, correção E10-R02, invariante “Nenhuma combinação de estornos aceitos pelo simulador deixa o saldo liberado abaixo de zero” (linha 176). Evidência: dois pagamentos aprovados de R$ 80,00; saída de R$ 60,00; saldo R$ 100,00; ambos os estornos de R$ 80,00 aceitos em processamento; conclusão dos dois resulta em **−R$ 60,00**. Não exige concorrência nem alteração direta de modelos.
+
+Causa observada: `apps/simulador_pagamentos/provedor.py:111` soma somente movimentos, sem considerar os estornos pendentes; `_estornar` aceita ambos sob a trava. `apps/simulador_pagamentos/controle.py:231` conclui sem nova proteção de suficiência do saldo. É necessário cobrir o ciclo aceitação/conclusão assíncrona conforme o invariante, com teste que reproduza o déficit. Reprodução integral no parecer consolidado.
+
+R08: a não conformidade histórica de TDD permanece registrada, com tratamento expressamente autorizado na E10-07/spec.md. Os registros de sensibilidade foram conferidos; não foram repetidas mutações nesta rodada. Isso não reclassifica execução tardia como Red anterior à implementação.
