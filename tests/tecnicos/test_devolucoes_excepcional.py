@@ -394,3 +394,77 @@ def test_auditoria_e_historico_da_confirmacao(a: Arranjo) -> None:  # A-17
     assert ultimo is not None
     assert ultimo.situacao == "concluida_fora_da_plataforma"
     assert ultimo.autor_id == a.admin.pk
+
+
+# --- E10-R06 e R07: tradução das duas consultas e confirmação em bloco durável ---------------
+
+
+def test_falha_da_consulta_de_estornos_vira_consulta_ao_provedor_falhou(
+    a: Arranjo, midia: Path
+) -> None:  # A-18
+    from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
+    from apps.pagamentos.models import ChamadaAoProvedor
+
+    parcela = levar_a_elegivel(a)
+    a.sim.falhar_proximas(1, operacao="consultar_estornos")
+    with pytest.raises(ConsultaAoProvedorFalhou):
+        _confirmar(a, parcela)
+    assert _contagens()[0] == 0
+    assert _contagens()[1] == 0
+    assert _arquivos(midia) == []
+    assert not ChamadaAoProvedor.objects.filter(
+        operacao="verificar_estornos", situacao="pendente"
+    ).exists()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_confirmacao_dentro_de_transacao_de_quem_chama_e_recusada(
+    relogio: RelogioControlado, simulador_pagamentos: Any, midia: Path
+) -> None:  # A-19
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = levar_a_elegivel(a)
+    with pytest.raises(RuntimeError, match="durable"):
+        with transaction.atomic():
+            _confirmar(a, parcela)
+    assert _contagens()[0] == 0
+    assert _contagens()[1] == 0
+    assert _arquivos(midia) == []
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_falha_na_liquidacao_propaga_e_nao_deixa_arquivo(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    midia: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-20
+    from apps.financeiro import devolucoes
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = levar_a_elegivel(a)
+
+    def falha(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("falha na liquidação")
+
+    monkeypatch.setattr(devolucoes, "liquidar_obrigacao_fora_do_provedor", falha)
+    with pytest.raises(RuntimeError, match="falha na liquidação"):
+        _confirmar(a, parcela)
+    assert _contagens()[0] == 0
+    assert _arquivos(midia) == []
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_confirmacao_fora_de_transacao_grava_o_arquivo(
+    relogio: RelogioControlado, simulador_pagamentos: Any, midia: Path
+) -> None:  # A-21
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = levar_a_elegivel(a)
+    confirmacao = _confirmar(a, parcela)
+    assert _contagens()[0] == 1
+    (arquivo,) = _arquivos(midia)
+    assert arquivo.name == confirmacao.comprovante.name.split("/")[-1]
+    assert arquivo.read_bytes() == PDF
