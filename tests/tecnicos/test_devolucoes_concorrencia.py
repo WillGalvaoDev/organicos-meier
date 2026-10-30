@@ -201,3 +201,82 @@ def test_duas_confirmacoes_excepcionais_da_mesma_parcela(
     assert ConfirmacaoDeDevolucaoExcepcional.objects.count() == 1
     assert MovimentoFinanceiro.objects.filter(tipo="devolucao_excepcional").count() == 1
     assert len([p for p in (tmp_path / "comprovantes").glob("*") if p.is_file()]) == 1
+
+
+# --- E10-R04: nova tentativa manual contra a tarefa (A-29 e A-30) -------------------------------
+
+
+def _parcela_em_falha_temporaria(relogio: RelogioControlado, simulador_pagamentos: Any) -> Any:
+    from datetime import timedelta
+
+    from apps.financeiro.devolucoes import autorizar_devolucao
+    from apps.pagamentos.chamadas import processar_chamadas
+    from tests.apoio.devolucoes import arranjo_da_devolucao
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    simulador_pagamentos.falhar_proximas(1, operacao="estornar")
+    parcela = autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "falha_temporaria"
+    relogio.avancar(timedelta(minutes=2))
+    return a, parcela
+
+
+def _estorno_concluido_uma_vez(parcela: Any) -> None:
+    from apps.financeiro.models import MovimentoFinanceiro
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from apps.simulador_pagamentos.models import EstornoSimulado
+
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    (estorno,) = EstornoSimulado.objects.all()
+    (movimento,) = MovimentoFinanceiro.objects.filter(tipo="devolucao")
+    assert movimento.chave_idempotencia == f"devolucao:{estorno.id_estorno}"
+    chamada = ChamadaAoProvedor.objects.get(operacao="estornar")
+    assert chamada.chave_idempotencia == parcela.chave_idempotencia
+
+
+def test_tarefa_antes_da_cadeia_contra_nova_tentativa_manual(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # E10-04, A-29
+    from apps.financeiro import devolucoes
+    from apps.pagamentos.chamadas import processar_chamadas
+
+    a, parcela = _parcela_em_falha_temporaria(relogio, simulador_pagamentos)
+    corrida = Corrida()
+    corrida.antes_de(monkeypatch, devolucoes, "_travar_cadeia")
+    ra, rb = corrida.rodar(
+        lambda: processar_chamadas(limite=1),
+        lambda: devolucoes.tentar_devolucao_de_novo(parcela, autor=a.admin),
+    )
+    assert ra.excecao is None, ra.excecao
+    assert isinstance(rb.excecao, devolucoes.DevolucaoRecusada), rb.excecao
+    assert "OperationalError" not in caplog.text
+    _estorno_concluido_uma_vez(parcela)
+
+
+def test_nova_tentativa_manual_depois_da_cadeia_contra_a_tarefa(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # E10-04, A-30
+    from apps.financeiro import devolucoes
+    from apps.pagamentos.chamadas import processar_chamadas
+
+    a, parcela = _parcela_em_falha_temporaria(relogio, simulador_pagamentos)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, devolucoes, "_travar_cadeia")
+    ra, rb = corrida.rodar(
+        lambda: devolucoes.tentar_devolucao_de_novo(parcela, autor=a.admin),
+        lambda: processar_chamadas(limite=1),
+    )
+    assert ra.excecao is None, ra.excecao
+    assert rb.excecao is None, rb.excecao
+    assert "OperationalError" not in caplog.text
+    processar_chamadas()
+    _estorno_concluido_uma_vez(parcela)
