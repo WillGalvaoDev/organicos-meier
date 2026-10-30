@@ -18,6 +18,12 @@
     <dt>Situação</dt><dd>{{ situacao }}</dd>
   </dl>
   {% if parcela and parcela.codigo_da_falha %}<p>Último código de falha: {{ parcela.codigo_da_falha }}</p>{% endif %}
+  {% if falha %}
+    <p>tentativas {{ falha.tentativas }}
+      {% if falha.depois == "proxima" %} · próxima {{ falha.proxima_em|date:"d/m/Y H:i" }}
+      {% elif falha.depois == "reconsulta" %} · reconsulta agendada
+      {% else %} · sem nova tentativa agendada{% endif %}</p>
+  {% endif %}
   {% if parcela and parcela.evidencia %}<h2>Evidência</h2><pre>{{ parcela.evidencia }}</pre>{% endif %}
   {% if pode_autorizar %}
     <form method="post" action="{% url 'financeiro_devolucao_autorizar' pk=obrigacao.pk %}">

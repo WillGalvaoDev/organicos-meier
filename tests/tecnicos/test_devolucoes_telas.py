@@ -310,6 +310,10 @@ def test_lista_informa_tentativas_e_o_que_vem_depois_nas_falhas(
     linha_sem_chamada = _linha_da_obrigacao(_secao(html, "falhas"), sem_chamada.obrigacao_id)
     assert "sem nova tentativa agendada" in linha_sem_chamada
 
+    detalhe = client.get(f"{BASE}{a.o1.pk}/").content.decode()
+    assert "tentativas 1" in " ".join(re.sub(r"<[^>]+>", " ", detalhe).split())
+    assert "reconsulta agendada" in detalhe
+
     processar_chamadas()  # a reconsulta roda e a parcela passa a elegível
     html = client.get(BASE).content.decode()
     assert f'data-obrigacao="{a.o1.pk}"' not in _secao(html, "falhas")

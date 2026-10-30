@@ -21,9 +21,13 @@
               <td>{{ linha.pagamento }}</td>
               <td>{{ linha.situacao }}</td>
               <td>
-                {% if linha.parcela.codigo_da_falha %}
+                {% if linha.falha %}
+                  {{ linha.parcela.codigo_da_falha }} · tentativas {{ linha.falha.tentativas }}
+                  {% if linha.falha.depois == "proxima" %} · próxima {{ linha.falha.proxima_em|date:"d/m/Y H:i" }}
+                  {% elif linha.falha.depois == "reconsulta" %} · reconsulta agendada
+                  {% else %} · sem nova tentativa agendada{% endif %}
+                {% elif linha.parcela.codigo_da_falha %}
                   {{ linha.parcela.codigo_da_falha }}
-                  {% if linha.chamada %} · tentativas {{ linha.chamada.tentativas }} · próxima {{ linha.chamada.proxima_em|date:"d/m/Y H:i" }}{% endif %}
                 {% endif %}
               </td>
             </tr>

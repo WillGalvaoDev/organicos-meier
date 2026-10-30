@@ -71,14 +71,34 @@ def _pagamento(obrigacao: ObrigacaoComComprador) -> str:
         return "-"
 
 
+def _acompanhamento_da_falha(parcela: ParcelaDeDevolucao) -> dict[str, Any]:
+    """Para as falhas (E10-R10): as tentativas somam as chamadas `estornar` e `acompanhar_estorno`
+    da parcela em qualquer situação; o que vem depois é a próxima tentativa (falha temporária), a
+    reconsulta agendada (falha definitiva) ou a ausência de qualquer chamada pendente."""
+    chamadas = ChamadaAoProvedor.objects.filter(alvo=f"parcela:{parcela.pk}")
+    tentativas = sum(
+        c.tentativas for c in chamadas.filter(operacao__in=("estornar", "acompanhar_estorno"))
+    )
+    pendentes = chamadas.filter(situacao=SituacaoDaChamada.PENDENTE)
+    proxima = pendentes.filter(operacao__in=("estornar", "acompanhar_estorno")).first()
+    reconsulta = pendentes.filter(operacao="verificar_estornos").exists()
+    if parcela.situacao == S.FALHA_TEMPORARIA and proxima is not None:
+        depois = ("proxima", proxima.proxima_em)
+    elif parcela.situacao == S.FALHA_DEFINITIVA and reconsulta:
+        depois = ("reconsulta", None)
+    else:
+        depois = ("nenhuma", None)
+    return {"tentativas": tentativas, "depois": depois[0], "proxima_em": depois[1]}
+
+
 def _linha(obrigacao: ObrigacaoComComprador) -> dict[str, Any]:
     parcela = ParcelaDeDevolucao.objects.filter(obrigacao=obrigacao).first()
     situacao = "devida" if parcela is None else parcela.situacao
-    chamada = None
-    if parcela is not None and situacao in (S.SOLICITADA, S.FALHA_TEMPORARIA, S.EM_PROCESSAMENTO):
-        chamada = ChamadaAoProvedor.objects.filter(
-            alvo=f"parcela:{parcela.pk}", situacao=SituacaoDaChamada.PENDENTE
-        ).first()
+    falha = (
+        _acompanhamento_da_falha(parcela)
+        if parcela is not None and situacao in (S.FALHA_TEMPORARIA, S.FALHA_DEFINITIVA)
+        else None
+    )
     return {
         "obrigacao": obrigacao,
         "parcela": parcela,
@@ -88,7 +108,7 @@ def _linha(obrigacao: ObrigacaoComComprador) -> dict[str, Any]:
         "motivo": texto_do_motivo(obrigacao.motivo),
         "comprador": obrigacao.comprador.nome if obrigacao.comprador else None,
         "pagamento": _pagamento(obrigacao),
-        "chamada": chamada,
+        "falha": falha,
     }
 
 
