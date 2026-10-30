@@ -262,22 +262,24 @@ def tentar_devolucao_de_novo(
         raise DevolucaoRecusada("só uma devolução com falha temporária pode ser tentada de novo")
     consultar_antes_de_decidir(atual.pagamento.referencia_externa)
     with transaction.atomic():
-        travada = _travar_cadeia(parcela.pk)
-        if travada.situacao != S.FALHA_TEMPORARIA:
-            raise DevolucaoRecusada(
-                "só uma devolução com falha temporária pode ser tentada de novo"
-            )
+        # A chamada primeiro, como a tarefa (chamada, depois a cadeia): sem inversão (E10-R04).
+        # Sem `skip_locked`: se a tarefa a está executando, esta espera o fim dela e reconfere.
         chamada = (
             ChamadaAoProvedor.objects.select_for_update()
             .filter(
                 operacao="estornar",
-                alvo=f"parcela:{travada.pk}",
+                alvo=f"parcela:{parcela.pk}",
                 situacao=SituacaoDaChamada.PENDENTE,
             )
             .first()
         )
         if chamada is None:
             raise DevolucaoRecusada("não há tentativa pendente para esta devolução")
+        travada = _travar_cadeia(parcela.pk)
+        if travada.situacao != S.FALHA_TEMPORARIA:
+            raise DevolucaoRecusada(
+                "só uma devolução com falha temporária pode ser tentada de novo"
+            )
         chamada.proxima_em = agora()
         chamada.save(update_fields=["proxima_em"])
         _historico(travada, autor_conta, {"acao": "nova_tentativa"})
@@ -304,7 +306,8 @@ def _concluir_parcela(parcela: ParcelaDeDevolucao, estorno: EstornoConsultado) -
 
 
 def _declarar_falha_definitiva(parcela: ParcelaDeDevolucao, codigo: str) -> None:
-    """A recusa definitiva: guarda a evidência, alerta e agenda a reconsulta."""
+    """A recusa definitiva: guarda a evidência e alerta. A reconsulta (`verificar_estornos`) é
+    agendada por quem chama, antes de travar a cadeia (E10-R04)."""
     if parcela.situacao not in ABERTAS:
         return
     parcela.codigo_da_falha = codigo[:40]
@@ -317,12 +320,15 @@ def _declarar_falha_definitiva(parcela: ParcelaDeDevolucao, codigo: str) -> None
         _chave_do_alerta(parcela),
         _dados_do_alerta(parcela, codigo=codigo),
     )
-    agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
 
 
 def _aplicar_estorno(parcela_pk: int, estorno: EstornoConsultado | None) -> None:
     if estorno is None:
         return
+    if estorno.situacao not in (SituacaoDoEstorno.CONCLUIDO, SituacaoDoEstorno.EM_PROCESSAMENTO):
+        # Antes da cadeia: a chamada (esta ou outra) vem antes da parcela. Se a parcela não chegar
+        # à falha definitiva, a reconsulta agendada não encontra nada a fazer.
+        agendar_chamada("verificar_estornos", f"parcela:{parcela_pk}")
     parcela = _travar_cadeia(parcela_pk)
     if parcela.situacao in FINAIS or parcela.situacao == S.ELEGIVEL_EXCEPCIONAL:
         return
@@ -392,7 +398,9 @@ def _estorno_falhou(chamada: ChamadaAoProvedor, erro: Exception) -> None:
     codigo = str(getattr(erro, "codigo", "falha"))
     if codigo == "parcela_encerrada":
         return
-    _declarar_falha_definitiva(_travar_cadeia(_pk_da_parcela(chamada)), codigo)
+    pk = _pk_da_parcela(chamada)
+    agendar_chamada("verificar_estornos", f"parcela:{pk}")  # antes da cadeia (E10-R04)
+    _declarar_falha_definitiva(_travar_cadeia(pk), codigo)
 
 
 # --- operação `acompanhar_estorno` ------------------------------------------------------------

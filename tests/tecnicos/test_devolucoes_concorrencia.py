@@ -232,7 +232,7 @@ def _estorno_concluido_uma_vez(parcela: Any) -> None:
     assert parcela.situacao == "concluida"
     (estorno,) = EstornoSimulado.objects.all()
     (movimento,) = MovimentoFinanceiro.objects.filter(tipo="devolucao")
-    assert movimento.chave_idempotencia == f"devolucao:{estorno.id_estorno}"
+    assert movimento.chave == f"devolucao:{estorno.id_estorno}"
     chamada = ChamadaAoProvedor.objects.get(operacao="estornar")
     assert chamada.chave_idempotencia == parcela.chave_idempotencia
 
@@ -252,6 +252,7 @@ def test_tarefa_antes_da_cadeia_contra_nova_tentativa_manual(
     ra, rb = corrida.rodar(
         lambda: processar_chamadas(limite=1),
         lambda: devolucoes.tentar_devolucao_de_novo(parcela, autor=a.admin),
+        b_atomica=False,  # a rota não abre transação externa: a consulta ao provedor não a segura
     )
     assert ra.excecao is None, ra.excecao
     assert isinstance(rb.excecao, devolucoes.DevolucaoRecusada), rb.excecao

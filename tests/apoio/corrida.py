@@ -71,11 +71,18 @@ class Corrida:
 
         return executa
 
-    def operacao_b(self, trabalho: Callable[[], Any]) -> Callable[[Any], Any]:
+    def operacao_b(
+        self, trabalho: Callable[[], Any], *, atomica: bool = True
+    ) -> Callable[[Any], Any]:
+        """`atomica=False` roda B sem a transação externa, como uma rota (`ATOMIC_REQUESTS` é
+        falso): a operação abre as suas, e a consulta ao provedor não segura trava até o fim."""
+
         def executa(barreira: Any) -> Any:
             barreira.wait(timeout=10)
             assert self.a_pausou.wait(TEMPO_LIMITE), "A não chegou ao ponto de pausa"
             try:
+                if not atomica:
+                    return trabalho()
                 with transaction.atomic():
                     return trabalho()
             finally:
@@ -98,10 +105,15 @@ class Corrida:
 
         return executa
 
-    def rodar(self, a: Callable[[], Any], b: Callable[[], Any]) -> tuple[Resultado, Resultado]:
+    def rodar(
+        self, a: Callable[[], Any], b: Callable[[], Any], *, b_atomica: bool = True
+    ) -> tuple[Resultado, Resultado]:
         """Roda A (que pausa) e B juntas; devolve os resultados de A e de B."""
         resultados = executar_em_paralelo(
-            self.operacao_a(a), self.operacao_b(b), self.controlador(), tempo_limite=60
+            self.operacao_a(a),
+            self.operacao_b(b, atomica=b_atomica),
+            self.controlador(),
+            tempo_limite=60,
         )
         assert resultados[2].excecao is None, repr(resultados[2].excecao)
         return resultados[0], resultados[1]
