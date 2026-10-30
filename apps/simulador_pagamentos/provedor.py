@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connections, transaction
 from django.db.models import Sum
 
 from apps.nucleo.tempo import agora, somar_horas
@@ -96,6 +96,18 @@ def _existente(estorno: EstornoSimulado, novo: NovoEstorno) -> EstornoConsultado
     return _consultado(estorno)
 
 
+# O saldo liberado da conta simulada é um recurso único, comum a todos os pagamentos (E10-R02): a
+# trava consultiva de transação serializa quem lê o saldo para aceitar um débito. A chave é fixa.
+CHAVE_DA_TRAVA_DO_SALDO = 7_151_002
+
+
+def _travar_o_saldo() -> None:
+    """Toma a trava do saldo até o fim da transação do simulador. Vem depois da trava da cobrança
+    (a ordem é a mesma em toda operação), então não há inversão."""
+    with connections[ALIAS].cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [CHAVE_DA_TRAVA_DO_SALDO])
+
+
 def _saldo_liberado(instante: datetime) -> Decimal:
     """A soma dos movimentos da conta já liberados no instante: o saldo que um estorno consome."""
     soma = MovimentoSimulado.objects.filter(liberado_em__lte=instante).aggregate(s=Sum("valor"))
@@ -130,6 +142,7 @@ def _estornar(novo: NovoEstorno) -> EstornoConsultado:
             raise RecusaDoProvedor("parcial_nao_suportado")
         if novo.valor > restante:
             raise RecusaDoProvedor("valor_acima_do_disponivel")
+        _travar_o_saldo()
         if _saldo_liberado(agora_) < novo.valor:
             raise SaldoInsuficienteParaEstorno("saldo disponível insuficiente")
         recusa_tardia = PLANO.consumir_recusa_mas_processa(cobranca.pk)
