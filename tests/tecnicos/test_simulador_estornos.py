@@ -404,3 +404,78 @@ def test_dois_estornos_com_saldo_para_os_dois_concluem_sem_impasse(
     assert rb.excecao is None, rb.excecao
     assert EstornoSimulado.objects.count() == 2
     assert _saldo_liberado() == D("40.00")
+
+
+# --- E10-R02 residual: o estorno em processamento compromete o saldo (A-23 a A-27) -------------
+
+
+def _arranjo_s(sim: Any, *, em_processamento: bool = True) -> tuple[str, str]:
+    pa, pb = _duas_cobrancas_de_80(sim, "saida")
+    assert _saldo_liberado() == D("100.00")
+    if em_processamento:
+        sim.estornos_em_processamento(pa)
+        sim.estornos_em_processamento(pb)
+    return pa, pb
+
+
+def test_estorno_em_processamento_compromete_o_saldo_na_aceitacao(sim: Any) -> None:  # A-23
+    pa, pb = _arranjo_s(sim)
+    primeiro = estornar(pa, "80.00", "k0")
+    assert primeiro.situacao == SituacaoDoEstorno.EM_PROCESSAMENTO
+    with pytest.raises(SaldoInsuficienteParaEstorno):
+        estornar(pb, "80.00", "k1")
+    assert EstornoSimulado.objects.count() == 1
+    sim.concluir_estorno(primeiro.id_estorno)
+    assert _saldo_liberado() == D("20.00")
+
+
+def test_estorno_recusado_em_processamento_libera_o_comprometido(sim: Any) -> None:  # A-24
+    pa, pb = _arranjo_s(sim)
+    primeiro = estornar(pa, "80.00", "k0")
+    sim.recusar_estorno(primeiro.id_estorno, "estado_invalido")
+    segundo = estornar(pb, "80.00", "k1")
+    assert segundo.situacao == SituacaoDoEstorno.EM_PROCESSAMENTO
+    sim.concluir_estorno(segundo.id_estorno)
+    assert _saldo_liberado() == D("20.00")
+
+
+def test_estorno_invisivel_em_processamento_tambem_compromete_o_saldo(sim: Any) -> None:  # A-25
+    pa, pb = _arranjo_s(sim, em_processamento=False)
+    sim.recusar_mas_processar(pa, "meio_nao_permite_estorno")
+    with pytest.raises(RecusaDoProvedor):
+        estornar(pa, "80.00", "k0")
+    with pytest.raises(SaldoInsuficienteParaEstorno):
+        estornar(pb, "80.00", "k1")
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_aceitacao_espera_a_conclusao_que_tem_a_trava_do_saldo(
+    sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-26
+    from apps.simulador_pagamentos import estado
+    from tests.apoio.corrida import Corrida
+
+    pa, pb = _arranjo_s(sim)
+    primeiro = estornar(pa, "80.00", "k0")
+    corrida = Corrida(using="simulador_pagamentos")
+    corrida.depois_de(monkeypatch, estado, "concluir")
+    ra, rb = corrida.rodar(
+        lambda: sim.concluir_estorno(primeiro.id_estorno), lambda: estornar(pb, "80.00", "k1")
+    )
+    assert ra.excecao is None, ra.excecao
+    assert corrida.b_esperou, "B terminou sem esperar a trava do saldo"
+    assert isinstance(rb.excecao, SaldoInsuficienteParaEstorno), (rb.excecao, _saldo_liberado())
+    assert _saldo_liberado() == D("20.00")
+
+
+def test_debito_externo_depois_da_aceitacao_deixa_o_saldo_negativo_e_barra_novas(
+    sim: Any,
+) -> None:  # A-27
+    pa, pb = _arranjo_s(sim)
+    primeiro = estornar(pa, "80.00", "k0")
+    sim.registrar_saida(D("60.00"), descricao="saida depois")
+    sim.concluir_estorno(primeiro.id_estorno)
+    assert _saldo_liberado() == D("-40.00")
+    with pytest.raises(SaldoInsuficienteParaEstorno):
+        estornar(pb, "10.00", "k1")

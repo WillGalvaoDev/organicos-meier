@@ -22,7 +22,10 @@ TEMPO_LIMITE = 15.0
 
 
 class Corrida:
-    def __init__(self) -> None:
+    def __init__(self, *, using: str = "default") -> None:
+        """`using`: o banco em que se procura a espera por trava (o do simulador, por exemplo)."""
+        self.using = using
+        self.b_esperou = False
         self.a_pausou = threading.Event()
         self.liberar = threading.Event()
         self.b_terminou = threading.Event()
@@ -103,7 +106,10 @@ class Corrida:
                 assert self.a_pausou.wait(TEMPO_LIMITE), "A não chegou ao ponto de pausa"
                 limite = time.monotonic() + TEMPO_LIMITE
                 while time.monotonic() < limite:
-                    if self.b_terminou.is_set() or outra_conexao_esperando():
+                    if self.b_terminou.is_set():
+                        break
+                    if outra_conexao_esperando(self.using):
+                        self.b_esperou = True
                         break
                     time.sleep(0.05)
             finally:
