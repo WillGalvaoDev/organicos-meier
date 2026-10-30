@@ -42,3 +42,24 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-1 a A-22 e A-25 | `tests/tecnicos/test_devolucoes_execucao.py` |
 | A-23 e A-24 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
 | A-9 e A-10 | também `tests/tecnicos/test_t08_devolucao_idempotente.py` (T-8) |
+
+## Correções E10-R03 e R04 (2026-10-30)
+
+Valem a seção das correções no `spec.md`, o "Padrão das corridas" (E09-01, `spec.md`) e a correção E10-R08 (E10-07, `spec.md`). As corridas usam os serviços reais, o provedor simulado real e transações PostgreSQL. Os critérios do R05 estão na E10-05.
+
+**Arranjo D (designação):** o arranjo da E10-04, com a custódia de X esvaziada para outra obrigação (o "ralo" da prova do revisor), de modo que uma obrigação nova `Od` de 31,25 (um parcial de I1) fica sem financiamento; `designar_reserva(ADM, Od, 31.25, ...)` feita numa transação própria. O sem cobertura de `Od` é 0,00, todo pela designação.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-26 | R03 | concorrência | D | `autorizar_devolucao(Od)`, que pausa logo depois de ler `sem_cobertura_da_obrigacao`, em paralelo com `desfazer_designacao(ADM, d, ...)` | a autorização conclui, com uma parcela `solicitada` e uma chamada `estornar`; o desfazer levanta `DevolucaoRecusada("há devolução em curso para esta obrigação")`; a designação continua ativa; o sem cobertura de `Od` é 0,00. **Red esperado:** as duas concluem, e o sem cobertura fica 31,25 |
+| A-27 | R03 | concorrência | D | `desfazer_designacao(ADM, d, ...)`, que pausa logo depois de conferir que não há devolução em curso, em paralelo com `autorizar_devolucao(Od)` | o desfazer conclui; a autorização levanta `DevolucaoRecusada` com a mensagem de cobrir antes; nenhuma parcela e nenhuma chamada. **Red esperado:** a autorização não espera a `reserva`, lê o sem cobertura de antes e cria a parcela; as duas concluem |
+| A-28 | R03 | negativo | D com a parcela de `Od` levada a `falha_definitiva` (`recusar_estornos(P1, "prazo_vencido")` e `processar_chamadas(limite=1)`); depois, a mesma parcela levada a `elegivel_excepcional` | `desfazer_designacao(ADM, d, ...)` em cada um dos dois estados | `DevolucaoRecusada` nos dois; a designação continua ativa. **Red esperado:** o desfazer é aceito |
+| A-29 | R04 | concorrência | a parcela de O1 em `falha_temporaria` (`falhar_proximas(1, operacao="estornar")`, autorizar e processar), com a chamada vencida (relógio + 2 minutos); o simulador sem falha planejada | `processar_chamadas(limite=1)`, que pausa logo antes de travar a cadeia da parcela, em paralelo com `tentar_devolucao_de_novo(parcela, autor=ADM)` | nenhum `OperationalError` (nem no log); a tarefa conclui o estorno: a parcela `concluida`, um `EstornoSimulado`, um F15 `devolucao:<id_estorno>`; a nova tentativa levanta `DevolucaoRecusada`; a chave da chamada é a da autorização. **Red esperado:** `OperationalError: deadlock detected` na trava de `pagamentos_chamadaaoprovedor` |
+| A-30 | R04 | concorrência | o arranjo do A-29 | `tentar_devolucao_de_novo(parcela, autor=ADM)`, que pausa logo depois de travar a cadeia, em paralelo com `processar_chamadas(limite=1)`; depois das duas, `processar_chamadas()` | a nova tentativa conclui (`proxima_em = agora`); a execução paralela não tenta a chamada (`skip_locked`); a execução seguinte conclui o estorno com a mesma chave: um `EstornoSimulado` e um F15; nenhum `OperationalError`. **Red esperado:** a tarefa pega a chamada, que a nova tentativa ainda não travou, e as duas se travam mutuamente (`deadlock detected`) |
+
+As provas `test_autorizacao_versus_desfazer_cobertura` e `test_retentativa_manual_versus_worker` do parecer têm de passar como estão. Os critérios acima as estendem com a ordem inversa e com o estado final do livro.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-26, A-27, A-29 e A-30 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
+| A-28 | `tests/tecnicos/test_devolucoes_execucao.py` |

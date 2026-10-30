@@ -140,3 +140,27 @@ Um reembolso com total zero é gravado sem obrigação, como a sexta ocorrência
 ## Dependências e decisões em aberto
 
 Depende de E08 (pedido congelado e situação), E09-06 (obrigação) e da regra única de travas (E09-01). Nenhuma decisão em aberto.
+
+## Correção E10-R01 — chave de um parcial usada pela integral (2026-10-30)
+
+Origem: parecer sobre `9ce04ad`, R01 (`docs/specs/E10-02/review.md`). Valem a "Ordem e regras comuns" e a correção E10-R08 (E10-07, `spec.md`, seção "Correções da revisão da E10").
+
+### Diagnóstico
+
+A regra de idempotência compara pedido, motivo e linhas. Na integral, a comparação das linhas foi dispensada (`linhas=None`), porque a repetição legítima da integral recalcularia um restante vazio. A dispensa vale para qualquer reembolso com a chave, inclusive um parcial. Assim, a integral com a chave de um parcial devolve o parcial, sem erro e sem devolver o restante. O inverso também passa: um parcial com a chave de uma integral cujas linhas coincidem devolve a integral.
+
+A especificação não distinguia os dois tipos de solicitação no conteúdo do reembolso. A falha é da especificação, e a regra abaixo a completa.
+
+### Regras
+
+- `Reembolso` ganha o campo `tipo`, `parcial` ou `integral`, obrigatório e só de inserção, gravado pela função que criou o reembolso.
+- O **conteúdo** que a idempotência compara passa a ser: pedido, motivo, `tipo` e, no parcial, as linhas (item e quantidade).
+  - **Integral repetida** (mesma chave, mesmo pedido, mesmo motivo, `tipo = integral`): devolve o reembolso existente, mesmo que o restante agora seja vazio.
+  - **Integral com a chave de um parcial**, ou **parcial com a chave de uma integral**: `ReembolsoConflitante`, sem escrita.
+  - O resto da regra de idempotência não muda.
+- **Migração:** o campo entra com uma migração. Não há dados de produção (fase 1); as linhas existentes de desenvolvimento recebem `parcial`.
+- **A-16 reescrito.** O texto "em qualquer ordem: ... duas obrigações" não vale quando a integral ganha, porque o parcial seguinte pede uma quantidade que já não resta e é recusado pelas regras do A-4 e do A-8. O critério reescrito prova as duas ordens, cada uma forçada pela pausa. O limite financeiro (125,00 no total) não muda.
+
+### Invariante acrescentado
+
+- Uma chave identifica uma única solicitação: o mesmo tipo, o mesmo pedido, o mesmo motivo e, no parcial, as mesmas linhas.

@@ -205,3 +205,44 @@ O `devolucao_concluida_tardiamente`, crítico, é da E10-05.
 ## Dependências e decisões em aberto
 
 Depende de E10-02, E10-03, E09-03, E09-05, E09-06, E07-04 e E07-06. Nenhuma decisão em aberto.
+
+## Correções E10-R03, R04 e R05 (2026-10-30)
+
+Origem: parecer sobre `9ce04ad` (`docs/specs/E10-04/review.md` e `docs/specs/E10-05/review.md`). Valem a "Regra única de travas" e o "Padrão das corridas" (E09-01, `spec.md`) e a correção E10-R08 (E10-07, `spec.md`).
+
+### R03 — a autorização concorre com a retirada da própria cobertura
+
+**Diagnóstico.** A autorização lê `sem_cobertura_da_obrigacao` travando a conta da obrigação, mas não a `reserva`. As designações, que entram nessa cobertura, são protegidas pela trava da `reserva` (E09-R02). `desfazer_designacao` trava a `reserva` e procura uma parcela que, na corrida, ainda não foi criada. As duas transações decidem com leituras que a outra muda, e as duas concluem: a parcela fica autorizada sobre uma obrigação com 31,25 sem cobertura. Recusar depois, na liquidação, não basta, porque o provedor já terá devolvido o dinheiro.
+
+A especificação original também deixou de fora dois estados: `desfazer_designacao` só recusava com parcela `solicitada`, `falha_temporaria` ou `em_processamento`. Em `falha_definitiva` e `elegivel_excepcional`, um estorno do provedor ainda pode ser adotado (E10-05), e a liquidação dele precisa da cobertura.
+
+**Regras.**
+
+- **Autorização:** depois das travas do pagamento e da `SituacaoDoPedido` e da conferência da parcela existente, `autorizar_devolucao` trava **juntas** a conta `obrigacao_comprador(o)` e a `reserva`, com `travar_contas` (ordem crescente de `pk`). Só depois lê o liquidado, o sem cobertura e as parcelas do pagamento.
+- **Confirmação excepcional (E10-06):** a leitura da cobertura também passa a ser feita com essas duas contas travadas, depois da cadeia.
+- **`desfazer_designacao`** recusa com `DevolucaoRecusada("há devolução em curso para esta obrigação")` sempre que a obrigação tem parcela **não final**: `solicitada`, `falha_temporaria`, `em_processamento`, `falha_definitiva` ou `elegivel_excepcional`. A leitura continua depois da trava da `reserva`.
+- **Resultado em qualquer ordem:** se a autorização trava primeiro, o desfazer espera, vê a parcela e recusa. Se o desfazer trava primeiro, a autorização espera, lê o sem cobertura de 31,25 e recusa com a mensagem de cobrir antes.
+
+### R04 — a nova tentativa manual inverte a ordem de travas da tarefa
+
+**Diagnóstico.** `processar_chamadas` trava a `ChamadaAoProvedor` primeiro e, dentro de `concluir` ou do gancho `adiada`, a cadeia da parcela (pagamento → `SituacaoDoPedido` → parcela). `tentar_devolucao_de_novo` faz o inverso: trava a cadeia e depois a chamada. Com a mesma parcela nas duas, o PostgreSQL detecta o impasse. A correção E07-R01 (E07-04, `spec.md`) já pedia que as operações da E10 evitassem essa inversão; a especificação desta fatia não a aplicou.
+
+**Regra das travas das chamadas da E10.** A ordem é: **a chamada → a cadeia da parcela → as contas do livro → os alertas.**
+
+- `tentar_devolucao_de_novo`, depois da leitura sem trava e da consulta ao provedor, abre a transação e:
+  1. trava a chamada `estornar` pendente da parcela com `select_for_update()`, **sem** `skip_locked` e sem `nowait`. Se a tarefa está executando essa chamada, a nova tentativa espera a tarefa terminar. Depois da espera, a condição `situacao = 'pendente'` é conferida na versão nova da linha (PostgreSQL em `READ COMMITTED`). Sem chamada pendente: `DevolucaoRecusada("não há tentativa pendente para esta devolução")`;
+  2. trava a cadeia e relê a parcela. Fora de `falha_temporaria`: `DevolucaoRecusada` com a mensagem atual;
+  3. grava `proxima_em = agora`, com a mesma chave, e o histórico.
+- Com a trava da chamada retida pela nova tentativa, `processar_chamadas` pula a chamada (`skip_locked`) e a executa numa execução seguinte, com a mesma chave.
+- **Agendamentos feitos sob a cadeia.** `_declarar_falha_definitiva`, `_aplicar_estorno` e `_concluir_verificacao` agendam outra operação da mesma parcela enquanto seguram a cadeia. `agendar_chamada` espera a trava de uma pendente do mesmo par (E07-R01). Para cada um desses agendamentos, o implementador registra no `review.md` por que, pelos estados da parcela, não pode haver uma execução da mesma operação e do mesmo alvo segurando essa pendente; onde isso não puder ser demonstrado, o agendamento passa para antes da cadeia.
+
+**Invariante acrescentado.** Nenhuma transação da E10 trava uma `ChamadaAoProvedor` de uma parcela depois de travar a cadeia dessa parcela.
+
+### R05 — a reconsulta na elegível adota só o estorno concluído
+
+**Diagnóstico.** A E10-05 estendeu `verificar_estornos` à parcela `elegivel_excepcional` "com as mesmas regras de adoção". Na `falha_definitiva`, essas regras adotam o estorno do mesmo valor nos dois estados, `concluido` e `em_processamento`. Na elegível, o código só adota o concluído. Um estorno reencontrado em processamento fica sem acompanhamento, e a tela continua mostrando a parcela como elegível. A tabela de transições desta fatia não tinha as saídas da elegível para a adoção.
+
+**Transições (substituem a linha da elegível em "Transições permitidas"):**
+- `elegivel_excepcional` → `em_processamento` ou `concluida` (estorno adotado pela reconsulta, E10-05), ou `concluida_fora_da_plataforma` (E10-06).
+
+As regras da adoção na elegível estão na E10-05, "Correção E10-R05 e R09". A adoção na elegível não gera aviso ao comprador, porque `em_processamento` é estado intermediário; a conclusão gera o aviso "Estorno concluído" da E10-07.

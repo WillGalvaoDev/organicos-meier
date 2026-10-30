@@ -37,3 +37,19 @@ Em todos, o autor é o administrador. As chaves são distintas por chamada, salv
 | A-1 a A-14 e A-17 | `tests/tecnicos/test_devolucoes_reembolso.py` |
 | A-15 e A-16 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
 | A-1, A-2, A-3, A-4, A-5, A-7 e A-9 | também `tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py`, no nível do serviço |
+
+## Correção E10-R01 (2026-10-30)
+
+Valem a seção da correção no `spec.md`, o "Padrão das corridas" (E09-01, `spec.md`, como na E09) e a correção E10-R08 (E10-07, `spec.md`). O A-16 abaixo **substitui** o A-16 original.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-16 (reescrito) | Concorrência, R01 | concorrência | N | `reembolso_parcial(I2, 1)` e `reembolso_integral_do_pedido(pedido)` em paralelo, em duas execuções. Na primeira, o parcial pausa logo depois da trava da `SituacaoDoPedido` e a integral começa; na segunda, é a integral que pausa no mesmo ponto | **Parcial primeiro:** dois reembolsos e duas obrigações, cuja soma é 125,00. **Integral primeiro:** um reembolso e uma obrigação de 125,00, e o parcial levanta `ReembolsoRecusado` (quantidade acima do restante), sem escrita. Nas duas, os acumulados do pedido ficam exatamente 100,00, 5,00 e 20,00 |
+| A-18 | R01 | negativo | K; `reembolso_parcial(item, 0.25, chave="mesma-chave", motivo="cancelamento_da_rodada")` feito | `reembolso_integral_do_pedido(pedido, chave="mesma-chave", motivo="cancelamento_da_rodada")` | `ReembolsoConflitante`; um reembolso só (`tipo = parcial`); uma obrigação; os acumulados iguais aos de antes. **Red esperado:** devolve o parcial, sem erro |
+| A-19 | R01 | negativo | K com um item; `reembolso_integral_do_pedido(pedido, chave="int-1")` feito, com a linha (item, quantidade total) | `reembolso_parcial(item, <a quantidade total>, chave="int-1")`, com o mesmo motivo | `ReembolsoConflitante`; nada novo. **Red esperado:** as linhas coincidem e a integral é devolvida |
+| A-20 | R01 | positivo | o A-19 antes do parcial | `reembolso_integral_do_pedido` de novo, com a mesma chave e o mesmo motivo | devolve o mesmo reembolso, com `tipo = integral`; nada novo. Regressão: esperado verde no código atual, sem Red, salvo pela ausência do campo `tipo` |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-16 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
+| A-18 a A-20 | `tests/tecnicos/test_devolucoes_reembolso.py` |

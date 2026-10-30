@@ -33,3 +33,20 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-16 | `tests/tecnicos/test_devolucoes_concorrencia.py` |
 | A-1, A-2, A-3 e A-4 | também `tests/aceitacao/test_cenarios_35_36_excepcional.py` |
 | A-3 a A-5 | também `tests/tecnicos/test_t09_excepcional.py` (T-9) |
+
+## Correções E10-R06 e R07 (2026-10-30)
+
+Valem a seção das correções no `spec.md` e a correção E10-R08 (E10-07, `spec.md`). Os critérios da recusa por estorno sem baixa (R09) estão na E10-05, A-12 a A-16.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-18 | R06, Infra 4.2 | negativo | o arranjo; `falhar_proximas(1, operacao="consultar_estornos")` | confirmar com campos válidos | `ConsultaAoProvedorFalhou`; nenhuma confirmação, F16 ou arquivo; nenhuma `verificar_estornos` agendada; a parcela continua `elegivel_excepcional`. **Red esperado:** `ProvedorIndisponivel` |
+| A-19 | R07 | negativo | o arranjo, num teste com `transaction=True` e `MEDIA_ROOT` temporário | confirmar dentro de `transaction.atomic()` aberto pelo teste | `RuntimeError` do bloco durável, antes de qualquer gravação; depois de sair do bloco do teste, nenhuma confirmação, nenhum F16, nenhum arquivo em `MEDIA_ROOT`; a parcela continua `elegivel_excepcional`. **Red esperado:** a confirmação é aceita dentro do bloco, e o PDF fica no armazenamento depois do rollback do teste |
+| A-20 | R07 | negativo | o arranjo, com `transaction=True`; `liquidar_obrigacao_fora_do_provedor` substituída por uma que levanta `RuntimeError` | confirmar | a exceção propaga; nenhuma confirmação; nenhum arquivo. Regressão: esperado verde, sem Red |
+| A-21 | R07 | positivo | o arranjo, com `transaction=True` | confirmar fora de transação | a confirmação gravada; o arquivo existe no armazenamento, com o nome gerado e o conteúdo enviado. Regressão: esperado verde, sem Red |
+
+A prova `test_rollback_externo_remove_comprovante` do parecer passa com a correção, porque o `RuntimeError` do bloco durável satisfaz o `pytest.raises` dela. O A-19 confere o motivo correto. A prova `test_reconsulta_estornos_indisponivel` tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-18 a A-21 | `tests/tecnicos/test_devolucoes_excepcional.py` |

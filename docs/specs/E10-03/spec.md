@@ -153,3 +153,24 @@ Nos passos 1 a 8, nada é gravado, salvo no modo de recusa com processamento (ab
 ## Dependências e decisões em aberto
 
 Depende de E07 (interface, simulador e plano de falhas) e de E09-02 (movimentos e saldo). Nenhuma decisão em aberto. O comportamento real fica para a L-7 (fase 2a).
+
+## Correção E10-R02 — saldo comum disputado por estornos de pagamentos diferentes (2026-10-30)
+
+Origem: parecer sobre `9ce04ad`, R02 (`docs/specs/E10-03/review.md`). Vale a correção E10-R08 (E10-07, `spec.md`).
+
+### Diagnóstico
+
+O passo 8 de `estornar` confere o saldo liberado da conta simulada. A trava, porém, é a da cobrança: ela serializa os estornos do mesmo pagamento, mas não os de pagamentos diferentes. O recurso que os dois consomem é o saldo da conta, comum a todos os pagamentos. Duas transações leem o mesmo saldo, as duas aceitam, e o saldo liberado fica negativo (−60,00 na prova do revisor).
+
+### Regras
+
+- **O saldo liberado da conta simulada é um recurso único.** Toda operação do simulador que lê esse saldo para aceitar um débito toma uma **trava do saldo**, comum à conta, antes da leitura. Hoje, a única operação assim é `estornar`.
+- **Ordem:** a trava da cobrança primeiro, a trava do saldo depois. Os estornos de pagamentos diferentes ficam serializados só no trecho do saldo, e não há inversão.
+- **Forma da trava:** é escolha do implementador, registrada no `review.md`. As duas formas aceitas são uma trava consultiva de transação do PostgreSQL (`pg_advisory_xact_lock`, com uma chave constante e nomeada, na conexão do simulador) ou uma linha única da conta simulada travada com `select_for_update`. A trava acaba com a transação do simulador.
+- **A recusa não muda:** quem perde a disputa recebe `SaldoInsuficienteParaEstorno`, que é **temporária** (passo 8), e não uma `RecusaDoProvedor`. Na E10-04, isso leva a parcela a `falha_temporaria` com `saldo_insuficiente`, como no A-11 de lá.
+- Os controles de teste que registram saídas (`registrar_saida`) representam débitos externos à plataforma e não validam saldo; não mudam.
+- **Limite de verificação (L-7):** o tratamento real do Mercado Pago para estornos concorrentes com saldo insuficiente não está validado. O simulador adota o comportamento conservador: o saldo nunca fica negativo por estornos.
+
+### Invariante acrescentado
+
+- Nenhuma combinação de estornos aceitos pelo simulador deixa o saldo liberado abaixo de zero.

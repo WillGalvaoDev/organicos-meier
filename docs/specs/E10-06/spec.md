@@ -130,3 +130,34 @@ Esta fatia define também o **lançamento no livro-razão** da devolução excep
 ## Dependências e decisões em aberto
 
 Depende de E10-04, E10-05, E09-01 (lista de fluxos), E09-05 (designações) e E09-06 (liquidação). Nenhuma decisão em aberto. O armazenamento no R2 entra na E16.
+
+## Correções E10-R06 e R07 (2026-10-30)
+
+Origem: parecer sobre `9ce04ad`, R06 e R07 (`docs/specs/E10-06/review.md`). Também valem para esta fatia:
+- a correção E10-R03 (E10-04): a cobertura é lida com a conta da obrigação e a `reserva` travadas;
+- a correção E10-R09 (E10-05): a recusa do passo 4 vale para qualquer **estorno sem baixa**, inclusive o que tem o ID da própria parcela;
+- a correção E10-R08 (E10-07, `spec.md`).
+
+### R06 — a falha da consulta de estornos escapa do contrato de erro
+
+**Diagnóstico.** O passo 4 faz duas consultas. A primeira, `consultar_antes_de_decidir`, traduz as falhas do provedor em `ConsultaAoProvedorFalhou`. A segunda, `consultar_estornos`, é chamada direto, e a falha dela propaga `ProvedorIndisponivel`. A rota da E10-07 só trata `ConsultaAoProvedorFalhou`, e esse caminho não chega ao 503.
+
+**Regra.** As duas consultas do passo 4 passam pela mesma tradução de erros: `ProvedorIndisponivel`, `RecusaDoProvedor` e `PagamentoNaoEncontrado` viram `ConsultaAoProvedorFalhou`. É o mesmo conjunto de `consultar_antes_de_decidir` (E07). Se qualquer uma das duas falhar:
+- nada é gravado e nenhum arquivo vai ao armazenamento;
+- nenhuma chamada é agendada.
+
+A rota não muda: `ConsultaAoProvedorFalhou` responde 503 com a mensagem de tentar de novo.
+
+### R07 — rollback da transação de quem chama deixa o comprovante órfão
+
+**Diagnóstico.** O arquivo é gravado dentro da transação da confirmação e apagado se ela levantar. Mas, quando a função é chamada dentro de uma transação de quem chama, a transação dela é só um ponto de salvamento. Ela retorna sem erro, a transação de fora é desfeita depois, e o arquivo fica no armazenamento sem confirmação no banco. O Django não tem gancho de rollback para apagar o arquivo nesse momento.
+
+**Regra.**
+- A confirmação abre a sua transação com `transaction.atomic(durable=True)`. Chamada dentro de outra transação, ela é recusada com o erro do Django para bloco durável aninhado (`RuntimeError`), antes de qualquer gravação, e sem arquivo.
+  - O bloco durável é aceito diretamente dentro da transação de teste do Django (`TestCase` e testes `django_db` sem `transaction=True`). Um teste existente que chame a confirmação dentro de um `atomic` próprio passa a receber o erro. O implementador aponta esse teste no `review.md` e ajusta só o arranjo, sem afrouxar asserção.
+  - A rota da E10-07 já chama fora de transação (`ATOMIC_REQUESTS = False`).
+- A ordem atual continua: todas as validações e as consultas primeiro, o arquivo gravado dentro da transação durável, e o arquivo apagado se ela levantar.
+- Depois do commit, o arquivo fica, e a rota de download o entrega.
+- **Limite registrado:** se o processo cair entre a gravação do arquivo e o commit, pode sobrar um arquivo sem confirmação. O contrário nunca acontece: nenhuma confirmação fica sem arquivo. Não há regra de limpeza de órfãos nesta etapa.
+
+**Alternativa descartada.** Gravar o arquivo só em `transaction.on_commit`. A confirmação ficaria gravada sem o arquivo se a gravação depois do commit falhasse, e o comprovante é parte obrigatória da confirmação (§9.5).

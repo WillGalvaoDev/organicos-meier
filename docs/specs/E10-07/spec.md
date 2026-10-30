@@ -120,3 +120,119 @@ As fatias E10-02 a E10-06 entregam o cálculo, a execução e a confirmação ex
 ## Dependências e decisões em aberto
 
 Depende de E10-02 a E10-06, E04 (avisos), E09-08 (menu e padrões das telas financeiras) e E08 (detalhe do pedido). Nenhuma decisão em aberto.
+
+## Correções da revisão da E10 (2026-10-30)
+
+O parecer consolidado do agente 3 sobre `9ce04ad` está neste diretório, em `review.md`, e reprovou a E10. A E10-01 foi aprovada e não se reabre. As correções estão nas fatias afetadas:
+
+| Achado | Classificação | Onde está a especificação | Critérios novos ou alterados |
+|---|---|---|---|
+| R01 — a integral aceita a chave de um parcial | importante | E10-02, "Correção E10-R01" | E10-02 A-16 (reescrito), A-18 a A-20 |
+| R02 — estornos de pagamentos diferentes gastam o mesmo saldo | importante | E10-03, "Correção E10-R02" | E10-03 A-21 e A-22 |
+| R03 — a autorização concorre com a retirada da cobertura | bloqueador | E10-04, "Correções E10-R03, R04 e R05" | E10-04 A-26 a A-28 |
+| R04 — impasse entre a nova tentativa manual e a tarefa | bloqueador | E10-04, mesma seção | E10-04 A-29 e A-30 |
+| R05 — o estorno reencontrado em processamento não é adotado | importante | E10-04 (transições) e E10-05, "Correção E10-R05 e R09" | E10-05 A-10 e A-11; E10-07 A-23 |
+| R06 — a falha da consulta de estornos escapa do 503 | importante | E10-06, "Correções E10-R06 e R07" | E10-06 A-18; E10-07 A-22 |
+| R07 — o comprovante órfão depois do rollback de quem chama | importante | E10-06, mesma seção | E10-06 A-19 a A-21 |
+| R08 — evidência de TDD | não conformidade de processo; **tratamento decidido pelo responsável em 2026-10-30: o mesmo da E05-R04, E06-R05, E08-R06 e E09-R08** | esta fatia, "Correção E10-R08" (vale para toda a E10) | sem critério novo para os antigos; registro e mutação por critério |
+| R09 — o estorno com ID conhecido escapa da proteção e do alerta crítico | bloqueador | E10-05, "Correção E10-R05 e R09" | E10-05 A-12 a A-16 |
+| R10 — a lista omite as tentativas da falha definitiva | importante | esta fatia, "Correção E10-R10" | E10-07 A-21 |
+
+Nenhuma correção muda regra de negócio nem decisão aprovada. As fontes continuam a especificação funcional v1.7 e a infraestrutura v1.8.
+
+### Ordem e regras comuns
+
+**Ordem sugerida:**
+1. R04 e R03, porque mudam a ordem das travas de que as outras dependem.
+2. R09 e depois R05, que usam a mesma definição de **estorno sem baixa**.
+3. R06 e R07.
+4. R01, R02 e R10, independentes entre si.
+5. O registro da R08.
+
+**Corridas.** Todos os critérios de concorrência novos seguem o "Padrão das corridas" da E09 (E09-01, `spec.md`), com `tests/apoio/corrida.py`:
+- os serviços reais em transações PostgreSQL;
+- a pausa só num ponto, sem retirar trava, validação ou efeito;
+- a liberação da pausa quando a outra operação termina, espera trava ou chega ao seu ponto;
+- o Red indicado no critério; tempo esgotado ou erro de infraestrutura não vale como Red.
+
+**Provas do parecer.** Das dez provas reproduzidas no parecer:
+- `test_saldo_compartilhado_em_estornos_concorrentes` fica substituída pelo E10-03 A-21. A barreira de duas threads dela esgota o tempo depois da correção.
+- As outras nove têm de passar como estão. Cada critério novo indica a prova que ele estende.
+
+**Verificação final.** Ao final, o implementador roda:
+- a suíte completa, sem `--deselect`;
+- `uv run ruff check --no-cache .`, `uv run ruff format --check .` e `uv run mypy .`;
+- `uv run python manage.py makemigrations --check --dry-run`; o R01 acrescenta uma migração;
+- as nove provas do parecer, num arquivo temporário que não entra no commit.
+
+Os resultados vão para o `review.md` de cada fatia corrigida.
+
+### Correção E10-R10 — tentativas da falha definitiva na lista
+
+**Diagnóstico.** A lista só procura a chamada **pendente** da parcela, e só nas situações `solicitada`, `falha_temporaria` e `em_processamento`. Na falha definitiva, a chamada `estornar` ou `acompanhar_estorno` já está encerrada (`falhou`), e a linha não mostra as tentativas. A especificação pedia "nas falhas, o código, as tentativas e a próxima tentativa", sem dizer de onde vêm as tentativas de uma chamada encerrada.
+
+**Regras.** Nas linhas do grupo **falhas** (e no detalhe):
+- **o código:** `codigo_da_falha` da parcela;
+- **as tentativas:** o texto `tentativas N`, em que N é a soma de `tentativas` das chamadas `estornar` e `acompanhar_estorno` da parcela (`alvo = parcela:<pk>`), em qualquer situação;
+- **o que vem depois:**
+  - em `falha_temporaria`: `próxima <dd/mm/aaaa hh:mm>`, da chamada pendente;
+  - em `falha_definitiva` com `verificar_estornos` pendente: `reconsulta agendada`;
+  - sem chamada pendente da parcela: `sem nova tentativa agendada`.
+
+A tela só lê; nada muda nos serviços.
+
+### Efeitos das outras correções nesta fatia
+
+- **R04:** a rota `tentar-de-novo/` pode esperar a execução em andamento da mesma chamada. Se a tarefa concluiu nesse meio-tempo, o serviço recusa, e a rota responde 409 com a mensagem, como no A-8.
+- **R05:** a parcela adotada em processamento aparece no grupo **em processamento**, e o comprador vê "Estorno em processamento na plataforma de pagamento". Não há aviso novo.
+- **R06:** a falha de qualquer das duas consultas da confirmação chega à rota como `ConsultaAoProvedorFalhou`, e a resposta é 503.
+
+### Correção E10-R08 — evidência de TDD (2026-10-30)
+
+Origem: parecer sobre `9ce04ad`, R08. Esta seção vale para toda a E10. As outras fatias só remetem a ela.
+
+#### Diagnóstico
+
+Estes critérios não têm Red válido comprovado antes do código de produção:
+
+| Critério | O que o registro mostra |
+|---|---|
+| E10-03 A-17 | as validações de `NovoEstorno.__post_init__` entraram no commit de andaime (`ceb68d7`); os cinco casos já estavam verdes |
+| E10-03 A-18 | o Red registrado foi a ausência da operação, e não uma corrida contra a operação funcional sem a trava |
+| E10-04 A-23 e A-24 | os testes entraram depois da proteção, como declarado; a mutação não mostrou que o A-23 falha sem a trava |
+| E10-06 A-16 | o teste entrou depois da trava, como declarado |
+
+Os já verdes declarados como regressão (E10-01 A-7, E10-05 A-7 e A-8, E10-06 A-2 e A-14, E10-07 A-14) foram aceitos pelo revisor e não entram na lista.
+
+#### Tratamento — decisão do responsável pelo projeto (2026-10-30)
+
+É o mesmo tratamento das correções E05-R04, E06-R05, E08-R06 e E09-R08 (E09-01, `spec.md`, seção "Correção E09-R08"), escolhido de novo para a E10. Ele não vira dispensa automática para as próximas etapas.
+
+1. **Procurar a evidência que existe.** Valem commits locais, logs guardados com data e saídas registradas no momento. Se o implementador encontrar a evidência, registra a referência exata, e o critério sai da lista. Não vale execução nova, andaime recriado ou inferência sobre a ordem.
+2. **Registrar a não conformidade** numa seção "Não conformidade de TDD" no `review.md` de cada fatia afetada (E10-03, E10-04 e E10-06). A seção traz:
+   - os critérios;
+   - o que aconteceu;
+   - o tratamento aplicado.
+
+   O registro anterior é preservado sem edição, e nenhum texto pode dar a entender que houve Red nesses critérios.
+3. **Provar a sensibilidade por mutação**, com o título "sensibilidade (mutação), não Red". Cada mutação registra o trecho mudado, o comando com os arquivos de teste inteiros e sem `-k`, a falha por asserção (não por tempo esgotado) e a restauração verde.
+
+   | Critério | Mutação |
+   |---|---|
+   | E10-03 A-17 | uma mutação por regra de `NovoEstorno`: aceitar valor zero ou negativo; aceitar mais de duas casas decimais; aceitar chave vazia; aceitar chave com mais de 64 caracteres. Cada uma tem de fazer falhar o caso correspondente |
+   | E10-03 A-18 | `estornar` sem a trava da cobrança |
+   | E10-04 A-23 | `autorizar_devolucao` sem as travas do pagamento e da `SituacaoDoPedido` |
+   | E10-04 A-24 | `_concluir_verificacao` e `_aplicar_estorno` sem a trava da cadeia (só a releitura) |
+   | E10-06 A-16 | `confirmar_devolucao_excepcional` sem a trava da cadeia (só a releitura) |
+
+   Se o teste existente não falhar com a mutação, ele é reforçado com o "Padrão das corridas": a primeira operação pausa logo depois da leitura que a trava protege. O reforço é mostrado falhando com a mutação e passando sem ela, e entra no mesmo registro de sensibilidade. A falta de sensibilidade não fica só registrada como limite.
+4. **Correções com Red real.** Todos os critérios novos desta correção seguem Red → Green → Refactor, cada um com a falha esperada indicada.
+   - Os de concorrência registram as duas linhas da prevenção do E08-R06: o verde funcional, que já existe, e o Red da corrida, observado no código atual.
+   - Os declarados como regressão (E10-02 A-20, E10-03 A-22, E10-05 A-16, E10-06 A-20 e A-21) registram a execução verde antes da correção e depois dela, com a justificativa.
+
+Os passos 2 e 3 são o tratamento definitivo dos critérios antigos. Mesmo com esse tratamento, R01 a R07, R09 e R10 só se encerram pelos critérios novos.
+
+#### Prevenção (soma-se às anteriores)
+
+- **Validação observável não é andaime.** Recusa de entrada, mensagem ou exceção que um teste pode observar é comportamento, mesmo quando fica na interface ou num `dataclass`. Ela só entra depois do Red.
+- **A trava vem depois do Red da corrida.** Para cada proteção de concorrência, o registro mostra três passos: o verde funcional sem a trava, o Red da corrida e só então a trava.

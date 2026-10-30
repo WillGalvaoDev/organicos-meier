@@ -37,3 +37,20 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-13 e A-14 | `tests/tecnicos/test_pedidos_estornos_do_comprador.py` |
 | A-15 a A-20 | `tests/tecnicos/test_devolucoes_avisos.py` |
 | A-2, A-9 e A-10 | também `tests/aceitacao/test_cenarios_35_36_excepcional.py`, pelo fluxo da tela |
+
+## Correções da revisão da E10 (2026-10-30)
+
+Valem as seções "Correções da revisão da E10" e "Correção E10-R10" do `spec.md` e a correção E10-R08.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-21 | R10 | positivo | `montar_tela`; `recusar_estornos(P1, "prazo_vencido")`; O1 autorizada e `processar_chamadas(limite=1)`: a parcela `falha_definitiva`, com uma tentativa e a `verificar_estornos` pendente; outra obrigação em `falha_temporaria` com duas tentativas | GET `financeiro/devolucoes/` | na linha de O1: `prazo_vencido`, `tentativas 1` e `reconsulta agendada`; na outra: o código, `tentativas 2` e `próxima <dd/mm/aaaa hh:mm>`; depois de a reconsulta rodar e a parcela passar a `elegivel_excepcional`, a linha de O1 sai das falhas. Uma falha definitiva sem chamada pendente (por fábrica) mostra `sem nova tentativa agendada`. **Red esperado:** a linha de O1 sem `tentativas 1` |
+| A-22 | R06 | negativo | a parcela `elegivel_excepcional`; `falhar_proximas(1, operacao="consultar_estornos")` | POST `excepcional/` válido, com o PDF | status 503, com "Não foi possível consultar o provedor; tente de novo"; nenhuma confirmação; nenhum arquivo; a parcela continua `elegivel_excepcional`. **Red esperado:** `ProvedorIndisponivel` não tratado (erro 500 ou exceção no cliente de testes) |
+| A-23 | R05 | positivo | o E10-05 A-10 feito: a parcela adotada em `em_processamento` | GET `financeiro/devolucoes/` como ADM e GET `pedidos/<X>/` como B | a obrigação no grupo **em processamento**, e não em **elegíveis**; o comprador vê "Estorno em processamento na plataforma de pagamento"; nenhum aviso novo além dos do E10-05 A-10. **Red esperado:** a obrigação no grupo **elegíveis** |
+
+A prova `test_lista_informa_tentativas_da_falha_definitiva` do parecer tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-21 e A-22 | `tests/tecnicos/test_devolucoes_telas.py` |
+| A-23 | `tests/tecnicos/test_pedidos_estornos_do_comprador.py` |

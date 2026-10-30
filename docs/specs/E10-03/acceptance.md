@@ -31,3 +31,18 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-17, A-19 e A-20 | `tests/tecnicos/test_simulador_estornos.py` |
 | A-18 | `tests/tecnicos/test_simulador_estornos.py`, com transações PostgreSQL reais |
+
+## Correção E10-R02 (2026-10-30)
+
+Valem a seção da correção no `spec.md`, o "Padrão das corridas" (E09-01, `spec.md`) e a correção E10-R08 (E10-07, `spec.md`). As duas corridas usam transações PostgreSQL reais e o provedor simulado real.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-21 | R02, AGENTS §6 | concorrência | duas cobranças aprovadas de 80,00, `Pa` e `Pb`, liberadas; uma saída de 60,00 registrada; o saldo liberado em 100,00 | `estornar(Pa, 80.00, "k0")`, que pausa logo depois de ler o saldo liberado, em paralelo com `estornar(Pb, 80.00, "k1")` | um estorno concluído e o outro levanta `SaldoInsuficienteParaEstorno` (e não `RecusaDoProvedor`); um `EstornoSimulado` só; o saldo liberado fica 20,00. **Red esperado:** os dois concluem, e o saldo fica −60,00 |
+| A-22 | R02 | concorrência | duas cobranças aprovadas de 80,00, liberadas; o saldo liberado em 200,00 | os dois estornos de 80,00 em paralelo, com a mesma pausa | os dois concluem, sem `deadlock`; o saldo liberado fica 40,00. Regressão da ordem das travas: esperado verde, sem Red |
+
+A prova `test_saldo_compartilhado_em_estornos_concorrentes` do parecer pausa com uma barreira de duas threads. Com a correção, a segunda thread espera a trava do saldo antes da barreira, e a prova esgota o tempo. Ela fica substituída pelo A-21, que libera a pausa também quando a outra conexão está esperando trava.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-21 e A-22 | `tests/tecnicos/test_simulador_estornos.py`, com transações PostgreSQL reais |
