@@ -277,3 +277,29 @@ Parte da causa é da especificação. A ordem sugerida punha R05 e R06 antes, e 
 ### Verificação final
 
 O implementador repete a verificação final da seção "Ordem e regras comuns". As provas do parecer passam a ser as oito indicadas acima.
+
+## Correções da nova revisão: R02 residual e R11 (2026-10-30)
+
+Origem: a nova revisão independente sobre `74b38c0` (`review.md`, "Nova revisão independente das correções"). Os dois achados se resolvem com regras técnicas derivadas, sem regra comercial nova e sem decisão do responsável.
+
+| Achado | Decisão | Onde está a especificação | Critérios |
+|---|---|---|---|
+| R02 residual — estornos em processamento não comprometem o saldo do simulador | O estorno aceito compromete o saldo na aceitação: o disponível é o liberado menos os estornos em processamento. A conclusão não confere de novo. A conclusão e a recusa tomam a trava do saldo. `consultar_saldo` não muda | E10-03, "Correção E10-R02 residual" | E10-03 A-23 a A-27 |
+| R11 — a reconsulta inconclusiva deixa a falha definitiva sem reconsulta pendente | A mesma chamada continua pendente, com os intervalos de sempre, sem desfazer o que a conclusão gravou. Sem novo alerta pela inconclusiva. A elegível inconclusiva não muda | E10-04, "Correção E10-R11" | E10-04 A-36 a A-41 |
+
+### Ordem e regras comuns
+
+1. **R11:** A-36 e A-40 juntos (serviço e tela), depois o restante.
+2. **R02 residual:** A-23, A-25 e A-26 antes da correção; A-24 e A-27 como regressão.
+
+Cada critério novo com Red real, antes do código de produção, registrado como na correção E10-R08. Commits separados por achado.
+
+### Provas da nova revisão
+
+- **`test_inconclusiva_mantem_reconsulta_pendente`:** tem de passar como está.
+- **`test_saldo_nao_negativo_depois_de_processamentos`:** fica substituída pelo E10-03 A-23. Ela não espera a recusa do segundo estorno, que é o comportamento especificado, e o A-23 afirma a recusa e o saldo final de 20,00 com o mesmo arranjo.
+- As oito provas anteriores continuam valendo como na seção "Complemento das correções".
+
+### Verificação final
+
+O implementador repete a verificação final da seção "Ordem e regras comuns" das correções R01 a R10: a suíte completa, ruff, formatação, mypy e `makemigrations --check`. Registra os resultados no `review.md` desta fatia.

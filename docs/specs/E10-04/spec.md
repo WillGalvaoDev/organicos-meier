@@ -286,3 +286,32 @@ A parcela não pode passar a elegível sem uma reconsulta que responda, porque a
 - **Na tela (R10):** a falha definitiva com a reconsulta pendente continua com "reconsulta agendada". O detalhe mostra também o último erro e as tentativas da reconsulta.
 
 **Invariante acrescentado.** Toda parcela em `falha_definitiva` tem uma `verificar_estornos` pendente, até sair desse estado.
+
+## Correção E10-R11 — a reconsulta inconclusiva encerra a verificação (2026-10-30)
+
+Origem: nova revisão sobre `74b38c0`, R11 (`docs/specs/E10-04/review.md` e `docs/specs/E10-07/review.md`, "Nova revisão independente das correções"). Vale a correção E10-R08 (E10-07, `spec.md`). Nenhuma regra comercial muda.
+
+### Diagnóstico
+
+Quando a reconsulta só encontra estornos sem baixa de outro valor, `_concluir_verificacao` grava `verificacao_inconclusiva` e retorna. A chamada termina `concluida`. A parcela fica em `falha_definitiva` sem `verificar_estornos` pendente, contra o invariante do P4. Basta um estorno avulso de outro valor, sem nenhuma falha de rede.
+
+A regra da linha 150 (a parcela fica como está, com o alerta aberto para análise) e o invariante do P4 são compatíveis. A situação, o código e o alerta ficam, e a reconsulta continua. A reconsulta continuar tem motivo concreto: o próprio estorno recusado pode concluir depois no provedor (o risco residual da infraestrutura 4.7, E10-05), e só a reconsulta seguinte o adota. Também o estorno de outro valor pode ser recusado ou ganhar baixa, e então a parcela fica elegível. Não há exceção ao P4.
+
+### Regras
+
+- **Inconclusiva em `falha_definitiva`:** a parcela fica em `falha_definitiva`, com o código `verificacao_inconclusiva` e a evidência da reconsulta gravados, e o alerta `devolucao_em_falha_definitiva` continua aberto. A **mesma** chamada `verificar_estornos` (mesma chave) continua `pendente`:
+  - `tentativas` sobe um;
+  - `ultimo_erro = "verificacao_inconclusiva"`;
+  - `proxima_em` segue os intervalos de `processar_chamadas` (1, 5, 15 e 60 minutos, com o último repetido).
+- **O que a conclusão grava não se desfaz.** O código, a evidência e a resolução do `devolucao_com_falha` ficam gravados mesmo com a chamada reagendada. Uma `FalhaTemporaria` levantada de dentro de `concluir` não serve, porque desfaz a transação de `concluir`.
+  - A forma é escolha do implementador, registrada no `review.md`.
+  - Um caminho é `concluir` devolver um sinal de reagendamento com o código, que `_tentar` aplica depois de `concluir` terminar, pelo mesmo caminho da falha temporária: tentativas, último erro e próxima tentativa.
+  - As outras operações não mudam de comportamento.
+- **A resposta inconclusiva é uma resposta do provedor.** O `devolucao_com_falha` aberto por falhas anteriores da reconsulta (P4) é resolvido com "reconsulta concluída", como nos outros resultados. O gancho `adiada` **não** abre `devolucao_com_falha` pelo código `verificacao_inconclusiva`: o alerta em vigor é o de falha definitiva, que já pede a análise do administrador.
+- **Inconclusiva em `elegivel_excepcional`** (E10-05, passo 6): sem mudança. A parcela fica elegível, e a chamada termina. O invariante do P4 é só da `falha_definitiva`, e a confirmação faz as próprias consultas e recusa diante de qualquer estorno sem baixa (E10-06, passo 4, e E10-R09).
+- **Na tela (R10):** a falha definitiva inconclusiva mostra `verificacao_inconclusiva` e "reconsulta agendada"; o detalhe mostra o último erro e as tentativas da reconsulta (regra do P4).
+- **A regra do P4 fica mais precisa.** Onde ela diz que o alerta é resolvido "quando a reconsulta conclui", leia-se "quando o provedor responde à reconsulta": adoção, elegível ou inconclusiva.
+
+### Invariante
+
+Sem mudança: toda parcela em `falha_definitiva` tem uma `verificar_estornos` pendente, até sair desse estado. Agora vale também para a inconclusiva.

@@ -46,3 +46,28 @@ A prova `test_saldo_compartilhado_em_estornos_concorrentes` do parecer pausa com
 | Critério | Arquivo de teste |
 |---|---|
 | A-21 e A-22 | `tests/tecnicos/test_simulador_estornos.py`, com transações PostgreSQL reais |
+
+## Correção E10-R02 residual (2026-10-30)
+
+Valem a seção "Correção E10-R02 residual" do `spec.md`, o "Padrão das corridas" (E09-01, `spec.md`) e a correção E10-R08 (E10-07, `spec.md`).
+
+**Arranjo S:**
+- duas cobranças aprovadas de 80,00, `Pa` e `Pb`, liberadas;
+- `estornos_em_processamento` nas duas;
+- uma saída de 60,00 registrada;
+- `consultar_saldo().liberado` em 100,00.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-23 | R02 residual | negativo | o arranjo S | `estornar(Pa, 80.00, "k0")`; depois `estornar(Pb, 80.00, "k1")`; depois `concluir_estorno` do primeiro | o primeiro aceito `em_processamento`; o segundo levanta `SaldoInsuficienteParaEstorno` (e não `RecusaDoProvedor`), sem `EstornoSimulado` novo; depois da conclusão, o saldo liberado fica 20,00. **Red esperado:** o segundo é aceito, e a conclusão dos dois leva o saldo a −60,00 |
+| A-24 | R02 residual | positivo | o arranjo S; o estorno de `Pa` aceito em processamento | `recusar_estorno` do estorno de `Pa`; depois `estornar(Pb, 80.00, "k1")` e `concluir_estorno` dele | o de `Pb` aceito; depois da conclusão, o saldo liberado fica 20,00. Regressão da liberação do comprometido: esperado verde depois do A-23 |
+| A-25 | R02 residual | negativo | o arranjo S sem `estornos_em_processamento` em `Pa`; `recusar_mas_processar(Pa, "meio_nao_permite_estorno")` | `estornar(Pa, 80.00, "k0")`, que levanta `RecusaDoProvedor`; depois `estornar(Pb, 80.00, "k1")` | o de `Pb` levanta `SaldoInsuficienteParaEstorno`: o invisível em processamento compromete o saldo. **Red esperado:** o de `Pb` é aceito |
+| A-26 | R02 residual, concorrência | concorrência | o arranjo S; o estorno de `Pa` aceito em processamento (o disponível é 20,00) | A: `concluir_estorno` do estorno de `Pa`, pausada depois da mudança e do movimento, antes do commit; B: `estornar(Pb, 80.00, "k1")` | B espera a trava do saldo enquanto A está pausada (a espera é vista em `pg_stat_activity` do banco do simulador; o apoio `outra_conexao_esperando` pode ganhar o alias como parâmetro); depois do commit de A, B levanta `SaldoInsuficienteParaEstorno`; o saldo liberado fica 20,00. **Red esperado:** B termina sem esperar a trava |
+| A-27 | R02 residual, débito externo | positivo | o arranjo S; o estorno de `Pa` aceito em processamento | `registrar_saida(60.00)`; `concluir_estorno` do estorno de `Pa`; depois `estornar(Pb, 10.00, "k1")` | a conclusão é aceita, e o saldo liberado fica −40,00; o estorno de `Pb` levanta `SaldoInsuficienteParaEstorno`. Regressão do limite dos débitos externos: esperado verde, sem Red |
+
+A prova `test_saldo_nao_negativo_depois_de_processamentos` do parecer chama o segundo `estornar` sem esperar a recusa. Com a correção, ela termina com `SaldoInsuficienteParaEstorno` nessa linha, que é o comportamento especificado. Ela fica substituída pelo A-23, que tem o mesmo arranjo e afirma a recusa e o saldo final não negativo.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-23 a A-25 e A-27 | `tests/tecnicos/test_simulador_estornos.py` |
+| A-26 | `tests/tecnicos/test_simulador_estornos.py`, com transações PostgreSQL reais |

@@ -174,3 +174,29 @@ O passo 8 de `estornar` confere o saldo liberado da conta simulada. A trava, por
 ### Invariante acrescentado
 
 - Nenhuma combinação de estornos aceitos pelo simulador deixa o saldo liberado abaixo de zero.
+
+## Correção E10-R02 residual — saldo comprometido por estornos em processamento (2026-10-30)
+
+Origem: nova revisão sobre `74b38c0`, R02 residual (`docs/specs/E10-03/review.md` e `docs/specs/E10-07/review.md`, "Nova revisão independente das correções"). Vale a correção E10-R08 (E10-07, `spec.md`). Nenhuma regra comercial muda.
+
+### Diagnóstico
+
+A trava do saldo da correção E10-R02 serializa as aceitações, mas a conferência do passo 8 lê só os movimentos liberados. Um estorno aceito `em_processamento` ainda não tem movimento. Por isso ele não reduz o saldo que a aceitação seguinte confere, e o débito só entra na conclusão (`concluir_estorno`), que não confere nada. Duas cobranças de 80,00 e uma saída de 60,00 deixam 100,00 liberados. Os dois estornos de 80,00 são aceitos em processamento, e a conclusão dos dois leva o saldo a −60,00, sem concorrência nenhuma.
+
+### Regras
+
+- **O estorno aceito compromete o saldo na aceitação, e não na conclusão.** No passo 8 de `estornar`, sob a trava do saldo, o valor conferido passa a ser o **saldo disponível para estorno**: o saldo liberado no instante menos a soma dos estornos `em_processamento` da conta simulada, de todos os pagamentos. A soma inclui os invisíveis de `recusar_mas_processar`, porque o provedor os está processando. Quando esse saldo for menor que o valor, a função levanta `SaldoInsuficienteParaEstorno` (temporária), como antes.
+- **A conclusão não confere o saldo de novo.** O débito de um estorno em processamento já foi reservado na aceitação, e `concluir_estorno` só o transforma em movimento. Recusar a conclusão de um estorno aceito seria uma regra nova do provedor, e o comportamento real é limite L-7.
+- **A recusa de um estorno em processamento** (`recusar_estorno`) libera o valor comprometido: ele sai da soma e não gera movimento.
+- **Leitura coerente.** As duas somas do passo 8 (movimentos liberados e estornos em processamento) são lidas sob a trava do saldo. `concluir_estorno` e `recusar_estorno` também tomam a trava do saldo, depois da trava do estorno e na mesma transação da mudança. Uma aceitação nunca enxerga um estorno que saiu de `em_processamento` sem enxergar o movimento correspondente, nem o contrário. A ordem é sempre a mesma: primeiro a trava da cobrança ou do estorno, e a do saldo por último. Não há inversão, porque `estornar` não trava linhas de estorno existentes.
+- **`consultar_saldo` não muda.** Ele continua informando o saldo liberado pelos movimentos, que é o que a conciliação da E09 compara. O comprometimento é uma regra interna da aceitação do simulador.
+- **Débitos externos.** Os controles `registrar_saida`, `ajustar_saldo` e `contestar` representam débitos fora da plataforma e continuam sem validar saldo (regra já aprovada). Um débito desses, feito depois da aceitação, pode levar o saldo liberado abaixo de zero quando o estorno concluir. Nesse caso, nenhuma aceitação nova passa enquanto o saldo disponível for menor que o valor.
+- **Limite de verificação (L-7):** como o Mercado Pago reserva o saldo de estornos em processamento não está validado. O simulador adota o comportamento conservador.
+
+### Invariante reescrito
+
+O invariante "Nenhuma combinação de estornos aceitos pelo simulador deixa o saldo liberado abaixo de zero" passa a ser:
+
+- **Depois de toda aceitação de estorno,** o saldo liberado menos os estornos `em_processamento` é maior ou igual a zero.
+- **Por consequência, sem débitos externos,** nenhuma sequência de aceitações, conclusões e recusas de estornos deixa o saldo liberado abaixo de zero.
+- **Só os débitos externos de controle** podem deixá-lo negativo.

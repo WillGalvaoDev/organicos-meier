@@ -82,3 +82,29 @@ Valem a seção "Complemento das correções" do `spec.md` e a correção E10-R0
 |---|---|
 | A-31 e A-32 | `tests/tecnicos/test_devolucoes_execucao.py` |
 | A-33 a A-35 | `tests/tecnicos/test_devolucoes_execucao.py` |
+
+## Correção E10-R11 (2026-10-30)
+
+Valem a seção "Correção E10-R11" do `spec.md` e a correção E10-R08 (E10-07, `spec.md`). O serviço e a tela andam juntos: o A-40 é escrito e visto falhar junto com o A-36, antes da correção.
+
+**Arranjo I:**
+- um estorno avulso de 10,00 do pagamento, aceito pelo provedor simulado e concluído, sem parcela (como na prova do parecer);
+- `recusar_estornos(P1, "prazo_vencido")`;
+- O1 autorizada;
+- `processar_chamadas()` até a reconsulta rodar uma vez.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-36 | R11, P4 | negativo | o arranjo I | — | a parcela em `falha_definitiva`, com `codigo_da_falha = "verificacao_inconclusiva"` e a evidência da reconsulta (o avulso de 10,00); `devolucao_em_falha_definitiva` aberto; a **mesma** `verificar_estornos` (mesma chave) `pendente`, com `tentativas = 1`, `ultimo_erro = "verificacao_inconclusiva"` e `proxima_em` 1 minuto depois; nenhum `devolucao_com_falha` aberto. **Red esperado:** a chamada `concluida`, sem nenhuma pendente |
+| A-37 | R11 | positivo | o A-36 | avançar o relógio e processar até a quinta reconsulta | todas inconclusivas; a mesma chamada pendente; os intervalos 1, 5, 15, 60 e 60 minutos; o código e a evidência mantidos; nenhum `devolucao_com_falha` aberto a partir da terceira; nenhum histórico de situação novo da parcela. **Red esperado:** nenhuma segunda reconsulta |
+| A-38 | R11, infra 4.7, E10-05 | positivo | o arranjo I, com `recusar_mas_processar(P1, "meio_nao_permite_estorno")` no lugar de `recusar_estornos`: o estorno da parcela recusado na resposta e invisível em processamento | a primeira reconsulta (inconclusiva); depois `concluir_estorno` do estorno da parcela; avançar 1 minuto e processar | a parcela adota o próprio estorno e fica `concluida` pela via principal (F15); os alertas resolvidos como no E10-05; a chamada `concluida`. **Red esperado:** a parcela parada em `falha_definitiva` |
+| A-39 | R11, P4 | positivo | a parcela em `falha_definitiva`, com o avulso de 10,00 **em processamento** (`estornos_em_processamento` antes dele) e o dublê da recusa do A-33 ativo até a terceira tentativa: `devolucao_com_falha` aberto | retirar o dublê, avançar 60 minutos e processar (inconclusiva); depois `recusar_estorno` do avulso, avançar e processar | na inconclusiva, o `devolucao_com_falha` é resolvido com "reconsulta concluída", e a chamada continua pendente; depois da recusa do avulso, a parcela passa a `elegivel_excepcional`, e a chamada termina. **Red esperado:** a chamada termina na inconclusiva, e a parcela não fica elegível |
+| A-40 | R11, R10 | positivo | o A-36 e `montar_tela` | GET `financeiro/devolucoes/` e o detalhe da parcela | na linha da parcela: `verificacao_inconclusiva` e `reconsulta agendada`; no detalhe: o último erro `verificacao_inconclusiva` e as tentativas da reconsulta. **Red esperado:** `sem nova tentativa agendada` |
+| A-41 | R11, E10-05 | positivo | uma parcela `elegivel_excepcional` e um estorno sem baixa de outro valor (arranjo do E10-05 para o passo 6) | a reconsulta | a parcela continua `elegivel_excepcional`, com o código `verificacao_inconclusiva`; a chamada termina. Regressão: esperado verde, sem Red |
+
+A prova `test_inconclusiva_mantem_reconsulta_pendente` do parecer tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-36 a A-39 e A-41 | `tests/tecnicos/test_devolucoes_execucao.py` |
+| A-40 | `tests/tecnicos/test_devolucoes_telas.py` |
