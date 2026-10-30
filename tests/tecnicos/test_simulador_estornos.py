@@ -344,3 +344,63 @@ def test_dois_estornos_concorrentes_com_a_mesma_chave(sim: Any) -> None:  # A-18
     assert len(ids) == 1
     assert EstornoSimulado.objects.count() == 1
     assert MovimentoSimulado.objects.filter(tipo="devolucao").count() == 1
+
+
+# --- E10-R02: o saldo liberado é um recurso único (A-21 e A-22) -------------------------------
+
+
+def _duas_cobrancas_de_80(sim: Any, extra_no_saldo: str) -> tuple[str, str]:
+    """Pa e Pb: 80,00 cada, tarifa zero, liberadas no ato. Com a saída de 60,00 o saldo liberado
+    é 100,00; com o depósito de 40,00 (`extra_no_saldo`), 200,00."""
+    sim.definir_tarifa("pix", percentual=D("0.00"), fixa=D("0.00"))
+    sim.definir_liberacao("pix", horas=0)
+    ids = []
+    for n in range(2):
+        criada = obter_provedor().criar_cobranca(
+            NovaCobranca(f"c{n}", f"ref-{n}", D("80.00"), "Pedido", T + DIA)
+        )
+        sim.aprovar(criada.pagamento.id_externo)
+        ids.append(criada.pagamento.id_externo)
+    if extra_no_saldo == "saida":
+        sim.registrar_saida(D("60.00"), descricao="saida")
+    else:
+        sim.depositar(D("40.00"))
+    return ids[0], ids[1]
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_estornos_de_pagamentos_diferentes_nao_gastam_o_mesmo_saldo_duas_vezes(
+    sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-21
+    from apps.simulador_pagamentos import provedor as simulado
+    from tests.apoio.corrida import Corrida
+
+    pa, pb = _duas_cobrancas_de_80(sim, "saida")
+    assert _saldo_liberado() == D("100.00")
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, simulado, "_saldo_liberado")
+    ra, rb = corrida.rodar(lambda: estornar(pa, "80.00", "k0"), lambda: estornar(pb, "80.00", "k1"))
+    assert ra.excecao is None, ra.excecao
+    assert isinstance(rb.excecao, SaldoInsuficienteParaEstorno), (rb.excecao, _saldo_liberado())
+    assert EstornoSimulado.objects.count() == 1
+    assert _saldo_liberado() == D("20.00")
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_dois_estornos_com_saldo_para_os_dois_concluem_sem_impasse(
+    sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-22
+    from apps.simulador_pagamentos import provedor as simulado
+    from tests.apoio.corrida import Corrida
+
+    pa, pb = _duas_cobrancas_de_80(sim, "deposito")
+    assert _saldo_liberado() == D("200.00")
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, simulado, "_saldo_liberado")
+    ra, rb = corrida.rodar(lambda: estornar(pa, "80.00", "k0"), lambda: estornar(pb, "80.00", "k1"))
+    assert ra.excecao is None, ra.excecao
+    assert rb.excecao is None, rb.excecao
+    assert EstornoSimulado.objects.count() == 2
+    assert _saldo_liberado() == D("40.00")
