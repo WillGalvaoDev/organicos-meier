@@ -75,3 +75,14 @@ Referência: spec.md, correção E10-R02, invariante “Nenhuma combinação de 
 Causa observada: `apps/simulador_pagamentos/provedor.py:111` soma somente movimentos, sem considerar os estornos pendentes; `_estornar` aceita ambos sob a trava. `apps/simulador_pagamentos/controle.py:231` conclui sem nova proteção de suficiência do saldo. É necessário cobrir o ciclo aceitação/conclusão assíncrona conforme o invariante, com teste que reproduza o déficit. Reprodução integral no parecer consolidado.
 
 R08: a não conformidade histórica de TDD permanece registrada, com tratamento expressamente autorizado na E10-07/spec.md. Os registros de sensibilidade foram conferidos; não foram repetidas mutações nesta rodada. Isso não reclassifica execução tardia como Red anterior à implementação.
+
+## Correção E10-R02 residual — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-23 a A-27; `outra_conexao_esperando(using)` e `Corrida(using=...)` com `b_esperou` | `b69fd72` | `uv run pytest tests/tecnicos/test_simulador_estornos.py` | **Red: 3 failed.** A-23 e A-25: `DID NOT RAISE SaldoInsuficienteParaEstorno`; A-26: "B terminou sem esperar a trava do saldo". A-24 e A-27 passaram (regressão, sem Red, como a spec prevê) |
+| `_comprometido_em_processamento()` (soma dos estornos `em_processamento` da conta, invisíveis inclusos) subtraída do saldo liberado no passo 8; `travar_o_saldo` movida para `estado.py`; `concluir_estorno` e `recusar_estorno` tomam a trava do saldo depois da trava do estorno, antes da mudança | `562148a` | o mesmo arquivo, `test_devolucoes_execucao.py`, `test_devolucoes_concorrencia.py` | 83 passed |
+
+`consultar_saldo` não mudou. A conclusão não confere o saldo (A-27 verde: aceita e deixa −40,00).
+
+Prova do parecer `test_saldo_nao_negativo_depois_de_processamentos`: substituída pelo A-23, como manda a spec; executada como está, o segundo `estornar` levanta `SaldoInsuficienteParaEstorno` (comportamento especificado).

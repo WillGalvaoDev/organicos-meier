@@ -491,3 +491,21 @@ def test_inconclusiva_mantem_reconsulta_pendente(relogio, simulador_pagamentos):
 ```
 
 Próximo gate: implementação dos dois achados com evidência Red/Green, seguida de nova revisão independente. Nenhuma nova melhoria não impeditiva foi aberta; não houve mudança em docs/melhorias.md. Sem push e sem alteração dos documentos de regra de negócio.
+
+## Correções da nova revisão (R02 residual e R11) — agente 2 — 2026-10-30
+
+Commits separados por achado: R11 (`53175fa` testes, `1106029` correção) e R02 residual (`b69fd72` testes, `562148a` correção). Cada critério novo teve Red real antes do código de produção; as exceções são os critérios de regressão que a spec declara verdes (A-41 da E10-04; A-24 e A-27 da E10-03). Detalhes nos `review.md` da E10-04 e da E10-03. A-40 (tela) foi escrito junto com A-36 e falhou antes da correção (`sem nova tentativa agendada`); passou sem mudança de template, porque `_acompanhamento_da_falha` já tratava a chamada pendente.
+
+### Verificação final
+
+```
+uv run pytest                                 # 2644 passed in 296.92s, sem filtro
+uv run ruff check . --no-cache                # All checks passed
+uv run ruff format --check .                  # 347 files already formatted
+uv run mypy .                                 # Success: no issues found in 416 source files
+uv run python manage.py makemigrations --check --dry-run   # No changes detected
+```
+
+Provas do parecer (arquivo temporário, removido): `test_inconclusiva_mantem_reconsulta_pendente` passa como está; `test_saldo_nao_negativo_depois_de_processamentos` é a substituída pelo E10-03 A-23. As oito provas anteriores continuam valendo como na seção "Complemento das correções".
+
+Riscos remanescentes: como o Mercado Pago reserva o saldo de estornos em processamento não está validado (L-7; o simulador adota o comportamento conservador); armazenamento do comprovante local até a E16.

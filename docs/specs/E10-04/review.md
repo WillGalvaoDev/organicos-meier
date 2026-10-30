@@ -108,3 +108,14 @@ Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores fo
 O problema já foi declarado pelo implementador no registro do complemento. A regra anterior de manter estado e alerta para análise (spec.md:150) não dispensa expressamente o novo invariante. Preservar esse estado e manter reconsulta são compatíveis; não se autoriza ignorar o P4. Se a intenção for excluir este caso do invariante, a alteração deve passar pelo gate de especificação, sem o revisor presumir uma exceção. As falhas de consulta do provedor tratadas por A-33 a A-35 estão cobertas e não são o cenário que falhou.
 
 R08: tratamento histórico e registros de sensibilidade conferidos conforme autorização da E10-07/spec.md; sem repetir mutações nesta rodada.
+
+## Correção E10-R11 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-36 a A-41 (serviço) e A-40 (tela), escritos juntos | `53175fa` | `uv run pytest tests/tecnicos/test_devolucoes_execucao.py tests/tecnicos/test_devolucoes_telas.py` | **Red: 5 failed** (A-36 a A-40). A-36/A-37: chamada `concluida` (`('concluida', 1, '') == ('pendente', ...)`), sem segunda reconsulta; A-38: parcela parada em `falha_definitiva`; A-39: chamada `concluida` na inconclusiva; A-40: `sem nova tentativa agendada`. **A-41 passou** (regressão, sem Red, como a spec prevê) |
+| `Reagendar` em `apps/pagamentos/chamadas.py`; `concluir` pode devolvê-lo e `_tentar` o aplica depois da transação de `concluir`, pelo caminho da falha temporária (`_adiar`, também usado pela falha temporária); `_concluir_verificacao` devolve `Reagendar("verificacao_inconclusiva")` só na `falha_definitiva`; `_verificacao_adiada` não abre `devolucao_com_falha` por esse código | `1106029` | os dois arquivos, mais `test_devolucoes_concorrencia.py`, `test_financeiro_conciliacao_estornos.py`, `test_devolucoes_excepcional.py` | 122 passed |
+
+**Decisão técnica (forma do reagendamento).** `concluir` devolve `Reagendar(codigo)` (ou `None`, como as outras operações, que não mudam). Levantar `FalhaTemporaria` de dentro de `concluir` desfaria o código, a evidência e a resolução do `devolucao_com_falha`, que ficam gravados. Na `elegivel_excepcional` a inconclusiva não reagenda (A-41, verde). O alerta `devolucao_com_falha` aberto por falhas anteriores é resolvido com "reconsulta concluída" também na inconclusiva (A-39).
+
+Prova do parecer `test_inconclusiva_mantem_reconsulta_pendente`: passa como está (arquivo temporário, removido).
