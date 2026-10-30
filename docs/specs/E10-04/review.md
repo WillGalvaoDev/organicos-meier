@@ -24,14 +24,31 @@
 - `verificar_estornos` que falha de forma definitiva não é reagendada: a parcela fica em `falha_definitiva` com o alerta aberto.
 - `devolucao_concluida_tardiamente` (crítico) e a ampliação de `AlertaFinanceiro.tipo` para 40 caracteres entram já na migração 0012, para não haver duas migrações do mesmo campo; o uso do alerta é da E10-05.
 
-## Revisão (agente 3)
+## Revisão independente — agente 3 — 2026-10-30
 
-| Achado | Classificação (bloqueador, importante, melhoria) | Evidência | Requisito |
-|---|---|---|---|
-| | | | |
+Objeto: branch `e10-implementacao`, commit `9ce04adcdb1b6186ee5c932ef38170989e4d19cf`, comparado à especificação de `cd735c3`. Fontes: funcional v1.7, infraestrutura v1.8, `spec.md` e `acceptance.md` das sete fatias, AGENTS.md. Os registros do implementador acima foram preservados.
 
-**Decisão:** pendente
+A suíte existente passou integralmente (**2600 passed in 270.31s**, execução independente iniciada em 2026-10-29). Isso não encerra os requisitos: os testes adicionais do revisor expõem os casos abaixo. Comandos, limitações, histórico TDD e reproduções estão no [parecer consolidado](../E10-07/review.md).
 
-## Revalidação
+**Decisão da fatia: REPROVADO.**
 
-—
+| Critérios | Evidência | Resultado |
+|---|---|---|
+| A-1 a A-6, A-8 a A-17, A-19/A-20/A-22/A-25 | `test_devolucoes_execucao.py`, T-8 | Cenários existentes verdes; limites de estados conhecidos em R05/R09 |
+| A-7 e A-21 | Cobertura e recusa sequencial de desfazer designação | Insuficientes em concorrência: R03 |
+| A-18 | Antecipação manual com mesma chave | Funciona isoladamente; deadlock com worker, R04 |
+| A-23 e A-24 | `test_devolucoes_concorrencia.py` | Verdes; não cobrem R03/R04; Red específico ausente, R08 |
+
+### R03 — bloqueador — autorização concorre com a retirada da própria cobertura
+
+Referências: E10-04/spec.md, autorização passo 5 e proteção de designações; A-7/A-21; funcional §§9.3/9.4; `apps/financeiro/devolucoes.py:210–224`, `apps/financeiro/reserva.py:319–344`.
+
+Reprodução: obrigação de 31,25 coberta integralmente por designação. A autorização pausa depois de ler `sem_cobertura = 0`; outra transação desfaz a designação antes da criação da parcela; ambas concluem. Observado: parcela autorizada e obrigação com **31,25 sem cobertura**. A autorização trava a conta da obrigação, enquanto o desfazer trava a reserva e lê a parcela ainda inexistente. A observação de que novas designações só aumentam cobertura não protege a retirada concorrente. Usar uma proteção comum para revalidar cobertura e impedir seu desfazimento, respeitando a ordem global. A liquidação posterior pode recusar depois que o provedor já devolveu; isso não satisfaz a proteção preventiva exigida.
+
+### R04 — bloqueador — retentativa manual inverte a ordem de travas do worker
+
+Referências: E10-04/spec.md, retentativa segura, E07-R01; AGENTS §6; `apps/financeiro/devolucoes.py:255–286`; `apps/pagamentos/chamadas.py:198–223`.
+
+Reprodução: parcela em `falha_temporaria`, chamada vencida. Worker segura a chamada e pausa antes de `_travar_cadeia`; a retentativa manual segura pagamento/pedido/parcela e espera a chamada. Liberar worker produz **`OperationalError: deadlock detected`**, na trava de `pagamentos_chamadaaoprovedor`. O teste apenas pausa operações reais. O alvo próprio evita a colisão inicial de autorização, mas não essa inversão na mesma parcela. Unificar ordem/protocolo e provar a corrida com uma liquidação e a mesma chave.
+
+R05 e R09 (E10-05/06) também afetam as operações deste módulo. R08 registra a não conformidade TDD; os registros históricos do implementador não constituem autorização para repetir exceções de etapas anteriores.

@@ -18,14 +18,31 @@
 - **A-6:** o estorno "visível em processamento" é montado com `EstornoSimulado.objects.update(visivel=True)` sobre o estorno que `recusar_mas_processar` deixou invisível.
 - `liquidar_obrigacao` e `liquidar_obrigacao_fora_do_provedor` partilham `_liquidar`; `_liquidado` soma os dois tipos de saída da conta da obrigação.
 
-## Revisão (agente 3)
+## Revisão independente — agente 3 — 2026-10-30
 
-| Achado | Classificação (bloqueador, importante, melhoria) | Evidência | Requisito |
-|---|---|---|---|
-| | | | |
+Objeto: branch `e10-implementacao`, commit `9ce04adcdb1b6186ee5c932ef38170989e4d19cf`, comparado à especificação de `cd735c3`. Fontes: funcional v1.7, infraestrutura v1.8, `spec.md` e `acceptance.md` das sete fatias, AGENTS.md. Os registros do implementador acima foram preservados.
 
-**Decisão:** pendente
+A suíte existente passou integralmente (**2600 passed in 270.31s**, execução independente iniciada em 2026-10-29). Isso não encerra os requisitos: os testes adicionais do revisor expõem os casos abaixo. Comandos, limitações, histórico TDD e reproduções estão no [parecer consolidado](../E10-07/review.md).
 
-## Revalidação
+**Decisão da fatia: REPROVADO.**
 
-—
+| Critérios | Evidência | Resultado |
+|---|---|---|
+| A-1 a A-5, A-8 a A-15 e A-17 | `test_devolucoes_excepcional.py`, T-9, cenários 35/36 | Cenários existentes verdes; rollback externo não coberto, R07 |
+| A-6 | Recusa de estorno novo visível | Verde nesse arranjo; ID conhecido permite confirmação, R09; acompanhamento ausente, R05 |
+| A-7 | Provedor integralmente indisponível | Verde; falha só na segunda consulta não é traduzida, R06 |
+| A-16 | Duas confirmações simultâneas | Verde; histórico sem Red específico, R08 |
+
+### R06 — importante — falha da consulta de estornos escapa do contrato de erro
+
+Referências: E10-06/spec.md, passo 4/A-7; E10-07, tratamento HTTP 503; `apps/financeiro/devolucoes.py:613`, `:672`; `apps/financeiro/devolucoes_views.py:205–206`.
+
+Reprodução: parcela elegível; `falhar_proximas(1, operacao="consultar_estornos")`; confirmar com campos válidos. A consulta de pagamento passa, mas a segunda consulta propaga **`ProvedorIndisponivel`** em vez de `ConsultaAoProvedorFalhou`. A rota só captura esta última, portanto esse caminho não entrega o 503/mensagem definidos. Nada deve ser confirmado quando qualquer consulta falha; normalizar os erros das duas consultas e testar o caminho HTTP também.
+
+### R07 — importante — rollback da transação externa deixa comprovante órfão
+
+Referências: E10-06/spec.md, passo 8 (“se a transação for desfeita, o arquivo é apagado”); AGENTS §6; `apps/financeiro/devolucoes.py:616–667`.
+
+Reprodução: chamar a confirmação dentro de `transaction.atomic()` do chamador e lançar `RuntimeError` depois de ela retornar. A confirmação e o F16 são desfeitos, mas sobra **um PDF** em `MEDIA_ROOT/comprovantes/`. O `except BaseException` só cobre falhas enquanto a função está ativa; a transação externa ainda não foi confirmada quando ela retorna. Fazer a persistência/limpeza respeitar a transação efetiva ou recusar explicitamente uma composição transacional que não possa garantir; testar também falha interna e preservação do arquivo após commit.
+
+R09 (detalhado na E10-05) impede a aprovação da proteção contra duplicidade. R08 cobre o histórico TDD. F16 foi conferido: transferência interna obrigação → reserva, sem débito exterior, liquidado somando F15/F16; os testes de segregação existentes passaram.

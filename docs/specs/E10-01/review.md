@@ -38,14 +38,18 @@ uv run ruff check / ruff format --check nos dois arquivos                       
 
 A suíte completa roda ao fim de cada fatia (ver o registro da E10 no último `review.md`).
 
-## Revisão (agente 3)
+## Revisão independente — agente 3 — 2026-10-30
 
-| Achado | Classificação (bloqueador, importante, melhoria) | Evidência | Requisito |
-|---|---|---|---|
-| | | | |
+Objeto: branch `e10-implementacao`, commit `9ce04adcdb1b6186ee5c932ef38170989e4d19cf`, comparado à especificação de `cd735c3`. Fontes: funcional v1.7, infraestrutura v1.8, `spec.md` e `acceptance.md` das sete fatias, AGENTS.md. Os registros do implementador acima foram preservados.
 
-**Decisão:** pendente
+A suíte existente passou integralmente (**2600 passed in 270.31s**, execução independente iniciada em 2026-10-29). Isso não encerra os requisitos: os testes adicionais do revisor expõem os casos abaixo. Comandos, limitações, histórico TDD e reproduções estão no [parecer consolidado](../E10-07/review.md).
 
-## Revalidação
+**Decisão da fatia: APROVADO.** A aprovação desta fatia não aprova a E10 inteira.
 
-—
+| Critérios | Confronto com código e testes | Resultado |
+|---|---|---|
+| A-1 a A-6 | `test_financeiro_conciliacao.py`; reconstrução de pendências, sinais e somente diferença nova em `_ajuste_das_pendencias` | Atendidos nos cenários executados |
+| A-7 e A-8 | Corte temporal do lançamento e não duplicação pela identidade do movimento | Atendidos; A-7 é regressão já verde, com a limitação de arranjo declarada acima |
+| A-9 e A-10 | Alerta sem data, log sem conteúdo sensível e conciliação de dias pendentes | Atendidos |
+
+Nenhum achado novo nesta fatia. O histórico `ff357ee → 19063a8` separa testes e alteração funcional; o registro identifica corretamente o critério já verde. A conciliação continua sem lançar dinheiro. O risco residual dos estornos pertence à E10-05 (R09), não à fórmula desta fatia.

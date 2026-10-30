@@ -15,14 +15,36 @@
 - O alerta `devolucao_concluida_tardiamente` tem a chave `id_estorno` e é resolvido na adoção, junto com o alerta de elegível.
 - `conciliacao.py` importa `ABERTAS` de `devolucoes.py`; o inverso não existe (sem ciclo).
 
-## Revisão (agente 3)
+## Revisão independente — agente 3 — 2026-10-30
 
-| Achado | Classificação (bloqueador, importante, melhoria) | Evidência | Requisito |
-|---|---|---|---|
-| | | | |
+Objeto: branch `e10-implementacao`, commit `9ce04adcdb1b6186ee5c932ef38170989e4d19cf`, comparado à especificação de `cd735c3`. Fontes: funcional v1.7, infraestrutura v1.8, `spec.md` e `acceptance.md` das sete fatias, AGENTS.md. Os registros do implementador acima foram preservados.
 
-**Decisão:** pendente
+A suíte existente passou integralmente (**2600 passed in 270.31s**, execução independente iniciada em 2026-10-29). Isso não encerra os requisitos: os testes adicionais do revisor expõem os casos abaixo. Comandos, limitações, histórico TDD e reproduções estão no [parecer consolidado](../E10-07/review.md).
 
-## Revalidação
+**Decisão da fatia: REPROVADO.**
 
-—
+| Critérios | Evidência | Resultado |
+|---|---|---|
+| A-1/A-2/A-5/A-6/A-8/A-9 | `test_financeiro_conciliacao_estornos.py`; identidade, dois cortes temporais e resolução posterior | Cenários existentes verdes |
+| A-3 | Adoção tardia de concluído com ID ainda não associado | Verde nesse arranjo; processamento reencontrado fica abandonado, R05 |
+| A-4 | Alerta de duplicidade depois da excepcional | Verde apenas com ID nulo na parcela; falha para ID já conhecido, R09 |
+| A-7 | F16 sem movimento exterior nem divergência | Verde; ausência de efeito corretamente declarada como regressão, não Red novo |
+
+### R05 — importante — estorno reencontrado em processamento não é adotado nem acompanhado
+
+Referências: E10-05/spec.md, extensão de `verificar_estornos` “com as mesmas regras de adoção”; E10-06, passo 4/A-6; funcional §9.2; `apps/financeiro/devolucoes.py:460–497`.
+
+Reprodução: recusa com processamento invisível, parcela elegível; o estorno torna-se visível ainda em processamento; tentar confirmar a excepcional recusa e agenda verificação. Executar a verificação. Observado: parcela continua `elegivel_excepcional`, sem acompanhamento; o teste esperava `em_processamento`. `_adotar_estorno_tardio` só considera concluídos. A decisão do implementador de não adotar o processamento não atende à extensão da especificação e deixa o estado exibido incorreto. A tabela original de transições da E10-04 precisa refletir essa extensão técnica; não há nova regra comercial a decidir. A guarda no POST continua recusando enquanto o provedor mostra o estorno, mas o acompanhamento automático se perde.
+
+### R09 — bloqueador — risco residual com ID conhecido escapa à proteção e ao alerta crítico
+
+Referências: infraestrutura 4.7 (proteção contra duplicidade e risco residual); funcional §9.5; E10-05/A-4 e E10-06/A-6; `apps/financeiro/devolucoes.py:448–457`, `:669–676`; `apps/financeiro/conciliacao.py:366–388`.
+
+Um estorno inicialmente em processamento recebe ID, depois é recusado e a parcela fica elegível mantendo esse ID. O dublê de risco residual faz o mesmo estorno concluir tardiamente. Foram executadas duas ordens:
+
+1. Conclusão antes da confirmação: `confirmar_devolucao_excepcional` **aceita**, em vez de recusar. `_nao_contabilizados` confunde “ID associado a uma parcela” com devolução já liquidada e ignora o estorno relevante da própria parcela.
+2. Confirmação antes da conclusão tardia: a conciliação abre somente divergência comum; **não** abre `devolucao_concluida_tardiamente`. O filtro `id_estorno__isnull=True` exclui a parcela excepcional cujo ID já era conhecido.
+
+O dublê muda explicitamente o estado do registro simulado para representar a conclusão posterior à recusa e usa `concluir_estorno` para produzir o débito. Não afirma que essa reversão foi validada na API real: exercita o risco residual exigido pela infraestrutura, sem presumir que ID conhecido elimina esse risco. Tratar também o estorno associado ainda não liquidado; a regra técnica de “não contabilizado” não pode enfraquecer a fonte de verdade. Preservar uma única baixa e alerta crítico quando o dinheiro já foi devolvido fora.
+
+Histórico funcional: `3aaf01e → fe06cbe`; A-7 acrescentado em `deccdce`, sem Red, como registrado.
