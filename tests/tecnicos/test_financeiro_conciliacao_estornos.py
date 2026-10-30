@@ -22,6 +22,7 @@ from apps.pagamentos.provedor import (
     TipoDeMovimentoNoProvedor,
     obter_provedor,
 )
+from apps.simulador_pagamentos.estado import obter_estorno
 from apps.simulador_pagamentos.models import EstornoSimulado
 from tests.apoio.devolucoes import Arranjo, arranjo_da_devolucao, parcial
 from tests.conftest import RelogioControlado
@@ -259,3 +260,205 @@ def test_devolucao_excepcional_nao_aparece_na_conciliacao(
     assert _diferenca(conciliacao) == D("0.00")
     assert conciliacao.resultado == "ok"
     assert _alertas("divergencia_na_conciliacao") == []
+
+
+# --- E10-R05 e R09: estorno sem baixa e adoção na reconsulta (A-10 a A-16) ----------------------
+
+
+def _pdf() -> Any:
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return SimpleUploadedFile("c.pdf", b"%PDF-1.4 comprovante")
+
+
+def _confirmar(a: Arranjo, parcela: ParcelaDeDevolucao) -> Any:
+    from apps.financeiro.devolucoes import confirmar_devolucao_excepcional
+
+    return confirmar_devolucao_excepcional(
+        parcela,
+        autor=a.admin,
+        meio="pix",
+        identificacao="E2E-1",
+        justificativa="Pix direto",
+        comprovante=_pdf(),
+    )
+
+
+def _arranjo_r(a: Arranjo, *, ate_a_elegivel: bool = True) -> tuple[ParcelaDeDevolucao, str]:
+    """Estorno recusado que conclui tarde: a parcela passa por `falha_definitiva` (e fica
+    `elegivel_excepcional`, se `ate_a_elegivel`) com o `id_estorno` guardado."""
+    a.sim.estornos_em_processamento(a.pagamento.id_externo)
+    parcela = autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+    id_estorno = EstornoSimulado.objects.get().id_estorno
+    a.sim.recusar_estorno(id_estorno, "estado_invalido")
+    if ate_a_elegivel:
+        processar_chamadas()
+    else:
+        processar_chamadas(limite=1)
+    parcela.refresh_from_db()
+    assert parcela.situacao == ("elegivel_excepcional" if ate_a_elegivel else "falha_definitiva")
+    assert parcela.id_estorno == id_estorno
+    return parcela, id_estorno
+
+
+def _concluir_tarde(a: Arranjo, id_estorno: str) -> None:
+    """O dublê do risco residual (infraestrutura 4.7): o estorno recusado volta a processar e
+    conclui. Não afirma que a API real reverte uma recusa (L-7)."""
+    EstornoSimulado.objects.filter(pk=obter_estorno(id_estorno).pk).update(
+        situacao="em_processamento"
+    )
+    a.sim.concluir_estorno(id_estorno)
+
+
+def _elegivel_com_estorno_visivel_em_processamento(a: Arranjo) -> ParcelaDeDevolucao:
+    a.sim.recusar_mas_processar(a.pagamento.id_externo, "meio_nao_permite_estorno")
+    parcela = autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    EstornoSimulado.objects.update(visivel=True)
+    return parcela
+
+
+def test_estorno_reencontrado_em_processamento_na_elegivel_e_adotado(a: Arranjo) -> None:  # A-10
+    from apps.financeiro.devolucoes import DevolucaoRecusada
+
+    parcela = _elegivel_com_estorno_visivel_em_processamento(a)
+    estorno = EstornoSimulado.objects.get()
+    with pytest.raises(DevolucaoRecusada):
+        _confirmar(a, parcela)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.id_estorno) == ("em_processamento", estorno.id_estorno)
+    assert ChamadaAoProvedor.objects.filter(
+        operacao="acompanhar_estorno", alvo=f"parcela:{parcela.pk}", situacao="pendente"
+    ).exists()
+    assert _alertas("devolucao_elegivel_excepcional") == []
+    resolvido = AlertaFinanceiro.objects.get(tipo="devolucao_elegivel_excepcional")
+    assert resolvido.motivo_da_resolucao == "estorno encontrado no provedor e adotado"
+
+
+def test_estorno_adotado_em_processamento_conclui_sem_novo_aviso_de_andamento(
+    a: Arranjo,
+) -> None:  # A-11
+    from apps.financeiro.devolucoes import DevolucaoRecusada
+    from apps.notificacoes.models import Notificacao
+
+    parcela = _elegivel_com_estorno_visivel_em_processamento(a)
+    with pytest.raises(DevolucaoRecusada):
+        _confirmar(a, parcela)
+    processar_chamadas()
+    estorno = EstornoSimulado.objects.get()
+    a.sim.concluir_estorno(estorno.id_estorno)
+    a.relogio.avancar(timedelta(hours=1))
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    assert MovimentoFinanceiro.objects.filter(chave=f"devolucao:{estorno.id_estorno}").count() == 1
+    titulos = [
+        n.titulo
+        for n in Notificacao.objects.filter(conta=a.comprador, evento="estorno").order_by("pk")
+    ]
+    assert titulos.count("Estorno concluído") == 1
+    assert titulos.count("Estorno em andamento") == 1  # o da elegibilidade, e nenhum depois
+
+
+def test_confirmacao_recusada_quando_o_estorno_da_propria_parcela_conclui_tarde(
+    a: Arranjo, settings: Any, tmp_path: Any
+) -> None:  # A-12
+    from apps.financeiro.devolucoes import DevolucaoRecusada
+    from apps.financeiro.models import ConfirmacaoDeDevolucaoExcepcional
+
+    settings.MEDIA_ROOT = tmp_path
+    parcela, id_estorno = _arranjo_r(a)
+    _concluir_tarde(a, id_estorno)
+    with pytest.raises(
+        DevolucaoRecusada, match="há devolução em processamento ou concluída no provedor"
+    ):
+        _confirmar(a, parcela)
+    assert not ConfirmacaoDeDevolucaoExcepcional.objects.exists()
+    assert not MovimentoFinanceiro.objects.filter(tipo="devolucao_excepcional").exists()
+    assert not list(tmp_path.rglob("*.pdf"))
+    assert ChamadaAoProvedor.objects.filter(
+        operacao="verificar_estornos", alvo=f"parcela:{parcela.pk}", situacao="pendente"
+    ).exists()
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.id_estorno) == ("concluida", id_estorno)
+    assert MovimentoFinanceiro.objects.filter(chave=f"devolucao:{id_estorno}").count() == 1
+
+
+def test_conclusao_tardia_depois_da_confirmacao_e_devolucao_em_dobro(
+    a: Arranjo, settings: Any, tmp_path: Any
+) -> None:  # A-13
+    settings.MEDIA_ROOT = tmp_path
+    parcela, id_estorno = _arranjo_r(a)
+    _confirmar(a, parcela)
+    _concluir_tarde(a, id_estorno)
+    antes = MovimentoFinanceiro.objects.count()
+    _conciliar(a)
+    (alerta,) = _alertas("devolucao_concluida_tardiamente")
+    assert alerta.gravidade == "critico"
+    assert alerta.chave == id_estorno
+    assert alerta.dados["parcela"] == parcela.pk
+    assert alerta.dados["situacao"] == "concluida_fora_da_plataforma"
+    assert alerta.dados["devolvida_em_dobro"] is True
+    assert MovimentoFinanceiro.objects.count() == antes
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida_fora_da_plataforma"
+    assert not ChamadaAoProvedor.objects.filter(operacao="verificar_estornos", situacao="pendente")
+
+
+def test_reconsulta_em_falha_definitiva_adota_o_estorno_que_concluiu_tarde(
+    a: Arranjo,
+) -> None:  # A-14
+    from apps.financeiro.models import HistoricoDaDevolucao
+
+    parcela, id_estorno = _arranjo_r(a, ate_a_elegivel=False)
+    _concluir_tarde(a, id_estorno)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.id_estorno) == ("concluida", id_estorno)
+    assert MovimentoFinanceiro.objects.filter(chave=f"devolucao:{id_estorno}").count() == 1
+    assert not HistoricoDaDevolucao.objects.filter(
+        parcela=parcela, situacao="elegivel_excepcional"
+    ).exists()
+
+
+def test_alerta_critico_com_id_conhecido_em_falha_definitiva(a: Arranjo) -> None:  # A-15
+    parcela, id_estorno = _arranjo_r(a, ate_a_elegivel=False)
+    _concluir_tarde(a, id_estorno)
+    _conciliar(a)
+    (alerta,) = _alertas("devolucao_concluida_tardiamente")
+    assert alerta.gravidade == "critico"
+    assert alerta.chave == id_estorno
+    assert alerta.dados["devolvida_em_dobro"] is False
+    assert (
+        ChamadaAoProvedor.objects.filter(
+            operacao="verificar_estornos", alvo=f"parcela:{parcela.pk}", situacao="pendente"
+        ).count()
+        == 1
+    )
+
+
+def test_estorno_assumido_por_parcela_em_processamento_nao_bloqueia_outra_confirmacao(
+    a: Arranjo, settings: Any, tmp_path: Any
+) -> None:  # A-16 (regressão da definição)
+    from django.db import transaction
+
+    from apps.financeiro.reserva import designar_reserva
+    from tests.apoio.devolucoes import parcela_de_fabrica
+
+    settings.MEDIA_ROOT = tmp_path
+    a.sim.estornos_em_processamento(a.pagamento.id_externo)
+    em_processamento = autorizar_devolucao(a.o1, autor=a.admin)
+    processar_chamadas(limite=1)
+    a.sim.concluir_estorno(EstornoSimulado.objects.get().id_estorno)
+    outra = parcela_de_fabrica(a, "elegivel_excepcional", "10.00")
+    with transaction.atomic():
+        designar_reserva(a.admin, outra.obrigacao, outra.obrigacao.devido, "Cobrir")
+    confirmacao = _confirmar(a, outra)
+    assert confirmacao.pk is not None
+    em_processamento.refresh_from_db()
+    assert em_processamento.situacao == "em_processamento"
