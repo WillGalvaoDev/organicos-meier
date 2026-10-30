@@ -337,3 +337,87 @@ def test_desfazer_a_designacao_contra_a_autorizacao(
     assert "cobrir antes" in str(rb.excecao)
     assert not ParcelaDeDevolucao.objects.exists()
     assert not ChamadaAoProvedor.objects.filter(operacao="estornar").exists()
+
+
+# --- E10-R08: reforço do A-24 (sensibilidade à trava da cadeia) ---------------------------------
+
+
+def _estorno_concluido_de(parcela: Any) -> Any:
+    from apps.nucleo.tempo import agora
+    from apps.pagamentos.provedor import EstornoConsultado, SituacaoDoEstorno
+
+    return EstornoConsultado(
+        "sim-est-9999",
+        parcela.pagamento.id_externo,
+        parcela.valor,
+        SituacaoDoEstorno.CONCLUIDO,
+        None,
+        agora(),
+        agora(),
+    )
+
+
+def test_verificacao_contra_confirmacao_excepcional_nunca_devolve_duas_vezes(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+    tmp_path: Any,
+) -> None:  # E10-04, A-24 reforçado (R08)
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.financeiro import devolucoes
+    from apps.financeiro.models import ConfirmacaoDeDevolucaoExcepcional, MovimentoFinanceiro
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.devolucoes import arranjo_da_devolucao, levar_a_elegivel
+
+    settings.MEDIA_ROOT = tmp_path
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = levar_a_elegivel(a)
+    estorno = _estorno_concluido_de(parcela)  # a reconsulta de A viu o que a de B não viu
+    chamada = ChamadaAoProvedor(operacao="verificar_estornos", alvo=f"parcela:{parcela.pk}")
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, devolucoes, "_estornos_sem_baixa")
+    ra, rb = corrida.rodar(
+        lambda: devolucoes._concluir_verificacao(chamada, [estorno]),
+        lambda: devolucoes.confirmar_devolucao_excepcional(
+            parcela,
+            autor=a.admin,
+            meio="pix",
+            identificacao="E2E-1",
+            justificativa="Pix direto",
+            comprovante=SimpleUploadedFile("c.pdf", b"%PDF-1.4 x"),
+        ),
+        b_atomica=False,
+    )
+    assert ra.excecao is None, ra.excecao
+    assert isinstance(rb.excecao, devolucoes.DevolucaoRecusada), rb.excecao
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    assert MovimentoFinanceiro.objects.filter(tipo="devolucao").count() == 1
+    assert not MovimentoFinanceiro.objects.filter(tipo="devolucao_excepcional").exists()
+    assert not ConfirmacaoDeDevolucaoExcepcional.objects.exists()
+    assert not list(tmp_path.rglob("*.pdf"))
+
+
+def test_dois_acompanhamentos_do_mesmo_estorno_liquidam_uma_vez(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # E10-04, A-24 reforçado (R08)
+    from apps.financeiro import devolucoes
+    from apps.financeiro.models import MovimentoFinanceiro
+    from tests.apoio.devolucoes import arranjo_da_devolucao
+
+    a = arranjo_da_devolucao(simulador_pagamentos, relogio)
+    parcela = devolucoes.autorizar_devolucao(a.o1, autor=a.admin)
+    estorno = _estorno_concluido_de(parcela)
+    corrida = Corrida()
+    corrida.antes_de(monkeypatch, devolucoes, "_concluir_parcela")
+    ra, rb = corrida.rodar(
+        lambda: devolucoes._aplicar_estorno(parcela.pk, estorno),
+        lambda: devolucoes._aplicar_estorno(parcela.pk, estorno),
+    )
+    assert ra.excecao is None, ra.excecao
+    assert rb.excecao is None, rb.excecao
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida"
+    assert MovimentoFinanceiro.objects.filter(tipo="devolucao").count() == 1
