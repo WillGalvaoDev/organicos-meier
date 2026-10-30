@@ -41,6 +41,10 @@ class PlanoDeFalhas:
         self._aprovacoes_no_cancelamento: dict[int, datetime | None] = {}
         self._tarifas: dict[str, tuple[Decimal, Decimal]] = {}
         self._liberacoes: dict[str, int] = {}
+        self._estornos_em_processamento: set[int] = set()
+        self._recusas_de_estorno: dict[int, str] = {}
+        self._recusas_mas_processa: dict[int, str] = {}
+        self._sem_estorno_parcial: set[int] = set()
 
     def indisponivel(self) -> None:
         with self._trava:
@@ -115,6 +119,39 @@ class PlanoDeFalhas:
         """O prazo de liberação do meio, em horas; o padrão é zero."""
         with self._trava:
             return self._liberacoes.get(meio, 0)
+
+    def estornos_em_processamento(self, cobranca_id: int) -> None:
+        with self._trava:
+            self._estornos_em_processamento.add(cobranca_id)
+
+    def estorno_em_processamento(self, cobranca_id: int) -> bool:
+        with self._trava:
+            return cobranca_id in self._estornos_em_processamento
+
+    def recusar_estornos(self, cobranca_id: int, codigo: str) -> None:
+        with self._trava:
+            self._recusas_de_estorno[cobranca_id] = codigo
+
+    def recusa_de_estorno(self, cobranca_id: int) -> str | None:
+        with self._trava:
+            return self._recusas_de_estorno.get(cobranca_id)
+
+    def recusar_mas_processar(self, cobranca_id: int, codigo: str) -> None:
+        with self._trava:
+            self._recusas_mas_processa[cobranca_id] = codigo
+
+    def consumir_recusa_mas_processa(self, cobranca_id: int) -> str | None:
+        """O código da recusa programada que o provedor conclui depois, uma só vez."""
+        with self._trava:
+            return self._recusas_mas_processa.pop(cobranca_id, None)
+
+    def sem_estorno_parcial(self, cobranca_id: int) -> None:
+        with self._trava:
+            self._sem_estorno_parcial.add(cobranca_id)
+
+    def aceita_estorno_parcial(self, cobranca_id: int) -> bool:
+        with self._trava:
+            return cobranca_id not in self._sem_estorno_parcial
 
     def aprovar_no_cancelamento(self, cobranca_id: int, em: datetime | None) -> None:
         with self._trava:

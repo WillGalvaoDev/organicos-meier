@@ -9,12 +9,13 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from django.db import connection, transaction
+from django.db import connections, transaction
 
 
-def outra_conexao_esperando() -> bool:
-    """Alguma outra conexão do banco de testes está esperando por trava neste instante?"""
-    with connection.cursor() as cursor:
+def outra_conexao_esperando(using: str = "default") -> bool:
+    """Alguma outra conexão do banco de testes está esperando por trava neste instante? `using`
+    é o banco consultado (o do simulador de pagamentos tem o seu)."""
+    with connections[using].cursor() as cursor:
         cursor.execute(
             "SELECT count(*) FROM pg_stat_activity "
             "WHERE wait_event_type = 'Lock' AND datname = current_database()"

@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.conf import settings
+from django.db import connections
 
 from apps.nucleo.tempo import agora, somar_horas
 from apps.nucleo.valores import arredondar_centavos
@@ -17,8 +18,14 @@ from apps.pagamentos.provedor import (
     PagamentoNaoEncontrado,
     SituacaoNoProvedor,
 )
-from apps.simulador_pagamentos.models import AvisoSimulado, CobrancaSimulada, MovimentoSimulado
+from apps.simulador_pagamentos.models import (
+    AvisoSimulado,
+    CobrancaSimulada,
+    EstornoSimulado,
+    MovimentoSimulado,
+)
 from apps.simulador_pagamentos.plano import PLANO, Anterior
+from apps.simulador_pagamentos.roteador import ALIAS
 
 logger = logging.getLogger("apps.simulador_pagamentos")
 
@@ -106,6 +113,7 @@ def novo_movimento(
     ocorrido_em: datetime,
     liberado_em: datetime,
     cobranca: CobrancaSimulada | None = None,
+    id_estorno: str = "",
 ) -> MovimentoSimulado:
     return MovimentoSimulado.objects.create(
         tipo=tipo,
@@ -114,6 +122,49 @@ def novo_movimento(
         id_externo=cobranca.id_externo if cobranca is not None else "",
         ocorrido_em=ocorrido_em,
         liberado_em=liberado_em,
+        id_estorno=id_estorno,
+    )
+
+
+_ID_DO_ESTORNO = re.compile(r"sim-est-([1-9][0-9]{0,17})")
+
+
+def obter_estorno(id_estorno: str, *, travar: bool = False) -> EstornoSimulado:
+    achado = _ID_DO_ESTORNO.fullmatch(id_estorno)
+    consulta = EstornoSimulado.objects.select_for_update() if travar else EstornoSimulado.objects
+    estorno = consulta.filter(pk=int(achado.group(1))).first() if achado else None
+    if estorno is None:
+        raise ValueError("estorno desconhecido")
+    return estorno
+
+
+# O saldo liberado da conta simulada é um recurso único, comum a todos os pagamentos (E10-R02): a
+# trava consultiva de transação serializa quem lê o saldo para aceitar um débito e quem muda um
+# estorno em processamento. A chave é fixa.
+CHAVE_DA_TRAVA_DO_SALDO = 7_151_002
+
+
+def travar_o_saldo() -> None:
+    """Toma a trava do saldo até o fim da transação do simulador. Vem sempre depois da trava da
+    cobrança ou do estorno (a ordem é a mesma em toda operação), então não há inversão."""
+    with connections[ALIAS].cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [CHAVE_DA_TRAVA_DO_SALDO])
+
+
+def concluir(estorno: EstornoSimulado, instante: datetime) -> None:
+    """Conclui o estorno: ele passa a ser visível e o débito entra na conta."""
+    estorno.situacao = "concluido"
+    estorno.concluido_em = instante
+    estorno.visivel = True
+    estorno.save(update_fields=["situacao", "concluido_em", "visivel"])
+    novo_movimento(
+        "devolucao",
+        "refund",
+        -estorno.valor,
+        instante,
+        instante,
+        estorno.cobranca,
+        id_estorno=estorno.id_estorno,
     )
 
 

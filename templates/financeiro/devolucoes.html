@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Devoluções · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Devoluções</h1>
+  {% include "financeiro/_menu.html" %}
+  <p><strong>Autorização não é dinheiro devolvido.</strong> A devolução só termina quando o provedor conclui o estorno ou quando você confirma a devolução feita fora da plataforma.</p>
+  {% for secao in secoes %}
+    <section id="grupo-{{ secao.id }}">
+      <h2>{{ secao.titulo }}</h2>
+      <table>
+        <thead><tr><th>Obrigação</th><th>Valor</th><th>Motivo</th><th>Pedido</th><th>Comprador</th><th>Pagamento</th><th>Situação</th><th>Falha</th></tr></thead>
+        <tbody>
+          {% for linha in secao.linhas %}
+            <tr data-obrigacao="{{ linha.obrigacao.pk }}">
+              <td><a href="{% url 'financeiro_devolucao' pk=linha.obrigacao.pk %}">{{ linha.obrigacao.pk }}</a></td>
+              <td>{{ linha.valor|reais }}</td>
+              <td>{{ linha.motivo }}</td>
+              <td>{% if linha.obrigacao.pedido_id %}{{ linha.obrigacao.pedido_id }}{% else %}pagamento sem pedido{% endif %}</td>
+              <td>{{ linha.comprador|default:"-" }}</td>
+              <td>{{ linha.pagamento }}</td>
+              <td>{{ linha.situacao }}</td>
+              <td>
+                {% if linha.falha %}
+                  {{ linha.parcela.codigo_da_falha }} · tentativas {{ linha.falha.tentativas }}
+                  {% if linha.falha.depois == "proxima" %} · próxima {{ linha.falha.proxima_em|date:"d/m/Y H:i" }}
+                  {% elif linha.falha.depois == "reconsulta" %} · reconsulta agendada
+                  {% else %} · sem nova tentativa agendada{% endif %}
+                {% elif linha.parcela.codigo_da_falha %}
+                  {{ linha.parcela.codigo_da_falha }}
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8">Nenhuma.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endfor %}
+  {% if pagina.has_other_pages %}
+    <nav aria-label="Páginas">
+      {% if pagina.has_previous %}<a href="?pagina={{ pagina.previous_page_number }}">Anterior</a>{% endif %}
+      Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+      {% if pagina.has_next %}<a href="?pagina={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

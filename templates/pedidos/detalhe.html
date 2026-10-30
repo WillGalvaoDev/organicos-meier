@@ -44,5 +44,13 @@
       <button type="submit">Pagar com Pix</button>
     </form>
   {% endif %}
+  {% if estornos %}
+    <h2>Estornos</h2>
+    <ul>
+      {% for e in estornos %}
+        <li class="estorno">{{ e.valor|reais }} · {{ e.motivo }} · {{ e.estado }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
   <p><a href="{% url 'pedidos_lista' %}">Voltar para meus pedidos</a></p>
 {% endblock %}

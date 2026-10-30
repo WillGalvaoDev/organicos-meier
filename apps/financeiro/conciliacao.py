@@ -10,18 +10,22 @@ e resolve alertas e agenda consultas.
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 
 from apps.financeiro.alertas import abrir_alerta, resolver_alerta
+from apps.financeiro.devolucoes import ABERTAS
 from apps.financeiro.livro import saldo_total_esperado
 from apps.financeiro.models import (
     AlertaFinanceiro,
     ConciliacaoDiaria,
     Despesa,
     MovimentoFinanceiro,
+    ParcelaDeDevolucao,
+    SituacaoDaParcela,
     TipoDeAlerta,
     TipoDeDespesa,
     TipoDeMovimento,
@@ -116,6 +120,11 @@ def _classificar(movimento: MovimentoNoProvedor, ate: datetime | None = None) ->
     if tipo == TipoDeMovimentoNoProvedor.SAIDA:
         total = _total(f"saida:{movimento.id_movimento}", ate)
         return None if total == abs(movimento.valor) else DIVERGENTE
+    if tipo == TipoDeMovimentoNoProvedor.DEVOLUCAO:
+        if not movimento.id_estorno:
+            return DIVERGENTE
+        total = _total(f"devolucao:{movimento.id_estorno}", ate)
+        return None if total == abs(movimento.valor) else DIVERGENTE
     return DIVERGENTE  # ajuste, outro ou um tipo que o livro não conhece
 
 
@@ -148,11 +157,124 @@ def _do_livro_sem_par(
     return sem_par
 
 
+@dataclass(frozen=True)
+class _Pendencia:
+    """Um alerta aberto de um dia anterior que ainda pode estar sem par (E10-01). `movimento` é o
+    movimento do provedor montado dos dados do alerta; `identificacao` é a do aporte ou da saída do
+    livro. Um só dos dois vem preenchido."""
+
+    tipo: str
+    chave: str
+    valor: Decimal  # com sinal: o do provedor, ou o do livro
+    movimento: MovimentoNoProvedor | None = None
+    identificacao: str | None = None
+
+
+def _montar_a_pendencia(alerta: AlertaFinanceiro, antes_de: date) -> _Pendencia | None:
+    """A pendência do alerta, ou `None` se ele não é de um dia anterior a `antes_de` ou não tem
+    dados legíveis (nesse caso, só o aviso no log: sem dados do alerta, que podem ser sensíveis)."""
+    dados: dict[str, Any] = alerta.dados
+    try:
+        data = date.fromisoformat(str(dados["data"]))
+        if data >= antes_de:
+            return None
+        valor = Decimal(str(dados["valor"]))
+        if alerta.chave.startswith("livro:"):
+            return _Pendencia(
+                alerta.tipo, alerta.chave, valor, identificacao=str(dados["identificacao"])
+            )
+        if alerta.tipo == TipoDeAlerta.PAGAMENTO_SEM_CONCILIACAO:
+            id_externo: str | None = str(dados["id_externo"])
+            tipo = TipoDeMovimentoNoProvedor.PAGAMENTO
+            id_movimento = alerta.chave
+        else:
+            id_externo = dados.get("id_externo")
+            id_movimento = str(dados["id_movimento"])
+            try:
+                tipo = TipoDeMovimentoNoProvedor(str(dados["tipo"]))
+            except ValueError:
+                tipo = TipoDeMovimentoNoProvedor.OUTRO  # um tipo que o livro não conhece
+    except (KeyError, ValueError, InvalidOperation):
+        logger.warning(
+            "Alerta %s ignorado na conciliação: sem data legível ou dados incompletos", alerta.pk
+        )
+        return None
+    momento = datetime.combine(data, time.min, tzinfo=FUSO_DA_OPERACAO).astimezone(UTC)
+    movimento = MovimentoNoProvedor(
+        id_movimento,
+        tipo,
+        tipo.value,
+        valor,
+        id_externo,
+        momento,
+        None,
+        id_estorno=dados.get("id_estorno"),
+    )
+    return _Pendencia(alerta.tipo, alerta.chave, valor, movimento=movimento)
+
+
+def _pendencias_anteriores(data: date) -> list[_Pendencia]:
+    """Os alertas abertos de dias anteriores a `data` que a diferença de saldo e a resolução
+    consideram: o movimento do provedor sem par, o pagamento sem entrada e o aporte ou a saída do
+    livro sem movimento. O alerta `saldo:<data>` não é pendência de movimento."""
+    abertos = AlertaFinanceiro.objects.filter(
+        tipo__in=(TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO, TipoDeAlerta.PAGAMENTO_SEM_CONCILIACAO),
+        resolvido_em__isnull=True,
+    ).exclude(chave__startswith="saldo:")
+    pendencias = (_montar_a_pendencia(alerta, data) for alerta in abertos.order_by("pk"))
+    return [p for p in pendencias if p is not None]
+
+
+def _ainda_pendente_em(
+    pendencia: _Pendencia,
+    movimentos: list[MovimentoNoProvedor],
+    do_recorte: list[MovimentoNoProvedor],
+    instante: datetime,
+) -> bool:
+    if pendencia.movimento is not None:
+        # o movimento que também está no recorte da diferença do dia já entrou pela fórmula da
+        # E09-07: a comparação é por `id_movimento` (o pagamento, pelo `id_externo` da chave)
+        if pendencia.tipo == TipoDeAlerta.PAGAMENTO_SEM_CONCILIACAO:
+            if any(
+                m.tipo == TipoDeMovimentoNoProvedor.PAGAMENTO
+                and (m.id_externo or m.id_movimento) == pendencia.chave
+                for m in do_recorte
+            ):
+                return False
+        elif any(m.id_movimento == pendencia.movimento.id_movimento for m in do_recorte):
+            return False
+        return _classificar(pendencia.movimento, instante) is not None
+    return not any(
+        m.id_movimento == pendencia.identificacao and m.ocorrido_em <= instante for m in movimentos
+    )
+
+
+def _ajuste_das_pendencias(
+    pendencias: list[_Pendencia],
+    movimentos: list[MovimentoNoProvedor],
+    do_recorte: list[MovimentoNoProvedor],
+    instante: datetime,
+) -> Decimal:
+    """O quanto as pendências anteriores ainda sem par em `instante` somam à diferença de saldo:
+    as do provedor são descontadas e as do livro, somadas de volta."""
+    total = ZERO
+    for pendencia in pendencias:
+        if not _ainda_pendente_em(pendencia, movimentos, do_recorte, instante):
+            continue
+        total += pendencia.valor if pendencia.identificacao is not None else -pendencia.valor
+    return total
+
+
 def _ler_o_dia(
-    movimentos: list[MovimentoNoProvedor], inicio: datetime, fim: datetime, instante: datetime
+    movimentos: list[MovimentoNoProvedor],
+    inicio: datetime,
+    fim: datetime,
+    instante: datetime,
+    pendencias: list[_Pendencia],
 ) -> tuple[_Achados, Decimal]:
-    """Os três recortes da conciliação (E09-R07), sobre a mesma lista do provedor. `instante` é o
-    `referente_a` do saldo. Devolve os achados do dia e o ajuste da diferença de saldo."""
+    """Os três recortes da conciliação (E09-R07), sobre a mesma lista do provedor, mais as
+    pendências de dias anteriores (E10-01). `instante` é o `referente_a` do saldo. Devolve os
+    achados do dia e o ajuste da diferença de saldo."""
     achados = _Achados()
     # 1. os movimentos do dia: classificação, alertas e a contagem do resumo
     do_dia = [m for m in movimentos if inicio <= m.ocorrido_em < fim]
@@ -183,7 +305,10 @@ def _ler_o_dia(
         ),
         ZERO,
     )
-    return achados, do_livro_sem_par - do_provedor_sem_par
+    ajuste = do_livro_sem_par - do_provedor_sem_par
+    return achados, ajuste + _ajuste_das_pendencias(
+        pendencias, movimentos, ate_o_instante, instante
+    )
 
 
 def conciliar_dia(data: date) -> ConciliacaoDiaria:
@@ -205,7 +330,8 @@ def conciliar_dia(data: date) -> ConciliacaoDiaria:
         motivo = "indisponivel" if isinstance(erro, ProvedorIndisponivel) else "recusa"
         logger.warning("Conciliação de %s adiada: provedor %s", data, motivo)
         raise ConsultaAoProvedorFalhou(f"conciliacao:{data}", motivo) from erro
-    achados, ajuste = _ler_o_dia(movimentos, inicio, fim, saldo_do_provedor.referente_a)
+    pendencias = _pendencias_anteriores(data)
+    achados, ajuste = _ler_o_dia(movimentos, inicio, fim, saldo_do_provedor.referente_a, pendencias)
     total_do_provedor = saldo_do_provedor.liberado + saldo_do_provedor.a_liberar
     diferenca = total_do_provedor - saldo_total_esperado(ate=saldo_do_provedor.referente_a) + ajuste
     sem_par = len(achados.sem_lancamento) + len(achados.divergentes) + len(achados.livro_sem_par)
@@ -227,6 +353,7 @@ def conciliar_dia(data: date) -> ConciliacaoDiaria:
                 },
             )
             _abrir_e_resolver_alertas(data, achados, diferenca)
+            _resolver_as_pendencias(data, fim, pendencias, movimentos)
     except IntegrityError:
         # outra execução conciliou o mesmo dia primeiro: a restrição única decidiu
         concorrente: ConciliacaoDiaria | None = ConciliacaoDiaria.objects.filter(data=data).first()
@@ -234,6 +361,50 @@ def conciliar_dia(data: date) -> ConciliacaoDiaria:
             raise
         return concorrente
     return conciliacao
+
+
+def _sinalizar_devolucao_tardia(movimento: MovimentoNoProvedor) -> None:
+    """Um estorno concluído no provedor, sem par no livro (E10-05): se o sistema já tinha a
+    parcela como falha definitiva, elegível ou devolvida de forma excepcional, o provedor concluiu
+    tarde o que se dava por não feito. O alerta é crítico; a parcela só adota o estorno se ainda
+    não houve a devolução excepcional."""
+    if not movimento.id_estorno:
+        return
+    parcelas = ParcelaDeDevolucao.objects.filter(pagamento__id_externo=movimento.id_externo)
+    if parcelas.filter(
+        id_estorno=movimento.id_estorno, situacao__in=(*ABERTAS, SituacaoDaParcela.CONCLUIDA)
+    ).exists():
+        return  # a parcela assume o estorno: o `concluir` dela vai lançar o F15 (ou já lançou)
+    sem_baixa = parcelas.filter(
+        situacao__in=(
+            SituacaoDaParcela.FALHA_DEFINITIVA,
+            SituacaoDaParcela.ELEGIVEL_EXCEPCIONAL,
+            SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA,
+        )
+    )
+    # A do mesmo ID primeiro (o estorno recusado que concluiu tarde); senão, uma sem ID (E10-R09).
+    parcela = (
+        sem_baixa.filter(id_estorno=movimento.id_estorno).first()
+        or sem_baixa.filter(id_estorno__isnull=True).first()
+    )
+    if parcela is None:
+        return
+    em_dobro = parcela.situacao == SituacaoDaParcela.CONCLUIDA_FORA_DA_PLATAFORMA
+    abrir_alerta(
+        TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE,
+        movimento.id_estorno,
+        {
+            "parcela": parcela.pk,
+            "obrigacao": parcela.obrigacao_id,
+            "situacao": parcela.situacao,
+            "valor": abs(movimento.valor),
+            "id_externo": movimento.id_externo,
+            "id_estorno": movimento.id_estorno,
+            "devolvida_em_dobro": em_dobro,
+        },
+    )
+    if not em_dobro:
+        agendar_chamada("verificar_estornos", f"parcela:{parcela.pk}")
 
 
 def _abrir_e_resolver_alertas(data: date, achados: _Achados, diferenca: Decimal) -> None:
@@ -257,8 +428,11 @@ def _abrir_e_resolver_alertas(data: date, achados: _Achados, diferenca: Decimal)
                 "descricao_no_provedor": movimento.descricao_no_provedor,
                 "valor": movimento.valor,
                 "id_externo": movimento.id_externo,
+                "id_estorno": movimento.id_estorno,
             },
         )
+        if movimento.tipo == TipoDeMovimentoNoProvedor.DEVOLUCAO:
+            _sinalizar_devolucao_tardia(movimento)
     for identificacao, valor in achados.livro_sem_par:
         abrir_alerta(
             TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO,
@@ -283,6 +457,28 @@ def _abrir_e_resolver_alertas(data: date, achados: _Achados, diferenca: Decimal)
             alerta.chave,
             motivo=f"conciliação de {data.isoformat()} sem diferença",
         )
+
+
+def _resolver_as_pendencias(
+    data: date, fim: datetime, pendencias: list[_Pendencia], movimentos: list[MovimentoNoProvedor]
+) -> None:
+    """Fecha as pendências de dias anteriores cujo par apareceu. O aporte ou a saída do livro acha
+    o seu movimento na lista do provedor; o movimento do provedor, o seu par no livro, na execução.
+    Um `ajuste`, um `outro` e um tipo desconhecido nunca têm par e ficam abertos."""
+    for pendencia in pendencias:
+        if pendencia.movimento is not None:
+            tem_par = _classificar(pendencia.movimento) is None
+        else:
+            tem_par = any(
+                m.id_movimento == pendencia.identificacao and m.ocorrido_em < fim
+                for m in movimentos
+            )
+        if tem_par:
+            resolver_alerta(
+                TipoDeAlerta(pendencia.tipo),
+                pendencia.chave,
+                motivo=f"par encontrado na conciliação de {data.isoformat()}",
+            )
 
 
 def conciliar_dias_pendentes_agora() -> int:

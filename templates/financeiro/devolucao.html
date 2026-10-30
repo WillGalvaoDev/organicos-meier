@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Devolução {{ obrigacao.pk }} · Financeiro · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Devolução da obrigação {{ obrigacao.pk }}</h1>
+  {% include "financeiro/_menu.html" %}
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <p><strong>Autorização não é dinheiro devolvido.</strong></p>
+  <dl>
+    <dt>Valor devido</dt><dd>{{ valor|reais }}</dd>
+    <dt>Componentes</dt><dd>produtos {{ obrigacao.produtos|reais }} · serviço {{ obrigacao.servico|reais }} · frete {{ obrigacao.frete|reais }}{% if obrigacao.integral %} · integral {{ obrigacao.integral|reais }}{% endif %}</dd>
+    <dt>Motivo</dt><dd>{{ motivo }}</dd>
+    <dt>Pedido</dt><dd>{% if obrigacao.pedido_id %}{{ obrigacao.pedido_id }}{% else %}pagamento sem pedido{% endif %}</dd>
+    <dt>Comprador</dt><dd>{{ comprador|default:"-" }}</dd>
+    <dt>Pagamento</dt><dd>{{ pagamento }}</dd>
+    <dt>Financiado</dt><dd>{{ financiado|reais }}</dd>
+    <dt>Sem cobertura</dt><dd>{{ sem_cobertura|reais }}</dd>
+    <dt>Situação</dt><dd>{{ situacao }}</dd>
+  </dl>
+  {% if parcela and parcela.codigo_da_falha %}<p>Último código de falha: {{ parcela.codigo_da_falha }}</p>{% endif %}
+  {% if falha %}
+    <p>tentativas {{ falha.tentativas }}
+      {% if falha.depois == "proxima" %} · próxima {{ falha.proxima_em|date:"d/m/Y H:i" }}
+      {% elif falha.depois == "reconsulta" %} · reconsulta agendada
+      {% else %} · sem nova tentativa agendada{% endif %}</p>
+    {% if falha.reconsulta and falha.reconsulta.tentativas %}
+      <p>reconsulta: {{ falha.reconsulta.ultimo_erro }} · tentativas {{ falha.reconsulta.tentativas }}</p>
+    {% endif %}
+  {% endif %}
+  {% if parcela and parcela.evidencia %}<h2>Evidência</h2><pre>{{ parcela.evidencia }}</pre>{% endif %}
+  {% if pode_autorizar %}
+    <form method="post" action="{% url 'financeiro_devolucao_autorizar' pk=obrigacao.pk %}">
+      {% csrf_token %}<button type="submit">Autorizar devolução</button>
+    </form>
+  {% endif %}
+  {% if pode_tentar %}
+    <form method="post" action="{% url 'financeiro_devolucao_tentar_de_novo' pk=obrigacao.pk %}">
+      {% csrf_token %}<button type="submit">Tentar de novo</button>
+    </form>
+  {% endif %}
+  {% if pode_confirmar %}
+    <p><a href="{% url 'financeiro_devolucao_excepcional' pk=obrigacao.pk %}">Confirmar devolução feita fora da plataforma</a></p>
+  {% endif %}
+  {% if confirmacao %}
+    <h2>Devolução feita fora da plataforma</h2>
+    <p>{{ confirmacao.get_meio_display }} · {{ confirmacao.identificacao }} · {{ confirmacao.valor|reais }} · {{ confirmacao.confirmada_em|date:"d/m/Y H:i" }}</p>
+    <p>{{ confirmacao.justificativa }}</p>
+    <p><a href="{% url 'financeiro_devolucao_comprovante' pk=obrigacao.pk %}">Baixar o comprovante</a></p>
+  {% endif %}
+  {% if historico %}
+    <h2>Histórico</h2>
+    <ul>
+      {% for linha in historico %}<li>{{ linha.momento|date:"d/m/Y H:i" }} · {{ linha.situacao }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

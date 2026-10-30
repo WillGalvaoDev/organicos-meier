@@ -12,12 +12,12 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-29, with PR #82 (Mercado Pago API reference for the simulator; documentation only). Last stage merged: PR #81 (E09) |
+| **Last updated** | 2026-10-30, with PR #83 (E10) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 9 of 16 stages delivered (E01–E09), 65 slices, each approved by an independent review |
-| **Last stage delivered** | E09 — Ledger, reserve and reconciliation (PR #81) |
-| **Next stage** | E10 — Refunds (not started) |
-| **Test suite** | 2,433 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
+| **Progress** | 10 of 16 stages delivered (E01–E10), 72 slices, each approved by an independent review |
+| **Last stage delivered** | E10 — Refunds (PR #83) |
+| **Next stage** | E11 — Final settlement and pending queue (not started) |
+| **Test suite** | 2,644 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
 | **Open blockers** | None |
 | **Non-blocking improvements** | 8 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
@@ -31,8 +31,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Payment provider interface and a deterministic simulator. It produces delays, duplicates and failures, and webhooks are idempotent.
 - Payment opening with frozen orders, Pix charges and the `T0`/`T0 + 24h`/`T0 + 48h` timeline. Late or duplicate payments go to refund, and a lost-response recovery cancels charges left without an attempt.
 - Double-entry ledger with immutable movements segregated by destination (custody, supplier obligation, freight, service revenue, reserve), the administrator's reserve with its coverage, buyer obligations, the financial invariant checked every 10 minutes and the daily reconciliation against the provider, with alerts.
+- Refunds: partial refunds proportional by item, service and freight, and full order refunds; refunds through the simulated provider with idempotency, safe retries and late-conclusion handling; refund reconciliation; the exceptional refund confirmed by the administrator with a receipt; refund notices and the admin and buyer screens. The simulator also produces refunds and chargebacks.
 
-**Not built yet:** refunds (E10), final settlement and the pending queue (E11), round cancellation (E12), the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+**Not built yet:** final settlement and the pending queue (E11), round cancellation (E12), the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -45,8 +46,8 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E07 | Payment simulator and integration | ✅ Delivered |
 | E08 | Charging: opening, frozen orders and deadlines | ✅ Delivered |
 | E09 | Ledger, reserve and reconciliation | ✅ Delivered |
-| E10 | Refunds | ⏳ Next |
-| E11 | Final settlement and pending queue | — |
+| E10 | Refunds | ✅ Delivered |
+| E11 | Final settlement and pending queue | ⏳ Next |
 | E12 | Round cancellation | — |
 | E13 | Formal order, payout and supplier portal | — |
 | E14 | Receiving, delivery issues, pickup and disposal | — |

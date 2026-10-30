@@ -57,6 +57,7 @@ class MovimentoSimulado(models.Model):
     id_externo = models.CharField(max_length=40, blank=True, default="")
     ocorrido_em = models.DateTimeField(default=agora)
     liberado_em = models.DateTimeField()
+    id_estorno = models.CharField(max_length=64, blank=True, default="")
 
     def __str__(self) -> str:
         return self.id_movimento
@@ -64,3 +65,26 @@ class MovimentoSimulado(models.Model):
     @property
     def id_movimento(self) -> str:
         return f"mov-{self.pk}"
+
+
+class EstornoSimulado(models.Model):
+    """Um estorno do pagamento (E10-03). `visivel` falso é o estorno que o provedor recusou na
+    resposta mas continua processando: a consulta não o mostra."""
+
+    cobranca = models.ForeignKey(
+        CobrancaSimulada, on_delete=models.CASCADE, related_name="estornos"
+    )
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    valor = CampoDinheiro()
+    situacao = models.CharField(max_length=20)
+    codigo = models.CharField(max_length=40, blank=True, default="")
+    criado_em = models.DateTimeField(default=agora)
+    concluido_em = models.DateTimeField(null=True, blank=True)
+    visivel = models.BooleanField(default=True)
+
+    def __str__(self) -> str:
+        return self.id_estorno
+
+    @property
+    def id_estorno(self) -> str:
+        return f"sim-est-{self.pk}"

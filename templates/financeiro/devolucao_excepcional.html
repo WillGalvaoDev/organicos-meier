@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Confirmar devolução fora da plataforma · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Confirmar devolução feita fora da plataforma</h1>
+  {% include "financeiro/_menu.html" %}
+  <p>Informe a devolução que você fez diretamente ao comprador, por Pix ou transferência. A plataforma não executa essa devolução: ela só registra a confirmação e dá baixa na obrigação {{ obrigacao.pk }}.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'financeiro_devolucao_excepcional' pk=obrigacao.pk %}">
+    {% csrf_token %}
+    <label>Meio
+      <select name="meio" required>
+        <option value="pix" {% if dados.meio == "pix" %}selected{% endif %}>Pix</option>
+        <option value="transferencia" {% if dados.meio == "transferencia" %}selected{% endif %}>Transferência</option>
+      </select>
+    </label>
+    <label>Identificação da transferência <input name="identificacao" value="{{ dados.identificacao }}" maxlength="100" required></label>
+    <label>Justificativa <textarea name="justificativa" maxlength="1000" required>{{ dados.justificativa }}</textarea></label>
+    <label>Comprovante (PDF, JPEG ou PNG, até 10 MB) <input type="file" name="comprovante" accept=".pdf,.jpg,.jpeg,.png" required></label>
+    <button type="submit">Confirmar devolução</button>
+  </form>
+{% endblock %}

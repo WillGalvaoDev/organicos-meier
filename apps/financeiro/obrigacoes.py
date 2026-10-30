@@ -236,9 +236,10 @@ def cobrir_obrigacao_com_receita(
 
 
 def _liquidado(destino: ContaFinanceira) -> Decimal:
-    saiu = TransferenciaFinanceira.objects.filter(de=destino, para__isnull=True).aggregate(
-        s=Sum("valor")
-    )["s"]
+    saiu = TransferenciaFinanceira.objects.filter(
+        de=destino,
+        movimento__tipo__in=(TipoDeMovimento.DEVOLUCAO, TipoDeMovimento.DEVOLUCAO_EXCEPCIONAL),
+    ).aggregate(s=Sum("valor"))["s"]
     return Decimal(saiu) if saiu is not None else ZERO
 
 
@@ -252,7 +253,10 @@ def _designacoes_ativas(
 
 
 def _ja_liquidada(
-    chave: str, obrigacao: ObrigacaoComComprador, valor: Decimal
+    chave: str,
+    obrigacao: ObrigacaoComComprador,
+    valor: Decimal,
+    tipo: str = TipoDeMovimento.DEVOLUCAO,
 ) -> MovimentoFinanceiro | None:
     existente: MovimentoFinanceiro | None = MovimentoFinanceiro.objects.filter(chave=chave).first()
     if existente is None:
@@ -261,7 +265,7 @@ def _ja_liquidada(
         "s"
     ]
     if (
-        existente.tipo != TipoDeMovimento.DEVOLUCAO
+        existente.tipo != tipo
         or (existente.origem_tipo, existente.origem_id) != (TIPO_DA_OBRIGACAO, str(obrigacao.pk))
         or total != valor
     ):
@@ -274,17 +278,34 @@ def liquidar_obrigacao(
 ) -> MovimentoFinanceiro:
     """Dá baixa na obrigação quando a devolução é feita (chamada pela E10). Usa primeiro o saldo
     financiado da conta e depois as designações ativas, em ordem de criação; depois vem a saída."""
+    return _liquidar(obrigacao, valor, referencia, fora_do_provedor=False)
+
+
+def liquidar_obrigacao_fora_do_provedor(
+    obrigacao: ObrigacaoComComprador, valor: Decimal, *, referencia: str
+) -> MovimentoFinanceiro:
+    """A baixa da devolução excepcional (E10-06): igual à `liquidar_obrigacao`, mas o último
+    movimento é o F16, da obrigação para a reserva. O administrador devolveu com recursos
+    próprios, fora do provedor; o dinheiro que estava destinado à obrigação continua na conta do
+    provedor e passa a ser capital dele, que é o que a reserva representa."""
+    return _liquidar(obrigacao, valor, referencia, fora_do_provedor=True)
+
+
+def _liquidar(
+    obrigacao: ObrigacaoComComprador, valor: Decimal, referencia: str, *, fora_do_provedor: bool
+) -> MovimentoFinanceiro:
     _exigir_transacao("liquidar_obrigacao")
     if not isinstance(valor, Decimal) or valor <= 0:
         raise LiquidacaoRecusada("o valor deve ser maior que zero")
-    chave = f"devolucao:{referencia}"
-    existente = _ja_liquidada(chave, obrigacao, valor)
+    tipo = TipoDeMovimento.DEVOLUCAO_EXCEPCIONAL if fora_do_provedor else TipoDeMovimento.DEVOLUCAO
+    chave = f"{tipo}:{referencia}"
+    existente = _ja_liquidada(chave, obrigacao, valor, tipo)
     if existente is not None:
         return existente
     destino = conta_da_obrigacao(obrigacao)
     caixa = conta(Destinacao.RESERVA)
     travar_contas(destino, caixa)
-    existente = _ja_liquidada(chave, obrigacao, valor)  # refeita sob a trava
+    existente = _ja_liquidada(chave, obrigacao, valor, tipo)  # refeita sob a trava
     if existente is not None:
         return existente
     liquidado = _liquidado(destino)
@@ -309,10 +330,15 @@ def liquidar_obrigacao(
         )
         falta_financiar -= usado
     movimento = lancar(
-        tipo=TipoDeMovimento.DEVOLUCAO,
-        transferencias=[Transferencia(destino, EXTERIOR, valor)],
+        tipo=tipo,
+        transferencias=[Transferencia(destino, caixa if fora_do_provedor else EXTERIOR, valor)],
         autor=SISTEMA,
-        justificativa="Devolução ao comprador concluída",
+        justificativa=(
+            "Devolução excepcional feita pelo administrador fora da integração (P-5): o recurso "
+            "que ficou na conta do provedor passa a ser capital do administrador"
+            if fora_do_provedor
+            else "Devolução ao comprador concluída"
+        ),
         origem=obrigacao,
         chave=chave,
     )

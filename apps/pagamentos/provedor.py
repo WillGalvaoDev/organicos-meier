@@ -145,12 +145,61 @@ class MovimentoNoProvedor:
     id_externo: str | None  # o pagamento, só em `pagamento`, `tarifa` e `devolucao`
     ocorrido_em: datetime
     liberado_em: datetime | None
+    id_estorno: str | None = None  # só nos movimentos `devolucao` (E10-03)
 
     def __post_init__(self) -> None:
         for campo in ("ocorrido_em", "liberado_em"):
             instante = getattr(self, campo)
             if instante is not None:
                 object.__setattr__(self, campo, somar_horas(instante, 0))
+
+
+class SituacaoDoEstorno(StrEnum):
+    EM_PROCESSAMENTO = "em_processamento"
+    CONCLUIDO = "concluido"
+    RECUSADO = "recusado"
+
+
+@dataclass(frozen=True)
+class NovoEstorno:
+    """O pedido de estorno de um pagamento aprovado. O valor é sempre explícito."""
+
+    id_externo: str
+    valor: Decimal
+    chave_idempotencia: str
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.chave_idempotencia) <= TAMANHO_MAXIMO_DA_CHAVE:
+            raise ValueError("chave de idempotência deve ter de 1 a 64 caracteres")
+        try:
+            valor = dinheiro(self.valor)  # recusa float e mais de duas casas
+        except ValorInvalido as erro:
+            raise ValueError(f"valor inválido: {erro}") from None
+        if valor <= 0:
+            raise ValueError("valor deve ser maior que zero")
+        object.__setattr__(self, "valor", valor)
+
+
+@dataclass(frozen=True)
+class EstornoConsultado:
+    id_estorno: str
+    id_externo: str
+    valor: Decimal
+    situacao: SituacaoDoEstorno
+    codigo: str | None
+    criado_em: datetime
+    concluido_em: datetime | None
+
+    def __post_init__(self) -> None:
+        for campo in ("criado_em", "concluido_em"):
+            instante = getattr(self, campo)
+            if instante is not None:
+                object.__setattr__(self, campo, somar_horas(instante, 0))
+
+
+class SaldoInsuficienteParaEstorno(Exception):
+    """Falta saldo disponível para estornar. Não é definitiva: um aporte resolve, e a nova
+    tentativa usa a mesma chave."""
 
 
 class ProvedorIndisponivel(Exception):
@@ -193,6 +242,10 @@ class Provedor(Protocol):
     def consultar_saldo(self) -> SaldoNoProvedor: ...
 
     def listar_movimentos(self, desde: datetime, ate: datetime) -> list[MovimentoNoProvedor]: ...
+
+    def estornar(self, novo: NovoEstorno) -> EstornoConsultado: ...
+
+    def consultar_estornos(self, id_externo: str) -> list[EstornoConsultado]: ...
 
 
 def obter_provedor() -> Provedor:

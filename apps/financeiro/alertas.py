@@ -35,6 +35,10 @@ GRAVIDADE_POR_TIPO: dict[str, str] = {
     TipoDeAlerta.DIVERGENCIA_NA_CONCILIACAO: Gravidade.AVISO,
     TipoDeAlerta.APROVADO_APOS_A_MARGEM: Gravidade.AVISO,
     TipoDeAlerta.DUPLICIDADE: Gravidade.AVISO,
+    TipoDeAlerta.DEVOLUCAO_COM_FALHA: Gravidade.AVISO,
+    TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA: Gravidade.AVISO,
+    TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL: Gravidade.AVISO,
+    TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE: Gravidade.CRITICO,
 }
 
 
@@ -83,6 +87,36 @@ def _corpo_da_devolucao(dados: dict[str, Any]) -> str:
     )
 
 
+def _corpo_da_devolucao_com_falha(dados: dict[str, Any]) -> str:
+    return (
+        f"A devolução da parcela {dados.get('parcela', '-')} de {_valor(dados, 'valor')} "
+        f"falhou ({dados.get('codigo', '-')}) e está na tentativa {dados.get('tentativas', '-')}."
+    )
+
+
+def _corpo_da_devolucao_em_falha_definitiva(dados: dict[str, Any]) -> str:
+    return (
+        f"O provedor recusou a devolução da parcela {dados.get('parcela', '-')} de "
+        f"{_valor(dados, 'valor')} ({dados.get('codigo', '-')}). A reconsulta está em andamento."
+    )
+
+
+def _corpo_da_devolucao_elegivel(dados: dict[str, Any]) -> str:
+    return (
+        f"A parcela {dados.get('parcela', '-')} de {_valor(dados, 'valor')} pode ser devolvida "
+        "de forma excepcional, fora da plataforma."
+    )
+
+
+def _corpo_da_devolucao_tardia(dados: dict[str, Any]) -> str:
+    dobro = " Houve devolução em dobro." if dados.get("devolvida_em_dobro") else ""
+    return (
+        f"O provedor concluiu o estorno {dados.get('id_estorno', '-')} de "
+        f"{_valor(dados, 'valor')} da parcela {dados.get('parcela', '-')}, que o sistema "
+        f"tinha como {dados.get('situacao', '-')}.{dobro}"
+    )
+
+
 TEXTO_POR_TIPO: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
     TipoDeAlerta.INVARIANTE_VIOLADO: (
         "Alerta crítico: saldo do provedor abaixo das obrigações",
@@ -102,6 +136,19 @@ TEXTO_POR_TIPO: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
         _corpo_da_devolucao,
     ),
     TipoDeAlerta.DUPLICIDADE: ("Pagamento em duplicidade", _corpo_da_devolucao),
+    TipoDeAlerta.DEVOLUCAO_COM_FALHA: ("Devolução com falha", _corpo_da_devolucao_com_falha),
+    TipoDeAlerta.DEVOLUCAO_EM_FALHA_DEFINITIVA: (
+        "Devolução em falha definitiva",
+        _corpo_da_devolucao_em_falha_definitiva,
+    ),
+    TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL: (
+        "Devolução elegível para devolução excepcional",
+        _corpo_da_devolucao_elegivel,
+    ),
+    TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE: (
+        "Alerta crítico: devolução concluída tardiamente",
+        _corpo_da_devolucao_tardia,
+    ),
 }
 
 

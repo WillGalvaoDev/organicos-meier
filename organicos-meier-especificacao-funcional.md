@@ -1,6 +1,6 @@
 # Orgânicos Méier — Especificação funcional
 
-Versão 1.6 · 14 de outubro de 2026
+Versão 1.7 · 29 de outubro de 2026
 
 | Versão | Alterações |
 |---|---|
@@ -11,6 +11,7 @@ Versão 1.6 · 14 de outubro de 2026
 | 1.4 | Resolve os pontos 17.4 a 17.11 e reconfirma 17.2 e 17.3 sem alteração de regra: restauração de interesses depois de caixa invalidada, estoque no retorno ao interesse, banimento por e-mail, contas independentes de comprador e fornecedor, medidas fracionárias, visibilidade do fornecedor, falhas no envio do pedido formal, congelamento das condições da rodada. Seções 2, 3, 4, 5, 6.2, 8.2, 10, 12, 13, 14, 16 e 17. Questões de implementação Q-1 a Q-4 separadas em 17. Corresponde a `organicos-meier-infraestrutura.md` v1.5. |
 | 1.5 | Incorpora as decisões Q-1 a Q-4 e os requisitos derivados aprovados R-1 a R-4: fila de interesses pendentes, e-mail exclusivo por conta, reenvio do pedido formal também depois de sucesso, quantidades fracionárias em qualquer unidade, arredondamento monetário, compatibilidade entre múltiplo e incremento, normalização de e-mails, tentativas de envio. Nova seção 5.2. Seções 2, 3, 4.2, 4.4, 5, 8.2, 9, 9.2, 10, 12, 13, 14, 16 e 17. Novas questões Q-5 a Q-7. Corresponde a `organicos-meier-infraestrutura.md` v1.6. |
 | 1.6 | Incorpora as decisões Q-5 a Q-7 e os requisitos aprovados R-5 a R-8: visualização e remoção de quantidades pendentes pelo comprador, alteração do incremento só na fase de interesse e com validação integral, reembolso parcial proporcional ao subtotal registrado com controle acumulado, prioridade dos pendentes, pendentes fora do mínimo, bloqueio de reenvio durante o ciclo automático, validação de incrementos inteiros e fracionários. Seções 2, 4.2, 4.4, 5.2, 9.2, 10, 13, 14, 16 e 17. Nenhuma questão de implementação aberta. Corresponde a `organicos-meier-infraestrutura.md` v1.7. |
+| 1.7 | Incorpora a decisão Q-8, aprovada pelo responsável em 2026-10-29: perda por contestação (cartão) ou por devolução forçada do Pix (MED) depois da aprovação do pagamento. O fornecedor recebe integralmente, inclusive antes do repasse; a perda é coberta pela receita de serviço da rodada, depois pela reserva e, se faltar, por novo aporte; o comprador é suspenso para análise do administrador, sem banimento automático. Nova seção 9.6 e linha Q-8 na seção 17. Corresponde a `organicos-meier-infraestrutura.md` v1.8. |
 
 ## 1. Finalidade e escopo
 
@@ -421,6 +422,16 @@ Taxas cobradas pela plataforma de pagamentos, custo de WhatsApp e outros custos 
 - A obrigação financeira permanece integralmente registrada enquanto não for liquidada.
 - A exceção aplica-se exclusivamente a devoluções, nunca ao recebimento de pagamentos de compradores.
 
+### 9.6 Contestação e devolução forçada (Q-8)
+
+Contestação é a disputa aberta pelo comprador no cartão (fase 2b). Devolução forçada é a devolução de um Pix imposta pelo banco do pagador (MED, fase 2a). Nas duas, o provedor debita o valor da conta depois da aprovação do pagamento, sem uma devolução autorizada pela plataforma.
+
+- O fornecedor recebe integralmente, antes ou depois do repasse. Os recursos destinados a ele não cobrem a perda (P-2).
+- A perda é coberta primeiro pela receita de serviço da rodada do pedido, depois pela reserva e, se faltar, por novo aporte (P-1, P-3).
+- O comprador do pagamento contestado é suspenso (seção 2) para análise do administrador. Não há banimento automático. A reversão da suspensão segue a seção 2.
+- O débito e cada cobertura são lançamentos explícitos, auditáveis e justificados no livro-razão (seção 9.3).
+- Fase 1: o simulador reproduz o débito, e a conciliação diária o aponta como divergência. Os lançamentos e a suspensão automáticos entram com o meio de pagamento real que os produz (fase 2a para o Pix, fase 2b para o cartão).
+
 ## 10. Pedido formal, repasse e recebimento
 
 - Fornecedor consulta somente os dados permitidos na seção 2.
@@ -755,6 +766,7 @@ A proposta deve dimensionar os 100 compradores totais e 50 fornecedores sem pres
 | R-6 | Pendentes sem reserva fora do mínimo, dos pedidos e das cobranças. | 5.2, 6 |
 | R-7 | Reenvio manual bloqueado durante o ciclo automático e liberado depois, inclusive após sucesso. | 10 |
 | R-8 | Incremento por produto, inteiro ou fracionário, maior que zero, até três casas decimais, sem fracionamento obrigatório. | 4.2 |
+| Q-8 | Contestação ou devolução forçada do Pix (MED): fornecedor recebe integralmente, inclusive antes do repasse; perda coberta pela receita de serviço da rodada, depois pela reserva e por novo aporte; comprador suspenso para análise, sem banimento automático. | 2, 9.3, 9.6 |
 
 ### Pontos ainda a validar
 
@@ -775,7 +787,7 @@ Estes pontos não impedem pesquisa de infraestrutura, mas precisam de solução 
 
 ### Questões de implementação
 
-Q-1 a Q-7 estão resolvidas (tabela de decisões acima). Não há questão de implementação aberta nesta versão.
+Q-1 a Q-8 estão resolvidas (tabela de decisões acima). Não há questão de implementação aberta nesta versão.
 
 ## 18. Entrega esperada da pesquisa de infraestrutura
 

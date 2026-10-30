@@ -307,8 +307,8 @@ Proposta de mapeamento para cada esquema. O que está marcado como a confirmar d
 | Cancelar pagamento terminal | erro `2018` | devolve o estado atual | o contrato interno é devolver o estado; a tradução converte o `2018` |
 | Vencimento do Pix | de 30 minutos a 30 dias | qualquer instante futuro | **conflito em aberto** (seção 4). O simulador poderia recusar vencimento fora da faixa. A proposta `max(T0 + 24h, emissão + 30 min)` não está aprovada: mudaria a infraestrutura 4.5 e a E08-03, e só vale com especificação, depois da L-1 |
 | Estados intermediários do pagamento | `in_process` e `authorized` | não existem | a tradução os junta em `pendente` |
-| Reembolso Pix em processamento | `400` sem o cabeçalho; `201` com `in_process` usando `X-Render-In-Process-Refunds` | ainda não reproduz (o reembolso é da E10) | a E10 decide como o simulador reproduz a contingência (seção 7) |
-| Reembolso e contestação no `status` | `refunded` e `charged_back` | não existem | o sistema mantém `aprovado` e registra à parte (E10) |
+| Reembolso Pix em processamento | `400` sem o cabeçalho; `201` com `in_process` usando `X-Render-In-Process-Refunds` | reproduz com `estornos_em_processamento`: o estorno nasce `em_processamento`, sem movimento, e termina em `concluir_estorno` ou `recusar_estorno` (E10-03) | a fase 2a traduz o `in_process` para `em_processamento` (seção 7) |
+| Reembolso e contestação no `status` | `refunded` e `charged_back` | a contestação é `contestar`: um débito `outro` (`chargeback` ou `med`) na conta, sem mudar a situação do pagamento (E10-03) | o sistema mantém `aprovado` e registra à parte; os lançamentos automáticos ficam para as fases 2a e 2b (Q-8) |
 | Saldo | por relatório assíncrono | instantâneo, com `referente_a = agora` | o sistema já compara pelo `referente_a` (E09-07) |
 | Paginação da busca | `paging` | lista inteira | é responsabilidade da tradução |
 | Reenvio do aviso | a cada 15 minutos, sem limite documentado | os testes decidem quando e quantas vezes | o simulador cobre repetido, atrasado e perdido |

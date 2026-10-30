@@ -15,7 +15,7 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.nucleo.so_insercao import RegistroSoInsercao
 from apps.nucleo.tempo import agora
-from apps.nucleo.valores import CampoDinheiro
+from apps.nucleo.valores import CampoDinheiro, CampoQuantidade
 from apps.rodadas.models import Ciclo, Rodada
 
 
@@ -47,6 +47,7 @@ class TipoDeMovimento(models.TextChoices):
     RETIRADA_DE_RECEITA = "retirada_de_receita", "Retirada de receita"
     PAGAMENTO_DO_FRETE = "pagamento_do_frete", "Pagamento do frete"
     DEVOLUCAO = "devolucao", "Devolução"
+    DEVOLUCAO_EXCEPCIONAL = "devolucao_excepcional", "Devolução excepcional"
 
 
 class TipoDeAlerta(models.TextChoices):
@@ -56,6 +57,19 @@ class TipoDeAlerta(models.TextChoices):
     DIVERGENCIA_NA_CONCILIACAO = "divergencia_na_conciliacao", "Divergência na conciliação"
     APROVADO_APOS_A_MARGEM = "aprovado_apos_a_margem", "Aprovado depois da margem"
     DUPLICIDADE = "duplicidade", "Duplicidade"
+    DEVOLUCAO_COM_FALHA = "devolucao_com_falha", "Devolução com falha"
+    DEVOLUCAO_EM_FALHA_DEFINITIVA = (
+        "devolucao_em_falha_definitiva",
+        "Devolução em falha definitiva",
+    )
+    DEVOLUCAO_ELEGIVEL_EXCEPCIONAL = (
+        "devolucao_elegivel_excepcional",
+        "Devolução elegível para excepcional",
+    )
+    DEVOLUCAO_CONCLUIDA_TARDIAMENTE = (
+        "devolucao_concluida_tardiamente",
+        "Devolução concluída tardiamente",
+    )
 
 
 class Gravidade(models.TextChoices):
@@ -358,7 +372,7 @@ class AlertaFinanceiro(models.Model):
     """Um alerta ao administrador: aberto uma vez por situação `(tipo, chave)` e resolvido depois.
     O histórico fica; a resolução só preenche `resolvido_em` e o motivo."""
 
-    tipo = models.CharField(max_length=30, choices=TipoDeAlerta.choices)
+    tipo = models.CharField(max_length=40, choices=TipoDeAlerta.choices)
     chave = models.CharField(max_length=80)
     gravidade = models.CharField(max_length=10, choices=Gravidade.choices)
     dados = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
@@ -377,3 +391,181 @@ class AlertaFinanceiro(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tipo}:{self.chave}"
+
+
+class MotivoDoReembolso(models.TextChoices):
+    MINIMO_NAO_ATINGIDO = "minimo_nao_atingido", "Mínimo não atingido"
+    CAIXA_INVALIDADA = "caixa_invalidada", "Caixa invalidada"
+    OCORRENCIA_DE_ENTREGA = "ocorrencia_de_entrega", "Ocorrência de entrega"
+    CANCELAMENTO_DA_RODADA = "cancelamento_da_rodada", "Cancelamento da rodada"
+
+
+class TipoDoReembolso(models.TextChoices):
+    PARCIAL = "parcial", "Parcial"
+    INTEGRAL = "integral", "Integral"
+
+
+class Reembolso(RegistroSoInsercao):
+    """Uma devolução de parte (ou de todo o restante) de um pedido pago (E10-02). Fica separada do
+    pedido congelado; o acumulado do pedido e dos itens é a soma destes registros. A `chave`
+    identifica o fato que o gerou. `autor` vazio é o sistema."""
+
+    pedido = models.ForeignKey("pedidos.Pedido", on_delete=models.PROTECT, related_name="+")
+    chave = models.CharField(max_length=64, unique=True)
+    motivo = models.CharField(max_length=30, choices=MotivoDoReembolso.choices)
+    tipo = models.CharField(max_length=10, choices=TipoDoReembolso.choices)
+    produtos = CampoDinheiro()
+    servico = CampoDinheiro()
+    frete = CampoDinheiro()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, null=True, blank=True)
+    criado_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(produtos__gte=0) & Q(servico__gte=0) & Q(frete__gte=0),
+                name="reembolso_componentes_nao_negativos",
+            ),
+            models.CheckConstraint(
+                condition=Q(chave__regex=r"\S"), name="reembolso_chave_preenchida"
+            ),
+        )
+
+    @property
+    def total(self) -> Decimal:
+        return Decimal(self.produtos + self.servico + self.frete)
+
+    def __str__(self) -> str:
+        return f"reembolso {self.pk}"
+
+
+class ItemReembolsado(RegistroSoInsercao):
+    """A parte de um item do pedido devolvida por um reembolso."""
+
+    reembolso = models.ForeignKey(Reembolso, on_delete=models.PROTECT, related_name="itens")
+    item = models.ForeignKey("pedidos.ItemDoPedido", on_delete=models.PROTECT, related_name="+")
+    quantidade = CampoQuantidade()
+    valor = CampoDinheiro()
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=["reembolso", "item"], name="item_reembolsado_unico"),
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="item_reembolsado_quantidade_positiva"
+            ),
+            models.CheckConstraint(
+                condition=Q(valor__gte=0), name="item_reembolsado_valor_nao_negativo"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"item reembolsado {self.pk}"
+
+
+class SituacaoDaParcela(models.TextChoices):
+    SOLICITADA = "solicitada", "Solicitada"
+    FALHA_TEMPORARIA = "falha_temporaria", "Falha temporária"
+    EM_PROCESSAMENTO = "em_processamento", "Em processamento"
+    FALHA_DEFINITIVA = "falha_definitiva", "Falha definitiva"
+    ELEGIVEL_EXCEPCIONAL = "elegivel_excepcional", "Elegível para devolução excepcional"
+    CONCLUIDA = "concluida", "Concluída"
+    CONCLUIDA_FORA_DA_PLATAFORMA = "concluida_fora_da_plataforma", "Concluída fora da plataforma"
+
+
+class ParcelaDeDevolucao(models.Model):
+    """A devolução de uma obrigação pela plataforma (E10-04): uma por obrigação. Registro de
+    estado, como a tentativa de pagamento: cada mudança de situação também vira uma linha do
+    histórico. A chave de idempotência é gravada na autorização, antes de qualquer chamada."""
+
+    obrigacao = models.OneToOneField(
+        ObrigacaoComComprador, on_delete=models.PROTECT, related_name="parcela"
+    )
+    pagamento = models.ForeignKey(
+        "pagamentos.PagamentoNoProvedor", on_delete=models.PROTECT, related_name="+"
+    )
+    valor = CampoDinheiro()
+    situacao = models.CharField(max_length=30, choices=SituacaoDaParcela.choices)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    id_estorno = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    codigo_da_falha = models.CharField(max_length=40, blank=True, default="")
+    evidencia = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    autorizada_por = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    autorizada_em = models.DateTimeField(default=agora)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(valor__gt=0), name="parcela_devolucao_valor_positivo"
+            ),
+            models.CheckConstraint(
+                condition=Q(situacao__in=SituacaoDaParcela.values),
+                name="parcela_devolucao_situacao_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"parcela {self.pk}"
+
+
+class HistoricoDaDevolucao(RegistroSoInsercao):
+    """Uma linha por mudança de situação da parcela, com o autor e os dados da mudança."""
+
+    parcela = models.ForeignKey(
+        ParcelaDeDevolucao, on_delete=models.PROTECT, related_name="historico"
+    )
+    situacao = models.CharField(max_length=30, choices=SituacaoDaParcela.choices)
+    momento = models.DateTimeField(default=agora)
+    autor = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    dados = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+
+    def __str__(self) -> str:
+        return f"{self.parcela_id} {self.situacao}"
+
+
+class MeioDaDevolucaoExcepcional(models.TextChoices):
+    PIX = "pix", "Pix"
+    TRANSFERENCIA = "transferencia", "Transferência"
+
+
+class ConfirmacaoDeDevolucaoExcepcional(RegistroSoInsercao):
+    """A confirmação do administrador de que devolveu o dinheiro fora da plataforma (E10-06).
+    Uma por parcela. O comprovante fica no armazenamento, com nome gerado, e só é servido ao
+    administrador."""
+
+    parcela = models.OneToOneField(
+        ParcelaDeDevolucao, on_delete=models.PROTECT, related_name="confirmacao"
+    )
+    obrigacao = models.ForeignKey(ObrigacaoComComprador, on_delete=models.PROTECT, related_name="+")
+    pedido = models.ForeignKey(
+        "pedidos.Pedido", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    comprador = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    valor = CampoDinheiro()
+    meio = models.CharField(max_length=15, choices=MeioDaDevolucaoExcepcional.choices)
+    identificacao = models.CharField(max_length=100)
+    justificativa = models.TextField()
+    comprovante = models.FileField(upload_to="comprovantes/")
+    comprovante_nome = models.CharField(max_length=255)
+    comprovante_tipo = models.CharField(max_length=30)
+    comprovante_tamanho = models.PositiveIntegerField()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    confirmada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(condition=Q(valor__gt=0), name="confirmacao_valor_positivo"),
+            models.CheckConstraint(
+                condition=Q(justificativa__regex=r"\S") & Q(identificacao__regex=r"\S"),
+                name="confirmacao_textos_preenchidos",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"confirmação da parcela {self.parcela_id}"
