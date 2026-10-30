@@ -400,24 +400,37 @@ def test_verificacao_contra_confirmacao_excepcional_nunca_devolve_duas_vezes(
     assert not list(tmp_path.rglob("*.pdf"))
 
 
-def test_dois_acompanhamentos_do_mesmo_estorno_liquidam_uma_vez(
+def test_conclusao_contra_recusa_da_mesma_parcela_fica_concluida_sem_falha_no_historico(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # E10-04, A-24 reforçado (R08)
     from apps.financeiro import devolucoes
-    from apps.financeiro.models import MovimentoFinanceiro
+    from apps.financeiro.models import HistoricoDaDevolucao, MovimentoFinanceiro
+    from apps.pagamentos.provedor import SituacaoDoEstorno
     from tests.apoio.devolucoes import arranjo_da_devolucao
 
     a = arranjo_da_devolucao(simulador_pagamentos, relogio)
     parcela = devolucoes.autorizar_devolucao(a.o1, autor=a.admin)
-    estorno = _estorno_concluido_de(parcela)
+    concluido = _estorno_concluido_de(parcela)
+    recusado = concluido.__class__(
+        "sim-est-9998",
+        concluido.id_externo,
+        concluido.valor,
+        SituacaoDoEstorno.RECUSADO,
+        "estado_invalido",
+        concluido.criado_em,
+        None,
+    )
     corrida = Corrida()
     corrida.antes_de(monkeypatch, devolucoes, "_concluir_parcela")
     ra, rb = corrida.rodar(
-        lambda: devolucoes._aplicar_estorno(parcela.pk, estorno),
-        lambda: devolucoes._aplicar_estorno(parcela.pk, estorno),
+        lambda: devolucoes._aplicar_estorno(parcela.pk, concluido),
+        lambda: devolucoes._aplicar_estorno(parcela.pk, recusado),
     )
     assert ra.excecao is None, ra.excecao
     assert rb.excecao is None, rb.excecao
     parcela.refresh_from_db()
     assert parcela.situacao == "concluida"
     assert MovimentoFinanceiro.objects.filter(tipo="devolucao").count() == 1
+    assert not HistoricoDaDevolucao.objects.filter(
+        parcela=parcela, situacao="falha_definitiva"
+    ).exists()
