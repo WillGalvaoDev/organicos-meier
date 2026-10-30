@@ -119,3 +119,16 @@ R08: tratamento histórico e registros de sensibilidade conferidos conforme auto
 **Decisão técnica (forma do reagendamento).** `concluir` devolve `Reagendar(codigo)` (ou `None`, como as outras operações, que não mudam). Levantar `FalhaTemporaria` de dentro de `concluir` desfaria o código, a evidência e a resolução do `devolucao_com_falha`, que ficam gravados. Na `elegivel_excepcional` a inconclusiva não reagenda (A-41, verde). O alerta `devolucao_com_falha` aberto por falhas anteriores é resolvido com "reconsulta concluída" também na inconclusiva (A-39).
 
 Prova do parecer `test_inconclusiva_mantem_reconsulta_pendente`: passa como está (arquivo temporário, removido).
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**APROVADO. R11 encerrado.** `_concluir_verificacao` retorna `Reagendar` somente para a inconclusiva em falha definitiva. O processador mantém a mesma chamada pendente com os intervalos existentes, sem desfazer código, evidência e resolução do alerta de consulta. O alerta da falha definitiva permanece; a inconclusiva não gera indevidamente o alerta de falha de consulta. O caminho elegível continua encerrando a chamada, conforme o contrato.
+
+Matriz nova: **A-36 a A-41 atendidos**, incluindo repetição, identidade da chamada, prazos, ausência de histórico espúrio, adoção tardia com F15, recuperação após falha de consulta, elegibilidade posterior e apresentação na tela. A prova independente `test_inconclusiva_mantem_reconsulta_pendente` passou sem alteração. O sinal de reagendamento e a atualização da chamada permanecem na transação externa do worker; a mudança não cria um commit intermediário da conclusão financeira.
+
+**TDD conferido e reproduzido independentemente:** no commit de testes `53175fa`, arquivos inteiros `test_devolucoes_execucao.py` e `test_devolucoes_telas.py`: **5 failed, 53 passed em 29,46 s**, exatamente A-36 a A-40. Chamada concluída em vez de pendente, ausência de continuação/adoção e tela sem reconsulta explicam as falhas. A correção vem depois, em `1106029`. A-41 é regressão verde declarada. A suíte atual passa conforme registro consolidado.
+
+A alteração compartilhada em `apps/pagamentos/chamadas.py` foi incluída na avaliação de regressão pela suíte completa, não apenas pelos testes novos de devolução.

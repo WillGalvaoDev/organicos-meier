@@ -70,3 +70,10 @@ Registro da troca aceita pelo especificador (`65e3698`, `acceptance.md`, "Comple
 Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
 
 **APROVADO. R06 e R07 encerrados; interação com R09 revalidada.** Falhas na consulta isolada de estornos são traduzidas pela interface de consulta. A confirmação excepcional recusa transação externa antes de gerar arquivo e usa fronteira durável; a reprodução de rollback externo passou, assim como a de indisponibilidade isolada. A-18 a A-21 integram a suíte reexecutada. O limite declarado de arquivo órfão após queda do processo e o armazenamento local até E16 não são apresentados como resolvidos por esta correção. R08: tratamento histórico autorizado e evidência registrada conferidos, sem repetir mutações nesta rodada.
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**APROVADO.** Mantido o encerramento de R06/R07. As provas independentes de falha isolada na consulta de estornos e proteção contra rollback externo passaram novamente. Permanecem os limites documentados de armazenamento local até E16 e de queda do processo; esta rodada não os apresenta como resolvidos.

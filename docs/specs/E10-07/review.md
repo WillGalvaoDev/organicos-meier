@@ -509,3 +509,49 @@ uv run python manage.py makemigrations --check --dry-run   # No changes detected
 Provas do parecer (arquivo temporário, removido): `test_inconclusiva_mantem_reconsulta_pendente` passa como está; `test_saldo_nao_negativo_depois_de_processamentos` é a substituída pelo E10-03 A-23. As oito provas anteriores continuam valendo como na seção "Complemento das correções".
 
 Riscos remanescentes: como o Mercado Pago reserva o saldo de estornos em processamento não está validado (L-7; o simulador adota o comportamento conservador); armazenamento do comprovante local até a E16.
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**Veredito final da etapa E10: APROVADO.** R02 residual e R11 encerrados. Não permanece achado impeditivo aberto desta revisão. Os encerramentos de R01 e R03 a R10 são mantidos, inclusive o tratamento histórico de R08 autorizado na especificação; a ausência histórica de Red não foi apagada nem transformada retroativamente em conformidade.
+
+### Escopo e aderência
+
+Conferidos os ajustes de requisitos e aceitação de `1c2a17b` antes do código, o diff de produção/testes desde `74bfa95`, a ordem dos commits e os registros Red/Green. As regras novas detalham a suficiência de saldo do simulador e a persistência da reconsulta já exigidas, sem mudar a regra comercial de devolução. Não foram alterados documentos-base. Os pareceres anteriores estavam preservados nos sete arquivos antes desta edição e continuam preservados.
+
+| Matriz | Verificação e conclusão |
+|---|---|
+| E10-03 A-23 a A-27 | Aceitação compromete saldo, invisíveis incluídos; recusa libera; conclusão serializa; débito externo tem limite explícito. **Atendidos; R02 encerrado.** |
+| E10-04 A-36 a A-41 | Mesma chamada pendente, intervalos e evidência preservados, recuperação/adoção, alertas e tela corretos; elegível mantém contrato anterior. **Atendidos; R11 encerrado.** |
+| Critérios anteriores das sete fatias | Parecer anterior mantido quanto aos itens já encerrados; suíte completa e nove provas independentes reexecutadas, sem regressão encontrada. |
+
+### Execuções independentes
+
+**Suíte completa: 2644 passed em 367,29 s (6 min 7 s), sem falhas.** Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e10.py" -q -p no:cacheprovider --tb=short`. A coleta ocorreu antes da criação do arquivo temporário das nove provas extras.
+
+- `.venv/Scripts/python.exe -m ruff check .`: passou.
+- `.venv/Scripts/python.exe -m ruff format --check .`: 347 arquivos formatados.
+- `.venv/Scripts/python.exe -m mypy .`: sem problemas em 416 arquivos.
+- `.venv/Scripts/python.exe manage.py makemigrations --check --dry-run`: sem mudanças.
+- Provas independentes preservadas: **9 passed em 11,86 s**. Oito provas anteriores, sem as duas substituídas pela especificação, mais `test_inconclusiva_mantem_reconsulta_pendente` exatamente como no parecer. Arquivo temporário `tests/tecnicos/test_devolucoes_revisao_temporaria.py`, removido após execução. A prova antiga de saldo é substituída por A-23, que espera a recusa temporária do segundo estorno e confere o saldo final.
+
+Os testes usaram `.venv/Scripts/python.exe`, `PYTHONPATH` na raiz correspondente, `DJANGO_SETTINGS_MODULE=config.settings.test` e runner que define somente `TEST.NAME` nos bancos antes de chamar `pytest.main(sys.argv[1:])`. Argumentos `-q -p no:cacheprovider --tb=short`; sem seleção na suíte completa. Banco isolado da suíte: `test_organicos_revisor_e10_9ce04ad` (nome histórico; código efetivamente auditado `4b51242`). Provas extras: `test_organicos_revisor_e10_extra_4b51242`.
+
+### Reexecução dos commits de testes anteriores às correções
+
+Em worktree temporário isolado, banco `test_organicos_revisor_e10_red_4b51242`, arquivos inteiros, sem `-k`:
+
+| Commit | Arquivos executados | Resultado independente |
+|---|---|---|
+| `53175fa`, antes de `1106029` | `tests/tecnicos/test_devolucoes_execucao.py tests/tecnicos/test_devolucoes_telas.py` | **5 failed, 53 passed em 29,46 s**: exatamente as falhas A-36 a A-40 registradas para R11 |
+| `b69fd72`, antes de `562148a` | `tests/tecnicos/test_simulador_estornos.py` | **3 failed, 31 passed em 7,46 s**: A-23/A-25 não recusam e A-26 não espera a trava |
+
+Os commits de testes não incluem a implementação de produção correspondente. As reproduções confirmam a sensibilidade e os motivos das falhas registrados pelo implementador; não são apresentadas como substitutas dos registros históricos. As regressões A-24/A-27/A-41 já verdes estão declaradas como tais. Worktree removido após conferir árvore limpa. Uma tentativa inicial do runner extra falhou por codificação do arquivo temporário antes da coleta; o runner foi corrigido e a execução válida acima é a evidência usada.
+
+### Limites e próximo gate
+
+Aprovação restrita à fase 1 e ao contrato simulado: a reserva real do Mercado Pago permanece em L-7 para validação futura; comprovantes locais até E16 e demais limites previamente documentados não são autorização de produção financeira real. Nenhuma nova melhoria não impeditiva foi identificada; docs/melhorias.md não mudou.
+
+Arquivos alterados pelo revisor: somente os sete `docs/specs/E10-01` a `E10-07/review.md`. Nenhum código de produção foi corrigido pelo revisor. Próximo gate: encaminhamento para integração; quem abrir o PR deve atualizar o estado nos dois README conforme AGENTS.md §10. Esta revisão não abre PR nem faz push.

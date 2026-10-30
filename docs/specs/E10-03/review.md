@@ -86,3 +86,16 @@ R08: a não conformidade histórica de TDD permanece registrada, com tratamento 
 `consultar_saldo` não mudou. A conclusão não confere o saldo (A-27 verde: aceita e deixa −40,00).
 
 Prova do parecer `test_saldo_nao_negativo_depois_de_processamentos`: substituída pelo A-23, como manda a spec; executada como está, o segundo `estornar` levanta `SaldoInsuficienteParaEstorno` (comportamento especificado).
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**APROVADO. R02 residual encerrado.** A conferência de aceitação agora subtrai do saldo liberado todos os estornos em processamento, inclusive invisíveis, sob a trava global. Conclusão e recusa tomam a mesma trava, depois da linha do estorno. Assim a conversão do comprometimento em movimento não deixa uma janela para consumir o saldo duas vezes. A consulta pública do saldo continua baseada em movimentos, preservando o contrato de conciliação.
+
+Matriz nova: **A-23 a A-27 atendidos**. A-23 recusa o segundo estorno e termina com R$ 20,00; A-24 libera o comprometimento na recusa; A-25 inclui o invisível; A-26 observa a espera pela trava na conclusão concorrente; A-27 mantém o comportamento explicitamente especificado para débitos externos. A prova antiga sem tratamento da recusa foi substituída por A-23 conforme acceptance.md, pois a recusa temporária agora é justamente o resultado esperado.
+
+**TDD conferido e reproduzido independentemente:** no commit de testes `b69fd72`, arquivo inteiro `tests/tecnicos/test_simulador_estornos.py`: **3 failed, 31 passed em 7,46 s**. As falhas são A-23/A-25 (`DID NOT RAISE SaldoInsuficienteParaEstorno`) e A-26 (B não espera a trava). A correção de produção vem depois, em `562148a`. A-24 e A-27 são regressões declaradas verdes; não foram apresentadas como novos ciclos Red. A suíte atual passa conforme registro consolidado.
+
+Limite preservado: a política real de reserva do Mercado Pago continua não validada (L-7). Esta aprovação é do simulador conservador de fase 1, não de integração financeira real. Débitos externos de controle podem tornar o saldo negativo como expressamente delimitado pela spec; a correção impede o déficit causado pela combinação dos estornos aceitos.

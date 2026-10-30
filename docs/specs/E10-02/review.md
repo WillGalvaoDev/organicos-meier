@@ -66,3 +66,10 @@ Migração: linhas existentes recebem `parcial` (`preserve_default=False`). `mak
 Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
 
 **APROVADO. R01 encerrado.** A distinção imutável entre obrigação parcial e integral impede reaproveitar a mesma chave com outra natureza; mantém a repetição integral legítima. A reprodução anterior de colisão passou. Os cenários A-16 e A-18 a A-20 integram a suíte reexecutada.
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**APROVADO.** Mantido o encerramento de R01. A prova independente de colisão entre chave parcial e integral passou novamente. Sem mudança funcional desta fatia nesta rodada; regressões cobertas pela suíte completa.

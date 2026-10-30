@@ -64,3 +64,10 @@ O dublê da conclusão tardia (`update(situacao="em_processamento")` + `concluir
 Base auditada: `74b38c0`, branch `e10-implementacao`. Os registros anteriores foram preservados integralmente. Este parecer prevalece sobre o anterior apenas quanto à revalidação descrita abaixo. Resultado consolidado e reproduções: [E10-07/review.md](../E10-07/review.md), seção com esta mesma data e título.
 
 **APROVADO no escopo revalidado. R05 e R09 encerrados.** A adoção de estorno em processamento após elegibilidade agora agenda acompanhamento. Um identificador já conhecido em parcela recusada não equivale a baixa contabilizada: a conclusão tardia impede confirmação excepcional ou gera alerta de possível duplicidade quando ela já ocorreu. As reproduções anteriores correspondentes passaram; A-10 a A-16 integram a suíte reexecutada. A aprovação desta fatia não encerra a etapa, devido a R02 e R11.
+
+
+## Revalidação final de R02 residual e R11 — agente 3 — 2026-10-30
+
+Base auditada: `4b51242`, branch `e10-implementacao`. Revisão incremental sobre o parecer `74bfa95`, com reexecução da suíte completa e das provas independentes preservadas. Histórico anterior e registros do implementador mantidos integralmente.
+
+**APROVADO.** Mantido o encerramento de R05/R09. As provas independentes de adoção após elegibilidade, conclusão tardia de identificador conhecido e alerta tardio passaram novamente. A-38/A-39 da E10-04 também exercitam a continuidade da reconsulta até adoção ou elegibilidade. Nenhum novo achado nesta rodada.
