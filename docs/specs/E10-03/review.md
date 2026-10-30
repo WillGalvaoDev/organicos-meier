@@ -38,3 +38,27 @@ Referências: E10-03/spec.md, `estornar`, passo 8; A-7/A-18; AGENTS §6; `apps/s
 Reprodução concorrente com PostgreSQL: dois pagamentos aprovados de 80,00; saldo liberado total reduzido a 100,00; ambos pedem estorno de 80,00. Uma barreira depois da leitura do saldo e antes da criação apenas sincroniza as threads, sem remover proteção. Observado: ambos concluem, dois débitos, saldo **−60,00**. Esperado: um conclui e o outro recebe `SaldoInsuficienteParaEstorno`. A trava é por cobrança; o recurso consumido é a conta comum. Serializar a validação e o consumo desse recurso, com teste que distinga recusa temporária de recusa definitiva.
 
 Histórico: `ceb68d7 → c06d379` separa andaime e funcional, mas a validação de `NovoEstorno` já foi implementada no primeiro commit e A-18 falhou inicialmente por ausência da operação. Ver R08 consolidado; validação observável não se torna “sem comportamento testável” por estar na interface.
+
+## Correção E10-R02 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Refatoração: `_saldo_liberado(instante)` extraída (ponto de pausa) | `a87d480` | `tests/tecnicos/test_simulador_estornos.py` | 27 passed, sem mudar comportamento |
+| Testes A-21 e A-22 | `005210b` | o mesmo arquivo | **Red: A-21** (`rb.excecao` é `None`; saldo liberado −60,00). A-22 verde (regressão da ordem das travas) |
+| Trava do saldo | `d9c2ef3` | o mesmo arquivo e `test_devolucoes_execucao.py` | 55 passed |
+
+Forma da trava: `pg_advisory_xact_lock(CHAVE_DA_TRAVA_DO_SALDO = 7151002)` na conexão do simulador, tomada depois da trava da cobrança e antes da leitura do saldo. A prova do parecer `test_saldo_compartilhado_em_estornos_concorrentes` fica substituída pelo A-21, como a spec manda.
+
+## Não conformidade de TDD (R08) — E10-03 A-17 e A-18
+
+O registro anterior fica preservado. **Não houve Red** para: A-17 (as validações de `NovoEstorno` entraram verdes no andaime `ceb68d7`) e A-18 (o Red foi a operação ausente, não uma corrida contra a operação sem a trava). Busca de evidência histórica (passo 1): commits `ceb68d7`/`c06d379` e os logs de execução guardados de 2026-10-29 não contêm a saída desses ciclos; nada encontrado. Tratamento decidido pelo responsável (2026-10-30): registro e sensibilidade por mutação.
+
+**Sensibilidade (mutação), não Red** — comando: `uv run pytest tests/tecnicos/test_simulador_estornos.py` (arquivo inteiro, sem `-k`); cada arquivo restaurado depois:
+
+| Mutação | Resultado |
+|---|---|
+| `NovoEstorno`: `if valor <= 0` → `if False` | 2 failed (`test_novo_estorno_invalido[valor0-k]`, `[valor1-k]`): `DID NOT RAISE ValueError` |
+| `valor = dinheiro(...)` → `Decimal(str(...))` | 1 failed (`[valor2-k]`) |
+| chave sem o mínimo de 1 caractere | 1 failed (`[valor3-]`) |
+| chave sem o máximo de 64 | 1 failed (`[valor4-xxxx…]`) |
+| `estornar` sem `travar=True` na cobrança | 1 failed, `test_dois_estornos_concorrentes_com_a_mesma_chave`: `IntegrityError` na chave de idempotência no lugar de `None` |

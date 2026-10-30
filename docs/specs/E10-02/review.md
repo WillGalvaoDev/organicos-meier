@@ -49,3 +49,13 @@ Referências: E10-02/spec.md, “Idempotência pela chave”; funcional §9.2; `
 Reprodução: pedido K, parcial de 0,25 com chave `mesma-chave` e motivo `cancelamento_da_rodada`; chamar a integral com a mesma chave e motivo. Esperado: `ReembolsoConflitante`. Observado: devolve o parcial, sem erro e sem completar o restante. `_existente(..., linhas=None)` dispensa a comparação das linhas para toda integral, inclusive quando a chave pertence a outra solicitação. Preservar a repetição legítima da integral sem aceitar silenciosamente um pedido diferente.
 
 Histórico: `2c8329c → ae25659` (funcional) e `80c4a9b → dd57ba6` (corridas) dão rastreabilidade ao Red/Green registrado. A frase de A-16 que exige duas obrigações “em qualquer ordem” precisa ser compatibilizada tecnicamente com A-4/A-8 e a recusa de quantidade excedente: se a integral ganhar, o parcial subsequente não pode criar nova devolução. Não autoriza alterar o limite financeiro.
+
+## Correção E10-R01 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-18 a A-20 e A-16 reescrito (duas ordens, pausa em `_travar_o_pedido`) | `9a5b7d7` | `uv run pytest tests/tecnicos/test_devolucoes_reembolso.py tests/tecnicos/test_devolucoes_concorrencia.py` | **Red: 3 failed.** A-18 e A-19: `DID NOT RAISE ReembolsoConflitante`; A-20: `AttributeError: 'Reembolso' object has no attribute 'tipo'`. O A-16 reescrito passou nas duas ordens (a spec não prevê Red para ele); prevenção E08-R06: o verde funcional já existia e o limite financeiro não mudou |
+| Sensibilidade do A-16 (mutação), não Red | — | `_travar_o_pedido` sem `select_for_update`; arquivo de teste inteiro | falham por asserção `test_dois_parciais...`, `test_tres_parciais...` e `test_parcial_e_integral...[parcial]`; restaurado |
+| `Reembolso.tipo`, migração `0014_tipo_do_reembolso`, `_existente` compara pedido, motivo, tipo e linhas (parcial) | `417a3cd` | os mesmos arquivos e `tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py` | 39 passed |
+
+Migração: linhas existentes recebem `parcial` (`preserve_default=False`). `makemigrations --check`: sem mudanças.

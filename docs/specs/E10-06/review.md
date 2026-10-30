@@ -46,3 +46,16 @@ Referências: E10-06/spec.md, passo 8 (“se a transação for desfeita, o arqui
 Reprodução: chamar a confirmação dentro de `transaction.atomic()` do chamador e lançar `RuntimeError` depois de ela retornar. A confirmação e o F16 são desfeitos, mas sobra **um PDF** em `MEDIA_ROOT/comprovantes/`. O `except BaseException` só cobre falhas enquanto a função está ativa; a transação externa ainda não foi confirmada quando ela retorna. Fazer a persistência/limpeza respeitar a transação efetiva ou recusar explicitamente uma composição transacional que não possa garantir; testar também falha interna e preservação do arquivo após commit.
 
 R09 (detalhado na E10-05) impede a aprovação da proteção contra duplicidade. R08 cobre o histórico TDD. F16 foi conferido: transferência interna obrigação → reserva, sem débito exterior, liquidado somando F15/F16; os testes de segregação existentes passaram.
+
+## Correções E10-R06 e R07 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-18 a A-21 | `0c09af9` | `uv run pytest tests/tecnicos/test_devolucoes_excepcional.py` | **Red: 2 failed.** A-18: `ProvedorIndisponivel` escapa; A-19: `DID NOT RAISE RuntimeError`. A-20 e A-21 passam (regressão, execução verde antes e depois da correção) |
+| `traduzindo_falhas` (contexto em `consulta.py`, usado pelas duas consultas); `_exigir_fora_de_transacao` (bloco durável vazio no início) e `transaction.atomic(durable=True)` na confirmação | `ee375bd` | o arquivo, `test_pagamentos_consulta.py`, `test_devolucoes_telas.py`, `test_devolucoes_concorrencia.py`, `test_cenarios_35_36_excepcional.py`, `test_t09_excepcional.py` | 78 passed |
+
+Nenhum teste existente chamava a confirmação dentro de `atomic` próprio. A leitura de cobertura com as duas contas travadas (R03) não tem critério dedicado na spec e não tem Red possível: a retirada da designação já é recusada na elegível.
+
+## Não conformidade de TDD (R08) — E10-06 A-16
+
+Registro anterior preservado: sem Red da corrida (trava escrita com o código). Busca de evidência: nada em `dabe910`/`deccdce` nem nos logs. **Sensibilidade (mutação), não Red** — `uv run pytest tests/tecnicos/test_devolucoes_concorrencia.py`, com `confirmar_devolucao_excepcional` lendo a parcela sem a trava da cadeia: 1 failed, `test_duas_confirmacoes_excepcionais_da_mesma_parcela` (`'já confirmada'` não está na mensagem recebida, que passa a ser a de cobertura); restaurado. O reforço da corrida verificação × confirmação (E10-04) também cobre essa trava.

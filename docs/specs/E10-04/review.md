@@ -52,3 +52,31 @@ Referências: E10-04/spec.md, retentativa segura, E07-R01; AGENTS §6; `apps/fin
 Reprodução: parcela em `falha_temporaria`, chamada vencida. Worker segura a chamada e pausa antes de `_travar_cadeia`; a retentativa manual segura pagamento/pedido/parcela e espera a chamada. Liberar worker produz **`OperationalError: deadlock detected`**, na trava de `pagamentos_chamadaaoprovedor`. O teste apenas pausa operações reais. O alvo próprio evita a colisão inicial de autorização, mas não essa inversão na mesma parcela. Unificar ordem/protocolo e provar a corrida com uma liquidação e a mesma chave.
 
 R05 e R09 (E10-05/06) também afetam as operações deste módulo. R08 registra a não conformidade TDD; os registros históricos do implementador não constituem autorização para repetir exceções de etapas anteriores.
+
+## Correções E10-R03 e R04 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-29 e A-30 | `b02d06b` | `uv run pytest tests/tecnicos/test_devolucoes_concorrencia.py` | **Red: 2 failed.** A-29: `OperationalError: deadlock detected ... pagamentos_chamadaaoprovedor`; A-30: `erro inesperado OperationalError` no log da tarefa. O verde funcional (nova tentativa isolada, A-18) já existia |
+| Ajuste do arranjo `Corrida`: `rodar(..., b_atomica=False)` para B, como a rota (`ATOMIC_REQUESTS` falso) | `f6feaea` | idem | Red reconferido no código antigo com o teste final: 2 failed |
+| `tentar_devolucao_de_novo`: chamada (sem `skip_locked`/`nowait`) → cadeia → escrita; `verificar_estornos` agendada antes da cadeia | `f6feaea` | `test_devolucoes_concorrencia.py`, `test_devolucoes_execucao.py`, `test_devolucoes_excepcional.py`, `test_financeiro_conciliacao_estornos.py`, `test_devolucoes_telas.py`, `test_devolucoes_avisos.py` | 97 passed |
+| Testes A-26 a A-28 | `a058de3` | `test_devolucoes_concorrencia.py`, `test_devolucoes_execucao.py` | **Red: 3 failed.** A-26 e A-27: as duas operações concluem; A-28: `DID NOT RAISE DevolucaoRecusada` |
+| Autorização trava conta da obrigação e reserva (`travar_contas`, pk crescente); `EM_CURSO` em `desfazer_designacao`; leitura de cobertura da confirmação excepcional com as duas contas travadas | `5940418` | os mesmos e `test_devolucoes_excepcional.py`, `test_financeiro_reserva.py` | 80 passed |
+
+**Ponto para o revisor/especificador (prova `test_retentativa_manual_versus_worker`).** A prova do parecer roda B dentro de uma transação externa (`Corrida.operacao_b`). Com isso a consulta ao provedor da nova tentativa (`consultar_antes_de_decidir`, que trava o pagamento) mantém o lock até o fim da transação externa, e o impasse reaparece fora do código sob teste. Executada com B sem a transação externa (como a rota), a mesma prova passa (arquivo temporário, não commitado). Seguir a spec ao pé da letra (consulta antes da transação; chamada sem `nowait`) e passar a prova como está são incompatíveis; **decisão pedida**: ajustar o arranjo da prova (B sem transação externa) ou autorizar `nowait`/chamada antes da consulta.
+
+**Ajuste de arranjo (E10-06 A-10).** Com a R03, a designação de obrigação com parcela não final não se desfaz; o A-10 da E10-06 usa agora uma parcela `elegivel_excepcional` de fábrica sem cobertura. As asserções não mudaram.
+
+**Agendamentos feitos sob a cadeia.**
+- `verificar_estornos` (de `_declarar_falha_definitiva`): não se demonstra a ausência de um `verificar_estornos` pendente em execução (ex.: reconsulta velha agendada por uma recusa que leu a parcela como elegível); por isso passou para **antes** da cadeia (`_estorno_falhou` e `_aplicar_estorno`). Se a parcela não chegar à falha definitiva, a reconsulta agendada não encontra nada a fazer.
+- `acompanhar_estorno` (de `_aplicar_estorno` e `_adotar_estorno`): a parcela só sai de `em_processamento` dentro da própria chamada `acompanhar_estorno`, que se encerra na mesma transação; logo, nas situações de onde se entra em `em_processamento` (solicitada, falha temporária, falha definitiva, elegível) não há `acompanhar_estorno` pendente nem em execução. Permanece sob a cadeia.
+- `estornar` (autorização): a parcela é nova; não há chamada anterior.
+
+## Não conformidade de TDD (R08) — E10-04 A-23 e A-24
+
+Registro anterior preservado: não houve Red das corridas (travas escritas com o código funcional). Busca de evidência (passo 1): nada nos commits `ddf8016`/`77fca2e` nem nos logs de 2026-10-29. **Sensibilidade (mutação), não Red** — `uv run pytest tests/tecnicos/test_devolucoes_concorrencia.py`:
+
+| Mutação | Resultado |
+|---|---|
+| A-23: `autorizar_devolucao` sem `travar_pagamento` e sem a trava da `SituacaoDoPedido` | 1 failed, `test_duas_autorizacoes_da_mesma_obrigacao_geram_uma_parcela` (`IntegrityError` no lugar de `None`) |
+| A-24: `_concluir_verificacao` e `_aplicar_estorno` com só a releitura | o teste existente **não falhou** (11 passed). Reforçado (`20695e8`, `8eac7e0`) com duas corridas: `test_verificacao_contra_confirmacao_excepcional_nunca_devolve_duas_vezes` e `test_conclusao_contra_recusa_da_mesma_parcela_fica_concluida_sem_falha_no_historico`. Com a mutação: 2 failed (`LiquidacaoRecusada` e histórico com `falha_definitiva`); sem ela: 13 passed |

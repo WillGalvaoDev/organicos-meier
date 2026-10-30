@@ -344,3 +344,24 @@ def test_lista_informa_tentativas_da_falha_definitiva(client, webauthn, relogio,
     assert 'tentativas 1' in resposta.content.decode()
 
 ```
+
+## Correções da revisão — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-21 a A-23 | `085ccd8` | `tests/tecnicos/test_devolucoes_telas.py`, `tests/tecnicos/test_pedidos_estornos_do_comprador.py` | **Red: A-21** (sem `tentativas 1`). **Red tardio declarado:** A-22 e A-23 foram escritos depois da correção dos serviços (R05/R06 vieram antes na ordem pedida); o Red foi conferido contra o código de produção anterior (`44727d1`): A-22 `ProvedorIndisponivel`, A-23 `'elegivel_excepcional' == 'em_processamento'` |
+| `_acompanhamento_da_falha` (tentativas das chamadas `estornar` e `acompanhar_estorno`; próxima, reconsulta agendada ou sem nova tentativa) na lista e no detalhe | `7a7ff5a` | os mesmos e `test_devolucoes_avisos.py` | 29 passed; o detalhe teve Red próprio antes do template |
+
+## Verificação final consolidada da correção (E10-R01 a R10)
+
+```
+uv run pytest                                 # 2627 passed in 294.47s, sem filtro
+uv run ruff check . --no-cache                # All checks passed
+uv run ruff format --check .                  # 347 files already formatted
+uv run mypy .                                 # Success: no issues found in 416 source files
+uv run python manage.py makemigrations --check --dry-run   # No changes detected
+```
+
+Provas do parecer (arquivo temporário, não commitado): 8 das 10 passam. `test_saldo_compartilhado_em_estornos_concorrentes` foi substituída pelo E10-03 A-21 (a barreira esgota o tempo, como a spec previu). `test_retentativa_manual_versus_worker` falha só pelo arranjo (ver "Ponto para o revisor" na E10-04); sem a transação externa em B, passa.
+
+Riscos remanescentes: a decisão acima; `verificar_estornos` que falha de forma definitiva no provedor não é reagendada; armazenamento do comprovante local até a E16.

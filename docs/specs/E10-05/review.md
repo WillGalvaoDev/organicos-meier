@@ -48,3 +48,12 @@ Um estorno inicialmente em processamento recebe ID, depois é recusado e a parce
 O dublê muda explicitamente o estado do registro simulado para representar a conclusão posterior à recusa e usa `concluir_estorno` para produzir o débito. Não afirma que essa reversão foi validada na API real: exercita o risco residual exigido pela infraestrutura, sem presumir que ID conhecido elimina esse risco. Tratar também o estorno associado ainda não liquidado; a regra técnica de “não contabilizado” não pode enfraquecer a fonte de verdade. Preservar uma única baixa e alerta crítico quando o dinheiro já foi devolvido fora.
 
 Histórico funcional: `3aaf01e → fe06cbe`; A-7 acrescentado em `deccdce`, sem Red, como registrado.
+
+## Correção E10-R05 e R09 — agente 2 — 2026-10-30
+
+| Etapa | Commit | Comando | Resultado |
+|---|---|---|---|
+| Testes A-10 a A-16 | `44727d1` | `uv run pytest tests/tecnicos/test_financeiro_conciliacao_estornos.py` | **Red: 6 failed, 10 passed.** A-10, A-11, A-14: a parcela continua `elegivel_excepcional`/`falha_definitiva`; A-12: `DID NOT RAISE`; A-13 e A-15: nenhum alerta crítico. A-16 passa (regressão da definição) |
+| `_estornos_sem_baixa`, `_escolher_o_estorno`, `_adotar_estorno` (mesmas regras em falha definitiva e elegível), transição `elegivel → em_processamento`, conciliação com parcela do mesmo ID | `1d3b9da` | o arquivo e `test_devolucoes_execucao.py`, `test_devolucoes_excepcional.py`, `test_devolucoes_telas.py`, `test_financeiro_conciliacao.py` | 120 passed |
+
+O dublê da conclusão tardia (`update(situacao="em_processamento")` + `concluir_estorno`) exercita o risco residual da infraestrutura 4.7; não afirma que a API real reverte uma recusa (L-7).
