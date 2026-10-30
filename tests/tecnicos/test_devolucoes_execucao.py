@@ -340,12 +340,12 @@ def test_estorno_invisivel_ainda_em_processamento_nao_e_visto(a: Arranjo) -> Non
 def _recusar_a_reconsulta(monkeypatch: pytest.MonkeyPatch) -> None:
     """Dublê da recusa na reconsulta: só troca a resposta do provedor (E10-04, A-33)."""
     from apps.pagamentos.provedor import RecusaDoProvedor
-    from apps.simulador_pagamentos.provedor import SIMULADO
+    from apps.simulador_pagamentos.provedor import ProvedorSimulado
 
-    def recusa(id_externo: str) -> Any:
+    def recusa(self: Any, id_externo: str) -> Any:
         raise RecusaDoProvedor("estado_invalido")
 
-    monkeypatch.setattr(SIMULADO, "consultar_estornos", recusa)
+    monkeypatch.setattr(ProvedorSimulado, "consultar_estornos", recusa)
 
 
 def _verificacao(parcela: ParcelaDeDevolucao) -> ChamadaAoProvedor:
@@ -404,14 +404,14 @@ def test_reconsulta_com_pagamento_nao_encontrado_nao_desiste_apos_24_horas(
     a: Arranjo, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-35 (P4)
     from apps.pagamentos.provedor import PagamentoNaoEncontrado
-    from apps.simulador_pagamentos.provedor import SIMULADO
+    from apps.simulador_pagamentos.provedor import ProvedorSimulado
 
     parcela = _levar_a_falha_definitiva(a)
 
-    def nao_achou(id_externo: str) -> Any:
+    def nao_achou(self: Any, id_externo: str) -> Any:
         raise PagamentoNaoEncontrado(id_externo)
 
-    monkeypatch.setattr(SIMULADO, "consultar_pagamento", nao_achou)
+    monkeypatch.setattr(ProvedorSimulado, "consultar_pagamento", nao_achou)
     a.relogio.avancar(timedelta(hours=25))
     processar_chamadas()
     chamada = _verificacao(parcela)

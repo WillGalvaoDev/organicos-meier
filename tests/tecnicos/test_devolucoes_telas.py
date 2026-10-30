@@ -339,16 +339,16 @@ def test_detalhe_da_falha_definitiva_mostra_o_erro_e_as_tentativas_da_reconsulta
     client: Client, a: Arranjo, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # P4, "Na tela"
     from apps.pagamentos.provedor import RecusaDoProvedor
-    from apps.simulador_pagamentos.provedor import SIMULADO
+    from apps.simulador_pagamentos.provedor import ProvedorSimulado
 
     a.sim.recusar_estornos(a.pagamento.id_externo, "prazo_vencido")
     autorizar_devolucao(a.o1, autor=a.admin)
     processar_chamadas(limite=1)
 
-    def recusa(id_externo: str) -> Any:
+    def recusa(self: Any, id_externo: str) -> Any:
         raise RecusaDoProvedor("estado_invalido")
 
-    monkeypatch.setattr(SIMULADO, "consultar_estornos", recusa)
+    monkeypatch.setattr(ProvedorSimulado, "consultar_estornos", recusa)
     a.relogio.avancar(timedelta(minutes=1))
     processar_chamadas()
     html = client.get(f"{BASE}{a.o1.pk}/").content.decode()
