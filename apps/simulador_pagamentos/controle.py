@@ -235,6 +235,7 @@ def concluir_estorno(id_estorno: str, *, em: datetime | None = None) -> None:
         estorno = estado.obter_estorno(id_estorno, travar=True)
         if estorno.situacao != "em_processamento":
             raise ValueError("só um estorno em processamento pode ser concluído")
+        estado.travar_o_saldo()  # a mudança e o movimento aparecem juntos para quem aceita estornos
         estado.concluir(estorno, instante)
     estado.registrar("concluir_estorno", estorno.cobranca.id_externo)
 
@@ -245,6 +246,7 @@ def recusar_estorno(id_estorno: str, codigo: str) -> None:
         estorno = estado.obter_estorno(id_estorno, travar=True)
         if estorno.situacao != "em_processamento":
             raise ValueError("só um estorno em processamento pode ser recusado")
+        estado.travar_o_saldo()
         estorno.situacao = "recusado"
         estorno.codigo = codigo
         estorno.visivel = True

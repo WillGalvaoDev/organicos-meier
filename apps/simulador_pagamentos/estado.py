@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.conf import settings
+from django.db import connections
 
 from apps.nucleo.tempo import agora, somar_horas
 from apps.nucleo.valores import arredondar_centavos
@@ -24,6 +25,7 @@ from apps.simulador_pagamentos.models import (
     MovimentoSimulado,
 )
 from apps.simulador_pagamentos.plano import PLANO, Anterior
+from apps.simulador_pagamentos.roteador import ALIAS
 
 logger = logging.getLogger("apps.simulador_pagamentos")
 
@@ -134,6 +136,19 @@ def obter_estorno(id_estorno: str, *, travar: bool = False) -> EstornoSimulado:
     if estorno is None:
         raise ValueError("estorno desconhecido")
     return estorno
+
+
+# O saldo liberado da conta simulada é um recurso único, comum a todos os pagamentos (E10-R02): a
+# trava consultiva de transação serializa quem lê o saldo para aceitar um débito e quem muda um
+# estorno em processamento. A chave é fixa.
+CHAVE_DA_TRAVA_DO_SALDO = 7_151_002
+
+
+def travar_o_saldo() -> None:
+    """Toma a trava do saldo até o fim da transação do simulador. Vem sempre depois da trava da
+    cobrança ou do estorno (a ordem é a mesma em toda operação), então não há inversão."""
+    with connections[ALIAS].cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [CHAVE_DA_TRAVA_DO_SALDO])
 
 
 def concluir(estorno: EstornoSimulado, instante: datetime) -> None:
