@@ -25,3 +25,22 @@ O A-3 espera a parcela de A em P1, depois da apuração, `ativa` com reservado 6
 ## Defeito achado depois pela E11-08 (corrigido)
 
 A devolução integral de mais de um pedido pago na mesma apuração tinha o mesmo defeito da E11-04 (`OrdemDeTravasViolada`). Teste: `test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao` (Red `3066566`). A correção é a mesma: o conjunto das contas de todos os pagantes é travado antes da primeira devolução.
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**REPROVADO — R01 e R02 (importantes), R04 (bloqueador).** A-1 a A-17 confrontados com código/testes, inclusive mais de um pagante. O fluxo nominal preserva estoque, gera obrigações integrais e permite novo ciclo, mas as provas independentes abaixo falharam.
+
+**R01:** o filtro genérico `parcela_removida` em `apps/pedidos/apuracao.py:409` perde a reserva paga quando o comprador removeu apenas a sobra pendente durante pagamento. Prova: 6 congeladas + 2 pendentes; remove 2; retorno deixa `removida/0` em vez de `ativa/6`. Ver E11-04.
+
+**R02 — importante — estoque continua ocupado pela conta suspensa após o retorno.** Referências: funcional §2 (interesses do suspenso removidos), §8.2 (retorno ao interesse), E11-05 regra 2 e E05-07. O ramo de conta suspensa em `_restaurar_as_reservas_dos_pagantes` só pula a parcela, deixando `em_pedido` e sua reserva antiga. `total_reservado` continua incluindo essa situação. Prova: AP-insuficiente, limites 11/12, A paga e é suspenso antes da apuração; no retorno P1 ainda tem **6 reservadas** de A, em vez de liberar essa capacidade. O pedido congelado pode e deve ficar intacto; ele não exige uma reserva operacional sem uso no novo ciclo. A limitação já declarada pelo implementador não é uma aprovação. Corrigir a destinação da reserva no retorno e cobrir suspensão/remoção, sem restaurar interesses de conta impedida.
+
+O resultado do A-3 questionado pelo implementador está correto pela regra 4 e R-5: imediatamente após restaurar são 6 reservadas e 2 pendentes; depois de atender a fila, com o estoque liberado por B, são 8 e 0. O teste separa esses dois momentos. Não considero isso mudança comercial nem defeito de produção; o texto do critério precisa refletir a composição das regras.
+
+**R04 — bloqueador — deadlock entre retorno e registro de tarifa tardia.** Referências: AGENTS.md §6 (concorrência e recuperação financeira), E11-01 ordem de travas, E11-05 atomicidade, regra financeira única da E09. A apuração toma `FOR NO KEY UPDATE`, mas em `apps/rodadas/fechamento.py:371`/`:372` o retorno reutilizado promove fornecedor/rodada a `FOR UPDATE`. Depois espera contas financeiras em `apps/pedidos/apuracao.py:621`/`:486`. A tarefa `registrar_tarifas_pendentes_agora` pode já deter a conta de receita/contas financeiras e tentar confirmar uma despesa com FK para a rodada. O commit pede `FOR KEY SHARE` na rodada: uma transação espera a outra.
+
+Prova com duas conexões reais, sem retirar validações: consulta da apuração termina; a tarefa registra a tarifa e pausa antes do commit; a apuração retorna para interesse e começa a devolução; a tarefa tenta confirmar. PostgreSQL: **`OperationalError: deadlock detected`**, contexto `rodadas_rodada ... FOR KEY SHARE`. Reproduzido duas vezes após ajustar a chamada do helper na prova. Em ambas a tarefa financeira foi a vítima; o banco pode escolher outra vítima. As pausas só ordenam uma execução possível. Corrigir a ordem/compatibilidade de travas em todo o ramo, não apenas em `_travar`; acrescentar regressão contra a tarifa tardia. Não é necessário alterar regra de negócio.
+
+TDD: `67e5bd2 → 47a4689` e correção de múltiplos pagantes `3066566 → aae9149`, registros conferidos; os cenários novos deste parecer não estavam cobertos.

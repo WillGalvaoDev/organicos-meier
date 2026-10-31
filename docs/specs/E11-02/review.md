@@ -21,3 +21,12 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Ajustes dos testes por conflito com fatias seguintes (E11-04)
 
 Registrado também na E11-04: o A-4 passou a conferir só a parcela de A em P1, e o A-6 filtra a chave `itens_cancelados:inadimplencia:`. As asserções sobre o que a E11-02 produz não mudaram.
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**APROVADO no escopo próprio desta fatia.** A-1 a A-10 confrontados com código/testes: remoção por fornecedor inclusive produto fora do estoque, preservação dos demais compradores/fornecedores e do pedido congelado, aviso só aos cancelados agora, auditoria e corrida com remoção de pendente. Não foi encontrado achado próprio.
+
+O ajuste registrado de A-4 é coerente com a composição das fatias: a remoção dos inadimplentes não muda A, mas E11-04 restaura a parte invalidada de A depois. Filtrar a chave do aviso de inadimplência em A-6 também distingue corretamente o evento posterior de caixa incompleta. Isso não autoriza enfraquecer a preservação dos pedidos congelados. TDD: `9364df2 → e958092`, registros Red/Green e regressões verdes conferidos. A aprovação desta fatia não aprova a etapa.

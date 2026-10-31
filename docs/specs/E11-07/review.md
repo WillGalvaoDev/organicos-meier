@@ -19,3 +19,12 @@ Comandos com os arquivos de teste inteiros, sem `-k`: `uv run pytest tests/tecni
 ## Riscos remanescentes e limites de verificação
 
 - A aprovação com a consulta ao provedor bloqueada não tem critério de tela na spec; coberta pelo serviço (E11-06 A-5).
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**Sem achado próprio nos cenários A-1 a A-17; aprovação da etapa não concedida.** Conferidas as rotas POST, autorização administrativa e nova autenticação por passkey, 409/503, disponibilidade por prazo, apresentação do resultado, links de devolução, situação do comprador e isolamento de dados. As mensagens de fila/reservas não correspondem ao estado real nos casos R01/R02, originados nas fatias de restauração; devem ser revalidadas junto dessas correções.
+
+A mensagem específica de 503 na aprovação evita afirmar que nada foi apurado depois de já existir apuração: adaptação técnica coerente, sem mudar a regra de bloqueio. TDD: `2e5c00c → 33c0cd2`, registros conferidos. Não foi feita inspeção visual em navegador; evidência de tela nesta revisão é leitura de templates/rotas e testes HTTP da suíte.

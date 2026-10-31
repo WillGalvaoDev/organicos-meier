@@ -28,3 +28,16 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Defeito achado depois pela E11-08 (corrigido)
 
 Com dois pagantes com estorno na mesma apuração, a segunda criação de obrigação pedia contas do livro-razão de `pk` menor que as já travadas (`OrdemDeTravasViolada`). Teste: `test_dois_pagantes_com_estorno_na_mesma_apuracao` (Red `3066566`, 1 failed). Correção: `_travar_as_contas_das_devolucoes` trava o conjunto das contas de todos os pagantes de uma vez, em ordem crescente de `pk`, antes do primeiro estorno (`contas_das_obrigacoes`, em `apps/financeiro/obrigacoes.py`). Detalhes no `review.md` da E11-08.
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**REPROVADO — R01 (importante).** A-1 a A-14 confrontados com código/testes, incluindo os dois pagantes com estorno acrescentados na E11-08. Os cenários existentes passam, mas falta a interação entre remover a sobra pendente e restaurar a parte paga congelada.
+
+**R01 — remoção só da sobra pendente impede a restauração das unidades pagas.** Referências: funcional §5.2 (remover pendente só afeta a pendência), §8.2 passo 3.4; E11-04 regras 2/4 e invariante de restauração, E11-05 regra 1. `apps/pedidos/apuracao.py:360` e `:409` tratam qualquer parcela `removida` como impedimento, além da conta suspensa/removida prevista na spec. Uma parcela com parte congelada e sobra pendente fica `removida` legitimamente quando o comprador ativo remove toda a sobra pelo serviço. Isso não cancelou suas unidades pagas.
+
+Prova da rodada viável: A tem 4 unidades de P2 no pedido e 2 pendentes; paga e remove apenas as 2 pendentes. A caixa das 4 é invalidada pela inadimplência de B. A apuração gera reembolso, mas mantém a parcela `removida`, pendente zero, em vez de restaurar 4. Prova de retorno: A tem 6 unidades pagas e 2 pendentes de P1; remove as 2; a rodada volta ao interesse, mas não recupera as 6 reservadas. Ambas falharam independentemente. Corrigir distinguindo a remoção da sobra da elegibilidade da conta, preservando identidade/quantidade congelada e sem ressuscitar a sobra que o comprador removeu; testar ambos os ramos e idempotência.
+
+TDD: `b75e61e → df2b910`, e `3066566 → aae9149` para mais de um pagante; registros conferidos. A trava das contas de usuários antes do fornecedor é uma decisão técnica coerente com a moderação. O impedimento adicional `parcela_removida`, porém, não decorre da regra de conta suspensa.

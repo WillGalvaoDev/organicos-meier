@@ -21,3 +21,16 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Riscos remanescentes e limites de verificação
 
 - O comportamento do provedor real na busca por referência continua o limite L-6.
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**BLOQUEADO POR DECISÃO no ponto R03; etapa E11 REPROVADA também por defeitos independentes.** A-1 a A-21 foram confrontados com código e testes: autorização, fronteira de 48h, releitura sob trava, pedido imutável, inadimplência, reconsulta, idempotência, destino/alerta de pagamento informado depois e sua liquidação estão cobertos pela suíte. A-8 confirma o agendamento implementado, mas esse critério não basta para comprovar a ordem exigida pela fonte superior.
+
+**R03 — bloqueador — cancelamento no provedor adiado para depois da apuração.** Infraestrutura §4.3: reconsultar, cancelar no provedor tentativas não terminais, aplicar P-6 e seguir a apuração; indisponibilidade bloqueia a apuração. E11-01/spec.md, passo 5, e A-8 mandam somente agendar. `apps/pedidos/apuracao.py:282` chama `agendar_cancelamento`; `iniciar_apuracao` prossegue e grava o resultado antes da execução externa. Prova: X pago, cobrança de Y pendente, início em T0+48h; depois da conclusão da apuração o provedor ainda devolve `pendente`. Com falha programada de `cancelar_cobranca`, a apuração também termina sem bloqueio, pois nem tenta a operação.
+
+O código segue o detalhamento local, mas há conflito com a fonte superior. Não se trata de mandar fazer rede sob travas: a solução deve preservar também o contrato da infraestrutura §4.2. Solicitei ao responsável identificar eventual decisão aprovada que permita postergar o cancelamento. Não foi localizada tal decisão nos documentos auditados. O ponto exige alinhamento pelo especificador: cumprir a ordem existente ou formalizar uma alteração autorizada, com tratamento da corrida e da indisponibilidade. Não presumi essa autorização.
+
+TDD: conferidos `e092f5b → bbc9e7f` e o registro dos Reds intermediários de destino/concorrência; não reexecutei versões históricas nesta rodada. A solução `FOR NO KEY UPDATE` inicial é pertinente, mas o ramo de retorno a perde depois (R04, E11-05).

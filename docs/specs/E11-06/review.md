@@ -18,3 +18,12 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Riscos remanescentes e limites de verificação
 
 - O receptor de `resultado_aprovado` é da E13; a spec fixa que uma exceção dele desfaz o avanço (testado com um receptor que falha).
+
+
+## Parecer independente — agente 3 — 2026-10-31
+
+Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 integrada `1b9bf07`. Leitura dos documentos-base (funcional v1.7 e infraestrutura v1.8), spec/acceptance das oito fatias, implementação, testes e registros de TDD. O conteúdo anterior deste arquivo foi preservado integralmente. Evidências e reproduções completas no [parecer consolidado da E11-08](../E11-08/review.md).
+
+**APROVADO no escopo próprio revalidado; sem liberar o avanço da etapa com os achados abertos.** A-1 a A-13 confrontados com código/testes: nova consulta, bloqueio por falha, autorização, exclusão de pedidos inteiramente invalidados, lançamentos de custódia/fornecedor/serviço/frete, déficit sem cobrar mais do pagante, unicidade da aprovação, auditoria e rollback quando o receptor do sinal falha. Não encontrado achado próprio nesse fluxo.
+
+TDD: `5a97b88 → d54cdf7`, registros conferidos. Pedido formal e repasse continuam na E13. Os problemas do início/retorno não são resolvidos por aprovar o resultado.
