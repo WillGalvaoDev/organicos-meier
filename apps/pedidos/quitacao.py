@@ -25,8 +25,10 @@ from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.tempo import agora, ate_o_limite
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.pedidos.models import (
+    ApuracaoFinal,
     DestinoDaDecisao,
     DestinoDoPagamento,
+    MotivoDoCancelamento,
     MotivoDoDestino,
     Pedido,
     SituacaoDePagamento,
@@ -108,6 +110,20 @@ def _sem_pedido(pagamento: PagamentoDoProvedor) -> DestinoDoPagamento:
     return destino
 
 
+def teria_quitado_pela_p6(pagamento: PagamentoDoProvedor, pedido: Pedido) -> bool:
+    """O pagamento teria quitado o pedido pela P-6: valor igual ao total, criado antes de
+    `T0 + 24h` e aprovado até `T0 + 48h`. Só serve ao alerta do pagamento informado depois da
+    apuração (E11-01); não olha a situação do pedido."""
+    aprovado = pagamento.aprovado_no_provedor_em
+    abertura = pedido.abertura
+    return (
+        aprovado is not None
+        and pagamento.valor == pedido.total
+        and aceita_tentativas(abertura, pagamento.criado_no_provedor_em)
+        and ate_o_limite(aprovado, fim_da_margem(abertura))
+    )
+
+
 def _motivo_da_devolucao(
     pagamento: PagamentoDoProvedor, aprovado: datetime, pedido: Pedido, situacao: SituacaoDoPedido
 ) -> str | None:
@@ -124,7 +140,12 @@ def _motivo_da_devolucao(
         return MotivoDoDestino.DUPLICIDADE
     cancelado_em = situacao.cancelado_em
     if situacao.situacao == SituacaoDePagamento.CANCELADO and (
-        cancelado_em is None or aprovado >= cancelado_em
+        cancelado_em is None
+        or aprovado >= cancelado_em
+        # depois da apuração nenhum pagamento desfaz um cancelamento, e a falta de pagamento
+        # nunca é desfeita (E11-01)
+        or situacao.motivo_do_cancelamento == MotivoDoCancelamento.INADIMPLENCIA
+        or ApuracaoFinal.objects.filter(ciclo_id=abertura.ciclo_id).exists()
     ):
         return MotivoDoDestino.PEDIDO_CANCELADO
     return None

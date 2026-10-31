@@ -164,6 +164,23 @@ class ParcelaNoPedido(RegistroDoPedido):
         return f"parcela no pedido {self.pk}"
 
 
+class ApuracaoFinal(RegistroDoPedido):
+    """A apuração final do ciclo (E11-01): uma por ciclo, gravada depois de cancelar os não
+    pagos. A rodada continua em `pagamento` até o administrador aprovar o resultado."""
+
+    ciclo = models.OneToOneField(Ciclo, on_delete=models.PROTECT, related_name="apuracao")
+    abertura = models.OneToOneField(
+        AberturaDoPagamento, on_delete=models.PROTECT, related_name="apuracao"
+    )
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    iniciada_em = models.DateTimeField()
+    pedidos_pagos = models.PositiveIntegerField()
+    pedidos_nao_pagos = models.PositiveIntegerField()
+
+    def __str__(self) -> str:
+        return f"apuração {self.pk}"
+
+
 class SituacaoDePagamento(models.TextChoices):
     AGUARDANDO_PAGAMENTO = "aguardando_pagamento", "Aguardando pagamento"
     PAGO = "pago", "Pago"
@@ -173,6 +190,7 @@ class SituacaoDePagamento(models.TextChoices):
 class MotivoDoCancelamento(models.TextChoices):
     SUSPENSAO = "suspensao", "Suspensão da conta"
     REMOCAO_DA_CONTA = "remocao_da_conta", "Remoção da conta"
+    INADIMPLENCIA = "inadimplencia", "Falta de pagamento"
 
 
 class SituacaoDoPedido(models.Model):

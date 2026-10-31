@@ -56,6 +56,15 @@ def traduzindo_falhas(referencia_externa: str) -> Iterator[None]:
         raise ConsultaAoProvedorFalhou(referencia_externa, motivo) from erro
 
 
+def exigir_fora_de_transacao() -> None:
+    """Recusa, antes de qualquer consulta ou gravação, a chamada dentro de transação de quem
+    chama: a consulta ao provedor vem antes da transação da decisão e sem travas (infraestrutura
+    4.2). O bloco durável vazio levanta o `RuntimeError` do Django, e é aceito na transação de
+    teste do Django."""
+    with transaction.atomic(durable=True):
+        pass
+
+
 def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProvedor]:
     """Sincroniza todos os pagamentos da referência e devolve os registros, relidos do banco,
     por `criado_no_provedor_em` e `id_externo`. Cada pagamento é sincronizado numa transação

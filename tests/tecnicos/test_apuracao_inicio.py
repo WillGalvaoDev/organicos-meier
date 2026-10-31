@@ -43,10 +43,11 @@ def sim(relogio: RelogioControlado, simulador_pagamentos: Any) -> Any:
 @pytest.fixture
 def consultas(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """As referências consultadas pela apuração, sem mudar o que a consulta faz."""
+    from apps.pagamentos import consulta
     from apps.pedidos import apuracao
 
     registradas: list[str] = []
-    original = apuracao.consultar_antes_de_decidir
+    original = consulta.consultar_antes_de_decidir
 
     def espiar(referencia: str) -> Any:
         registradas.append(referencia)
@@ -54,6 +55,12 @@ def consultas(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(apuracao, "consultar_antes_de_decidir", espiar)
     return registradas
+
+
+def _receber_o_aviso(sim: Any, **entrega: Any) -> None:
+    """O aviso é entregue e a tarefa consulta e sincroniza o pagamento."""
+    sim.entregar_avisos(**entrega)
+    processar_chamadas()
 
 
 def _iniciar(a: Any) -> Any:
@@ -142,7 +149,7 @@ def test_so_o_administrador_apura(relogio: RelogioControlado) -> None:  # A-3
     antes = _foto()
     for autor in (a.a, ContaFactory.create(fornecedor=True), None):
         with pytest.raises(PermissionDenied):
-            iniciar_apuracao(autor, a.rodada)  # type: ignore[arg-type]
+            iniciar_apuracao(autor, a.rodada)
     assert _foto() == antes
 
 
@@ -187,7 +194,7 @@ def test_cancela_o_nao_pago_por_inadimplencia_e_audita(
 def test_a_apuracao_nao_altera_a_composicao_do_pedido(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-6
-    a, x, y = arranjo_ap(relogio)
+    a, x, _y = arranjo_ap(relogio)
     pagar(relogio, sim, x)
     relogio.congelar(PRAZO)
     antes = _composicao()
@@ -273,7 +280,7 @@ def test_provedor_indisponivel_bloqueia_a_apuracao(relogio: RelogioControlado, s
 def test_dentro_de_transacao_de_quem_chama_e_recusada(
     relogio: RelogioControlado, simulador_pagamentos: Any, consultas: list[str]
 ) -> None:  # A-12
-    a, x, y = arranjo_ap(relogio)
+    a, x, _y = arranjo_ap(relogio)
     pagar(relogio, simulador_pagamentos, x)
     relogio.congelar(PRAZO)
     antes = _foto()
@@ -287,7 +294,7 @@ def test_dentro_de_transacao_de_quem_chama_e_recusada(
 def test_apurar_de_novo_e_recusado(relogio: RelogioControlado, sim: Any) -> None:  # A-13
     from apps.pedidos.apuracao import ApuracaoRecusada
 
-    a, x, y = arranjo_ap(relogio)
+    a, x, _y = arranjo_ap(relogio)
     pagar(relogio, sim, x)
     relogio.congelar(PRAZO)
     _iniciar(a)
@@ -319,10 +326,10 @@ def _apurada_com_cobranca_de_y(
 def test_pagamento_no_prazo_informado_depois_da_apuracao_vira_devolucao_e_alerta(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-17
-    a, x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
+    a, _x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
     antes = _composicao()
     relogio.congelar(T0 + 50 * H)
-    sim.entregar_avisos()
+    _receber_o_aviso(sim)
     cancelado = _situacao(y)
     assert (cancelado.situacao, cancelado.motivo_do_cancelamento) == ("cancelado", "inadimplencia")
     assert cancelado.quitado_em is None
@@ -341,9 +348,9 @@ def test_pagamento_no_prazo_informado_depois_da_apuracao_vira_devolucao_e_alerta
 def test_aviso_repetido_nao_repete_destino_obrigacao_nem_alerta(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-18
-    a, x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
+    _a, _x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
     relogio.congelar(T0 + 50 * H)
-    sim.entregar_avisos(vezes=3)
+    _receber_o_aviso(sim, vezes=3)
     assert len(_destinos(y)) == 1
     assert ObrigacaoComComprador.objects.filter(pedido=y).count() == 1
     assert len(_alertas()) == 1
@@ -352,9 +359,9 @@ def test_aviso_repetido_nao_repete_destino_obrigacao_nem_alerta(
 def test_aprovado_depois_da_margem_nao_abre_o_alerta_do_prazo(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-19
-    a, x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, T0 + 49 * H)
+    _a, _x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, T0 + 49 * H)
     relogio.congelar(T0 + 50 * H)
-    sim.entregar_avisos()
+    _receber_o_aviso(sim)
     assert _destinos(y) == [("devolucao", "aprovado_apos_a_margem")]
     assert _alertas() == []
 
@@ -370,7 +377,7 @@ def test_cancelamento_por_suspensao_antes_da_apuracao_nao_quita_depois_dela(
     _iniciar(a)
     sim.aprovar(id_y, em=T0 + 29 * H)
     relogio.congelar(T0 + 50 * H)
-    sim.entregar_avisos()
+    _receber_o_aviso(sim)
     cancelado = _situacao(y)
     assert (cancelado.situacao, cancelado.motivo_do_cancelamento) == ("cancelado", "suspensao")
     assert _destinos(y) == [("devolucao", "pedido_cancelado")]
@@ -379,9 +386,9 @@ def test_cancelamento_por_suspensao_antes_da_apuracao_nao_quita_depois_dela(
 
 def test_devolucao_concluida_resolve_o_alerta(relogio: RelogioControlado, sim: Any) -> None:
     # A-21
-    a, x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
+    a, _x, y, _ = _apurada_com_cobranca_de_y(relogio, sim, PRAZO - timedelta(minutes=1))
     relogio.congelar(T0 + 50 * H)
-    sim.entregar_avisos()
+    _receber_o_aviso(sim)
     assert len(_alertas()) == 1
     obrigacao = ObrigacaoComComprador.objects.get(pedido=y)
     autorizar_devolucao(obrigacao, autor=a.admin)
@@ -429,9 +436,10 @@ def test_duas_apuracoes_em_paralelo_gravam_uma(
 
 def _reconsulta_de_y_pendente(monkeypatch: pytest.MonkeyPatch, y: Pedido) -> None:
     """Dublê da consulta só na reconsulta da apuração: a de Y não vê a aprovação."""
+    from apps.pagamentos import consulta
     from apps.pedidos import apuracao
 
-    original = apuracao.consultar_antes_de_decidir
+    original = consulta.consultar_antes_de_decidir
 
     def reconsultar(referencia: str) -> Any:
         if referencia == y.referencia_externa:
@@ -473,7 +481,7 @@ def test_apuracao_espera_o_aviso_que_trava_a_situacao_de_y(
     corrida = Corrida()
     corrida.antes_de(monkeypatch, quitacao, "_motivo_da_devolucao")
     ra, rb = corrida.rodar(
-        lambda: simulador_pagamentos.entregar_avisos(),
+        lambda: _receber_o_aviso(simulador_pagamentos),
         lambda: apuracao.iniciar_apuracao(a.admin, a.rodada),
         b_atomica=False,
     )
@@ -502,7 +510,7 @@ def test_aviso_espera_a_apuracao_que_ja_cancelou_y(
     corrida.depois_de(monkeypatch, apuracao, "_cancelar_os_nao_pagos")
     ra, rb = corrida.rodar(
         lambda: apuracao.iniciar_apuracao(a.admin, a.rodada),
-        lambda: simulador_pagamentos.entregar_avisos(),
+        lambda: _receber_o_aviso(simulador_pagamentos),
         a_atomica=False,
         b_atomica=False,
     )

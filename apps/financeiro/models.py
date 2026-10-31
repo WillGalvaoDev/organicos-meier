@@ -70,6 +70,10 @@ class TipoDeAlerta(models.TextChoices):
         "devolucao_concluida_tardiamente",
         "Devolução concluída tardiamente",
     )
+    APROVADO_NO_PRAZO_DEPOIS_DA_APURACAO = (
+        "aprovado_no_prazo_depois_da_apuracao",
+        "Aprovado no prazo depois da apuração",
+    )
 
 
 class Gravidade(models.TextChoices):
