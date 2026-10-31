@@ -200,6 +200,19 @@ class ApuracaoFinal(RegistroDoPedido):
         return f"apuração {self.pk}"
 
 
+class AprovacaoDoResultado(RegistroDoPedido):
+    """O administrador aprovou o resultado válido da apuração e a rodada avançou (E11-06)."""
+
+    apuracao = models.OneToOneField(
+        ApuracaoFinal, on_delete=models.PROTECT, related_name="aprovacao"
+    )
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    aprovada_em = models.DateTimeField()
+
+    def __str__(self) -> str:
+        return f"aprovação {self.pk}"
+
+
 class CaixaInvalidada(RegistroDoPedido):
     """Uma caixa do produto no ciclo que ficou incompleta por inadimplência (E11-03). Só inserção:
     a caixa inteira é invalidada, e nenhuma é refeita."""

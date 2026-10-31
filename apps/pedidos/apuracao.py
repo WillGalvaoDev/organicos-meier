@@ -23,7 +23,8 @@ from apps.catalogo.models import Produto
 from apps.catalogo.quantidades import quantidade_com_unidade
 from apps.catalogo.templatetags.catalogo import reais
 from apps.contas.models import Conta, Papel, Situacao
-from apps.financeiro.models import MotivoDoReembolso
+from apps.financeiro.apuracao import frete_do_ciclo, registrar_apuracao_no_livro
+from apps.financeiro.models import ApuracaoNoLivro, MotivoDoReembolso
 from apps.financeiro.reembolsos import reembolso_integral_do_pedido, reembolso_parcial
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
@@ -36,6 +37,7 @@ from apps.nucleo.valores import arredondar_centavos
 from apps.pagamentos.consulta import consultar_antes_de_decidir, exigir_fora_de_transacao
 from apps.pedidos.models import (
     AberturaDoPagamento,
+    AprovacaoDoResultado,
     ApuracaoFinal,
     CaixaInvalidada,
     ItemDoPedido,
@@ -51,9 +53,10 @@ from apps.pedidos.models import (
 )
 from apps.pedidos.pagamento import agendar_cancelamento
 from apps.pedidos.prazos import fim_da_margem, pode_iniciar_apuracao
+from apps.pedidos.sinais import resultado_aprovado
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.fechamento import MOTIVO_DO_RETORNO_DO_PAGAMENTO, voltar_para_interesse
-from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
+from apps.rodadas.models import Ciclo, EstoqueDaRodada, Etapa, Rodada
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,9 @@ MENSAGENS = {
         "(horário de Brasília)."
     ),
     "ja_apurada": "A apuração deste ciclo já foi feita.",
+    "sem_apuracao": "A apuração deste ciclo ainda não foi feita.",
+    "resultado_nao_valido": "Só um resultado válido pode ser aprovado.",
+    "ja_aprovado": "O resultado desta apuração já foi aprovado.",
 }
 
 
@@ -602,6 +608,100 @@ def _retornar_para_interesse(
         "nao_restauradas": nao_restauradas,
         "reembolsos": reembolsos,
     }
+
+
+def _conferir_a_aprovacao(rodada: Rodada) -> ApuracaoFinal:
+    """As conferências da aprovação sobre a rodada relida: em `pagamento`, ciclo vigente apurado
+    com resultado válido e ainda não aprovado. A primeira que falha vale."""
+    if rodada.etapa != Etapa.PAGAMENTO:
+        raise ApuracaoRecusada("fora_de_pagamento")
+    ciclo = ciclo_vigente(rodada)
+    apuracao: ApuracaoFinal | None = (
+        ApuracaoFinal.objects.filter(ciclo=ciclo).first() if ciclo else None
+    )
+    if apuracao is None:
+        raise ApuracaoRecusada("sem_apuracao")
+    if apuracao.resultado != ResultadoDaApuracao.VALIDA:
+        raise ApuracaoRecusada("resultado_nao_valido")
+    if AprovacaoDoResultado.objects.filter(apuracao=apuracao).exists():
+        raise ApuracaoRecusada("ja_aprovado")
+    return apuracao
+
+
+def _pedidos_validos(calculo: CalculoDoResultado, pagos: list[Pedido]) -> list[Pedido]:
+    """Os pedidos pagos com ao menos uma unidade fora das caixas invalidadas. Um pedido pago só
+    com unidades invalidadas não é válido: a custódia dele já financiou os reembolsos (E11-04)."""
+    com_unidade_valida = {
+        item.pedido_id
+        for item in ItemDoPedido.objects.filter(pedido__in=pagos)
+        if calculo.unidades_invalidadas.get(item.pk, ZERO) < item.quantidade
+    }
+    return [pedido for pedido in pagos if pedido.pk in com_unidade_valida]
+
+
+def _registrar_a_apuracao_no_livro(
+    autor: Conta, ciclo: Ciclo, validos: list[Pedido]
+) -> ApuracaoNoLivro:
+    """A apuração final aprovada no livro-razão (E09-06): a custódia dos pedidos válidos vai para a
+    obrigação com o fornecedor, a receita de serviço e o frete; o frete dos inadimplentes vira
+    déficit do administrador (P-1)."""
+    return registrar_apuracao_no_livro(ciclo, validos, autor=autor)
+
+
+def aprovar_resultado(autor: Conta | None, rodada: Rodada) -> AprovacaoDoResultado:
+    """Aprova o resultado válido da apuração e avança a rodada para `aguardando_fornecedor`.
+
+    Só o administrador (`PermissionDenied`). Só fora de transação (`RuntimeError`): a nova consulta
+    ao provedor vem antes da decisão e, se falhar, bloqueia o avanço. Um pagamento descoberto agora
+    segue as regras da E11-01 (devolução e alerta) e não refaz o resultado (§7.1, §8.3).
+    """
+    administrador = _exigir_administrador(autor)
+    exigir_fora_de_transacao()
+    atual = Rodada.objects.get(pk=rodada.pk)
+    apuracao = _conferir_a_aprovacao(atual)
+    pedidos = list(Pedido.objects.filter(abertura_id=apuracao.abertura_id).order_by("pk"))
+    for pedido in pedidos:
+        consultar_antes_de_decidir(pedido.referencia_externa)
+    with transaction.atomic():
+        Fornecedor.objects.select_for_update(no_key=True).get(pk=atual.fornecedor_id)
+        travada = Rodada.objects.select_for_update(no_key=True).get(pk=atual.pk)
+        apuracao = _conferir_a_aprovacao(travada)
+        abertura = apuracao.abertura
+        situacoes = list(
+            SituacaoDoPedido.objects.filter(pedido__abertura=abertura).order_by("pedido_id")
+        )
+        pagos_ids = {s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO}
+        nao_pagos = {s.pedido_id for s in situacoes} - pagos_ids
+        calculo = _calcular_o_resultado(abertura, nao_pagos)
+        validos = _pedidos_validos(calculo, [p for p in pedidos if p.pk in pagos_ids])
+        ciclo = abertura.ciclo
+        _registrar_a_apuracao_no_livro(administrador, ciclo, validos)
+        travada.etapa = Etapa.AGUARDANDO_FORNECEDOR
+        travada.save(update_fields=["etapa"])
+        instante = agora()
+        aprovacao = AprovacaoDoResultado.objects.create(
+            apuracao=apuracao, autor=administrador, aprovada_em=instante
+        )
+        frete = frete_do_ciclo(ciclo)
+        registrar_auditoria(
+            administrador,
+            "rodada.aprovar_resultado",
+            travada,
+            {
+                "rodada": travada.pk,
+                "ciclo": ciclo.pk,
+                "apuracao": apuracao.pk,
+                "pedidos_validos": [p.pk for p in validos],
+                "frete_efetivo": str(frete.efetivo),
+                "frete_arrecadado": str(frete.arrecadado),
+                "deficit": str(frete.deficit),
+            },
+        )
+        resultado_aprovado.send(
+            sender=AprovacaoDoResultado, rodada=travada, ciclo=ciclo, apuracao=apuracao
+        )
+    rodada.etapa = Etapa.AGUARDANDO_FORNECEDOR
+    return aprovacao
 
 
 def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:

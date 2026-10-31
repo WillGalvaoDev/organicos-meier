@@ -20,6 +20,7 @@ from apps.financeiro.models import (
     MovimentoFinanceiro,
     ObrigacaoComComprador,
     PedidoApurado,
+    TipoDeDespesa,
 )
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
@@ -69,7 +70,7 @@ def _aprovar(a: Any) -> Any:
 
 
 def _v(relogio: RelogioControlado, sim: Any, **arranjo: Any) -> tuple[Any, Pedido, Pedido, Any]:
-    """O arranjo V: AP-viável, X pago e Y sem pagamento, apurado em `T0 + 48h`, relógio `T0 + 49h`."""
+    """O arranjo V: AP-viável, X pago, Y sem pagamento, apurado em `T0 + 48h`; relógio `T0 + 49h`."""
     a, x, y = arranjo_ap(relogio, **arranjo)
     pagar(relogio, sim, x)
     relogio.congelar(PRAZO)
@@ -136,7 +137,7 @@ def test_aprovar_leva_a_apuracao_ao_livro_e_avanca_a_rodada(
         )
     }
     assert destinos == {"produtos": D("60.00"), "servico": D("3.00"), "frete": D("7.76")}
-    (deficit,) = Despesa.objects.filter(tipo="deficit_de_frete")
+    (deficit,) = Despesa.objects.filter(tipo=TipoDeDespesa.DEFICIT_DE_FRETE)
     assert deficit.valor == D("14.24")
 
 
