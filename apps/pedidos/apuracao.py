@@ -12,6 +12,7 @@ abertura. A apuração não trava pagamento nenhum, então segue a ordem da E08-
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
@@ -21,6 +22,8 @@ from apps.catalogo.models import Produto
 from apps.contas.models import Conta, Papel
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
+from apps.notificacoes.emissao import emitir_evento
+from apps.notificacoes.eventos import Evento
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao
 from apps.pagamentos.consulta import consultar_antes_de_decidir, exigir_fora_de_transacao
@@ -42,6 +45,8 @@ from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 logger = logging.getLogger(__name__)
 
 MOTIVO_DA_TENTATIVA = "apuracao"
+MAIOR_TITULO = 150
+ZERO = Decimal("0.000")
 
 MENSAGENS = {
     "fora_de_pagamento": "Só uma rodada na etapa de pagamento pode ser apurada.",
@@ -135,6 +140,53 @@ def _cancelar_os_nao_pagos(situacoes: list[SituacaoDoPedido], instante: datetime
     return cancelados
 
 
+def _remover_as_parcelas_dos_inadimplentes(
+    fornecedor_id: int, compradores: list[int]
+) -> list[dict[str, Any]]:
+    """Os inadimplentes perdem todas as parcelas `ativa`, `em_pedido` e `pendente` em produtos do
+    fornecedor, inclusive de fora do estoque da rodada (§8.2, passo 3.2). A sequência e a
+    quantidade original ficam; as parcelas de outros fornecedores não mudam. Nenhuma reserva é
+    atendida agora: fora de interesse a fila não é atendida. Devolve o que saiu, por comprador."""
+    parcelas = ParcelaDeInteresse.objects.filter(
+        comprador_id__in=compradores,
+        produto__fornecedor_id=fornecedor_id,
+        situacao__in=(
+            SituacaoParcela.ATIVA,
+            SituacaoParcela.EM_PEDIDO,
+            SituacaoParcela.PENDENTE,
+        ),
+    ).order_by("comprador_id", "produto_id", "sequencia")
+    por_comprador: dict[int, list[list[object]]] = {}
+    for parcela in parcelas:
+        por_comprador.setdefault(parcela.comprador_id, []).append(
+            [parcela.pk, str(parcela.quantidade_reservada), str(parcela.quantidade_pendente)]
+        )
+        parcela.quantidade_reservada = ZERO
+        parcela.quantidade_pendente = ZERO
+        parcela.situacao = SituacaoParcela.REMOVIDA
+        parcela.save(update_fields=["quantidade_reservada", "quantidade_pendente", "situacao"])
+    return [{"comprador": pk, "parcelas": removidas} for pk, removidas in por_comprador.items()]
+
+
+def _avisar_o_cancelamento(pedidos: list[Pedido], fornecedor: Fornecedor) -> None:
+    """O aviso de cancelamento ao comprador cujo pedido foi cancelado por esta apuração. Quem já
+    tinha o pedido cancelado por suspensão ou remoção não recebe: a moderação já tratou a conta."""
+    for pedido in pedidos:
+        emitir_evento(
+            Evento.ITENS_CANCELADOS,
+            pedido.comprador,
+            titulo=f"Pedido cancelado: {fornecedor.nome}"[:MAIOR_TITULO],
+            corpo=(
+                f"Seu pedido {pedido.pk} da rodada de {fornecedor.nome} foi cancelado porque o "
+                "pagamento não foi identificado até o fim do prazo. Os itens desse fornecedor "
+                "saíram do seu carrinho, inclusive reservas e quantidades pendentes. Nada foi "
+                "cobrado neste pedido."
+            ),
+            link=f"/pedidos/{pedido.pk}/",
+            chave=f"itens_cancelados:inadimplencia:{pedido.pk}:{pedido.comprador_id}",
+        )
+
+
 def _cancelar_as_cobrancas_pendentes(pedido_ids: list[int]) -> None:
     """Para cada pedido da abertura, pago ou não, agenda o cancelamento das tentativas `criada`
     cujo pagamento não é terminal (E08-03). O alvo próprio do motivo evita esperar uma chamada
@@ -154,6 +206,7 @@ def _gravar_a_apuracao(
     situacoes: list[SituacaoDoPedido],
     cancelados: list[int],
     anteriores: dict[int, str],
+    inadimplentes: list[dict[str, Any]],
 ) -> ApuracaoFinal:
     pagos = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     nao_pagos = [s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO]
@@ -172,6 +225,7 @@ def _gravar_a_apuracao(
         "pagos": pagos,
         "nao_pagos": [[pk, anteriores[pk]] for pk in nao_pagos],
         "cancelados_agora": cancelados,
+        "inadimplentes": inadimplentes,
     }
     registrar_auditoria(autor, "rodada.apuracao_final", rodada, dados)
     return apuracao
@@ -201,8 +255,19 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
             .order_by("pedido_id")
         )
         anteriores = {s.pedido_id: s.situacao for s in situacoes}
+        nao_pagos = {s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO}
         cancelados = _cancelar_os_nao_pagos(situacoes, instante)
+        compradores = [p.comprador_id for p in pedidos if p.pk in nao_pagos]
+        inadimplentes = _remover_as_parcelas_dos_inadimplentes(travada.fornecedor_id, compradores)
         _cancelar_as_cobrancas_pendentes(pedido_ids)
+        _avisar_o_cancelamento([p for p in pedidos if p.pk in cancelados], travada.fornecedor)
         return _gravar_a_apuracao(
-            administrador, travada, abertura, instante, situacoes, cancelados, anteriores
+            administrador,
+            travada,
+            abertura,
+            instante,
+            situacoes,
+            cancelados,
+            anteriores,
+            inadimplentes,
         )
