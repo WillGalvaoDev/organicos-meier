@@ -96,12 +96,37 @@ def test_reservas_de_quem_pagou_ficam_e_as_de_quem_nao_pagou_saem(
 def test_parcela_com_pendente_volta_a_ativa_com_a_parte_congelada(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-3
-    a, _x, _y, _ = _retorno(relogio, sim, pendente_a_p1=2)
+    from django.db import transaction
+
+    from apps.pedidos import apuracao as modulo
+    from apps.pedidos.models import AberturaDoPagamento
+
+    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE, pendente_a_p1=2)
+    pagar(relogio, sim, x)
+    relogio.congelar(PRAZO)
     (parcela,) = _parcelas(a.a, a.p1)
+    assert (parcela.situacao, parcela.quantidade_reservada) == ("pendente", D("0.000"))
+    # a restauração, sozinha: a reserva é a parte congelada e a pendência não muda
+    with transaction.atomic():
+        restauradas, _ = modulo._restaurar_as_reservas_dos_pagantes(
+            AberturaDoPagamento.objects.get(), [x.pk]
+        )
+        parcela.refresh_from_db()
+        assert (parcela.situacao, parcela.quantidade_reservada, parcela.quantidade_pendente) == (
+            "ativa",
+            D("6.000"),
+            D("2.000"),
+        )
+        assert [parcela.pk, "6.000"] in restauradas
+        transaction.set_rollback(True)
+    # o retorno inteiro atende a fila com o estoque liberado por B: o pendente de A (anterior a
+    # qualquer reserva nova, R-5) recebe a reserva; ver o ponto para o especificador no review.md
+    _iniciar(a)
+    parcela.refresh_from_db()
     assert (parcela.situacao, parcela.quantidade_reservada, parcela.quantidade_pendente) == (
         "ativa",
-        D("6.000"),
-        D("2.000"),
+        D("8.000"),
+        D("0.000"),
     )
     assert parcela.quantidade_reservada + parcela.quantidade_pendente <= parcela.quantidade_original
 

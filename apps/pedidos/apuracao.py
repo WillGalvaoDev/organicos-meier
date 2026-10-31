@@ -24,8 +24,9 @@ from apps.catalogo.quantidades import quantidade_com_unidade
 from apps.catalogo.templatetags.catalogo import reais
 from apps.contas.models import Conta, Papel, Situacao
 from apps.financeiro.models import MotivoDoReembolso
-from apps.financeiro.reembolsos import reembolso_parcial
+from apps.financeiro.reembolsos import reembolso_integral_do_pedido, reembolso_parcial
 from apps.fornecedores.models import Fornecedor
+from apps.interesses.consultas import total_reservado
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.notificacoes.emissao import emitir_evento
 from apps.notificacoes.eventos import Evento
@@ -51,6 +52,7 @@ from apps.pedidos.models import (
 from apps.pedidos.pagamento import agendar_cancelamento
 from apps.pedidos.prazos import fim_da_margem, pode_iniciar_apuracao
 from apps.rodadas.ciclos import ciclo_vigente
+from apps.rodadas.fechamento import MOTIVO_DO_RETORNO_DO_PAGAMENTO, voltar_para_interesse
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
 
 logger = logging.getLogger(__name__)
@@ -373,6 +375,105 @@ def _restaurar_na_fila(
         )
 
 
+def _restaurar_as_reservas_dos_pagantes(
+    abertura: AberturaDoPagamento, pagos: list[int]
+) -> tuple[list[list[object]], list[dict[str, Any]]]:
+    """No retorno para interesse as reservas de quem pagou continuam na própria rodada, com a
+    ordem original (E11-05): cada parcela que aparece num pedido pago passa a `ativa`, com a
+    reserva igual à soma congelada nesse ciclo (a pendência não muda). Isso vale para a que ficou
+    `em_pedido` e para a que ficou `pendente` com a parte congelada só no pedido (E08-02). As
+    unidades de caixa invalidada ficam reservadas: no retorno não há fila. A conta suspensa ou
+    removida não pode ter interesses, e a parcela não é restaurada."""
+    somas: dict[int, Decimal] = {}
+    donos: dict[int, int] = {}
+    linhas = ParcelaNoPedido.objects.filter(
+        item__pedido__abertura=abertura, item__pedido_id__in=pagos
+    ).select_related("item__pedido")
+    for linha in linhas.order_by("pk"):
+        somas[linha.parcela_id] = somas.get(linha.parcela_id, ZERO) + linha.quantidade
+        donos[linha.parcela_id] = linha.item.pedido.comprador_id
+    contas = {c.pk: c for c in Conta.objects.filter(pk__in=set(donos.values()))}
+    restauradas: list[list[object]] = []
+    nao_restauradas: list[dict[str, Any]] = []
+    for parcela_pk in sorted(somas):
+        parcela = ParcelaDeInteresse.objects.get(pk=parcela_pk)
+        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(contas[donos[parcela_pk]].situacao))
+        if motivo is None and parcela.situacao == SituacaoParcela.REMOVIDA:
+            motivo = "parcela_removida"
+        if motivo is not None:
+            nao_restauradas.append({"parcela": parcela.pk, "motivo": motivo})
+            continue
+        parcela.quantidade_reservada = somas[parcela_pk]
+        parcela.situacao = SituacaoParcela.ATIVA
+        parcela.save(update_fields=["quantidade_reservada", "situacao"])
+        restauradas.append([parcela.pk, str(parcela.quantidade_reservada)])
+    return restauradas, nao_restauradas
+
+
+def _conferir_o_estoque(rodada: Rodada) -> None:
+    """Com o estoque travado, o total reservado de cada produto da rodada cabe no limite. Deve
+    valer sempre (as reservas restauradas couberam na abertura e o estoque não muda fora do
+    interesse); se falhar, a apuração inteira é desfeita e o log diz o produto."""
+    for estoque in EstoqueDaRodada.objects.filter(rodada_id=rodada.pk).select_related("produto"):
+        reservado = total_reservado(estoque.produto)
+        if estoque.limite is not None and reservado > estoque.limite:
+            logger.error(
+                "Retorno para interesse: produto %s com reserva %s acima do limite %s",
+                estoque.produto_id,
+                reservado,
+                estoque.limite,
+            )
+            raise RuntimeError("o total reservado passa do estoque da rodada")
+
+
+def _devolver_integralmente(apuracao: ApuracaoFinal, pedidos: list[Pedido]) -> list[dict[str, Any]]:
+    """A devolução integral de cada pedido pago (E10-02): a obrigação, financiada pela custódia do
+    ciclo, espera a autorização do administrador. Sem apuração no livro."""
+    gravados: list[dict[str, Any]] = []
+    for pedido in pedidos:
+        registrado = reembolso_integral_do_pedido(
+            pedido,
+            chave=f"minimo:{apuracao.pk}:{pedido.pk}",
+            motivo=MotivoDoReembolso.MINIMO_NAO_ATINGIDO,
+            autor=SISTEMA,
+        )
+        if registrado is None:
+            continue
+        reembolso = registrado.reembolso
+        gravados.append(
+            {
+                "chave": reembolso.chave,
+                "pedido": pedido.pk,
+                "produtos": str(reembolso.produtos),
+                "servico": str(reembolso.servico),
+                "frete": str(reembolso.frete),
+            }
+        )
+    return gravados
+
+
+def _avisar_o_retorno(
+    apuracao: ApuracaoFinal, fornecedor: Fornecedor, pedidos: list[Pedido]
+) -> None:
+    """O aviso de retorno para interesse a cada comprador pagante, com chave própria (não colide
+    com a do ciclo, da E06-06). O mínimo do fornecedor não aparece."""
+    for pedido in pedidos:
+        emitir_evento(
+            Evento.RETORNO_PARA_INTERESSE,
+            pedido.comprador,
+            titulo=f"Rodada de volta ao interesse: {fornecedor.nome}"[:MAIOR_TITULO],
+            corpo=(
+                f"A rodada de {fornecedor.nome} voltou para a fase de interesse porque os "
+                "pagamentos confirmados não atingiram o mínimo do fornecedor. Seus interesses "
+                "continuam reservados na rodada, na ordem original, e você pode alterá-los. "
+                f"O valor pago de {reais(pedido.total)} será devolvido integralmente depois da "
+                "autorização do administrador."
+            ),
+            link=f"/pedidos/{pedido.pk}/",
+            chave=f"retorno_para_interesse:apuracao:{apuracao.pk}:{pedido.comprador_id}",
+        )
+
+
 def _estornar_e_restaurar(
     apuracao: ApuracaoFinal, calculo: CalculoDoResultado
 ) -> list[EfeitoNoPedido]:
@@ -456,6 +557,7 @@ def _auditar_a_apuracao(
     inadimplentes: list[dict[str, Any]],
     calculo: CalculoDoResultado,
     efeitos: list[EfeitoNoPedido],
+    retorno: dict[str, Any] | None,
 ) -> None:
     pagos = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     nao_pagos = [s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO]
@@ -473,7 +575,33 @@ def _auditar_a_apuracao(
         "resultado": calculo.resultado,
         "pedidos": [efeito.como_dados() for efeito in efeitos],
     }
+    if retorno is not None:
+        dados["retorno"] = retorno
     registrar_auditoria(autor, "rodada.apuracao_final", rodada, dados)
+
+
+def _retornar_para_interesse(
+    apuracao: ApuracaoFinal,
+    rodada: Rodada,
+    abertura: AberturaDoPagamento,
+    pedidos: list[Pedido],
+    situacoes: list[SituacaoDoPedido],
+) -> dict[str, Any]:
+    """O ramo do mínimo não atendido (E11-05): restaura as reservas dos pagantes, confere o estoque,
+    devolve a rodada ao interesse (que atende a fila com o estoque liberado pelos inadimplentes) e
+    gera a devolução integral dos pedidos pagos. Não apura no livro: não há frete efetivo."""
+    pagos_ids = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
+    pagos = [p for p in pedidos if p.pk in pagos_ids]
+    restauradas, nao_restauradas = _restaurar_as_reservas_dos_pagantes(abertura, pagos_ids)
+    _conferir_o_estoque(rodada)
+    voltar_para_interesse(rodada, motivo=MOTIVO_DO_RETORNO_DO_PAGAMENTO, destinatarios=[])
+    reembolsos = _devolver_integralmente(apuracao, pagos)
+    _avisar_o_retorno(apuracao, rodada.fornecedor, pagos)
+    return {
+        "restauradas": restauradas,
+        "nao_restauradas": nao_restauradas,
+        "reembolsos": reembolsos,
+    }
 
 
 def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
@@ -512,6 +640,9 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
         if calculo.resultado == ResultadoDaApuracao.VALIDA:
             efeitos = _estornar_e_restaurar(apuracao, calculo)
             _avisar_a_caixa_incompleta(apuracao, travada.fornecedor, efeitos)
+        retorno: dict[str, Any] | None = None
+        if calculo.resultado == ResultadoDaApuracao.RETORNO_PARA_INTERESSE:
+            retorno = _retornar_para_interesse(apuracao, travada, abertura, pedidos, situacoes)
         _auditar_a_apuracao(
             administrador,
             travada,
@@ -523,5 +654,6 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
             inadimplentes,
             calculo,
             efeitos,
+            retorno,
         )
         return apuracao

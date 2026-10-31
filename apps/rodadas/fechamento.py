@@ -62,9 +62,19 @@ MENSAGENS = {
     "fora_de_fechamento_encerrado_para_pagamento": (
         "Só uma rodada com o fechamento encerrado pode abrir o pagamento."
     ),
+    "fora_de_pagamento": (
+        "Só uma rodada na etapa de pagamento pode voltar para interesse por pagamentos "
+        "insuficientes."
+    ),
 }
 
-MOTIVOS_DE_RETORNO = ("minimo_nao_atingido", "minimo_nao_atingido_na_abertura")
+MOTIVOS_DE_RETORNO = (
+    "minimo_nao_atingido",
+    "minimo_nao_atingido_na_abertura",
+    "pagamentos_insuficientes",
+)
+# A apuração final (E11-05) é o único caminho que devolve ao interesse uma rodada em `pagamento`.
+MOTIVO_DO_RETORNO_DO_PAGAMENTO = "pagamentos_insuficientes"
 
 
 class TransicaoRecusada(Exception):
@@ -344,7 +354,9 @@ def encerrar_fechamentos_vencidos() -> int:
 def voltar_para_interesse(
     rodada: Rodada, *, motivo: str, destinatarios: list[Conta] | None = None
 ) -> None:
-    """Devolve à fase de interesse a rodada com o fechamento encerrado (E06-06).
+    """Devolve à fase de interesse a rodada com o fechamento encerrado (E06-06), ou, só com o
+    motivo `pagamentos_insuficientes`, a rodada em `pagamento` que a apuração final reprovou
+    (E11-05).
 
     Não altera o ciclo, o prazo, as condições registradas nem a sequência das parcelas: o ciclo
     é histórico, e o próximo início de fechamento registra outro. Como a fase de interesse
@@ -358,11 +370,15 @@ def voltar_para_interesse(
         raise ValueError(f"motivo desconhecido: {motivo!r}")
     Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
     travada = Rodada.objects.select_for_update().filter(pk=rodada.pk).first()
-    if travada is None or travada.etapa != Etapa.FECHAMENTO_ENCERRADO:
-        raise TransicaoRecusada("fora_de_fechamento_encerrado")
+    do_pagamento = motivo == MOTIVO_DO_RETORNO_DO_PAGAMENTO
+    etapa_exigida = Etapa.PAGAMENTO if do_pagamento else Etapa.FECHAMENTO_ENCERRADO
+    if travada is None or travada.etapa != etapa_exigida:
+        raise TransicaoRecusada(
+            "fora_de_pagamento" if do_pagamento else "fora_de_fechamento_encerrado"
+        )
     ciclo = ciclo_vigente(travada)
     if ciclo is None:
-        raise RuntimeError("rodada com fechamento encerrado sem ciclo")
+        raise RuntimeError("rodada em retorno para interesse sem ciclo")
     if destinatarios is None:  # quem tem reserva na chamada, antes de a fila atender a outros
         destinatarios = compradores_com_reserva(travada)
     travada.etapa = Etapa.INTERESSE
