@@ -123,6 +123,8 @@ PREFIXOS_COM_SIMULADOR = (
     "test_cenario_39_",
     "test_cenarios_",
     "test_devolucoes_",
+    "test_apuracao_",
+    "test_fila_ponta_a_ponta",
     "test_t08_",
     "test_t09_",
     "test_simulador_estornos",
