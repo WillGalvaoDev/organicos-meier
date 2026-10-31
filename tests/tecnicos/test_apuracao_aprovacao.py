@@ -70,7 +70,7 @@ def _aprovar(a: Any) -> Any:
 
 
 def _v(relogio: RelogioControlado, sim: Any, **arranjo: Any) -> tuple[Any, Pedido, Pedido, Any]:
-    """O arranjo V: AP-viável, X pago, Y sem pagamento, apurado em `T0 + 48h`; relógio `T0 + 49h`."""
+    """O arranjo V: AP-viável, X pago e Y não, apurado em `T0 + 48h`, relógio em `T0 + 49h`."""
     a, x, y = arranjo_ap(relogio, **arranjo)
     pagar(relogio, sim, x)
     relogio.congelar(PRAZO)
