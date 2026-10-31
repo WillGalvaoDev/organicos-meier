@@ -21,3 +21,7 @@ O A-3 espera a parcela de A em P1, depois da apuração, `ativa` com reservado 6
 ## Riscos remanescentes e limites de verificação
 
 - **Conta suspensa ou removida (A-17):** a parcela `em_pedido` dela fica `em_pedido`, ainda contada em `total_reservado`, depois de a rodada voltar ao interesse. A spec manda só não restaurar. Um interesse de conta suspensa segurando estoque numa rodada em interesse parece indesejável; não alterei o comportamento. Decisão do especificador.
+
+## Defeito achado depois pela E11-08 (corrigido)
+
+A devolução integral de mais de um pedido pago na mesma apuração tinha o mesmo defeito da E11-04 (`OrdemDeTravasViolada`). Teste: `test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao` (Red `3066566`). A correção é a mesma: o conjunto das contas de todos os pagantes é travado antes da primeira devolução.

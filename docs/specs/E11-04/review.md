@@ -24,3 +24,7 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Riscos remanescentes e limites de verificação
 
 - A spec não diz o que fazer com a parcela restaurada cujo comprador é suspenso depois do commit: a suspensão (E05-07) a remove, como o A-14.
+
+## Defeito achado depois pela E11-08 (corrigido)
+
+Com dois pagantes com estorno na mesma apuração, a segunda criação de obrigação pedia contas do livro-razão de `pk` menor que as já travadas (`OrdemDeTravasViolada`). Teste: `test_dois_pagantes_com_estorno_na_mesma_apuracao` (Red `3066566`, 1 failed). Correção: `_travar_as_contas_das_devolucoes` trava o conjunto das contas de todos os pagantes de uma vez, em ordem crescente de `pk`, antes do primeiro estorno (`contas_das_obrigacoes`, em `apps/financeiro/obrigacoes.py`). Detalhes no `review.md` da E11-08.

@@ -6,7 +6,7 @@ Esta fatia é de testes de ponta a ponta (spec: "Verde de primeira" e "Correçã
 
 | Etapa | Commit | Resultado |
 |---|---|---|
-| Primeira execução do arquivo inteiro | `ARQUIVO` | **4 failed** na montagem do arranjo: `OrdemDeTravasViolada: a conta 6 foi pedida depois da 11` em `iniciar_apuracao` → `_estornar_e_restaurar` → `reembolso_parcial`. **Achado real das E11-04 e E11-05**: com dois pagantes com estorno (A e C) na mesma apuração, cada reembolso travava as contas do livro-razão separadamente, e a segunda chamada pedia contas de `pk` menor depois da maior. Os testes dessas fatias só tinham um pagante com estorno |
+| Primeira execução do arquivo inteiro | `3066566` (o arquivo entrou neste commit, ainda sem passar) | **4 failed** na montagem do arranjo: `OrdemDeTravasViolada: a conta 6 foi pedida depois da 11` em `iniciar_apuracao` → `_estornar_e_restaurar` → `reembolso_parcial`. **Achado real das E11-04 e E11-05**: com dois pagantes com estorno (A e C) na mesma apuração, cada reembolso travava as contas do livro-razão separadamente, e a segunda chamada pedia contas de `pk` menor depois da maior. Os testes dessas fatias só tinham um pagante com estorno |
 | Testes do defeito nos arquivos da E11-04 e da E11-05 (`test_dois_pagantes_com_estorno_na_mesma_apuracao`, `test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao`) | `3066566` | **Red: 2 failed** (`OrdemDeTravasViolada`) |
 | `contas_das_obrigacoes` (livro-razão) e `_travar_as_contas_das_devolucoes` (apuração): o conjunto das contas de todos os pagantes é travado de uma vez antes do primeiro estorno | commit da fatia | **47 passed** (E11-04, E11-05 e E11-08) |
 
