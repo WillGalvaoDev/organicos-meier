@@ -47,6 +47,14 @@ GRUPOS = (
     ("elegiveis", "Elegíveis para devolução excepcional"),
     ("concluidas", "Concluídas"),
 )
+ROTULO_DO_GRUPO_NO_SINGULAR = {
+    "pendentes": "Pendente de autorização",
+    "solicitadas": "Solicitada",
+    "em-processamento": "Em processamento",
+    "falhas": "Falha",
+    "elegiveis": "Elegível para devolução excepcional",
+    "concluidas": "Concluída",
+}
 GRUPO_DA_SITUACAO = {
     "devida": "pendentes",
     S.SOLICITADA: "solicitadas",

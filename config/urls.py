@@ -165,6 +165,16 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="rodadas_pagamento_abrir",
     ),
     path(
+        "administracao/rodadas/<int:pk>/apuracao/iniciar/",
+        rodadas_views.apuracao_iniciar,
+        name="rodadas_apuracao_iniciar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/apuracao/aprovar/",
+        rodadas_views.apuracao_aprovar,
+        name="rodadas_apuracao_aprovar",
+    ),
+    path(
         "administracao/rodadas/<int:pk>/estoque/incluir/",
         rodadas_views.estoque_incluir,
         name="rodadas_estoque_incluir",

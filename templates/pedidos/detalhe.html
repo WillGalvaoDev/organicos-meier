@@ -6,6 +6,19 @@
   {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
   <p>Situação: {{ situacao }}.</p>
   {% if quitado_em %}<p>Pago em {{ quitado_em }} (horário de Brasília).</p>{% endif %}
+  {% if apuracao.cancelado_por_inadimplencia %}
+    <p>O pagamento não foi identificado até o fim do prazo. Nada foi cobrado neste pedido.</p>
+  {% endif %}
+  {% if apuracao.caixas_incompletas %}
+    <ul>
+      {% for linha in apuracao.caixas_incompletas %}
+        <li>{{ linha.nome }}: {{ linha.quantidade }} em caixa que ficou incompleta: estorno proporcional e unidades na fila de pendentes do fornecedor</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if apuracao.rodada_voltou_para_interesse %}
+    <p>A rodada voltou para interesse. O valor pago será devolvido integralmente, e seus interesses continuam reservados na rodada.</p>
+  {% endif %}
 
   <table>
     <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Subtotal</th></tr></thead>
