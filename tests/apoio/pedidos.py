@@ -7,6 +7,7 @@ com 6 e B com 2 (duas caixas). `pendente_a_p1` acrescenta pendentes à parcela d
 relógio deve estar congelado antes de montar o arranjo.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -50,13 +51,22 @@ class Arranjo:
     a: Conta
     b: Conta
     admin: Conta
+    c: Conta | None = None
 
 
 def administrador() -> Conta:
     return Conta.objects.get(papel=Papel.ADMINISTRADOR)
 
 
-def montar_arranjo(*, minimo: str = "100.00", pendente_a_p1: int = 0) -> Arranjo:
+PARCELAS_DE_P2 = (("a", 4), ("b", 6), ("b", 2))
+
+
+def montar_arranjo(
+    *,
+    minimo: str = "100.00",
+    pendente_a_p1: int = 0,
+    parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
+) -> Arranjo:
     fornecedor = FornecedorFactory.create(nome="F", minimo=D(minimo))
     rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.FECHAMENTO_ENCERRADO)
     ciclo = dar_prazo_de_teste(rodada).ciclo
@@ -74,12 +84,16 @@ def montar_arranjo(*, minimo: str = "100.00", pendente_a_p1: int = 0) -> Arranjo
         EstoqueDaRodadaFactory.create(rodada=rodada, produto=produto, limite=None)
     a = ContaFactory.create(nome="Comprador A")
     b = ContaFactory.create(nome="Comprador B")
+    c = (
+        ContaFactory.create(nome="Comprador C")
+        if any(n == "c" for n, _ in parcelas_de_p2)
+        else None
+    )
+    donos = {"a": a, "b": b, "c": c}
     for comprador, produto, quantidade in (
         (a, p1, 6),
         (b, p1, 5),
-        (a, p2, 4),
-        (b, p2, 6),
-        (b, p2, 2),
+        *[(donos[nome], p2, quantidade) for nome, quantidade in parcelas_de_p2],
     ):
         pendente = pendente_a_p1 if (comprador, produto) == (a, p1) else 0
         ParcelaFactory.create(
@@ -89,7 +103,7 @@ def montar_arranjo(*, minimo: str = "100.00", pendente_a_p1: int = 0) -> Arranjo
             quantidade_reservada=D(quantidade),
             quantidade_pendente=D(pendente),
         )
-    return Arranjo(fornecedor, rodada, ciclo, p1, p2, a, b, administrador())
+    return Arranjo(fornecedor, rodada, ciclo, p1, p2, a, b, administrador(), c)
 
 
 def abrir(arranjo: Arranjo, frete: str = "22.00") -> ResultadoDaAbertura:

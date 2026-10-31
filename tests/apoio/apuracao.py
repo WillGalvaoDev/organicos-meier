@@ -6,6 +6,7 @@ antes de `T0 + 24h`, a tarefa criar a cobrança, o simulador aprová-la no insta
 ser entregue.
 """
 
+from collections.abc import Sequence
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pedidos.models import Pedido
 from tests.apoio.pedidos import (
+    PARCELAS_DE_P2,
     T0,
     Arranjo,
     abrir,
@@ -35,11 +37,14 @@ def arranjo_ap(
     minimo: str = VIAVEL,
     frete: str = "22.00",
     pendente_a_p1: int = 0,
+    parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
 ) -> tuple[Arranjo, Pedido, Pedido]:
     """AP com o pagamento aberto em `T0`; o relógio fica em `T0 + 1h`. Devolve o arranjo, o
     pedido X (de A) e o pedido Y (de B)."""
     relogio.congelar(T0)
-    arranjo = montar_arranjo(minimo=minimo, pendente_a_p1=pendente_a_p1)
+    arranjo = montar_arranjo(
+        minimo=minimo, pendente_a_p1=pendente_a_p1, parcelas_de_p2=parcelas_de_p2
+    )
     abrir(arranjo, frete)
     relogio.congelar(T0 + H)
     return arranjo, pedido_de(arranjo.a), pedido_de(arranjo.b)
