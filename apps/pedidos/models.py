@@ -164,6 +164,11 @@ class ParcelaNoPedido(RegistroDoPedido):
         return f"parcela no pedido {self.pk}"
 
 
+class ResultadoDaApuracao(models.TextChoices):
+    VALIDA = "valida", "Válida"
+    RETORNO_PARA_INTERESSE = "retorno_para_interesse", "Retorno para interesse"
+
+
 class ApuracaoFinal(RegistroDoPedido):
     """A apuração final do ciclo (E11-01): uma por ciclo, gravada depois de cancelar os não
     pagos. A rodada continua em `pagamento` até o administrador aprovar o resultado."""
@@ -176,9 +181,43 @@ class ApuracaoFinal(RegistroDoPedido):
     iniciada_em = models.DateTimeField()
     pedidos_pagos = models.PositiveIntegerField()
     pedidos_nao_pagos = models.PositiveIntegerField()
+    resultado = models.CharField(max_length=24, choices=ResultadoDaApuracao.choices)
+    valor_valido = CampoDinheiro()
+    minimo = CampoDinheiro()
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(resultado__in=ResultadoDaApuracao.values),
+                name="apuracao_resultado_valido",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_valido__gte=0), name="apuracao_valor_valido_nao_negativo"
+            ),
+        )
 
     def __str__(self) -> str:
         return f"apuração {self.pk}"
+
+
+class CaixaInvalidada(RegistroDoPedido):
+    """Uma caixa do produto no ciclo que ficou incompleta por inadimplência (E11-03). Só inserção:
+    a caixa inteira é invalidada, e nenhuma é refeita."""
+
+    apuracao = models.ForeignKey(ApuracaoFinal, on_delete=models.PROTECT, related_name="caixas")
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="+")
+    numero = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["apuracao", "produto", "numero"], name="caixa_invalidada_unica"
+            ),
+            models.CheckConstraint(condition=Q(numero__gte=1), name="caixa_invalidada_numero"),
+        )
+
+    def __str__(self) -> str:
+        return f"caixa {self.numero} invalidada"
 
 
 class SituacaoDePagamento(models.TextChoices):

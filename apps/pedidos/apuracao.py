@@ -11,6 +11,7 @@ abertura. A apuração não trava pagamento nenhum, então segue a ordem da E08-
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -26,12 +27,17 @@ from apps.notificacoes.emissao import emitir_evento
 from apps.notificacoes.eventos import Evento
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao
+from apps.nucleo.valores import arredondar_centavos
 from apps.pagamentos.consulta import consultar_antes_de_decidir, exigir_fora_de_transacao
 from apps.pedidos.models import (
     AberturaDoPagamento,
     ApuracaoFinal,
+    CaixaInvalidada,
+    ItemDoPedido,
     MotivoDoCancelamento,
+    ParcelaNoPedido,
     Pedido,
+    ResultadoDaApuracao,
     SituacaoDaTentativa,
     SituacaoDePagamento,
     SituacaoDoPedido,
@@ -47,6 +53,7 @@ logger = logging.getLogger(__name__)
 MOTIVO_DA_TENTATIVA = "apuracao"
 MAIOR_TITULO = 150
 ZERO = Decimal("0.000")
+ZERO_DINHEIRO = Decimal("0.00")
 
 MENSAGENS = {
     "fora_de_pagamento": "Só uma rodada na etapa de pagamento pode ser apurada.",
@@ -140,6 +147,69 @@ def _cancelar_os_nao_pagos(situacoes: list[SituacaoDoPedido], instante: datetime
     return cancelados
 
 
+@dataclass(frozen=True)
+class CalculoDoResultado:
+    """O que a apuração decide sobre as caixas e o mínimo, só com os registros congelados e as
+    situações sob trava: repetir o cálculo dá o mesmo resultado (E11-03)."""
+
+    caixas: list[tuple[int, int]]  # (produto, número da caixa), em ordem
+    unidades_invalidadas: dict[int, Decimal]  # item de pedido pago -> unidades em caixa invalidada
+    descontos: dict[int, Decimal]  # item de pedido pago -> produtos do estorno proporcional
+    valor_valido: Decimal
+    minimo: Decimal
+    resultado: str
+
+
+def _calcular_o_resultado(abertura: AberturaDoPagamento, nao_pagos: set[int]) -> CalculoDoResultado:
+    """Invalida a caixa inteira que tem uma parcela de pedido não pago, sem reorganizar (§6.3), e
+    recalcula o mínimo só com o que os pagos ainda podem pedir (§8.2, passo 3.5). O valor das
+    unidades invalidadas de um item pago é o do reembolso parcial da E10-02 para um pedido sem
+    reembolso anterior: o subtotal inteiro se todas saem, senão a proporção arredondada."""
+    parcelas = list(
+        ParcelaNoPedido.objects.filter(item__pedido__abertura=abertura)
+        .select_related("item")
+        .order_by("pk")
+    )
+    invalidas = {
+        (p.item.produto_id, p.caixa)
+        for p in parcelas
+        if p.item.pedido_id in nao_pagos and p.caixa is not None
+    }
+    unidades: dict[int, Decimal] = {}
+    for parcela in parcelas:
+        if parcela.item.pedido_id in nao_pagos or parcela.caixa is None:
+            continue
+        if (parcela.item.produto_id, parcela.caixa) in invalidas:
+            unidades[parcela.item_id] = unidades.get(parcela.item_id, ZERO) + parcela.quantidade
+    descontos: dict[int, Decimal] = {}
+    valor_valido = ZERO_DINHEIRO
+    itens = ItemDoPedido.objects.filter(pedido__abertura=abertura).exclude(pedido_id__in=nao_pagos)
+    for item in itens.order_by("pk"):
+        saem = unidades.get(item.pk, ZERO)
+        if saem == 0:
+            desconto = ZERO_DINHEIRO
+        elif saem == item.quantidade:
+            desconto = item.subtotal
+        else:
+            desconto = arredondar_centavos(item.subtotal * saem / item.quantidade)
+        if saem > 0:
+            descontos[item.pk] = desconto
+        valor_valido += item.subtotal - desconto
+    minimo = abertura.ciclo.minimo
+    return CalculoDoResultado(
+        caixas=sorted(invalidas),
+        unidades_invalidadas=unidades,
+        descontos=descontos,
+        valor_valido=valor_valido,
+        minimo=minimo,
+        resultado=(
+            ResultadoDaApuracao.VALIDA
+            if valor_valido >= minimo
+            else ResultadoDaApuracao.RETORNO_PARA_INTERESSE
+        ),
+    )
+
+
 def _remover_as_parcelas_dos_inadimplentes(
     fornecedor_id: int, compradores: list[int]
 ) -> list[dict[str, Any]]:
@@ -207,6 +277,7 @@ def _gravar_a_apuracao(
     cancelados: list[int],
     anteriores: dict[int, str],
     inadimplentes: list[dict[str, Any]],
+    calculo: CalculoDoResultado,
 ) -> ApuracaoFinal:
     pagos = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     nao_pagos = [s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO]
@@ -217,7 +288,12 @@ def _gravar_a_apuracao(
         iniciada_em=instante,
         pedidos_pagos=len(pagos),
         pedidos_nao_pagos=len(nao_pagos),
+        resultado=calculo.resultado,
+        valor_valido=calculo.valor_valido,
+        minimo=calculo.minimo,
     )
+    for produto_id, numero in calculo.caixas:
+        CaixaInvalidada.objects.create(apuracao=apuracao, produto_id=produto_id, numero=numero)
     dados: dict[str, Any] = {
         "rodada": rodada.pk,
         "ciclo": abertura.ciclo_id,
@@ -226,6 +302,10 @@ def _gravar_a_apuracao(
         "nao_pagos": [[pk, anteriores[pk]] for pk in nao_pagos],
         "cancelados_agora": cancelados,
         "inadimplentes": inadimplentes,
+        "caixas": [[produto_id, numero] for produto_id, numero in calculo.caixas],
+        "valor_valido": str(calculo.valor_valido),
+        "minimo": str(calculo.minimo),
+        "resultado": calculo.resultado,
     }
     registrar_auditoria(autor, "rodada.apuracao_final", rodada, dados)
     return apuracao
@@ -259,6 +339,7 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
         cancelados = _cancelar_os_nao_pagos(situacoes, instante)
         compradores = [p.comprador_id for p in pedidos if p.pk in nao_pagos]
         inadimplentes = _remover_as_parcelas_dos_inadimplentes(travada.fornecedor_id, compradores)
+        calculo = _calcular_o_resultado(abertura, nao_pagos)
         _cancelar_as_cobrancas_pendentes(pedido_ids)
         _avisar_o_cancelamento([p for p in pedidos if p.pk in cancelados], travada.fornecedor)
         return _gravar_a_apuracao(
@@ -270,4 +351,5 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
             cancelados,
             anteriores,
             inadimplentes,
+            calculo,
         )
