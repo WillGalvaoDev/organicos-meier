@@ -16,6 +16,7 @@ from django.db import transaction
 from django.test import Client
 
 from apps.catalogo.models import Produto, Unidade
+from apps.catalogo.quantidades import QuantidadeRecusada
 from apps.catalogo.servicos import alterar_multiplo
 from apps.contas.models import Conta
 from apps.financeiro.models import ObrigacaoComComprador, Reembolso
@@ -222,7 +223,7 @@ def test_progresso_e_pedido_so_contam_as_reservadas(
 def test_inclusao_em_paralelo_com_adicao_de_e_atende_a_fila_primeiro(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-4
-    from apps.interesses import fila
+    from apps.interesses import receptores
     from tests.apoio.corrida import Corrida
 
     fp = montar_fp(relogio, simulador_pagamentos)
@@ -231,7 +232,7 @@ def test_inclusao_em_paralelo_com_adicao_de_e_atende_a_fila_primeiro(
     fp.p.refresh_from_db()
     e = ContaFactory.create(nome="Comprador E")
     corrida = Corrida()
-    corrida.depois_de(monkeypatch, fila, "_alocar_produto")
+    corrida.depois_de(monkeypatch, receptores, "_alocar_produto")
     ra, rb = corrida.rodar(
         lambda: incluir_produto_na_rodada(fp.admin, r2, fp.p, D("10")),
         lambda: adicionar_interesse(e, fp.p, D("5")),
@@ -296,7 +297,9 @@ def test_remover_pendentes_nao_mexe_nas_reservas_nem_no_estorno(
         )
     )
     obrigacao = list(
-        ObrigacaoComComprador.objects.filter(comprador=fp.c).values_list("pk", "devido")
+        ObrigacaoComComprador.objects.filter(comprador=fp.c).values_list(
+            "pk", "produtos", "servico", "frete"
+        )
     )
     remover_pendente(fp.c, fp.p, D("2"))
     assert _estado(fp.c, fp.p) == ("ativa", D("4.000"), D("2.000"))
@@ -313,7 +316,11 @@ def test_remover_pendentes_nao_mexe_nas_reservas_nem_no_estorno(
         == estorno
     )
     assert (
-        list(ObrigacaoComComprador.objects.filter(comprador=fp.c).values_list("pk", "devido"))
+        list(
+            ObrigacaoComComprador.objects.filter(comprador=fp.c).values_list(
+                "pk", "produtos", "servico", "frete"
+            )
+        )
         == obrigacao
     )
 
@@ -326,7 +333,7 @@ def test_remocoes_invalidas_sao_recusadas_sem_escrita(
     antes = _estado(fp.c, fp.p)
     with pytest.raises(RemocaoAcimaDoPendente):
         remover_pendente(fp.c, fp.p, D("5"))
-    with pytest.raises(Exception, match="incremento|múltipl|quantidade"):
+    with pytest.raises(QuantidadeRecusada):
         remover_pendente(fp.c, fp.p, D("0.5"))
     assert _estado(fp.c, fp.p) == antes
 
@@ -360,7 +367,7 @@ def test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido(
 def test_remocao_de_pendentes_em_paralelo_com_a_inclusao(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-10
-    from apps.interesses import fila
+    from apps.interesses import receptores
     from tests.apoio.corrida import Corrida
 
     fp = montar_fp(relogio, simulador_pagamentos)
@@ -368,7 +375,7 @@ def test_remocao_de_pendentes_em_paralelo_com_a_inclusao(
     alterar_multiplo(fp.admin, fp.p, "")
     fp.p.refresh_from_db()
     corrida = Corrida()
-    corrida.depois_de(monkeypatch, fila, "_alocar_produto")
+    corrida.depois_de(monkeypatch, receptores, "_alocar_produto")
     ra, rb = corrida.rodar(
         lambda: incluir_produto_na_rodada(fp.admin, r2, fp.p, D("10")),
         lambda: remover_pendente(fp.c, fp.p, D("4")),

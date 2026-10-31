@@ -24,7 +24,9 @@ from apps.catalogo.quantidades import quantidade_com_unidade
 from apps.catalogo.templatetags.catalogo import reais
 from apps.contas.models import Conta, Papel, Situacao
 from apps.financeiro.apuracao import frete_do_ciclo, registrar_apuracao_no_livro
+from apps.financeiro.livro import travar_contas
 from apps.financeiro.models import ApuracaoNoLivro, MotivoDoReembolso
+from apps.financeiro.obrigacoes import contas_das_obrigacoes
 from apps.financeiro.reembolsos import reembolso_integral_do_pedido, reembolso_parcial
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
@@ -436,6 +438,7 @@ def _devolver_integralmente(apuracao: ApuracaoFinal, pedidos: list[Pedido]) -> l
     """A devolução integral de cada pedido pago (E10-02): a obrigação, financiada pela custódia do
     ciclo, espera a autorização do administrador. Sem apuração no livro."""
     gravados: list[dict[str, Any]] = []
+    _travar_as_contas_das_devolucoes(apuracao, pedidos)
     for pedido in pedidos:
         registrado = reembolso_integral_do_pedido(
             pedido,
@@ -480,6 +483,19 @@ def _avisar_o_retorno(
         )
 
 
+def _travar_as_contas_das_devolucoes(apuracao: ApuracaoFinal, pedidos: list[Pedido]) -> None:
+    """Cada estorno cria uma obrigação e trava as contas dela, e a regra do livro-razão manda
+    travar em ordem crescente de `pk`. Com mais de um pagante a criar obrigação, o conjunto das
+    contas de todos é travado de uma vez antes da primeira (as contas das obrigações novas nascem
+    com `pk` maior e vêm depois)."""
+    compradores = {p.comprador_id: p.comprador for p in pedidos}
+    ciclo = apuracao.ciclo
+    contas = contas_das_obrigacoes(
+        ciclo.rodada, ciclo, [compradores[pk] for pk in sorted(compradores)]
+    )
+    travar_contas(*contas)
+
+
 def _estornar_e_restaurar(
     apuracao: ApuracaoFinal, calculo: CalculoDoResultado
 ) -> list[EfeitoNoPedido]:
@@ -487,12 +503,13 @@ def _estornar_e_restaurar(
     proporcional por item (E10-02, que gera a obrigação e espera a autorização na lista de
     devoluções) e a volta das unidades à fila. As chaves únicas tornam o passo idempotente: o
     reembolso é por `caixa:<apuração>:<item>` e a restauração por `ParcelaNoPedido`."""
-    itens = (
+    itens = list(
         ItemDoPedido.objects.filter(pk__in=list(calculo.unidades_invalidadas))
         .select_related("pedido")
         .order_by("pedido_id", "pk")
     )
     invalidadas = set(calculo.caixas)
+    _travar_as_contas_das_devolucoes(apuracao, [item.pedido for item in itens])
     efeitos: dict[int, EfeitoNoPedido] = {}
     for item in itens:
         efeito = efeitos.setdefault(item.pedido_id, EfeitoNoPedido(item.pedido))

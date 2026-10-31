@@ -93,6 +93,18 @@ def _contas_candidatas(rodada: Rodada, ciclo: Ciclo, comprador: Conta) -> list[C
     ]
 
 
+def contas_das_obrigacoes(
+    rodada: Rodada, ciclo: Ciclo, compradores: list[Conta]
+) -> list[ContaFinanceira]:
+    """As fontes (antes e depois da apuração) de todas as obrigações que serão criadas para esses
+    compradores. Quem cria várias obrigações na mesma transação trava este conjunto de uma vez,
+    em ordem crescente de `pk`, antes da primeira (regra única de travas, E09-R01)."""
+    contas: list[ContaFinanceira] = []
+    for comprador in compradores:
+        contas.extend(_contas_candidatas(rodada, ciclo, comprador))
+    return contas
+
+
 # --- criação da obrigação, financiada pela regra --------------------------------------------
 
 
