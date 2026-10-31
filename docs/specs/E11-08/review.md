@@ -21,3 +21,15 @@ Execução final do arquivo da E11-08 (`uv run pytest tests/tecnicos/test_fila_p
 ## Riscos remanescentes e limites de verificação
 
 - A parte do pedido formal do T-47 fica para a E13 (spec). O encerramento da rodada que tira as parcelas `em_pedido` da contagem de `total_reservado` é da E14 (registro herdado).
+
+## Verificação final da E11 (agente 2)
+
+```
+uv run pytest                                 # 2764 passed in 382.87s, sem filtro
+uv run ruff check . --no-cache                # All checks passed
+uv run ruff format --check .                  # arquivos conformes
+uv run mypy .                                 # Success: no issues found
+uv run python manage.py makemigrations --check --dry-run   # No changes detected
+```
+
+Antes da E11 a suíte tinha 2.644 testes; a E11 acrescentou 120. Commits locais em `e11-implementacao`, sem push nem PR. Pontos abertos para o especificador e o revisor: ver "Ponto para o especificador" (E11-05), "Conflito entre critérios de fatias" (E11-04) e os riscos de cada `review.md`.
