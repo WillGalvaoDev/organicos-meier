@@ -413,3 +413,20 @@ def test_comprador_suspenso_nao_tem_as_reservas_restauradas(
     (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
     motivos = {n["motivo"] for n in auditoria.alteracoes["retorno"]["nao_restauradas"]}
     assert motivos == {"conta_suspensa"}
+
+
+def test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # achado pela E11-08: as contas do livro-razão de todas as devoluções, travadas juntas
+    a, x, _y = arranjo_ap(
+        relogio, minimo=INSUFICIENTE, parcelas_de_p2=(("a", 4), ("c", 2), ("b", 6))
+    )
+    assert a.c is not None
+    z = Pedido.objects.get(comprador=a.c)
+    pagar(relogio, sim, x)
+    pagar(relogio, sim, z)
+    relogio.congelar(PRAZO)
+    apuracao = _iniciar(a)
+    assert apuracao.resultado == "retorno_para_interesse"
+    assert Reembolso.objects.filter(motivo="minimo_nao_atingido").count() == 2
+    assert ObrigacaoComComprador.objects.filter(pedido__in=[x, z]).count() == 2

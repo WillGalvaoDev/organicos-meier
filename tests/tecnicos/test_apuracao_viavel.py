@@ -330,3 +330,19 @@ def test_suspensao_espera_a_apuracao_e_remove_a_parcela_restaurada(
     (parcela,) = _parcela(a.a, a.p2)
     assert (parcela.situacao, parcela.quantidade_pendente) == ("removida", D("0.000"))
     assert len(_reembolsos(x)) == 1
+
+
+def test_dois_pagantes_com_estorno_na_mesma_apuracao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # achado pela E11-08: as contas do livro-razão de todos os estornos, travadas juntas
+    a, x, _y = arranjo_ap(relogio, parcelas_de_p2=(("a", 3), ("b", 3), ("c", 3), ("b", 3)))
+    assert a.c is not None
+    z = pedido_de(a.c)
+    pagar(relogio, sim, x)
+    pagar(relogio, sim, z)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    assert len(_reembolsos(x)) == 1
+    assert len(_reembolsos(z)) == 1
+    assert {p.situacao for p in _parcela(a.a, a.p2)} == {"pendente"}
+    assert {p.situacao for p in _parcela(a.c, a.p2)} == {"pendente"}
