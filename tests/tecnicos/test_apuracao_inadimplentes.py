@@ -57,8 +57,15 @@ def _campos(parcelas: list[ParcelaDeInteresse]) -> list[tuple[Any, ...]]:
     ]
 
 
-def _avisos(conta: Any, chave_com: str = "itens_cancelados") -> list[Notificacao]:
-    return list(Notificacao.objects.filter(conta=conta, evento=chave_com).order_by("pk"))
+def _avisos(conta: Any) -> list[Notificacao]:
+    """Os avisos `itens_cancelados` por inadimplência (os de caixa incompleta são da E11-04)."""
+    return list(
+        Notificacao.objects.filter(
+            conta=conta,
+            evento="itens_cancelados",
+            chave__startswith="itens_cancelados:inadimplencia:",
+        ).order_by("pk")
+    )
 
 
 def _apurada_com_so_x_pago(relogio: RelogioControlado, sim: Any) -> tuple[Any, Any, Any]:
@@ -137,11 +144,12 @@ def test_parcelas_de_outro_fornecedor_nao_mudam(relogio: RelogioControlado, sim:
 def test_parcelas_de_quem_pagou_ficam_como_estavam(relogio: RelogioControlado, sim: Any) -> None:
     # A-4
     a, _x, _y = _apurada_com_so_x_pago(relogio, sim)
-    antes = _campos(_parcelas(a.a))
+    (de_p1,) = [p for p in _parcelas(a.a) if p.produto_id == a.p1.pk]
+    antes = _campos([de_p1])
     _iniciar(a)
-    depois = _parcelas(a.a)
-    assert _campos(depois) == antes
-    assert [p.situacao for p in depois] == ["em_pedido", "em_pedido"]
+    de_p1.refresh_from_db()
+    assert _campos([de_p1]) == antes
+    assert de_p1.situacao == "em_pedido"
 
 
 def test_composicao_do_pedido_do_inadimplente_nao_muda(

@@ -156,7 +156,7 @@ def test_a_restauracao_nao_espera_a_autorizacao_da_devolucao(
 
 
 def test_o_pedido_congelado_nao_muda(relogio: RelogioControlado, sim: Any) -> None:  # A-6
-    a, x, y = arranjo_ap(relogio)
+    a, x, _y = arranjo_ap(relogio)
     pagar(relogio, sim, x)
     relogio.congelar(PRAZO)
     antes = (

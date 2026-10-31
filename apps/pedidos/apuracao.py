@@ -11,7 +11,7 @@ abertura. A apuração não trava pagamento nenhum, então segue a ordem da E08-
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -20,12 +20,16 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
 from apps.catalogo.models import Produto
-from apps.contas.models import Conta, Papel
+from apps.catalogo.quantidades import quantidade_com_unidade
+from apps.catalogo.templatetags.catalogo import reais
+from apps.contas.models import Conta, Papel, Situacao
+from apps.financeiro.models import MotivoDoReembolso
+from apps.financeiro.reembolsos import reembolso_parcial
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.notificacoes.emissao import emitir_evento
 from apps.notificacoes.eventos import Evento
-from apps.nucleo.auditoria import registrar_auditoria
+from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao
 from apps.nucleo.valores import arredondar_centavos
 from apps.pagamentos.consulta import consultar_antes_de_decidir, exigir_fora_de_transacao
@@ -37,6 +41,7 @@ from apps.pedidos.models import (
     MotivoDoCancelamento,
     ParcelaNoPedido,
     Pedido,
+    RestauracaoDeCaixa,
     ResultadoDaApuracao,
     SituacaoDaTentativa,
     SituacaoDePagamento,
@@ -99,8 +104,14 @@ def _conferir(rodada: Rodada, instante: datetime) -> AberturaDoPagamento:
     return abertura
 
 
-def _travar(rodada_pk: int, fornecedor_id: int) -> Rodada:
+def _travar(rodada_pk: int, fornecedor_id: int, compradores: list[int]) -> Rodada:
     """As travas da decisão, na ordem documentada no módulo. Devolve a rodada travada.
+
+    Antes do fornecedor vão as contas dos compradores da abertura, por `pk`, com `FOR NO KEY
+    UPDATE` como a moderação: toda operação de interesse trava a conta primeiro, e é a conta que
+    serializa a suspensão ou a remoção com a apuração (a moderação só trava o fornecedor dos
+    produtos em que enxerga parcelas, e a parcela restaurada ainda não está commitada). Assim a
+    conta é lida sob trava para decidir a restauração (E11-04).
 
     Fornecedor, rodada, produtos, estoques e parcelas são travados com `FOR NO KEY UPDATE`: ele
     exclui as operações de interesse (que usam `FOR UPDATE`) e as outras apurações, mas deixa um
@@ -108,6 +119,7 @@ def _travar(rodada_pk: int, fornecedor_id: int) -> Rodada:
     fornecedor. Com `FOR UPDATE`, o commit desse pagamento esperaria a conferência da chave
     estrangeira contra a apuração, que espera a trava da situação dele: impasse.
     """
+    list(Conta.objects.select_for_update(no_key=True).filter(pk__in=compradores).order_by("pk"))
     Fornecedor.objects.select_for_update(no_key=True).get(pk=fornecedor_id)
     travada = Rodada.objects.select_for_update(no_key=True).get(pk=rodada_pk)
     produtos = list(
@@ -270,6 +282,171 @@ def _cancelar_as_cobrancas_pendentes(pedido_ids: list[int]) -> None:
 
 def _gravar_a_apuracao(
     autor: Conta,
+    abertura: AberturaDoPagamento,
+    instante: datetime,
+    situacoes: list[SituacaoDoPedido],
+    calculo: CalculoDoResultado,
+) -> ApuracaoFinal:
+    """Grava a `ApuracaoFinal` com o resultado e as caixas invalidadas, depois do cálculo."""
+    pagos = sum(1 for s in situacoes if s.situacao == SituacaoDePagamento.PAGO)
+    apuracao = ApuracaoFinal.objects.create(
+        ciclo_id=abertura.ciclo_id,
+        abertura=abertura,
+        autor=autor,
+        iniciada_em=instante,
+        pedidos_pagos=pagos,
+        pedidos_nao_pagos=len(situacoes) - pagos,
+        resultado=calculo.resultado,
+        valor_valido=calculo.valor_valido,
+        minimo=calculo.minimo,
+    )
+    for produto_id, numero in calculo.caixas:
+        CaixaInvalidada.objects.create(apuracao=apuracao, produto_id=produto_id, numero=numero)
+    return apuracao
+
+
+@dataclass
+class EfeitoNoPedido:
+    """O que a apuração viável fez no pedido pago com unidades em caixa invalidada (E11-04)."""
+
+    pedido: Pedido
+    itens: list[tuple[str, str, Decimal]] = field(default_factory=list)  # nome, unidade, quantidade
+    estorno: Decimal = ZERO_DINHEIRO
+    reembolsos: list[dict[str, Any]] = field(default_factory=list)
+    restauracoes: list[dict[str, Any]] = field(default_factory=list)
+    nao_restauradas: list[dict[str, Any]] = field(default_factory=list)
+
+    def como_dados(self) -> dict[str, Any]:
+        return {
+            "pedido": self.pedido.pk,
+            "reembolsos": self.reembolsos,
+            "restauracoes": self.restauracoes,
+            "nao_restauradas": self.nao_restauradas,
+        }
+
+
+MOTIVO_DA_NAO_RESTAURACAO: dict[str, str] = {
+    Situacao.SUSPENSA: "conta_suspensa",
+    Situacao.REMOVIDA: "conta_removida",
+}
+
+
+def _restaurar_na_fila(
+    apuracao: ApuracaoFinal, efeito: EfeitoNoPedido, item: ItemDoPedido, invalidadas: set[Any]
+) -> None:
+    """Cada `ParcelaNoPedido` do item numa caixa invalidada volta à fila de pendentes, na posição
+    original (a sequência não muda e nenhuma parcela é criada). A parcela fica sem reserva na
+    rodada apurada, inclusive a parte válida, que continua só no pedido. A conta suspensa ou
+    removida não pode ter interesses: a parcela não é restaurada e a auditoria registra o motivo."""
+    pedido = efeito.pedido
+    conta = Conta.objects.get(pk=pedido.comprador_id)
+    for no_pedido in ParcelaNoPedido.objects.filter(item=item).order_by("pk"):
+        if (item.produto_id, no_pedido.caixa) not in invalidadas:
+            continue
+        if RestauracaoDeCaixa.objects.filter(parcela_no_pedido=no_pedido).exists():
+            continue
+        parcela = ParcelaDeInteresse.objects.get(pk=no_pedido.parcela_id)
+        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(conta.situacao))
+        if motivo is None and parcela.situacao == SituacaoParcela.REMOVIDA:
+            motivo = "parcela_removida"
+        if motivo is not None:
+            efeito.nao_restauradas.append(
+                {"parcela_no_pedido": no_pedido.pk, "parcela": parcela.pk, "motivo": motivo}
+            )
+            continue
+        RestauracaoDeCaixa.objects.create(
+            apuracao=apuracao,
+            parcela_no_pedido=no_pedido,
+            parcela=parcela,
+            quantidade=no_pedido.quantidade,
+        )
+        parcela.quantidade_pendente += no_pedido.quantidade
+        parcela.quantidade_reservada = ZERO
+        parcela.situacao = SituacaoParcela.PENDENTE
+        parcela.save(update_fields=["quantidade_pendente", "quantidade_reservada", "situacao"])
+        efeito.restauracoes.append(
+            {
+                "parcela_no_pedido": no_pedido.pk,
+                "parcela": parcela.pk,
+                "quantidade": str(no_pedido.quantidade),
+            }
+        )
+
+
+def _estornar_e_restaurar(
+    apuracao: ApuracaoFinal, calculo: CalculoDoResultado
+) -> list[EfeitoNoPedido]:
+    """Com o resultado válido: para cada pedido pago com unidades em caixa invalidada, o estorno
+    proporcional por item (E10-02, que gera a obrigação e espera a autorização na lista de
+    devoluções) e a volta das unidades à fila. As chaves únicas tornam o passo idempotente: o
+    reembolso é por `caixa:<apuração>:<item>` e a restauração por `ParcelaNoPedido`."""
+    itens = (
+        ItemDoPedido.objects.filter(pk__in=list(calculo.unidades_invalidadas))
+        .select_related("pedido")
+        .order_by("pedido_id", "pk")
+    )
+    invalidadas = set(calculo.caixas)
+    efeitos: dict[int, EfeitoNoPedido] = {}
+    for item in itens:
+        efeito = efeitos.setdefault(item.pedido_id, EfeitoNoPedido(item.pedido))
+        quantidade = calculo.unidades_invalidadas[item.pk]
+        reembolso = reembolso_parcial(
+            item,
+            quantidade,
+            chave=f"caixa:{apuracao.pk}:{item.pk}",
+            motivo=MotivoDoReembolso.CAIXA_INVALIDADA,
+            autor=SISTEMA,
+        ).reembolso
+        if reembolso.produtos != calculo.descontos[item.pk]:
+            raise RuntimeError("o estorno de produtos difere do desconto do valor válido")
+        efeito.itens.append((item.nome, item.unidade, quantidade))
+        efeito.estorno += reembolso.produtos + reembolso.servico + reembolso.frete
+        efeito.reembolsos.append(
+            {
+                "chave": reembolso.chave,
+                "item": item.pk,
+                "quantidade": str(quantidade),
+                "produtos": str(reembolso.produtos),
+                "servico": str(reembolso.servico),
+                "frete": str(reembolso.frete),
+            }
+        )
+        _restaurar_na_fila(apuracao, efeito, item, invalidadas)
+    return list(efeitos.values())
+
+
+def _avisar_a_caixa_incompleta(
+    apuracao: ApuracaoFinal, fornecedor: Fornecedor, efeitos: list[EfeitoNoPedido]
+) -> None:
+    """O aviso ao comprador pagante cujas unidades estavam em caixa invalidada."""
+    for efeito in efeitos:
+        pedido = efeito.pedido
+        lista = ", ".join(
+            f"{quantidade_com_unidade(quantidade, unidade)} de {nome}"
+            for nome, unidade, quantidade in efeito.itens
+        )
+        fila = (
+            " Essas unidades voltaram para a fila de pendentes do fornecedor, na posição "
+            "original, e serão reservadas quando houver estoque numa próxima rodada."
+            if efeito.restauracoes
+            else ""
+        )
+        emitir_evento(
+            Evento.ITENS_CANCELADOS,
+            pedido.comprador,
+            titulo=f"Itens em caixa incompleta: {fornecedor.nome}"[:MAIOR_TITULO],
+            corpo=(
+                f"{lista} estavam em caixa que ficou incompleta por falta de pagamento de outro "
+                f"comprador. O estorno de {reais(efeito.estorno)} foi registrado e será feito "
+                f"depois da autorização do administrador.{fila}"
+            ),
+            link=f"/pedidos/{pedido.pk}/",
+            chave=f"itens_cancelados:caixa:{apuracao.pk}:{pedido.comprador_id}",
+        )
+
+
+def _auditar_a_apuracao(
+    autor: Conta,
     rodada: Rodada,
     abertura: AberturaDoPagamento,
     instante: datetime,
@@ -278,22 +455,10 @@ def _gravar_a_apuracao(
     anteriores: dict[int, str],
     inadimplentes: list[dict[str, Any]],
     calculo: CalculoDoResultado,
-) -> ApuracaoFinal:
+    efeitos: list[EfeitoNoPedido],
+) -> None:
     pagos = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     nao_pagos = [s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO]
-    apuracao = ApuracaoFinal.objects.create(
-        ciclo_id=abertura.ciclo_id,
-        abertura=abertura,
-        autor=autor,
-        iniciada_em=instante,
-        pedidos_pagos=len(pagos),
-        pedidos_nao_pagos=len(nao_pagos),
-        resultado=calculo.resultado,
-        valor_valido=calculo.valor_valido,
-        minimo=calculo.minimo,
-    )
-    for produto_id, numero in calculo.caixas:
-        CaixaInvalidada.objects.create(apuracao=apuracao, produto_id=produto_id, numero=numero)
     dados: dict[str, Any] = {
         "rodada": rodada.pk,
         "ciclo": abertura.ciclo_id,
@@ -306,9 +471,9 @@ def _gravar_a_apuracao(
         "valor_valido": str(calculo.valor_valido),
         "minimo": str(calculo.minimo),
         "resultado": calculo.resultado,
+        "pedidos": [efeito.como_dados() for efeito in efeitos],
     }
     registrar_auditoria(autor, "rodada.apuracao_final", rodada, dados)
-    return apuracao
 
 
 def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
@@ -326,7 +491,7 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
         consultar_antes_de_decidir(pedido.referencia_externa)
     pedido_ids = [p.pk for p in pedidos]
     with transaction.atomic():
-        travada = _travar(atual.pk, atual.fornecedor_id)
+        travada = _travar(atual.pk, atual.fornecedor_id, sorted({p.comprador_id for p in pedidos}))
         instante = agora()  # lido depois das travas
         _conferir(travada, instante)
         situacoes = list(
@@ -342,7 +507,12 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
         calculo = _calcular_o_resultado(abertura, nao_pagos)
         _cancelar_as_cobrancas_pendentes(pedido_ids)
         _avisar_o_cancelamento([p for p in pedidos if p.pk in cancelados], travada.fornecedor)
-        return _gravar_a_apuracao(
+        apuracao = _gravar_a_apuracao(administrador, abertura, instante, situacoes, calculo)
+        efeitos: list[EfeitoNoPedido] = []
+        if calculo.resultado == ResultadoDaApuracao.VALIDA:
+            efeitos = _estornar_e_restaurar(apuracao, calculo)
+            _avisar_a_caixa_incompleta(apuracao, travada.fornecedor, efeitos)
+        _auditar_a_apuracao(
             administrador,
             travada,
             abertura,
@@ -352,4 +522,6 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
             anteriores,
             inadimplentes,
             calculo,
+            efeitos,
         )
+        return apuracao

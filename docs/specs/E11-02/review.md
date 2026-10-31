@@ -17,3 +17,7 @@ Comandos com o arquivo de teste inteiro, sem `-k`: `uv run pytest tests/tecnicos
 ## Riscos remanescentes e limites de verificação
 
 - O número `sequencia` do pendente antigo de B no A-2 não é anterior à dele no arranjo (a sequência é do banco e o teste não a controla); a asserção do critério não depende disso.
+
+## Ajustes dos testes por conflito com fatias seguintes (E11-04)
+
+Registrado também na E11-04: o A-4 passou a conferir só a parcela de A em P1, e o A-6 filtra a chave `itens_cancelados:inadimplencia:`. As asserções sobre o que a E11-02 produz não mudaram.

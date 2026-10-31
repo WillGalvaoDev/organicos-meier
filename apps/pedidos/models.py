@@ -220,6 +220,32 @@ class CaixaInvalidada(RegistroDoPedido):
         return f"caixa {self.numero} invalidada"
 
 
+class RestauracaoDeCaixa(RegistroDoPedido):
+    """A volta de uma parte da parcela de um pagante para a fila de pendentes, por caixa
+    invalidada (E11-04). `parcela_no_pedido` é único: é a chave (parcela, caixa invalidada) que
+    impede restaurar duas vezes."""
+
+    apuracao = models.ForeignKey(
+        ApuracaoFinal, on_delete=models.PROTECT, related_name="restauracoes"
+    )
+    parcela_no_pedido = models.OneToOneField(
+        ParcelaNoPedido, on_delete=models.PROTECT, related_name="restauracao"
+    )
+    parcela = models.ForeignKey(ParcelaDeInteresse, on_delete=models.PROTECT, related_name="+")
+    quantidade = CampoQuantidade()
+    criada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="restauracao_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"restauração {self.pk}"
+
+
 class SituacaoDePagamento(models.TextChoices):
     AGUARDANDO_PAGAMENTO = "aguardando_pagamento", "Aguardando pagamento"
     PAGO = "pago", "Pago"
