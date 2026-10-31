@@ -14,6 +14,7 @@ from typing import Any
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pedidos.models import Pedido
 from tests.apoio.pedidos import (
+    PARCELAS_DE_P1,
     PARCELAS_DE_P2,
     T0,
     Arranjo,
@@ -37,13 +38,17 @@ def arranjo_ap(
     minimo: str = VIAVEL,
     frete: str = "22.00",
     pendente_a_p1: int = 0,
+    parcelas_de_p1: Sequence[tuple[str, int]] = PARCELAS_DE_P1,
     parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
 ) -> tuple[Arranjo, Pedido, Pedido]:
     """AP com o pagamento aberto em `T0`; o relógio fica em `T0 + 1h`. Devolve o arranjo, o
     pedido X (de A) e o pedido Y (de B)."""
     relogio.congelar(T0)
     arranjo = montar_arranjo(
-        minimo=minimo, pendente_a_p1=pendente_a_p1, parcelas_de_p2=parcelas_de_p2
+        minimo=minimo,
+        pendente_a_p1=pendente_a_p1,
+        parcelas_de_p1=parcelas_de_p1,
+        parcelas_de_p2=parcelas_de_p2,
     )
     abrir(arranjo, frete)
     relogio.congelar(T0 + H)

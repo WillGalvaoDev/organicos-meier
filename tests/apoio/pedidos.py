@@ -58,6 +58,7 @@ def administrador() -> Conta:
     return Conta.objects.get(papel=Papel.ADMINISTRADOR)
 
 
+PARCELAS_DE_P1 = (("a", 6), ("b", 5))
 PARCELAS_DE_P2 = (("a", 4), ("b", 6), ("b", 2))
 
 
@@ -65,6 +66,7 @@ def montar_arranjo(
     *,
     minimo: str = "100.00",
     pendente_a_p1: int = 0,
+    parcelas_de_p1: Sequence[tuple[str, int]] = PARCELAS_DE_P1,
     parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
 ) -> Arranjo:
     fornecedor = FornecedorFactory.create(nome="F", minimo=D(minimo))
@@ -84,15 +86,11 @@ def montar_arranjo(
         EstoqueDaRodadaFactory.create(rodada=rodada, produto=produto, limite=None)
     a = ContaFactory.create(nome="Comprador A")
     b = ContaFactory.create(nome="Comprador B")
-    c = (
-        ContaFactory.create(nome="Comprador C")
-        if any(n == "c" for n, _ in parcelas_de_p2)
-        else None
-    )
+    com_c = any(n == "c" for n, _ in (*parcelas_de_p1, *parcelas_de_p2))
+    c = ContaFactory.create(nome="Comprador C") if com_c else None
     donos = {"a": a, "b": b, "c": c}
     for comprador, produto, quantidade in (
-        (a, p1, 6),
-        (b, p1, 5),
+        *[(donos[nome], p1, quantidade) for nome, quantidade in parcelas_de_p1],
         *[(donos[nome], p2, quantidade) for nome, quantidade in parcelas_de_p2],
     ):
         pendente = pendente_a_p1 if (comprador, produto) == (a, p1) else 0
