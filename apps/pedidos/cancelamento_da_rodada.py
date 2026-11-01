@@ -10,18 +10,31 @@ rodada e as parcelas não removidas. O cancelamento concorre com a apuração, a
 interesse, a moderação e o encerramento do fechamento, e essa ordem evita impasse com eles.
 """
 
+import logging
 from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 
 from apps.contas.models import Conta, Papel, Situacao
+from apps.financeiro.devolucoes import DevolucaoRecusada, autorizar_devolucao
+from apps.financeiro.livro import travar_contas
+from apps.financeiro.models import MotivoDoReembolso, ObrigacaoComComprador, ParcelaDeDevolucao
+from apps.financeiro.obrigacoes import contas_das_obrigacoes
+from apps.financeiro.reembolsos import reembolso_integral_do_pedido
+from apps.financeiro.reserva import sem_cobertura_da_obrigacao
 from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
-from apps.nucleo.auditoria import registrar_auditoria
+from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import agendar_chamada
-from apps.pagamentos.consulta import exigir_fora_de_transacao, pendentes_das_referencias
+from apps.pagamentos.consulta import (
+    ConsultaAoProvedorFalhou,
+    consultar_antes_de_decidir,
+    exigir_fora_de_transacao,
+    pendentes_das_referencias,
+)
 from apps.pedidos.apuracao import _travar
 from apps.pedidos.models import (
     AberturaDoPagamento,
@@ -36,6 +49,8 @@ from apps.pedidos.models import (
 from apps.pedidos.pagamento import agendar_cancelamento
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.models import Etapa, Rodada
+
+logger = logging.getLogger(__name__)
 
 MAIOR_MENSAGEM = 1000
 MOTIVO_NO_ALVO = MotivoDoCancelamento.CANCELAMENTO_DA_RODADA.value
@@ -183,6 +198,115 @@ def _remover_os_interesses(fornecedor_id: int) -> list[dict[str, Any]]:
     return alteradas
 
 
+def _consultar_antes_de_cancelar(rodada: Rodada) -> None:
+    """Regra 2 da E12-03: antes das travas e fora de transação, consulta o provedor sobre cada
+    pedido pago de qualquer abertura da rodada e sobre os `aguardando_pagamento` da abertura
+    vigente, por `pk`. Uma `ConsultaAoProvedorFalhou` bloqueia o cancelamento, sem escrita; o
+    pagamento sincronizado agora segue as regras da E08-04 (pode quitar um pedido)."""
+    vigente = ciclo_vigente(rodada)
+    pedidos = Pedido.objects.filter(abertura__rodada_id=rodada.pk).select_related(
+        "abertura", "estado"
+    )
+    for pedido in pedidos.order_by("pk"):
+        situacao = pedido.estado.situacao
+        aguardando = (
+            situacao == SituacaoDePagamento.AGUARDANDO_PAGAMENTO
+            and vigente is not None
+            and pedido.abertura.ciclo_id == vigente.pk
+        )
+        if situacao == SituacaoDePagamento.PAGO or aguardando:
+            consultar_antes_de_decidir(pedido.referencia_externa)
+
+
+def _reembolsar_os_pedidos_pagos(
+    rodada: Rodada, autor: Conta
+) -> tuple[list[dict[str, Any]], list[int], list[ObrigacaoComComprador]]:
+    """Regra 4: o reembolso integral de cada pedido pago da rodada (todas as aberturas), relido
+    sob as travas, pelo que ainda não foi devolvido. As contas do livro de todas as obrigações a
+    criar são travadas de uma vez antes da primeira (regra única da E09). Devolve os reembolsos
+    gerados, os pedidos pagos sem nada restante e as obrigações criadas."""
+    pagos = list(
+        Pedido.objects.filter(
+            abertura__rodada_id=rodada.pk, estado__situacao=SituacaoDePagamento.PAGO
+        )
+        .select_related("abertura__ciclo", "comprador")
+        .order_by("pk")
+    )
+    por_ciclo: dict[int, tuple[Any, dict[int, Conta]]] = {}
+    for pedido in pagos:
+        _, compradores = por_ciclo.setdefault(pedido.abertura.ciclo_id, (pedido.abertura.ciclo, {}))
+        compradores[pedido.comprador_id] = pedido.comprador
+    contas = []
+    for ciclo, compradores in por_ciclo.values():
+        contas.extend(
+            contas_das_obrigacoes(rodada, ciclo, [compradores[pk] for pk in sorted(compradores)])
+        )
+    travar_contas(*contas)
+    reembolsos: list[dict[str, Any]] = []
+    sem_reembolso: list[int] = []
+    obrigacoes: list[ObrigacaoComComprador] = []
+    for pedido in pagos:
+        chave = f"cancelamento:{rodada.pk}:{pedido.comprador_id}:{pedido.pk}"
+        registrado = reembolso_integral_do_pedido(
+            pedido, chave=chave, motivo=MotivoDoReembolso.CANCELAMENTO_DA_RODADA, autor=autor
+        )
+        if registrado is None:
+            sem_reembolso.append(pedido.pk)
+            continue
+        r = registrado.reembolso
+        reembolsos.append(
+            {
+                "chave": chave,
+                "pedido": pedido.pk,
+                "comprador": pedido.comprador_id,
+                "produtos": str(r.produtos),
+                "servico": str(r.servico),
+                "frete": str(r.frete),
+            }
+        )
+        if registrado.obrigacao is not None:
+            obrigacoes.append(registrado.obrigacao)
+    return reembolsos, sem_reembolso, obrigacoes
+
+
+def _autorizar(obrigacao: ObrigacaoComComprador) -> bool:
+    """Autoriza a devolução pelo sistema (a indicação do cancelamento já é a autorização). Falha
+    não é relançada: fica no log, e a obrigação espera a tarefa periódica."""
+    try:
+        autorizar_devolucao(obrigacao, autor=SISTEMA)
+    except (ConsultaAoProvedorFalhou, DevolucaoRecusada) as erro:
+        logger.warning(
+            "Autorização da devolução do cancelamento: obrigação %s, %s: %s",
+            obrigacao.pk,
+            type(erro).__name__,
+            erro,
+        )
+        return False
+    except Exception as erro:
+        logger.error(
+            "Autorização da devolução do cancelamento: obrigação %s, erro inesperado %s",
+            obrigacao.pk,
+            type(erro).__name__,
+        )
+        return False
+    return True
+
+
+def autorizar_devolucoes_do_cancelamento_agora() -> int:
+    """Regra 6: autoriza as obrigações do cancelamento sem parcela e sem falta de cobertura. A
+    cobertura é escolha do administrador (P-2, P-3) e não é uma nova autorização. Repetir nunca
+    cria segunda parcela. Devolve quantas autorizações deram certo."""
+    sem_parcela = ObrigacaoComComprador.objects.filter(
+        motivo=MotivoDoReembolso.CANCELAMENTO_DA_RODADA
+    ).exclude(Exists(ParcelaDeDevolucao.objects.filter(obrigacao=OuterRef("pk"))))
+    autorizadas = 0
+    for obrigacao in sem_parcela.order_by("pk"):
+        if sem_cobertura_da_obrigacao(obrigacao) > 0:
+            continue
+        autorizadas += _autorizar(obrigacao)
+    return autorizadas
+
+
 def _gravar_o_cancelamento(
     autor: Conta,
     rodada: Rodada,
@@ -224,6 +348,8 @@ def cancelar_rodada(
     if atual is None:
         raise CancelamentoRecusado("rodada_inexistente")
     _conferir_a_etapa(atual.etapa)
+    if com_reembolso:
+        _consultar_antes_de_cancelar(atual)
     with transaction.atomic():
         travada = _travar(atual.pk, atual.fornecedor_id, _compradores_envolvidos(atual))
         instante = agora()  # lido depois das travas
@@ -233,6 +359,11 @@ def cancelar_rodada(
         cancelados, pagos = _cancelar_os_pedidos_nao_pagos(pedidos, instante)
         parcelas = _remover_os_interesses(travada.fornecedor_id)
         cobrancas = _agendar_o_cancelamento_das_cobrancas(pedidos)
+        reembolsos: list[dict[str, Any]] = []
+        sem_reembolso: list[int] = []
+        obrigacoes: list[ObrigacaoComComprador] = []
+        if com_reembolso:
+            reembolsos, sem_reembolso, obrigacoes = _reembolsar_os_pedidos_pagos(travada, autor)
         travada.etapa = Etapa.CANCELADA
         travada.save(update_fields=["etapa"])
         cancelamento = _gravar_o_cancelamento(
@@ -257,7 +388,11 @@ def cancelar_rodada(
                 "pedidos_cancelados": cancelados,
                 "pedidos_pagos": pagos,
                 "cobrancas": cobrancas,
-                "reembolsos": [],
+                "reembolsos": reembolsos,
+                "pagos_sem_reembolso": sem_reembolso,
             },
         )
+    # depois do commit: cada autorização consulta o provedor fora de transação (E10-04)
+    for obrigacao in sorted(obrigacoes, key=lambda o: o.pk):
+        _autorizar(obrigacao)
     return cancelamento

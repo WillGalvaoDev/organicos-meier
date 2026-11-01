@@ -156,3 +156,17 @@ def bloquear_tentativas_vencidas(timestamp: int) -> None:
 @app.task(name=TAREFA_DA_MARGEM, queueing_lock=TAREFA_DA_MARGEM)
 def reconsultar_pagamentos_da_margem(timestamp: int) -> None:
     reconsultar_pagamentos_da_margem_agora()
+
+
+TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO = "autorizar_devolucoes_do_cancelamento"
+
+
+@app.periodic(cron="*/10 * * * *")
+@app.task(
+    name=TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO,
+    queueing_lock=TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO,
+)
+def autorizar_devolucoes_do_cancelamento(timestamp: int) -> None:
+    from apps.pedidos.cancelamento_da_rodada import autorizar_devolucoes_do_cancelamento_agora
+
+    autorizar_devolucoes_do_cancelamento_agora()

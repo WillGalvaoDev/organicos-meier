@@ -118,7 +118,7 @@ def test_consulta_que_falha_bloqueia_o_cancelamento_inteiro(
     pagar(relogio, sim, x)
     etapa = Rodada.objects.get(pk=a.rodada.pk).etapa
     chamadas = ChamadaAoProvedor.objects.count()
-    sim.falhar_proximas(1, operacao="consultar_pagamento")
+    sim.falhar_proximas(1, operacao="buscar_por_referencia")
     with pytest.raises(ConsultaAoProvedorFalhou):
         _cancelar(a)
     assert Rodada.objects.get(pk=a.rodada.pk).etapa == etapa
@@ -263,11 +263,21 @@ def test_sem_cobertura_a_tarefa_espera_e_depois_autoriza(
 ) -> None:  # A-10
     from django.db import transaction
 
+    from apps.financeiro.livro import saldo
     from apps.financeiro.reserva import designar_reserva, registrar_aporte
     from apps.pedidos.cancelamento_da_rodada import autorizar_devolucoes_do_cancelamento_agora
+    from tests.apoio.financeiro import chave_nova, despesas, mover, receita_de
 
-    sim.definir_tarifa("pix", percentual=D("10"), fixa=D("0"))
     a, x = _aprovada(relogio, sim)
+    # a receita de serviço é consumida por despesas (cobertura de despesa) antes do cancelamento
+    with transaction.atomic():
+        mover(
+            "cobertura_de_despesa",
+            receita_de(a.rodada),
+            despesas(),
+            saldo(receita_de(a.rodada)),
+            chave=chave_nova(),
+        )
     id_deposito = sim.depositar(D("1000.00"))
     with transaction.atomic():
         registrar_aporte(a.admin, D("1000.00"), id_deposito, "Aporte")
@@ -285,10 +295,9 @@ def test_sem_cobertura_a_tarefa_espera_e_depois_autoriza(
 def test_falha_na_autorizacao_nao_desfaz_o_cancelamento(
     relogio: RelogioControlado, sim: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-11
-    from apps.financeiro import devolucoes
+    from apps.pagamentos.consulta import consultar_antes_de_decidir as original
     from apps.pedidos.cancelamento_da_rodada import autorizar_devolucoes_do_cancelamento_agora
 
-    original = devolucoes.consultar_antes_de_decidir
     falhas = [True]
 
     def consultar(referencia: str) -> Any:
@@ -297,7 +306,7 @@ def test_falha_na_autorizacao_nao_desfaz_o_cancelamento(
             raise ConsultaAoProvedorFalhou(referencia, "indisponivel")
         return original(referencia)
 
-    monkeypatch.setattr(devolucoes, "consultar_antes_de_decidir", consultar)
+    monkeypatch.setattr("apps.financeiro.devolucoes.consultar_antes_de_decidir", consultar)
     a, x, _y = arranjo_ap(relogio)
     pagar(relogio, sim, x)
     _cancelar(a)
