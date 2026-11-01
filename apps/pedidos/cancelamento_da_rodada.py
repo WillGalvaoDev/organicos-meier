@@ -358,16 +358,20 @@ def _corpo_do_aviso(
     dele, a fila e a mensagem do administrador."""
     frases = [f"A rodada de {fornecedor} foi cancelada pelo administrador."]
     if devolver is not None:
+        if cancelado_agora:
+            frases.append("Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele.")
         frases.append(
             f"O valor pago ainda não devolvido, {reais(devolver)}, será devolvido integralmente "
             "pela plataforma de pagamentos."
         )
-    elif pago and com_reembolso:
-        frases.append("As devoluções já devidas do seu pedido continuam em andamento.")
     elif pago:
+        if cancelado_agora:
+            frases.append("Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele.")
         frases.append(
-            "O cancelamento não inicia novas devoluções. As devoluções já devidas continuam em "
-            "andamento."
+            "As devoluções já devidas do seu pedido continuam em andamento."
+            if com_reembolso
+            else "O cancelamento não inicia novas devoluções. As devoluções já devidas continuam "
+            "em andamento."
         )
     else:
         frases.append(
@@ -394,10 +398,10 @@ def _avisar_os_compradores(
     pagos: list[int],
     parcelas: list[dict[str, Any]],
     reembolsos: list[dict[str, Any]],
-    sem_reembolso: list[int],
 ) -> None:
-    """E12-05: o aviso a cada comprador que tem reserva, pedido ou reembolso na rodada. Quem só
-    tem pendente na fila do fornecedor não recebe: o cancelamento não muda nada dele."""
+    """E12-05: o aviso a cada comprador que tem reserva, pedido ou pedido pago na rodada (de
+    qualquer abertura, R02). Quem só tem pendente na fila do fornecedor não recebe: o
+    cancelamento não muda nada dele."""
     rodada = cancelamento.rodada
     por_comprador: dict[int, Pedido] = {p.comprador_id: p for p in pedidos}
     pagos_ids = set(pagos)
@@ -408,14 +412,21 @@ def _avisar_os_compradores(
         total = Decimal(r["produtos"]) + Decimal(r["servico"]) + Decimal(r["frete"])
         devolver[r["comprador"]] = devolver.get(r["comprador"], Decimal("0.00")) + total
         do_reembolso.setdefault(r["comprador"], r["pedido"])
-    sem_saldo: dict[int, int] = {
-        comprador: pedido
-        for pedido, comprador in Pedido.objects.filter(pk__in=sem_reembolso).values_list(
-            "pk", "comprador_id"
+    # regra 2-A: quem tem pedido pago na rodada, em qualquer abertura, lido sob as travas
+    pagos_na_rodada: dict[int, int] = {}
+    for pedido_pago, comprador in (
+        Pedido.objects.filter(
+            abertura__rodada_id=rodada.pk, estado__situacao=SituacaoDePagamento.PAGO
         )
-    }
+        .values_list("pk", "comprador_id")
+        .order_by("pk")
+    ):
+        pagos_na_rodada[comprador] = pedido_pago  # o de maior pk fica
     destinatarios = (
-        {p["comprador"] for p in parcelas} | set(por_comprador) | set(devolver) | set(sem_saldo)
+        {p["comprador"] for p in parcelas}
+        | set(por_comprador)
+        | set(devolver)
+        | set(pagos_na_rodada)
     )
     na_fila = set(
         ParcelaDeInteresse.objects.filter(
@@ -430,15 +441,15 @@ def _avisar_os_compradores(
         pago = (
             (pedido is not None and pedido.pk in pagos_ids)
             or conta.pk in devolver
-            or conta.pk in sem_saldo
+            or conta.pk in pagos_na_rodada
         )
         link = "/carrinho/"
         if pedido is not None:
             link = f"/pedidos/{pedido.pk}/"
         elif conta.pk in do_reembolso:
             link = f"/pedidos/{do_reembolso[conta.pk]}/"
-        elif conta.pk in sem_saldo:
-            link = f"/pedidos/{sem_saldo[conta.pk]}/"
+        elif conta.pk in pagos_na_rodada:
+            link = f"/pedidos/{pagos_na_rodada[conta.pk]}/"
         corpo = _corpo_do_aviso(
             rodada.fornecedor.nome,
             com_reembolso=cancelamento.com_reembolso,
@@ -519,9 +530,7 @@ def cancelar_rodada(
             com_reembolso=com_reembolso,
             mensagem=mensagem,
         )
-        _avisar_os_compradores(
-            cancelamento, pedidos, cancelados, pagos, parcelas, reembolsos, sem_reembolso
-        )
+        _avisar_os_compradores(cancelamento, pedidos, cancelados, pagos, parcelas, reembolsos)
         registrar_auditoria(
             autor,
             "rodada.cancelar",

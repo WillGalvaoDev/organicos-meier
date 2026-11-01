@@ -215,6 +215,11 @@ def test_pagante_suspenso_recebe_o_aviso_e_so_pendente_sem_pedido_nao(
     from tests.fabricas import ContaFactory, ParcelaFactory
 
     a, x, _y = arranjo_ap(relogio, minimo="100.00", limites=(11, 12))
+    pagar(relogio, sim, x)
+    suspender(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    # C entra na fila depois do retorno (o estoque liberado por A já foi distribuído na apuração)
     c = ContaFactory.create(nome="Comprador C")
     ParcelaFactory.create(
         comprador=c,
@@ -224,10 +229,6 @@ def test_pagante_suspenso_recebe_o_aviso_e_so_pendente_sem_pedido_nao(
         quantidade_pendente=D("4"),
         situacao="pendente",
     )
-    pagar(relogio, sim, x)
-    suspender(a.admin, a.a)
-    relogio.congelar(PRAZO)
-    iniciar_apuracao(a.admin, a.rodada)
     parcelas_de_a = list(ParcelaDeInteresse.objects.filter(comprador=a.a).order_by("pk").values())
     _cancelar(a, com_reembolso=False)
     assert list(ParcelaDeInteresse.objects.filter(comprador=a.a).order_by("pk").values()) == (

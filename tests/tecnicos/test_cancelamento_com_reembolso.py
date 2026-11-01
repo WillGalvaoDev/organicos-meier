@@ -493,7 +493,9 @@ def _conferir_o_pagamento_tardio(
     assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
     destino = DestinoDoPagamento.objects.get(pagamento__id_externo=extra)
     assert (destino.destino, destino.motivo) == ("devolucao", "duplicidade")
-    obrigacao = ObrigacaoComComprador.objects.get(pedido=x, origem_id=str(destino.pk))
+    obrigacao = ObrigacaoComComprador.objects.get(
+        origem_tipo="pedidos.destinodopagamento", origem_id=str(destino.pk)
+    )
     assert obrigacao.integral == x.total
     assert not ParcelaDeDevolucao.objects.filter(obrigacao=obrigacao).exists()
     assert not Reembolso.objects.filter(pedido=x, motivo=MOTIVO).exists()
