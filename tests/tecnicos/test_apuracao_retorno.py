@@ -430,3 +430,98 @@ def test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao(
     assert apuracao.resultado == "retorno_para_interesse"
     assert Reembolso.objects.filter(motivo="minimo_nao_atingido").count() == 2
     assert ObrigacaoComComprador.objects.filter(pedido__in=[x, z]).count() == 2
+
+
+# --- E11-R04: nenhuma trava mais forte que FOR NO KEY UPDATE na apuração ----------------------
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_retorno_concorre_com_tarifa_tardia_sem_impasse(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-22 (a prova do parecer)
+    from dataclasses import replace
+    from threading import Event
+
+    from django.db import transaction
+
+    from apps.financeiro import entradas
+    from apps.pagamentos.sincronizacao import sincronizar_pagamento
+    from apps.pedidos import apuracao
+    from tests.apoio.apuracao import cobranca
+    from tests.apoio.concorrencia import executar_em_paralelo
+
+    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE)
+    simulador_pagamentos.definir_tarifa("pix", percentual=D("1"), fixa=D("0"))
+    externo = cobranca(relogio, x)
+    simulador_pagamentos.aprovar(externo)
+    completa = obter_provedor().consultar_pagamento(externo)
+    with transaction.atomic():
+        sincronizar_pagamento(replace(completa, tarifa=None), origem="tarefa")
+    relogio.congelar(PRAZO)
+    consultas, tarifa, retorno = Event(), Event(), Event()
+    original_travar = apuracao._travar
+    original_tarifa = entradas.registrar_tarifa
+    original_devolver = apuracao._devolver_integralmente
+
+    def travar(*args: Any, **kwargs: Any) -> Any:
+        consultas.set()
+        assert tarifa.wait(15)
+        return original_travar(*args, **kwargs)
+
+    def registrar(*args: Any, **kwargs: Any) -> Any:
+        resultado = original_tarifa(*args, **kwargs)
+        tarifa.set()
+        assert retorno.wait(15)
+        return resultado
+
+    def devolver(*args: Any, **kwargs: Any) -> Any:
+        retorno.set()
+        return original_devolver(*args, **kwargs)
+
+    monkeypatch.setattr(apuracao, "_travar", travar)
+    monkeypatch.setattr(entradas, "registrar_tarifa", registrar)
+    monkeypatch.setattr(apuracao, "_devolver_integralmente", devolver)
+
+    def apurar(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return apuracao.iniciar_apuracao(a.admin, a.rodada)
+
+    def registrar_pendentes(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        assert consultas.wait(15)
+        return entradas.registrar_tarifas_pendentes_agora()
+
+    resultados = executar_em_paralelo(apurar, registrar_pendentes)
+    assert all(r.excecao is None for r in resultados), [repr(r.excecao) for r in resultados]
+    a.rodada.refresh_from_db()
+    assert a.rodada.etapa == "interesse"
+    from apps.financeiro.models import Despesa
+
+    assert Despesa.objects.filter(tipo="tarifa").count() == 1
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_registro_com_chave_para_a_rodada_nao_espera_o_fim_do_retorno(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-23
+    from apps.financeiro.models import Despesa
+    from apps.pedidos import apuracao
+    from tests.apoio.corrida import Corrida
+
+    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE)
+    pagar(relogio, simulador_pagamentos, x)
+    relogio.congelar(PRAZO)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, apuracao, "voltar_para_interesse")
+    ra, rb = corrida.rodar(
+        lambda: apuracao.iniciar_apuracao(a.admin, a.rodada),
+        lambda: Despesa.objects.create(
+            tipo="deficit_frete", valor=D("1.00"), rodada=a.rodada, ciclo=a.ciclo
+        ),
+        a_atomica=False,
+    )
+    assert ra.excecao is None, ra.excecao
+    assert rb.excecao is None, rb.excecao
+    assert not corrida.b_esperou, "a inserção esperou a apuração: a trava foi promovida"
