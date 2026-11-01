@@ -124,7 +124,7 @@ PREFIXOS_COM_SIMULADOR = (
     "test_cenarios_",
     "test_devolucoes_",
     "test_apuracao_",
-    "test_cancelamento_com_pedidos",
+    "test_cancelamento_com_",
     "test_fila_ponta_a_ponta",
     "test_t08_",
     "test_t09_",
