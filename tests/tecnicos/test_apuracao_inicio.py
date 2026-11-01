@@ -14,6 +14,7 @@ from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
 from apps.pagamentos.models import ChamadaAoProvedor
+from apps.pagamentos.provedor import obter_provedor
 from apps.pedidos.models import (
     DestinoDoPagamento,
     ItemDoPedido,
@@ -216,24 +217,217 @@ def test_cancelado_por_suspensao_continua_e_conta_como_nao_pago(
     assert (apuracao.pedidos_pagos, apuracao.pedidos_nao_pagos) == (1, 1)
 
 
-def test_cancela_a_cobranca_pendente_do_nao_pago_uma_vez(
+def _y_com_cobranca_pendente(
     relogio: RelogioControlado, sim: Any
-) -> None:  # A-8
-    from apps.pedidos.apuracao import ApuracaoRecusada
+) -> tuple[Any, Pedido, Pedido, str, TentativaDePagamento]:
+    """O arranjo do A-8: X pago e Y com uma tentativa `criada` (cobrança pendente no simulador)."""
+    a, x, y = arranjo_ap(relogio)
+    pagar(relogio, sim, x)
+    id_y = cobranca(relogio, y)
+    return a, x, y, id_y, TentativaDePagamento.objects.get(pedido=y)
+
+
+def _situacao_no_provedor(id_externo: str) -> str:
+    return str(obter_provedor().consultar_pagamento(id_externo).situacao)
+
+
+def test_cancela_no_provedor_antes_de_apurar(
+    relogio: RelogioControlado, sim: Any, caplog: pytest.LogCaptureFixture
+) -> None:  # A-8 (R03)
+    from apps.pagamentos.models import PagamentoNoProvedor
+
+    a, _x, y, id_y, tentativa = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    caplog.set_level("INFO", logger="apps.simulador_pagamentos")
+    _iniciar(a)
+    assert _situacao_no_provedor(id_y) == "cancelado"
+    assert PagamentoNoProvedor.objects.get(id_externo=id_y).situacao == "cancelado"
+    chamada = ChamadaAoProvedor.objects.get(
+        operacao="cancelar_cobranca", alvo=f"t{tentativa.pk}:apuracao"
+    )
+    assert chamada.situacao == "concluida"
+    operacoes = [
+        r.getMessage() for r in caplog.records if "Simulador de pagamentos" in r.getMessage()
+    ]
+    primeira_consulta = next(i for i, m in enumerate(operacoes) if "buscar_por_referencia" in m)
+    cancelamento = next(i for i, m in enumerate(operacoes) if "cancelar_cobranca" in m)
+    assert primeira_consulta < cancelamento
+    cancelado = _situacao(y)
+    assert (cancelado.situacao, cancelado.motivo_do_cancelamento) == ("cancelado", "inadimplencia")
+
+
+def test_falha_do_cancelamento_bloqueia_a_apuracao(relogio: RelogioControlado, sim: Any) -> None:
+    # A-22
+    a, _x, y, id_y, tentativa = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    antes = _foto()
+    parcelas = _parcelas_do_fornecedor()
+    sim.falhar_proximas(1, operacao="cancelar_cobranca")
+    with pytest.raises(ConsultaAoProvedorFalhou) as erro:
+        _iniciar(a)
+    assert id_y in str(erro.value)
+    assert _foto()[0] == 0
+    assert _situacao(y).situacao == "aguardando_pagamento"
+    assert _parcelas_do_fornecedor() == parcelas
+    chamada = ChamadaAoProvedor.objects.get(
+        operacao="cancelar_cobranca", alvo=f"t{tentativa.pk}:apuracao"
+    )
+    assert (chamada.situacao, bool(chamada.ultimo_erro)) == ("pendente", True)
+    assert antes[0] == 0
+
+
+def _parcelas_do_fornecedor() -> list[Any]:
+    from apps.interesses.models import ParcelaDeInteresse
+
+    return list(
+        ParcelaDeInteresse.objects.order_by("pk").values_list(
+            "pk", "situacao", "quantidade_reservada", "quantidade_pendente"
+        )
+    )
+
+
+def test_pagamento_aprovado_na_resposta_do_cancelamento_quita_o_pedido(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-23
+    a, _x, y, id_y, _ = _y_com_cobranca_pendente(relogio, sim)
+    sim.aprovar_no_cancelamento(id_y, em=T0 + 47 * H)
+    relogio.congelar(PRAZO)
+    apuracao = _iniciar(a)
+    assert _situacao(y).situacao == "pago"
+    assert (apuracao.pedidos_pagos, apuracao.pedidos_nao_pagos) == (2, 0)
+    assert _destinos(y) == [("quita", "")]
+    assert ObrigacaoComComprador.objects.filter(pedido=y).count() == 0
+
+
+def test_cobranca_orfa_da_referencia_tambem_e_cancelada(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-24
+    from apps.pagamentos.provedor import NovaCobranca, obter_provedor
 
     a, x, y = arranjo_ap(relogio)
     pagar(relogio, sim, x)
-    cobranca(relogio, y)
-    tentativa = TentativaDePagamento.objects.get(pedido=y)
+    relogio.congelar(T0 + H)
+    orfa = obter_provedor().criar_cobranca(
+        NovaCobranca("orfa-y", y.referencia_externa, y.total, "Pedido", T0 + 25 * H)
+    )
+    id_orfa = orfa.pagamento.id_externo
     relogio.congelar(PRAZO)
+    _iniciar(a)
+    chamada = ChamadaAoProvedor.objects.get(
+        operacao="cancelar_cobranca", alvo=f"{id_orfa}:apuracao"
+    )
+    assert chamada.situacao == "concluida"
+    assert _situacao_no_provedor(id_orfa) == "cancelado"
+    assert _situacao(y).situacao == "cancelado"
+
+
+def _cancelamento_recusado(monkeypatch: pytest.MonkeyPatch, *, cancela_antes: bool) -> None:
+    """Dublê do cancelamento recusado (`estado_invalido`); com `cancela_antes`, o provedor já o
+    tinha cancelado."""
+    from apps.pagamentos.provedor import RecusaDoProvedor
+    from apps.simulador_pagamentos.provedor import ProvedorSimulado
+
+    original = ProvedorSimulado.cancelar_cobranca
+
+    def recusar(self: Any, id_externo: str) -> Any:
+        if cancela_antes:
+            original(self, id_externo)
+        raise RecusaDoProvedor("estado_invalido")
+
+    monkeypatch.setattr(ProvedorSimulado, "cancelar_cobranca", recusar)
+
+
+def test_cancelamento_recusado_com_a_cobranca_ja_cancelada_segue(
+    relogio: RelogioControlado, sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-25
+    a, _x, y, id_y, tentativa = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    _cancelamento_recusado(monkeypatch, cancela_antes=True)
     _iniciar(a)
     chamada = ChamadaAoProvedor.objects.get(
         operacao="cancelar_cobranca", alvo=f"t{tentativa.pk}:apuracao"
     )
-    assert chamada.situacao == "pendente"
-    with pytest.raises(ApuracaoRecusada, match="já foi feita"):
+    assert chamada.situacao == "falhou"
+    assert _situacao(y).motivo_do_cancelamento == "inadimplencia"
+    assert _situacao_no_provedor(id_y) == "cancelado"
+
+
+def test_cancelamento_recusado_com_a_cobranca_ainda_pendente_bloqueia(
+    relogio: RelogioControlado, sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-26
+    a, _x, y, _id_y, _ = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    _cancelamento_recusado(monkeypatch, cancela_antes=False)
+    with pytest.raises(ConsultaAoProvedorFalhou):
         _iniciar(a)
-    assert ChamadaAoProvedor.objects.filter(operacao="cancelar_cobranca").count() == 1
+    assert _foto()[0] == 0
+    assert _situacao(y).situacao == "aguardando_pagamento"
+
+
+def test_cobranca_que_reaparece_pendente_antes_da_decisao_recusa(
+    relogio: RelogioControlado, sim: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-27
+    from apps.pagamentos.models import PagamentoNoProvedor
+    from apps.pedidos import apuracao
+    from apps.pedidos.apuracao import ApuracaoRecusada
+
+    a, _x, y, id_y, _ = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    original = apuracao._cancelar_no_provedor
+
+    def cancelar_e_reabrir(*args: Any, **kwargs: Any) -> Any:
+        resultado = original(*args, **kwargs)
+        PagamentoNoProvedor.objects.filter(id_externo=id_y).update(situacao="pendente")
+        return resultado
+
+    monkeypatch.setattr(apuracao, "_cancelar_no_provedor", cancelar_e_reabrir)
+    antes = _foto()
+    with pytest.raises(ApuracaoRecusada) as recusa:
+        _iniciar(a)
+    assert recusa.value.codigo == "cobranca_aberta"
+    assert str(recusa.value) == "Há cobrança ainda aberta no provedor; tente de novo."
+    assert _foto() == antes
+    assert _situacao(y).situacao == "aguardando_pagamento"
+
+
+def test_chamada_do_bloqueio_pendente_nao_impede_a_da_apuracao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-28
+    from apps.pedidos.tarefas import bloquear_tentativas_vencidas_agora
+
+    a, _x, _y, id_y, tentativa = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(T0 + 25 * H)
+    sim.falhar_proximas(1, operacao="cancelar_cobranca")
+    bloquear_tentativas_vencidas_agora()
+    processar_chamadas()
+    do_bloqueio = ChamadaAoProvedor.objects.get(
+        operacao="cancelar_cobranca", alvo=f"t{tentativa.pk}:prazo"
+    )
+    assert (do_bloqueio.situacao, bool(do_bloqueio.ultimo_erro)) == ("pendente", True)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    da_apuracao = ChamadaAoProvedor.objects.get(
+        operacao="cancelar_cobranca", alvo=f"t{tentativa.pk}:apuracao"
+    )
+    assert da_apuracao.situacao == "concluida"
+    do_bloqueio.refresh_from_db()
+    assert do_bloqueio.situacao == "pendente"
+    assert _situacao_no_provedor(id_y) == "cancelado"
+    relogio.congelar(PRAZO + 2 * H)
+    processar_chamadas()  # o segundo cancelamento encontra a cobrança já cancelada
+    assert _situacao_no_provedor(id_y) == "cancelado"
+
+
+def test_auditoria_lista_as_cobrancas_canceladas_no_provedor(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-29
+    a, _x, _y, id_y, _ = _y_com_cobranca_pendente(relogio, sim)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
+    assert auditoria.alteracoes["cobrancas_canceladas"] == [
+        {"id_externo": id_y, "situacao": "cancelado"}
+    ]
 
 
 def test_reconsulta_registra_o_pagamento_aprovado_depois_de_48_horas(
