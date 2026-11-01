@@ -1,5 +1,6 @@
 """E12-07: o cancelamento da rodada de ponta a ponta com o simulador (acceptance A-1 a A-8)."""
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -284,6 +285,7 @@ def test_dois_cancelamentos_em_paralelo_geram_um_estorno_por_pagamento(
     assert EstornoSimulado.objects.filter(situacao="concluido").count() == 2
     assert _estornado_de(id_x) == D("94.35")
     assert _estornado_de(id_y) == D("106.15")
+    _invariante_ok()  # A-10
 
 
 def test_a_rota_pelo_cliente_http(client: Client, relogio: RelogioControlado) -> None:  # A-7
@@ -297,6 +299,7 @@ def test_a_rota_pelo_cliente_http(client: Client, relogio: RelogioControlado) ->
     assert Rodada.objects.get(pk=a.rodada.pk).etapa == "pagamento"
     assert _cancelar_pela_tela(client, a, credencial, "nao").status_code == 302
     assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
+    _invariante_ok()  # A-10
 
 
 def test_nova_rodada_depois_do_cancelamento(
@@ -329,3 +332,47 @@ def test_nova_rodada_depois_do_cancelamento(
     incluir_produto_na_rodada(a.admin, nova, a.p1, "20")
     assert nova.etapa == "interesse"
     assert foto() == antes
+    _invariante_ok()  # A-10
+
+
+def _retorno_cancelado_pela_tela(
+    client: Client, relogio: RelogioControlado, sim: Any, reembolso: str
+) -> tuple[Any, Any]:
+    """AP-R pela tela: X pago, a apuração em 48h com o retorno ao interesse e o administrador
+    cancelando; depois o processamento das chamadas."""
+    from apps.pedidos.apuracao import iniciar_apuracao
+
+    a, x, _y, credencial = _tela(client, relogio, minimo="100.00", limites=(11, 12))
+    pagar(relogio, sim, x)
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    assert _cancelar_pela_tela(client, a, credencial, reembolso).status_code == 302
+    _processar_tudo()
+    return a, x
+
+
+@pytest.mark.parametrize("reembolso", ["sim", "nao"])
+def test_cancelamento_depois_de_um_retorno_ao_interesse(
+    client: Client, relogio: RelogioControlado, sim: Any, reembolso: str
+) -> None:  # A-9
+    a, x = _retorno_cancelado_pela_tela(client, relogio, sim, reembolso)
+    assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
+    aviso = Notificacao.objects.get(conta=a.a, evento="rodada_cancelada")
+    assert aviso.link == f"/pedidos/{x.pk}/"
+    entrar = Client()
+    entrar.force_login(a.a)
+    pagina = " ".join(
+        re.sub(r"<[^>]+>", " ", entrar.get(f"/pedidos/{x.pk}/").content.decode()).split()
+    )
+    assert "seus interesses continuam reservados na rodada" not in pagina
+    assert "A rodada foi cancelada pelo administrador." in pagina
+    if reembolso == "sim":
+        assert "As devoluções já devidas do seu pedido continuam em andamento." in aviso.corpo
+        assert "As devoluções já devidas deste pedido continuam em andamento." in pagina
+    else:
+        assert "O cancelamento não inicia novas devoluções." in aviso.corpo
+        assert "O cancelamento não inicia novas devoluções." in pagina
+    assert not Reembolso.objects.filter(pedido=x, motivo=MOTIVO).exists()
+    assert ParcelaDeDevolucao.objects.filter(obrigacao__pedido=x).count() <= 1
+    assert ObrigacaoComComprador.objects.filter(pedido=x).count() == 1
+    _invariante_ok()
