@@ -73,6 +73,10 @@ MENSAGENS = {
 class CancelamentoRecusado(Exception):
     """O cancelamento foi recusado; `codigo` identifica a recusa e a mensagem é a da tela."""
 
+    @staticmethod
+    def mensagem_de(codigo: str) -> str:
+        return MENSAGENS[codigo]
+
     def __init__(self, codigo: str) -> None:
         super().__init__(MENSAGENS[codigo])
         self.codigo = codigo

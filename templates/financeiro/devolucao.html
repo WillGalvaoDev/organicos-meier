@@ -15,7 +15,7 @@
     <dt>Pagamento</dt><dd>{{ pagamento }}</dd>
     <dt>Financiado</dt><dd>{{ financiado|reais }}</dd>
     <dt>Sem cobertura</dt><dd>{{ sem_cobertura|reais }}</dd>
-    <dt>Situação</dt><dd>{{ situacao }}</dd>
+    <dt>Situação</dt><dd>{{ situacao }}{% if do_cancelamento %} · {{ do_cancelamento }}{% endif %}</dd>
   </dl>
   {% if parcela and parcela.codigo_da_falha %}<p>Último código de falha: {{ parcela.codigo_da_falha }}</p>{% endif %}
   {% if falha %}

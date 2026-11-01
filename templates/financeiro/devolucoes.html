@@ -19,7 +19,7 @@
               <td>{% if linha.obrigacao.pedido_id %}{{ linha.obrigacao.pedido_id }}{% else %}pagamento sem pedido{% endif %}</td>
               <td>{{ linha.comprador|default:"-" }}</td>
               <td>{{ linha.pagamento }}</td>
-              <td>{{ linha.situacao }}</td>
+              <td>{{ linha.situacao }}{% if linha.do_cancelamento %} · {{ linha.do_cancelamento }}{% endif %}</td>
               <td>
                 {% if linha.falha %}
                   {{ linha.parcela.codigo_da_falha }} · tentativas {{ linha.falha.tentativas }}

@@ -800,7 +800,8 @@ def test_409_do_servico_e_pagina_so_de_leitura_com_a_etapa_relida(
     assert "Salvar" not in html
     leitor = _Leitor()
     leitor.feed(html)
-    assert [f.action for f in leitor.formularios] == []
+    # só o cancelamento da rodada (E12-06, regra 4) é ação na página só de leitura do estoque
+    assert [f.action for f in leitor.formularios if "/cancelar/" not in f.action] == []
     assert "Fechamento" in html
     if incluir:
         assert not EstoqueDaRodada.objects.filter(rodada=rodada).exists()

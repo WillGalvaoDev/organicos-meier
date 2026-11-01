@@ -106,6 +106,21 @@ def _acompanhamento_da_falha(parcela: ParcelaDeDevolucao) -> dict[str, Any]:
     }
 
 
+def _do_cancelamento(
+    obrigacao: ObrigacaoComComprador, parcela: ParcelaDeDevolucao | None
+) -> str | None:
+    """A devolução do cancelamento da rodada nasce autorizada pela indicação do administrador
+    (E12-03): enquanto não tem parcela, a tela diz isso e em que ponto ela espera."""
+    if obrigacao.motivo != "cancelamento_da_rodada" or parcela is not None:
+        return None
+    espera = (
+        "aguardando cobertura"
+        if sem_cobertura_da_obrigacao(obrigacao) > 0
+        else "aguardando o envio ao provedor"
+    )
+    return f"Autorizada pelo cancelamento da rodada · {espera}"
+
+
 def _linha(obrigacao: ObrigacaoComComprador) -> dict[str, Any]:
     parcela = ParcelaDeDevolucao.objects.filter(obrigacao=obrigacao).first()
     situacao = "devida" if parcela is None else parcela.situacao
@@ -124,6 +139,7 @@ def _linha(obrigacao: ObrigacaoComComprador) -> dict[str, Any]:
         "comprador": obrigacao.comprador.nome if obrigacao.comprador else None,
         "pagamento": _pagamento(obrigacao),
         "falha": falha,
+        "do_cancelamento": _do_cancelamento(obrigacao, parcela),
     }
 
 
@@ -155,7 +171,7 @@ def _detalhe(
         "financiado": saldo(conta_da_obrigacao(obrigacao)),
         "historico": list(parcela.historico.order_by("pk")) if parcela is not None else [],
         "confirmacao": getattr(parcela, "confirmacao", None) if parcela is not None else None,
-        "pode_autorizar": parcela is None,
+        "pode_autorizar": parcela is None and linha["do_cancelamento"] is None,
         "pode_tentar": parcela is not None and parcela.situacao == S.FALHA_TEMPORARIA,
         "pode_confirmar": parcela is not None and parcela.situacao == S.ELEGIVEL_EXCEPCIONAL,
     }
