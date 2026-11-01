@@ -52,3 +52,10 @@ Comando: `uv run pytest tests/tecnicos/test_apuracao_inicio.py` (arquivo inteiro
 - **A-27:** o instantâneo de "sem escrita" é tirado depois do passo 4-A, porque o efeito no provedor fica (regra 5).
 
 Provas do parecer `test_cancelamento_no_provedor_precede_apuracao` e `test_falha_do_cancelamento_bloqueia_apuracao`: passam como estão (arquivo temporário, removido).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO nesta revalidação — R03 encerrado.** O cancelamento pendente é efetivado e sincronizado antes da decisão; indisponibilidade bloqueia. Conferidos A-8 e A-22 a A-29, cobranças órfãs, aprovação concorrente, recusa seguida de consulta e guarda sob trava. As duas provas independentes de R03 passam. O adendo alinha a especificação à infraestrutura §4.3, resolvendo o conflito anterior sem nova regra de negócio. A etapa E11 permanece REPROVADA por R02 residual.

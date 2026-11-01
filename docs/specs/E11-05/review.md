@@ -65,3 +65,10 @@ Comando: `uv run pytest tests/tecnicos/test_apuracao_retorno.py` (arquivo inteir
 Provas do parecer `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_suspenso_nao_prende_estoque_no_retorno` e `test_retorno_concorre_com_tarifa_sem_impasse` (esta é o A-22): passam como estão.
 
 Mais dois testes existentes afirmavam o texto "FOR UPDATE" no SQL da leitura travada das parcelas (`test_catalogo_incremento.py::test_leitura_das_parcelas_e_travada_em_ordem_de_sequencia` e `test_interesses_consultas.py::test_leitura_com_trava_usa_for_update_ordenado_pela_sequencia`); passaram a afirmar "FOR NO KEY UPDATE", pela mesma consequência do R04 (a suíte completa os acusou). A ordem por `sequencia` e a trava da linha continuam afirmadas.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**REPROVADO — R02 residual (importante). R01 e R04 encerrados.** As provas anteriores de reserva após remover sobra, liberação de estoque da conta suspensa e corrida com tarifa passam. Porém, se a suspensão já removeu todas as parcelas do pagante antes da apuração, `removidas_por_conta_impedida` fica vazio. O filtro de destinatários deduz desse conjunto vazio que o comprador não está impedido e emite `retorno_para_interesse`, contrariando o adendo R02 (aviso só a conta ativa). A lista de não restaurações também é descartada em `_retornar_para_interesse`. A reserva permanece corretamente zero; o residual é de registro e comunicação, não repetição do estoque preso. Prova e encaminhamento no consolidado.

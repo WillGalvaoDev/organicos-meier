@@ -27,3 +27,10 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 **APROVADO no escopo próprio revalidado; sem liberar o avanço da etapa com os achados abertos.** A-1 a A-13 confrontados com código/testes: nova consulta, bloqueio por falha, autorização, exclusão de pedidos inteiramente invalidados, lançamentos de custódia/fornecedor/serviço/frete, déficit sem cobrar mais do pagante, unicidade da aprovação, auditoria e rollback quando o receptor do sinal falha. Não encontrado achado próprio nesse fluxo.
 
 TDD: `5a97b88 → d54cdf7`, registros conferidos. Pedido formal e repasse continuam na E13. Os problemas do início/retorno não são resolvidos por aprovar o resultado.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO nesta revalidação, sem achado próprio.** Sem alteração de implementação específica nesta rodada; aprovação administrativa e regressões incluídas na suíte completa. A etapa E11 permanece REPROVADA por R02 residual.

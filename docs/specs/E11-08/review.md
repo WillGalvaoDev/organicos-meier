@@ -229,3 +229,76 @@ uv run python manage.py makemigrations --check --dry-run   # No changes detected
 ```
 
 Antes das correções a suíte tinha 2.764 testes; as correções acrescentaram 21. Commits locais em `e11-implementacao`, sem push nem PR.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**Veredito da E11: REPROVADO.** R01, R03 e R04 encerrados; R02 corrigido quanto ao estoque, mas ainda aberto quanto ao registro da conta impedida e às mensagens de reserva. Não há decisão de negócio pendente: os adendos já determinam o comportamento esperado.
+
+### R02 residual — importante — aviso e tela prometem reservas inexistentes
+
+Referências: E11-05/spec.md regra 2 e adendo R02 (auditoria e aviso); E11-07/spec.md adendo R02 (situação na apuração, sem afirmar reservas para conta impedida); funcional §2. Código: `apps/pedidos/apuracao.py:468`, `:709` a `:720`; `apps/pedidos/apuracao_tela.py:150` a `:178`.
+
+Reprodução: A tem apenas uma parcela, com 6 unidades congeladas pagas de P1 e 2 pendentes. B tem 5 de P1 e 12 de P2, não paga. Suspender A pelo serviço antes da apuração já remove sua parcela pendente, zerando reserva e pendência. Em 48h o mínimo de 100 não é atingido e a rodada retorna ao interesse. A reserva de A continua zero, corretamente. Entretanto, a apuração emite o aviso `retorno_para_interesse` e o contexto da tela do pedido afirma `interesses_reservados=True`.
+
+Causa: `_remover_as_parcelas_das_contas_impedidas` registra apenas parcelas que ainda estão ativa/em_pedido/pendente. Não encontrar parcela para remover não significa que a conta esteja ativa. O retorno descarta `nao_restauradas`, constrói os destinatários a partir de `removidas` e a tela usa a mesma lista como evidência de impedimento. A prova não altera estados diretamente nem simula resposta de sucesso: usa pagamento e suspensão reais do projeto. Os testes novos do implementador usam parcelas ainda `em_pedido` e não alcançam essa combinação.
+
+Encaminhamento: registrar a elegibilidade/não restauração do pagante no momento da apuração independentemente de haver parcela ainda removível; usar esse registro para destinatários e tela, preservando os valores anteriores das remoções efetivas. Cobrir conta suspensa e removida, inclusive parcela previamente removida e mudança posterior da situação da conta. Não inferir a situação histórica da conta consultando seu estado atual na tela. Nenhuma correção de produção foi feita pelo revisor.
+
+### Prova reproduzível adicional
+
+Arquivo temporário `tests/tecnicos/test_e11_revisao_temporaria.py`; conteúdo abaixo usa os mesmos imports/fixtures da prova anterior. Resultado: **2 failed, 6 deselected in 5.31s**, ambas por asserções de comportamento (aviso existe; contexto retorna True). As seis provas anteriores foram extraídas literalmente do bloco acima e executadas primeiro, sem mudanças: **6 passed in 8.60s**. O arquivo temporário foi removido antes do commit; a prova fica preservada aqui.
+
+```python
+from decimal import Decimal as D
+import pytest
+from apps.pedidos.apuracao import iniciar_apuracao
+from apps.interesses.servicos import remover_pendente
+from apps.interesses.models import ParcelaDeInteresse
+from apps.interesses.consultas import total_reservado
+from apps.contas.moderacao import suspender
+from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
+from apps.pagamentos.provedor import obter_provedor
+from tests.apoio.apuracao import arranjo_ap, pagar, cobranca, H
+from tests.apoio.pedidos import T0, montar_arranjo, abrir, pedido_de
+from tests.fabricas import ParcelaFactory
+
+pytestmark = pytest.mark.django_db(transaction=True, databases=['default','simulador_pagamentos'])
+
+@pytest.mark.parametrize("canal", ["aviso", "tela"])
+def test_conta_impedida_com_parcela_ja_removida(relogio, simulador_pagamentos, canal):
+    from apps.notificacoes.models import Notificacao
+    from apps.pedidos.models import Pedido
+    from apps.pedidos.apuracao_tela import efeitos_da_apuracao_no_pedido
+    a,x,_=arranjo_ap(relogio,minimo="100.00",pendente_a_p1=2,
+        parcelas_de_p1=(("a",6),("b",5)),parcelas_de_p2=(("b",12),))
+    pagar(relogio,simulador_pagamentos,x)
+    suspender(a.admin,a.a)
+    assert set(ParcelaDeInteresse.objects.filter(comprador=a.a).values_list("situacao",flat=True)) == {"removida"}
+    relogio.congelar(T0+48*H)
+    apuracao=iniciar_apuracao(a.admin,a.rodada)
+    assert apuracao.resultado == "retorno_para_interesse"
+    assert total_reservado(a.p1)==D("0")
+    if canal == "aviso":
+        assert not Notificacao.objects.filter(conta=a.a,evento="retorno_para_interesse").exists()
+    else:
+        efeito=efeitos_da_apuracao_no_pedido(Pedido.objects.get(pk=x.pk))
+        assert efeito["interesses_reservados"] is False
+```
+
+### Verificação independente e TDD
+
+- Suíte completa, sem filtro, sobre `0af24ad`: **2785 passed in 389.09s**. Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e11_correcao.py" -q -p no:cacheprovider --tb=short`. O runner define `DJANGO_SETTINGS_MODULE=config.settings.test`, altera somente `settings.DATABASES[*]["TEST"]["NAME"]` para `test_organicos_revisor_e11_0af24ad` e executa `pytest.main(sys.argv[1:])`; `PYTHONPATH` aponta à raiz. Banco PostgreSQL de teste isolado, sem trocar configurações versionadas. Inclui regressões E05/E06/E08 dos helpers de trava compartilhados e os novos critérios de concorrência.
+- Seis provas anteriores: mesmo runner com banco `test_organicos_revisor_e11_provas`, argumento `tests/tecnicos/test_e11_revisao_temporaria.py`: **6 passed in 8.60s**. Depois, acréscimo apenas da prova residual acima e `-k conta_impedida_com`: **2 failed, 6 deselected in 5.31s**.
+- `.venv/Scripts/ruff.exe check .`: **All checks passed**; `.venv/Scripts/ruff.exe format --check .`: **359 files already formatted**; `.venv/Scripts/mypy.exe .`: **434 source files sem erros**. Executados antes de criar a prova temporária.
+- Com `DJANGO_SETTINGS_MODULE=config.settings.test`: `.venv/Scripts/python.exe manage.py check`: **0 issues**; `manage.py makemigrations --check --dry-run`: **No changes detected**.
+- Registros e sequência dos commits conferidos: R04 `6a19f6d → 0ac4ba0`; R03 `ffcefc6 → e510c4f`; R01/R02 `be1b362` e `b3949f7 → ee1a720`. Commits Red alteram testes antes da produção; registros distinguem falhas e cenários já verdes. Não reexecutei os commits históricos Red nesta rodada. Executei independentemente o Green atual e as reproduções, encontrando o residual descrito.
+- As substituições de critérios A-8 (cancelamento efetivo) e A-17 do retorno foram autorizadas nos adendos. A corrida de aviso tardio agora aprova a cobrança após o cancelamento observado, mantendo a asserção de espera pela situação do pedido. Os testes de locks compartilhados passam a exigir `FOR NO KEY UPDATE`, coerente com a correção R04; a exclusão mútua é mantida. Não identifiquei afrouxamento para esconder os quatro defeitos anteriores.
+
+### Encerramento desta revisão
+
+R01, R03 e R04 encerrados. **R02 residual importante impede aprovação da E11** até corrigir o registro histórico e seus consumidores e revalidar o cenário acima. A suíte verde não cobre essa combinação. Sem achado adicional nas fatias E11-02, E11-03 e E11-06. Sem nova melhoria não impeditiva.
+
+Entrega: somente os oito `review.md`, conteúdo versionado anterior integralmente preservado por comparação de prefixo. Código e testes de produção não alterados. Sem push ou PR; README não alterado, pois não há PR para main nesta entrega. Próximo gate: correção TDD do residual e nova revisão independente.

@@ -39,3 +39,10 @@ Comando: `uv run pytest tests/tecnicos/test_pedidos_apuracao_do_comprador.py` (a
 | `efeitos_da_apuracao_no_pedido` lê o registro da apuração: `RestauracaoDeCaixa` para a frase da fila e a auditoria `removidas_por_conta_impedida` para a frase dos interesses reservados | `ee1a720` | 8 passed no arquivo |
 
 A tela não deduz nada da situação atual da conta.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**REPROVADO — manifestação de R02 residual (importante), sem novo número de achado.** A-18 passa no arranjo com parcelas ainda `em_pedido`, mas não cobre a conta cujas parcelas já foram removidas pela suspensão. Nesse caso, `_conta_impedida_no_retorno` lê uma lista vazia e `efeitos_da_apuracao_no_pedido` retorna `interesses_reservados=True`, embora a reserva seja zero, contrariando o adendo R02 desta spec. A prova parametrizada no consolidado reproduz tela e aviso. Correções de R01 e da mensagem de caixa sem restauração validadas. Sem inspeção visual em navegador; evidência de tela por código e testes.

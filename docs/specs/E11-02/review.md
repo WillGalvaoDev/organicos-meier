@@ -30,3 +30,10 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 **APROVADO no escopo próprio desta fatia.** A-1 a A-10 confrontados com código/testes: remoção por fornecedor inclusive produto fora do estoque, preservação dos demais compradores/fornecedores e do pedido congelado, aviso só aos cancelados agora, auditoria e corrida com remoção de pendente. Não foi encontrado achado próprio.
 
 O ajuste registrado de A-4 é coerente com a composição das fatias: a remoção dos inadimplentes não muda A, mas E11-04 restaura a parte invalidada de A depois. Filtrar a chave do aviso de inadimplência em A-6 também distingue corretamente o evento posterior de caixa incompleta. Isso não autoriza enfraquecer a preservação dos pedidos congelados. TDD: `9364df2 → e958092`, registros Red/Green e regressões verdes conferidos. A aprovação desta fatia não aprova a etapa.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO nesta revalidação, sem achado próprio.** Regressões de inadimplência incluídas na suíte completa. O esclarecimento de A-4/A-6 distingue a alteração legítima da parcela em fatias seguintes e a chave do aviso de inadimplência; não remove a obrigação de isolamento dos pagantes. A etapa E11 permanece REPROVADA por R02 residual.

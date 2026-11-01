@@ -23,3 +23,10 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 **APROVADO no escopo próprio desta fatia.** A-1 a A-9 confrontados com código/testes: caixas congeladas invalidadas inteiras, nenhuma realocação, mínimo do ciclo, unidades pagas restantes, arredondamento proporcional ao subtotal, determinismo e auditoria. Modelo de apuração e caixas com proteção de só inserção; migrações incluídas na suíte. Nenhum novo achado próprio.
 
 TDD: `ca861d2 → 91674c7`, evidências registradas conferidas. A classificação nominal passa, mas não sana os problemas de restauração e de cancelamento externo das outras fatias.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO nesta revalidação, sem achado próprio.** Sem alteração de implementação específica nesta rodada; regressões de caixas e apuração incluídas na suíte completa. A etapa E11 permanece REPROVADA por R02 residual.

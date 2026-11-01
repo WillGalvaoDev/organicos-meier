@@ -52,3 +52,10 @@ Comando: `uv run pytest tests/tecnicos/test_apuracao_viavel.py` (arquivo inteiro
 | `_restaurar_na_fila` deixa de tratar a parcela `removida` como impedimento (o motivo `parcela_removida` acabou) | `ee1a720` | **63 passed** (viável, retorno, telas) |
 
 Prova do parecer `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`: passa como está. A restauração soma só as unidades congeladas da caixa invalidada; a sobra removida (2) não volta (A-16).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO nesta revalidação — R01 encerrado.** A elegibilidade depende da conta, não do estado da parcela cuja sobra foi removida. Conferidos A-15 a A-18 e a prova independente da caixa paga, que passa sem alteração; restauração limitada às unidades congeladas e idempotência preservadas. A etapa E11 permanece REPROVADA por R02 residual.
