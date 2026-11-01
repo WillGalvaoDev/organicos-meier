@@ -8,16 +8,19 @@ import pytest
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
+from apps.contas.models import Conta, Situacao
 from apps.interesses.consultas import total_reservado
 from apps.interesses.models import ParcelaDeInteresse
 from apps.interesses.servicos import adicionar_interesse, remover_pendente
 from apps.nucleo.auditoria import EntradaAuditoria
+from apps.nucleo.tempo import agora
 from apps.rodadas.condicoes import CondicoesCongeladas, InteressesBloqueados
 from apps.rodadas.estoque import alterar_estoque
 from apps.rodadas.fechamento import TransicaoRecusada, iniciar_fechamento
 from apps.rodadas.models import Ciclo, CondicaoDoProdutoNoCiclo, Etapa, PrazoDoFechamento, Rodada
 from apps.rodadas.servicos import abrir_rodada
 from tests.apoio.interesses import cenario
+from tests.apoio.pedidos import T0
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory, ParcelaFactory
 
@@ -101,6 +104,7 @@ def test_cancela_a_rodada_em_interesse_e_zera_as_reservas(relogio: RelogioContro
     # A-1
     from apps.pedidos.models import CancelamentoDaRodada
 
+    relogio.congelar(T0)
     ci = Ci()
     cancelamento = ci.cancelar(com_reembolso=False)
     assert Rodada.objects.get(pk=ci.rodada.pk).etapa == "cancelada"
@@ -112,7 +116,7 @@ def test_cancela_a_rodada_em_interesse_e_zera_as_reservas(relogio: RelogioContro
         registro.com_reembolso,
         registro.mensagem,
         registro.etapa_anterior,
-    ) == (ci.admin, relogio.agora(), False, "", "interesse")
+    ) == (ci.admin, T0, False, "", "interesse")
     for parcela in (ci.pa, ci.pb):
         assert _estado(ci.parcela(parcela))[:3] == ("removida", D("0"), D("0"))
     assert total_reservado(ci.p1) == D("0")
@@ -158,7 +162,10 @@ def test_so_o_administrador_ativo_cancela(relogio: RelogioControlado) -> None:  
 
     ci = Ci()
     fornecedor = ContaFactory.create(fornecedor=True)
-    suspenso = ContaFactory.create(administrador=True, suspensa=True)
+    # o banco não admite administrador suspenso (conta_administrador_ativo): a guarda é
+    # exercida com a conta inativa em memória
+    suspenso = Conta.objects.get(pk=ci.admin.pk)
+    suspenso.situacao = Situacao.SUSPENSA
     antes = _foto(ci)
     for autor in (ci.a, fornecedor, suspenso, None):
         with pytest.raises(PermissionDenied):
@@ -168,7 +175,6 @@ def test_so_o_administrador_ativo_cancela(relogio: RelogioControlado) -> None:  
 
 def test_cancelar_de_novo_e_recusado(relogio: RelogioControlado) -> None:  # A-6
     from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado
-
     from apps.pedidos.models import CancelamentoDaRodada
 
     ci = Ci()
@@ -264,6 +270,7 @@ def test_rodada_encerrada_nao_e_cancelada(relogio: RelogioControlado) -> None:  
 
 
 def test_a_auditoria_traz_o_que_aconteceu_sem_motivo(relogio: RelogioControlado) -> None:  # A-13
+    relogio.congelar(T0)
     ci = Ci()
     ci.cancelar()
     (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.cancelar")
@@ -273,9 +280,13 @@ def test_a_auditoria_traz_o_que_aconteceu_sem_motivo(relogio: RelogioControlado)
     assert dados["etapa_anterior"] == "interesse"
     assert dados["com_reembolso"] is False
     assert dados["com_mensagem"] is False
-    assert dados["cancelada_em"] == relogio.agora().isoformat()
+    assert dados["cancelada_em"] == T0.isoformat()
     por_parcela = {p["parcela"]: p for p in dados["parcelas"]}
-    assert set(por_parcela) == {ci.pa.pk, ci.pb.pk}
+    # D (ativa, sem reserva, 3 pendentes) também é alterada: passa a pendente (regra 6)
+    assert set(por_parcela) == {ci.pa.pk, ci.pb.pk, ci.pd.pk}
+    linha_d = por_parcela[ci.pd.pk]
+    assert (linha_d["situacao_anterior"], linha_d["situacao_nova"]) == ("ativa", "pendente")
+    assert (linha_d["reservada_anterior"], linha_d["pendente_mantida"]) == ("0.000", "3.000")
     for parcela, reservada in ((ci.pa, "6.000"), (ci.pb, "5.000")):
         linha = por_parcela[parcela.pk]
         assert (linha["situacao_anterior"], linha["situacao_nova"]) == ("ativa", "removida")
@@ -294,7 +305,7 @@ def test_depois_de_cancelada_os_interesses_e_o_fechamento_ficam_recusados(
     ci.cancelar()
     antes = _foto(ci)
     with pytest.raises(InteressesBloqueados):
-        adicionar_interesse(ci.a, ci.p1, 1)
+        adicionar_interesse(ci.a, ci.p1, "1")
     with pytest.raises(TransicaoRecusada):
         iniciar_fechamento(ci.admin, ci.rodada)
     with pytest.raises(CondicoesCongeladas):
@@ -305,7 +316,7 @@ def test_depois_de_cancelada_os_interesses_e_o_fechamento_ficam_recusados(
 def test_remover_pendente_continua_aceito(relogio: RelogioControlado) -> None:  # A-15
     ci = Ci()
     ci.cancelar()
-    remover_pendente(ci.c, ci.p1, 1)
+    remover_pendente(ci.c, ci.p1, "1")
     assert ci.parcela(ci.pc).quantidade_pendente == D("2")
 
 
@@ -346,9 +357,8 @@ def test_ciclos_condicoes_e_prazos_ficam_como_estavam(relogio: RelogioControlado
 def test_dois_cancelamentos_em_paralelo_gravam_um(
     relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-18
-    from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado
-
     from apps.pedidos import cancelamento_da_rodada as modulo
+    from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado
     from apps.pedidos.models import CancelamentoDaRodada
     from tests.apoio.corrida import Corrida
 
@@ -374,11 +384,11 @@ def test_cancelamento_espera_o_interesse_que_ja_travou(
     from apps.interesses import servicos
     from tests.apoio.corrida import Corrida
 
-    ci = Ci(limite="15")
+    ci = Ci(limite="20")
     corrida = Corrida()
     corrida.depois_de(monkeypatch, servicos, "_acrescentar")
     ra, rb = corrida.rodar(
-        lambda: adicionar_interesse(ci.a, ci.p1, 2), lambda: ci.cancelar(), b_atomica=False
+        lambda: adicionar_interesse(ci.a, ci.p1, "2"), lambda: ci.cancelar(), b_atomica=False
     )
     assert ra.excecao is None, ra.excecao
     assert rb.excecao is None, rb.excecao
@@ -396,11 +406,11 @@ def test_interesse_espera_o_cancelamento_que_ja_travou(
     from apps.pedidos import cancelamento_da_rodada as modulo
     from tests.apoio.corrida import Corrida
 
-    ci = Ci(limite="15")
+    ci = Ci(limite="20")
     corrida = Corrida()
     corrida.depois_de(monkeypatch, modulo, "_gravar_o_cancelamento")
     ra, rb = corrida.rodar(
-        lambda: ci.cancelar(), lambda: adicionar_interesse(ci.a, ci.p1, 2), a_atomica=False
+        lambda: ci.cancelar(), lambda: adicionar_interesse(ci.a, ci.p1, "2"), a_atomica=False
     )
     assert ra.excecao is None, ra.excecao
     assert isinstance(rb.excecao, InteressesBloqueados), rb.excecao
@@ -412,7 +422,7 @@ def _fechamento_vencido(relogio: RelogioControlado) -> Ci:
     from datetime import timedelta
 
     ci = Ci(etapa=Etapa.FECHAMENTO)
-    relogio.congelar(relogio.agora() + timedelta(hours=25))
+    relogio.congelar(agora() + timedelta(hours=25))
     return ci
 
 
