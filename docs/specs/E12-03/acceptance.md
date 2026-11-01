@@ -48,3 +48,9 @@ A prova `test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio` do p
 | Critério | Arquivo de teste |
 |---|---|
 | A-19 a A-21 | `tests/tecnicos/test_cancelamento_com_reembolso.py`, com transações PostgreSQL reais |
+
+## Alinhamento dos critérios com a implementação revisada (2026-11-01)
+
+Os ajustes registrados no `review.md` pelo implementador foram aceitos pela revisão, e o texto dos critérios passa a ser este. Nenhuma regra muda.
+- **A-4:** a falha da consulta prévia é provocada com `falhar_proximas(operacao="buscar_por_referencia")`. A consulta por referência já traz o pagamento registrado, e `consultar_pagamento` só roda para os pagamentos não vistos.
+- **A-10:** com a tarifa de 10%, a receita de serviço continua 3,00, porque a despesa fica pendente para a reserva, e a obrigação nasceria coberta. Para haver falta de cobertura, a receita é consumida antes do cancelamento por um movimento `cobertura_de_despesa`, em transação própria (a ordem das travas do livro).

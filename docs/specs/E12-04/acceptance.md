@@ -16,3 +16,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | Critério | Arquivo de teste |
 |---|---|
 | A-1 a A-8 | `tests/tecnicos/test_pagamento_depois_do_cancelamento.py` |
+
+## Alinhamento dos critérios com a implementação revisada (2026-11-01)
+
+O alerta `pagamento_depois_do_cancelamento` não se resolve sozinho quando a devolução conclui. É resolvido pelo administrador, como diz a regra 4 ("abre uma vez por pagamento; repetir o registro não o reabre depois de resolvido"). A resolução automática de outros tipos de alerta não se estende a ele. É a leitura do texto aprovado, sem regra nova.

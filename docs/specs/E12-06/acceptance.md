@@ -48,3 +48,7 @@ A prova `test_cancelamento_nao_promete_reservas_do_retorno_anterior` do parecer 
 | Critério | Arquivo de teste |
 |---|---|
 | A-20 a A-22 | `tests/tecnicos/test_cancelamento_do_comprador.py` |
+
+## Alinhamento com a E03 (2026-11-01)
+
+A regra 4 manda mostrar o formulário de cancelamento em toda etapa cancelável, inclusive `fechamento`. Por isso a asserção da E03 A-25 (`test_rodadas_estoque.py::test_409_do_servico_e_pagina_so_de_leitura_com_a_etapa_relida`), de nenhum formulário na página só de leitura, passa a excluir apenas a ação com `/cancelar/`. As demais ações continuam proibidas nessa página.

@@ -40,3 +40,9 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-17 | `tests/tecnicos/test_cancelamento_da_rodada.py` |
 | A-18 a A-20 | `tests/tecnicos/test_cancelamento_da_rodada.py`, com transações PostgreSQL reais |
+
+## Alinhamento dos critérios com a implementação revisada (2026-11-01)
+
+Os ajustes registrados no `review.md` pelo implementador foram aceitos pela revisão, e o texto dos critérios passa a ser este. Nenhuma regra muda.
+- **A-5:** o banco recusa um administrador suspenso (restrição `conta_administrador_ativo`). Por isso o caso do administrador não ativo é exercido com a conta inativa só em memória. Os outros três casos não mudam.
+- **A-19:** o limite de P1 no arranjo é 20, e não 15. Com 15, a fila (C e D, 6 unidades) consome o livre e a adição de A é recusada por estoque, sem exercitar a corrida.
