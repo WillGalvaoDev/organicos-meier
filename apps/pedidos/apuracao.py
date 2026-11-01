@@ -403,9 +403,9 @@ def _restaurar_na_fila(
         if RestauracaoDeCaixa.objects.filter(parcela_no_pedido=no_pedido).exists():
             continue
         parcela = ParcelaDeInteresse.objects.get(pk=no_pedido.parcela_id)
+        # só a conta impede a restauração: a parcela `removida` porque o comprador tirou a sobra
+        # pendente continua dona das unidades pagas (E11-R01)
         motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(conta.situacao))
-        if motivo is None and parcela.situacao == SituacaoParcela.REMOVIDA:
-            motivo = "parcela_removida"
         if motivo is not None:
             efeito.nao_restauradas.append(
                 {"parcela_no_pedido": no_pedido.pk, "parcela": parcela.pk, "motivo": motivo}
@@ -437,8 +437,10 @@ def _restaurar_as_reservas_dos_pagantes(
     ordem original (E11-05): cada parcela que aparece num pedido pago passa a `ativa`, com a
     reserva igual à soma congelada nesse ciclo (a pendência não muda). Isso vale para a que ficou
     `em_pedido` e para a que ficou `pendente` com a parte congelada só no pedido (E08-02). As
-    unidades de caixa invalidada ficam reservadas: no retorno não há fila. A conta suspensa ou
-    removida não pode ter interesses, e a parcela não é restaurada."""
+    unidades de caixa invalidada ficam reservadas: no retorno não há fila. Só a conta impede a
+    restauração (suspensa ou removida: as parcelas dela saem antes, E11-R02); a situação atual da
+    parcela, inclusive `removida` pela sobra pendente que o comprador tirou, não impede
+    (E11-R01)."""
     somas: dict[int, Decimal] = {}
     donos: dict[int, int] = {}
     linhas = ParcelaNoPedido.objects.filter(
@@ -453,8 +455,6 @@ def _restaurar_as_reservas_dos_pagantes(
     for parcela_pk in sorted(somas):
         parcela = ParcelaDeInteresse.objects.get(pk=parcela_pk)
         motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(contas[donos[parcela_pk]].situacao))
-        if motivo is None and parcela.situacao == SituacaoParcela.REMOVIDA:
-            motivo = "parcela_removida"
         if motivo is not None:
             nao_restauradas.append({"parcela": parcela.pk, "motivo": motivo})
             continue
@@ -463,6 +463,47 @@ def _restaurar_as_reservas_dos_pagantes(
         parcela.save(update_fields=["quantidade_reservada", "situacao"])
         restauradas.append([parcela.pk, str(parcela.quantidade_reservada)])
     return restauradas, nao_restauradas
+
+
+def _remover_as_parcelas_das_contas_impedidas(
+    rodada: Rodada, pagos: list[Pedido]
+) -> list[dict[str, Any]]:
+    """No retorno, a reserva de uma conta que não pode ter interesses (suspensa ou removida) não
+    pode ocupar o estoque da rodada devolvida ao interesse (§2, E05-07): cada parcela do pagante
+    em produto do fornecedor, `em_pedido`, `ativa` ou `pendente`, passa a `removida`, com reserva e
+    pendência zero. A sequência e a quantidade original ficam, e o pedido não muda (E11-R02).
+    Acontece antes da conferência do estoque e da fila, que usam o que sobra. Devolve, por
+    parcela, o motivo e as quantidades que ela tinha."""
+    contas = {p.comprador_id: Conta.objects.get(pk=p.comprador_id) for p in pagos}
+    removidas: list[dict[str, Any]] = []
+    for comprador_id in sorted(contas):
+        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(contas[comprador_id].situacao))
+        if motivo is None:
+            continue
+        parcelas = ParcelaDeInteresse.objects.filter(
+            comprador_id=comprador_id,
+            produto__fornecedor_id=rodada.fornecedor_id,
+            situacao__in=(
+                SituacaoParcela.ATIVA,
+                SituacaoParcela.EM_PEDIDO,
+                SituacaoParcela.PENDENTE,
+            ),
+        ).order_by("produto_id", "sequencia")
+        for parcela in parcelas:
+            removidas.append(
+                {
+                    "comprador": comprador_id,
+                    "parcela": parcela.pk,
+                    "motivo": motivo,
+                    "reservada": str(parcela.quantidade_reservada),
+                    "pendente": str(parcela.quantidade_pendente),
+                }
+            )
+            parcela.quantidade_reservada = ZERO
+            parcela.quantidade_pendente = ZERO
+            parcela.situacao = SituacaoParcela.REMOVIDA
+            parcela.save(update_fields=["quantidade_reservada", "quantidade_pendente", "situacao"])
+    return removidas
 
 
 def _conferir_o_estoque(rodada: Rodada) -> None:
@@ -664,14 +705,19 @@ def _retornar_para_interesse(
     gera a devolução integral dos pedidos pagos. Não apura no livro: não há frete efetivo."""
     pagos_ids = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     pagos = [p for p in pedidos if p.pk in pagos_ids]
-    restauradas, nao_restauradas = _restaurar_as_reservas_dos_pagantes(abertura, pagos_ids)
+    removidas = _remover_as_parcelas_das_contas_impedidas(rodada, pagos)
+    restauradas, _ = _restaurar_as_reservas_dos_pagantes(abertura, pagos_ids)
     _conferir_o_estoque(rodada)
     voltar_para_interesse(rodada, motivo=MOTIVO_DO_RETORNO_DO_PAGAMENTO, destinatarios=[])
     reembolsos = _devolver_integralmente(apuracao, pagos)
-    _avisar_o_retorno(apuracao, rodada.fornecedor, pagos)
+    impedidos = {r["comprador"] for r in removidas}
+    # o aviso fala de interesses reservados: só quem tem conta ativa o recebe (E11-R02)
+    _avisar_o_retorno(
+        apuracao, rodada.fornecedor, [p for p in pagos if p.comprador_id not in impedidos]
+    )
     return {
         "restauradas": restauradas,
-        "nao_restauradas": nao_restauradas,
+        "removidas_por_conta_impedida": removidas,
         "reembolsos": reembolsos,
     }
 

@@ -10,6 +10,7 @@ from apps.financeiro.apuracao import frete_do_ciclo
 from apps.financeiro.devolucoes import situacao_da_devolucao
 from apps.financeiro.devolucoes_views import GRUPO_DA_SITUACAO, ROTULO_DO_GRUPO_NO_SINGULAR
 from apps.financeiro.models import ObrigacaoComComprador, Reembolso
+from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.pedidos.acompanhamento import CANCELAMENTOS_POR_EXTENSO
 from apps.pedidos.models import (
@@ -19,6 +20,7 @@ from apps.pedidos.models import (
     MotivoDoCancelamento,
     ParcelaNoPedido,
     Pedido,
+    RestauracaoDeCaixa,
     ResultadoDaApuracao,
     SituacaoDePagamento,
 )
@@ -142,6 +144,21 @@ def _apuracao_do_pedido(pedido: Pedido) -> ApuracaoFinal | None:
     return apuracao
 
 
+def _conta_impedida_no_retorno(apuracao: ApuracaoFinal, pedido: Pedido) -> bool:
+    """O comprador teve as parcelas removidas no retorno por conta impedida? A fonte é o registro
+    da apuração (a auditoria), e não a situação atual da conta (E11-R02)."""
+    auditoria = EntradaAuditoria.objects.filter(
+        acao="rodada.apuracao_final",
+        objeto_tipo="rodadas.rodada",
+        objeto_id=str(apuracao.abertura.rodada_id),
+        alteracoes__ciclo=apuracao.ciclo_id,
+    ).first()
+    if auditoria is None:
+        return False
+    removidas = auditoria.alteracoes.get("retorno", {}).get("removidas_por_conta_impedida", [])
+    return any(r["comprador"] == pedido.comprador_id for r in removidas)
+
+
 def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
     """O que o comprador vê do efeito da apuração no próprio pedido: o cancelamento por falta de
     pagamento, as unidades em caixa invalidada (com o estorno e a fila) e o retorno para interesse
@@ -151,12 +168,14 @@ def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
         == MotivoDoCancelamento.INADIMPLENCIA,
         "caixas_incompletas": [],
         "rodada_voltou_para_interesse": False,
+        "interesses_reservados": False,
     }
     apuracao = _apuracao_do_pedido(pedido)
     if apuracao is None or pedido.estado.situacao != SituacaoDePagamento.PAGO:
         return efeitos
     if apuracao.resultado == ResultadoDaApuracao.RETORNO_PARA_INTERESSE:
         efeitos["rodada_voltou_para_interesse"] = True
+        efeitos["interesses_reservados"] = not _conta_impedida_no_retorno(apuracao, pedido)
         return efeitos
     invalidadas = set(
         CaixaInvalidada.objects.filter(apuracao=apuracao).values_list("produto_id", "numero")
@@ -172,6 +191,13 @@ def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
         )
         if unidades > 0:
             efeitos["caixas_incompletas"].append(
-                {"nome": item.nome, "quantidade": quantidade_com_unidade(unidades, item.unidade)}
+                {
+                    "nome": item.nome,
+                    "quantidade": quantidade_com_unidade(unidades, item.unidade),
+                    # a fila só é prometida se a apuração restaurou a parcela (E11-R01/R02)
+                    "na_fila": RestauracaoDeCaixa.objects.filter(
+                        apuracao=apuracao, parcela_no_pedido__item=item
+                    ).exists(),
+                }
             )
     return efeitos

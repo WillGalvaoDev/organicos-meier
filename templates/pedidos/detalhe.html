@@ -12,12 +12,12 @@
   {% if apuracao.caixas_incompletas %}
     <ul>
       {% for linha in apuracao.caixas_incompletas %}
-        <li>{{ linha.nome }}: {{ linha.quantidade }} em caixa que ficou incompleta: estorno proporcional e unidades na fila de pendentes do fornecedor</li>
+        <li>{{ linha.nome }}: {{ linha.quantidade }} em caixa que ficou incompleta: estorno proporcional{% if linha.na_fila %} e unidades na fila de pendentes do fornecedor{% endif %}</li>
       {% endfor %}
     </ul>
   {% endif %}
   {% if apuracao.rodada_voltou_para_interesse %}
-    <p>A rodada voltou para interesse. O valor pago será devolvido integralmente, e seus interesses continuam reservados na rodada.</p>
+    <p>A rodada voltou para interesse. O valor pago será devolvido integralmente{% if apuracao.interesses_reservados %}, e seus interesses continuam reservados na rodada{% endif %}.</p>
   {% endif %}
 
   <table>
