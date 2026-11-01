@@ -99,6 +99,59 @@
     {% endif %}
   {% endif %}
 
+  {% if apuracao %}
+    <h2>Apuração final</h2>
+    {% if apuracao.tipo == "aguardar" %}
+      <p>A apuração pode começar a partir de {{ apuracao.a_partir_de }} (horário de Brasília).</p>
+    {% elif apuracao.tipo == "iniciar" %}
+      <form method="post" action="{% url 'rodadas_apuracao_iniciar' pk=rodada.pk %}">
+        {% csrf_token %}
+        <button type="submit">Iniciar apuração</button>
+        <p>A apuração cancela os pedidos não pagos e invalida as caixas incompletas. Ela não pode ser desfeita.</p>
+      </form>
+    {% else %}
+      <p>Apuração feita em {{ apuracao.feita_em }} (horário de Brasília) por {{ apuracao.por }}.</p>
+      <h3>Pedidos pagos</h3>
+      <ul>
+        {% for linha in apuracao.pagos %}<li>{{ linha.comprador }}: {{ linha.total|reais }}</li>{% empty %}<li>Nenhum.</li>{% endfor %}
+      </ul>
+      <h3>Pedidos não pagos</h3>
+      <ul>
+        {% for linha in apuracao.nao_pagos %}<li>{{ linha.comprador }}: {{ linha.situacao }}</li>{% empty %}<li>Nenhum.</li>{% endfor %}
+      </ul>
+      <h3>Caixas invalidadas</h3>
+      {% if apuracao.caixas %}
+        <ul>{% for caixa in apuracao.caixas %}<li>{{ caixa.produto }} · caixa {{ caixa.numero }}</li>{% endfor %}</ul>
+      {% else %}
+        <p>Nenhuma caixa invalidada.</p>
+      {% endif %}
+      <p>Valor válido {{ apuracao.valor_valido|reais }}. Mínimo do ciclo {{ apuracao.minimo|reais }}.
+        {% if apuracao.atendido %}Mínimo atendido.{% else %}Mínimo não atendido: a rodada voltou para interesse.{% endif %}</p>
+      <h3>Estornos gerados</h3>
+      {% if apuracao.estornos %}
+        <ul>
+          {% for estorno in apuracao.estornos %}
+            <li>{{ estorno.comprador }} · {{ estorno.motivo }} · {{ estorno.valor|reais }}
+              {% if estorno.obrigacao %}· {{ estorno.situacao }} · <a href="{% url 'financeiro_devolucao' pk=estorno.obrigacao %}">ver devolução</a>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Nenhum estorno gerado.</p>
+      {% endif %}
+      {% if apuracao.pode_aprovar %}
+        <form method="post" action="{% url 'rodadas_apuracao_aprovar' pk=rodada.pk %}">
+          {% csrf_token %}
+          <button type="submit">Aprovar resultado e avançar</button>
+          <p>O frete dos pedidos não pagos fica como déficit do administrador. As devoluções podem ser autorizadas antes ou depois.</p>
+        </form>
+      {% endif %}
+      {% if apuracao.aprovada %}
+        <p>Frete efetivo {{ apuracao.aprovada.frete_efetivo|reais }}, arrecadado {{ apuracao.aprovada.frete_arrecadado|reais }}, déficit {{ apuracao.aprovada.deficit|reais }}.</p>
+        <p>Resultado aprovado em {{ apuracao.aprovada.em }} (horário de Brasília) por {{ apuracao.aprovada.por }}.</p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
   <h2>Produtos na rodada</h2>
   {% if na_rodada %}
     <table>

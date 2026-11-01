@@ -67,8 +67,8 @@ def travar_estoque(rodada: Rodada, produto: Produto) -> EstoqueDaRodada:
     """
     if not connection.in_atomic_block:
         raise TransactionManagementError("travar_estoque exige uma transação aberta.")
-    Produto.objects.select_for_update().get(pk=produto.pk)
-    return EstoqueDaRodada.objects.select_for_update().get(
+    Produto.objects.select_for_update(no_key=True).get(pk=produto.pk)
+    return EstoqueDaRodada.objects.select_for_update(no_key=True).get(
         rodada_id=rodada.pk, produto_id=produto.pk
     )
 

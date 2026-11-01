@@ -15,6 +15,7 @@ from apps.pedidos.apresentacao import (
     situacao_do_pagamento,
     texto_da_situacao,
 )
+from apps.pedidos.apuracao_tela import efeitos_da_apuracao_no_pedido
 from apps.pedidos.models import Pedido
 from apps.pedidos.pagamento import PagamentoRecusado, pedir_pagamento
 
@@ -47,6 +48,7 @@ def _pagina_do_pedido(
         "pagamento": situacao_do_pagamento(pedido, comprador.situacao == Situacao.ATIVA),
         "quitado_em": data_e_hora(quitado_em) if quitado_em else None,
         "estornos": estornos_do_pedido(pedido),
+        "apuracao": efeitos_da_apuracao_no_pedido(pedido),
         "erro": erro,
     }
     return render(request, "pedidos/detalhe.html", contexto, status=status)

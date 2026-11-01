@@ -212,6 +212,27 @@ def _tentar(chamada: ChamadaAoProvedor) -> None:
     logger.info("Chamada ao provedor %s: %s concluida", chamada.pk, chamada.operacao)
 
 
+def executar_chamada_agora(pk: int) -> ChamadaAoProvedor:
+    """Executa já a chamada pendente, como uma iteração de `processar_chamadas`, sem esperar o
+    vencimento dela (E11-R03). Se a tarefa periódica está com a mesma chamada, espera a trava dela
+    (sem `skip_locked`) e reconfere a situação. Devolve a chamada relida: `concluida`, `falhou` ou
+    ainda `pendente` (provedor indisponível ou falha temporária)."""
+    with transaction.atomic():
+        chamada = ChamadaAoProvedor.objects.select_for_update().get(pk=pk)
+        if chamada.situacao == SituacaoDaChamada.PENDENTE:
+            try:
+                with transaction.atomic():
+                    _tentar(chamada)
+            except Exception as erro:
+                logger.error(
+                    "Chamada ao provedor %s: %s erro inesperado %s",
+                    chamada.pk,
+                    chamada.operacao,
+                    type(erro).__name__,
+                )
+    return ChamadaAoProvedor.objects.get(pk=pk)
+
+
 def processar_chamadas(*, limite: int = 100) -> int:
     """Tenta as chamadas pendentes já vencidas, uma transação por chamada, e devolve quantas
     foram tentadas. Uma chamada travada por outra execução é pulada; uma exceção inesperada

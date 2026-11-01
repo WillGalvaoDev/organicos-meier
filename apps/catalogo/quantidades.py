@@ -90,6 +90,20 @@ def calcular_subtotal(preco: Decimal, quantidade: Decimal) -> Decimal:
     return arredondar_centavos(preco * quantidade)
 
 
+ROTULO_CURTO_DA_UNIDADE = {
+    "unidade": "un",
+    "pacote": "pct",
+    "caixa": "cx",
+    "kg": "kg",
+    "litro": "L",
+}
+
+
+def quantidade_com_unidade(valor: Decimal, unidade: str) -> str:
+    """`4 un`, `0,25 kg`: a quantidade formatada e o rótulo curto da unidade."""
+    return f"{formatar_quantidade(valor)} {ROTULO_CURTO_DA_UNIDADE.get(unidade, unidade)}"
+
+
 def formatar_quantidade(valor: Decimal) -> str:
     """Exibição com vírgula e sem zeros à direita: 0,25, 1, 1,5."""
     return format(valor.normalize(), "f").replace(".", ",")

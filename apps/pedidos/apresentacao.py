@@ -28,6 +28,8 @@ def texto_da_situacao(pedido: Pedido, instante: datetime) -> str:
     if situacao == SituacaoDePagamento.PAGO:
         return "Pago"
     if situacao == SituacaoDePagamento.CANCELADO:
+        if pedido.estado.motivo_do_cancelamento == "inadimplencia":
+            return "Cancelado por falta de pagamento"
         return "Cancelado"
     if not aceita_tentativas(pedido.abertura, instante):
         return "Prazo encerrado"

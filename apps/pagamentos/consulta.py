@@ -30,8 +30,8 @@ class ConsultaAoProvedorFalhou(Exception):
     """O provedor não respondeu à consulta: a decisão fica bloqueada. `motivo`: `indisponivel`,
     `recusa` ou `nao_encontrado`. A mensagem não leva dado pessoal nem valor."""
 
-    def __init__(self, referencia_externa: str, motivo: str) -> None:
-        super().__init__(f"consulta ao provedor falhou: {motivo}")
+    def __init__(self, referencia_externa: str, motivo: str, mensagem: str | None = None) -> None:
+        super().__init__(mensagem or f"consulta ao provedor falhou: {motivo}")
         self.referencia_externa = referencia_externa
         self.motivo = motivo
 
@@ -54,6 +54,15 @@ def traduzindo_falhas(referencia_externa: str) -> Iterator[None]:
         motivo = next(m for tipo, m in _MOTIVOS if isinstance(erro, tipo))
         logger.warning("Consulta antes de decidir: %s %s", referencia_externa, motivo)
         raise ConsultaAoProvedorFalhou(referencia_externa, motivo) from erro
+
+
+def exigir_fora_de_transacao() -> None:
+    """Recusa, antes de qualquer consulta ou gravação, a chamada dentro de transação de quem
+    chama: a consulta ao provedor vem antes da transação da decisão e sem travas (infraestrutura
+    4.2). O bloco durável vazio levanta o `RuntimeError` do Django, e é aceito na transação de
+    teste do Django."""
+    with transaction.atomic(durable=True):
+        pass
 
 
 def consultar_antes_de_decidir(referencia_externa: str) -> list[PagamentoNoProvedor]:

@@ -40,7 +40,13 @@ from apps.financeiro.models import (
 )
 from apps.nucleo.auditoria import SISTEMA
 from apps.pagamentos.consulta import pagamentos_com_tarifa_e_destino, travar_pagamento
-from apps.pedidos.models import DestinoDaDecisao, DestinoDoPagamento, MotivoDoDestino
+from apps.pedidos.models import (
+    ApuracaoFinal,
+    DestinoDaDecisao,
+    DestinoDoPagamento,
+    MotivoDoDestino,
+)
+from apps.pedidos.quitacao import teria_quitado_pela_p6
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +198,36 @@ def _entrada_para_devolucao(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
                 "valor": destino.pagamento.valor,
             },
         )
+    if nova and destino.motivo == MotivoDoDestino.PEDIDO_CANCELADO:
+        _alertar_o_pagamento_no_prazo_depois_da_apuracao(destino)
     return movimento
+
+
+def _alertar_o_pagamento_no_prazo_depois_da_apuracao(destino: DestinoDoPagamento) -> None:
+    """Pagamento que teria quitado pela P-6, informado depois da apuração do ciclo: alerta crítico
+    (infraestrutura 4.4), aberto uma vez por pagamento. Pedido cancelado antes da apuração, ou
+    pagamento que não teria quitado, não alerta."""
+    pedido = destino.pedido
+    if pedido is None:
+        return
+    pagamento = destino.pagamento
+    if not ApuracaoFinal.objects.filter(ciclo_id=pedido.abertura.ciclo_id).exists():
+        return
+    if not teria_quitado_pela_p6(pagamento, pedido):
+        return
+    abrir_alerta(
+        TipoDeAlerta.APROVADO_NO_PRAZO_DEPOIS_DA_APURACAO,
+        pagamento.id_externo,
+        {
+            "pagamento": pagamento.id_externo,
+            "pedido": pedido.pk,
+            "comprador": pedido.comprador_id,
+            "valor": pagamento.valor,
+            "aprovado_em": pagamento.aprovado_no_provedor_em.isoformat()
+            if pagamento.aprovado_no_provedor_em
+            else None,
+        },
+    )
 
 
 def registrar_entrada(destino: DestinoDoPagamento) -> MovimentoFinanceiro:

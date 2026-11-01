@@ -36,6 +36,7 @@ from apps.financeiro.models import (
     Destinacao,
     MovimentoFinanceiro,
     ObrigacaoComComprador,
+    TipoDeAlerta,
     TipoDeDespesa,
     TipoDeMovimento,
     TransferenciaFinanceira,
@@ -60,6 +61,14 @@ logger = logging.getLogger(__name__)
 ZERO = Decimal("0.00")
 TIPO_DA_OBRIGACAO = "financeiro.obrigacaocomcomprador"
 MOTIVOS_COM_ALERTA = (MotivoDoDestino.APROVADO_APOS_A_MARGEM, MotivoDoDestino.DUPLICIDADE)
+# O alerta de cada motivo é resolvido quando a obrigação do pagamento é totalmente liquidada. O
+# pedido cancelado só tem o alerta do pagamento no prazo depois da apuração (E11-01).
+_ALERTAS_DO_MOTIVO: dict[str, tuple[str, ...]] = {
+    MotivoDoDestino.APROVADO_APOS_A_MARGEM: (MotivoDoDestino.APROVADO_APOS_A_MARGEM,),
+    MotivoDoDestino.DUPLICIDADE: (MotivoDoDestino.DUPLICIDADE,),
+    MotivoDoDestino.PEDIDO_CANCELADO: (TipoDeAlerta.APROVADO_NO_PRAZO_DEPOIS_DA_APURACAO,),
+}
+MOTIVOS_COM_ALERTA_RESOLVIDOS = tuple(_ALERTAS_DO_MOTIVO)
 
 
 class LiquidacaoRecusada(Exception):
@@ -82,6 +91,18 @@ def _contas_candidatas(rodada: Rodada, ciclo: Ciclo, comprador: Conta) -> list[C
         *_fontes(rodada, ciclo, comprador, False).values(),
         *_fontes(rodada, ciclo, comprador, True).values(),
     ]
+
+
+def contas_das_obrigacoes(
+    rodada: Rodada, ciclo: Ciclo, compradores: list[Conta]
+) -> list[ContaFinanceira]:
+    """As fontes (antes e depois da apuração) de todas as obrigações que serão criadas para esses
+    compradores. Quem cria várias obrigações na mesma transação trava este conjunto de uma vez,
+    em ordem crescente de `pk`, antes da primeira (regra única de travas, E09-R01)."""
+    contas: list[ContaFinanceira] = []
+    for comprador in compradores:
+        contas.extend(_contas_candidatas(rodada, ciclo, comprador))
+    return contas
 
 
 # --- criação da obrigação, financiada pela regra --------------------------------------------
@@ -345,11 +366,12 @@ def _liquidar(
     if (
         liquidado + valor == obrigacao.devido
         and obrigacao.origem_tipo == "pedidos.destinodopagamento"
-        and obrigacao.motivo in MOTIVOS_COM_ALERTA
+        and obrigacao.motivo in MOTIVOS_COM_ALERTA_RESOLVIDOS
     ):
         id_externo = DestinoDoPagamento.objects.get(
             pk=int(obrigacao.origem_id)
         ).pagamento.id_externo
-        resolver_alerta(obrigacao.motivo, id_externo, motivo="devolução concluída")
+        for tipo_do_alerta in _ALERTAS_DO_MOTIVO[obrigacao.motivo]:
+            resolver_alerta(tipo_do_alerta, id_externo, motivo="devolução concluída")
     avaliar_reserva()
     return movimento

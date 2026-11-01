@@ -11,16 +11,19 @@ from django.views.decorators.http import require_GET, require_POST
 
 from apps.catalogo.models import Produto
 from apps.catalogo.templatetags.catalogo import quantidade_br
-from apps.contas.administracao import somente_administrador
+from apps.contas.administracao import exige_reautenticacao_por_passkey, somente_administrador
 from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
 from apps.nucleo.valores import ValorInvalido, cabe_em_dinheiro, ler_decimal_digitado
+from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.acompanhamento import devolucoes_devidas, situacao_dos_pedidos
-from apps.pedidos.models import AberturaDoPagamento
+from apps.pedidos.apuracao import ApuracaoRecusada, aprovar_resultado, iniciar_apuracao
+from apps.pedidos.apuracao_tela import bloco_da_apuracao
+from apps.pedidos.models import AberturaDoPagamento, ResultadoDaApuracao
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
@@ -127,6 +130,7 @@ def _pagina_do_estoque(
         "editavel": editavel,
         "progresso": progresso,
         "fechamento": bloco,
+        "apuracao": bloco_da_apuracao(rodada, agora()),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
@@ -301,6 +305,60 @@ def fechamento_prorrogar(request: HttpRequest, pk: int) -> HttpResponse:
         "Prazo do fechamento prorrogado para "
         f"{local:%d/%m/%Y} às {local:%H:%M} (horário de Brasília).",
     )
+    return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+MENSAGEM_DO_PROVEDOR_NA_APURACAO = (
+    "Não foi possível consultar o provedor; nada foi apurado. Tente de novo."
+)
+
+
+def _apuracao_recusada(
+    request: HttpRequest, rodada: Rodada, mensagem: str, status: int
+) -> HttpResponse:
+    atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+    return _pagina_do_estoque(request, atual, mensagem, status=status)
+
+
+@exige_reautenticacao_por_passkey
+@require_POST
+def apuracao_iniciar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        apuracao = iniciar_apuracao(autor, rodada)
+    except ApuracaoRecusada as erro:
+        return _apuracao_recusada(request, rodada, erro.mensagem, 409)
+    except ConsultaAoProvedorFalhou:
+        return _apuracao_recusada(request, rodada, MENSAGEM_DO_PROVEDOR_NA_APURACAO, 503)
+    if apuracao.resultado == ResultadoDaApuracao.VALIDA:
+        messages.success(request, "Apuração feita. Confira o resultado e aprove o avanço.")
+    else:
+        messages.success(
+            request,
+            "Apuração feita. A rodada voltou para interesse; autorize as devoluções na lista "
+            "de devoluções.",
+        )
+    return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+@exige_reautenticacao_por_passkey
+@require_POST
+def apuracao_aprovar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        aprovar_resultado(autor, rodada)
+    except ApuracaoRecusada as erro:
+        return _apuracao_recusada(request, rodada, erro.mensagem, 409)
+    except ConsultaAoProvedorFalhou:
+        return _apuracao_recusada(
+            request,
+            rodada,
+            "Não foi possível consultar o provedor; o resultado não foi aprovado. Tente de novo.",
+            503,
+        )
+    messages.success(request, "Resultado aprovado. A rodada aguarda o fornecedor.")
     return redirect("rodadas_estoque", pk=rodada.pk)
 
 
