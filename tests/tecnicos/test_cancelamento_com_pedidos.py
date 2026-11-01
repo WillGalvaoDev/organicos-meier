@@ -475,3 +475,101 @@ def test_apuracao_espera_o_cancelamento_que_ja_travou(
         "cancelado",
         "cancelamento_da_rodada",
     )
+
+
+# --- R03: a ordem das travas com os pedidos de ciclos anteriores (A-17 e A-18) --------------------
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_cancelamento_espera_a_situacao_de_ciclo_anterior_antes_das_contas_do_livro(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:  # A-17
+    from threading import Event
+
+    from django.db import transaction
+    from django.db.utils import OperationalError
+
+    from apps.financeiro.models import ContaFinanceira
+    from apps.financeiro.obrigacoes import contas_das_obrigacoes
+    from tests.apoio.cancelamento import arranjo_ap_r
+    from tests.apoio.concorrencia import executar_em_paralelo
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+
+    a, x, _extra = arranjo_ap_r(relogio, simulador_pagamentos)
+    contas = [c.pk for c in contas_das_obrigacoes(a.rodada, x.abertura.ciclo, [a.a])]
+    assert contas
+    conferido = Event()
+    terceira: list[Any] = []
+
+    def segura_a_situacao(barreira: Any) -> None:
+        with transaction.atomic():
+            list(SituacaoDoPedido.objects.select_for_update().filter(pedido=x))
+            barreira.wait(timeout=10)
+            esperar_outra_conexao_na_trava()  # o cancelamento parado na situação de X
+            assert conferido.wait(15)
+
+    def cancela(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return _cancelar(a, com_reembolso=True)
+
+    def confere_as_contas(barreira: Any) -> None:
+        barreira.wait(timeout=10)
+        esperar_outra_conexao_na_trava()
+        try:
+            with transaction.atomic():
+                list(
+                    ContaFinanceira.objects.select_for_update(nowait=True, no_key=True).filter(
+                        pk__in=contas
+                    )
+                )
+            terceira.append(None)
+        except OperationalError as erro:
+            terceira.append(erro)
+        finally:
+            conferido.set()
+
+    resultados = executar_em_paralelo(
+        segura_a_situacao, cancela, confere_as_contas, tempo_limite=60
+    )
+    assert [r.excecao for r in resultados] == [None, None, None], [
+        repr(r.excecao) for r in resultados
+    ]
+    assert terceira == [None], terceira  # as contas do livro ainda estavam livres
+    assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
+
+
+@pytest.mark.parametrize("com_reembolso", [True, False])
+def test_a_primeira_trava_de_situacao_alcanca_o_pedido_do_ciclo_anterior(
+    relogio: RelogioControlado, sim: Any, com_reembolso: bool
+) -> None:  # A-18
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from tests.apoio.cancelamento import arranjo_ap_r
+
+    a, x, _extra = arranjo_ap_r(relogio, sim)
+    with CaptureQueriesContext(connection) as capturadas:
+        _cancelar(a, com_reembolso=com_reembolso)
+    consultas = [q["sql"] for q in capturadas.captured_queries]
+
+    def trava(sql: str, tabela: str) -> bool:
+        return f'FROM "{tabela}"' in sql and (" FOR NO KEY UPDATE" in sql or " FOR UPDATE" in sql)
+
+    das_situacoes = [i for i, sql in enumerate(consultas) if trava(sql, "pedidos_situacaodopedido")]
+    das_contas = [i for i, sql in enumerate(consultas) if trava(sql, "financeiro_contafinanceira")]
+    assert das_situacoes, "nenhuma trava de situação"
+    # a primeira trava de situação alcança X: relida (a captura já traz os parâmetros)
+    with connection.cursor() as cursor:
+        cursor.execute(consultas[das_situacoes[0]])
+        colunas = [c.name for c in cursor.description]
+        travados = {linha[colunas.index("pedido_id")] for linha in cursor.fetchall()}
+    assert x.pk in travados
+    assert all(das_situacoes[0] < i for i in das_contas), "uma conta do livro veio antes"
+    # dentro da transação do cancelamento (da primeira trava de conta de comprador em diante; a
+    # consulta prévia, antes dela, sincroniza por conta própria) não há trava do pagamento no
+    # provedor nem do destino dele
+    inicio = next(i for i, sql in enumerate(consultas) if trava(sql, "contas_conta"))
+    assert inicio < das_situacoes[0]
+    for tabela in ("pagamentos_pagamentonoprovedor", "pedidos_destinodopagamento"):
+        assert not any(trava(sql, tabela) for sql in consultas[inicio:]), tabela

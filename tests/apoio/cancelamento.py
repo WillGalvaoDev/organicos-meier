@@ -58,3 +58,31 @@ class Ci:
     def parcela(self, parcela: ParcelaDeInteresse) -> ParcelaDeInteresse:
         parcela.refresh_from_db()
         return parcela
+
+
+def arranjo_ap_r(
+    relogio: Any, sim: Any, *, segunda_cobranca: bool = False
+) -> tuple[Any, Any, str | None]:
+    """O arranjo AP-R da correção da revisão (E12-02): X pago no ciclo 1, a apuração em 48h com o
+    retorno ao interesse e a devolução de mínimo pendente. Com `segunda_cobranca`, uma segunda
+    cobrança de X fica pendente no simulador (prazo em T0 + 24h). Devolve o arranjo, X e o
+    `id_externo` da segunda cobrança (ou `None`)."""
+    from apps.pagamentos.provedor import NovaCobranca, obter_provedor
+    from apps.pedidos.apuracao import iniciar_apuracao
+    from tests.apoio.apuracao import H, arranjo_ap, pagar
+    from tests.apoio.pedidos import T0
+
+    a, x, _y = arranjo_ap(relogio, minimo="100.00", limites=(11, 12))
+    pagar(relogio, sim, x)
+    extra = None
+    if segunda_cobranca:
+        extra = (
+            obter_provedor()
+            .criar_cobranca(
+                NovaCobranca("extra-revisor", x.referencia_externa, x.total, "Pedido", T0 + 24 * H)
+            )
+            .pagamento.id_externo
+        )
+    relogio.congelar(T0 + 48 * H)
+    iniciar_apuracao(a.admin, a.rodada)
+    return a, x, extra

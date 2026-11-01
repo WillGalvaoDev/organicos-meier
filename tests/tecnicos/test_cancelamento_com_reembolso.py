@@ -467,3 +467,179 @@ def test_o_aviso_de_aprovacao_espera_a_situacao_que_o_cancelamento_travou(
     situacao = SituacaoDoPedido.objects.get(pedido=y)
     assert (situacao.situacao, situacao.motivo_do_cancelamento) == ("cancelado", MOTIVO)
     assert not Reembolso.objects.filter(pedido=y, motivo=MOTIVO).exists()
+
+
+# --- R03: o pagamento tardio de um pedido de ciclo anterior (A-19 a A-21) -------------------------
+
+
+def _invariante_ok() -> None:
+    from apps.financeiro.invariante import verificar_invariante_agora
+    from apps.financeiro.models import AlertaFinanceiro
+
+    verificar_invariante_agora()
+    assert not AlertaFinanceiro.objects.filter(
+        tipo="invariante_violado", resolvido_em__isnull=True
+    ).exists()
+
+
+def _conferir_o_pagamento_tardio(
+    a: Any, x: Pedido, extra: str, *, com_reembolso: bool, alerta: bool | None
+) -> None:
+    """As conferências comuns do A-19 a A-21: a rodada cancelada, a cobrança extra devolvida por
+    duplicidade (obrigação integral, sem parcela), X sem reembolso novo e o livro íntegro."""
+    from apps.financeiro.models import AlertaFinanceiro
+    from apps.pedidos.models import DestinoDoPagamento
+
+    assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
+    destino = DestinoDoPagamento.objects.get(pagamento__id_externo=extra)
+    assert (destino.destino, destino.motivo) == ("devolucao", "duplicidade")
+    obrigacao = ObrigacaoComComprador.objects.get(pedido=x, origem_id=str(destino.pk))
+    assert obrigacao.integral == x.total
+    assert not ParcelaDeDevolucao.objects.filter(obrigacao=obrigacao).exists()
+    assert not Reembolso.objects.filter(pedido=x, motivo=MOTIVO).exists()
+    assert not ObrigacaoComComprador.objects.filter(pedido=x, motivo=MOTIVO).exists()
+    auditoria = EntradaAuditoria.objects.get(acao="rodada.cancelar")
+    assert auditoria.alteracoes["reembolsos"] == []
+    if com_reembolso:
+        assert auditoria.alteracoes["pagos_sem_reembolso"] == [x.pk]
+    if alerta is not None:
+        existe = AlertaFinanceiro.objects.filter(tipo="pagamento_depois_do_cancelamento").exists()
+        assert existe is alerta
+    _invariante_ok()
+
+
+def _sincronizacao_antes_do_cancelamento(
+    relogio: RelogioControlado,
+    sim: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    com_reembolso: bool,
+) -> tuple[Any, Pedido, str]:
+    """A sincronização trava a situação de X e espera o cancelamento ficar bloqueado nela. Com
+    reembolso, o pagamento é aprovado no intervalo entre a consulta prévia e o commit, como na
+    prova do parecer. Os wrappers só pausam: validação, trava e efeito ficam como são."""
+    from threading import Event
+
+    from apps.pedidos import cancelamento_da_rodada as modulo
+    from apps.pedidos import quitacao
+    from tests.apoio.cancelamento import arranjo_ap_r
+    from tests.apoio.concorrencia import executar_em_paralelo
+    from tests.apoio.pedidos import sincronizar
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+
+    a, x, extra = arranjo_ap_r(relogio, sim, segunda_cobranca=True)
+    assert extra is not None
+    consultado, estado_travado = Event(), Event()
+    consultar_original = modulo._consultar_antes_de_cancelar
+    motivo_original = quitacao._motivo_da_devolucao
+
+    def consultar(*args: Any, **kwargs: Any) -> Any:
+        resultado = consultar_original(*args, **kwargs)
+        consultado.set()
+        assert estado_travado.wait(15)
+        return resultado
+
+    def motivo(*args: Any, **kwargs: Any) -> Any:
+        resultado = motivo_original(*args, **kwargs)
+        estado_travado.set()
+        esperar_outra_conexao_na_trava()  # o cancelamento bloqueado na situação de X
+        return resultado
+
+    monkeypatch.setattr(modulo, "_consultar_antes_de_cancelar", consultar)
+    monkeypatch.setattr(quitacao, "_motivo_da_devolucao", motivo)
+
+    def cancelar(barreira: Any) -> Any:
+        barreira.wait()
+        if not com_reembolso:
+            assert estado_travado.wait(15)
+        return _cancelar(a, com_reembolso=com_reembolso)
+
+    def pagamento(barreira: Any) -> Any:
+        barreira.wait()
+        if com_reembolso:
+            assert consultado.wait(15)
+        sim.aprovar(extra, em=T0 + 47 * H)
+        return sincronizar(extra)
+
+    resultados = executar_em_paralelo(cancelar, pagamento, tempo_limite=60)
+    assert [r.excecao for r in resultados] == [None, None], [repr(r.excecao) for r in resultados]
+    return a, x, extra
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_cancelamento_com_reembolso_e_pagamento_tardio_de_ciclo_anterior(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-19
+    a, x, extra = _sincronizacao_antes_do_cancelamento(
+        relogio, simulador_pagamentos, monkeypatch, com_reembolso=True
+    )
+    _conferir_o_pagamento_tardio(a, x, extra, com_reembolso=True, alerta=False)
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_cancelamento_sem_reembolso_e_pagamento_tardio_sincronizado_antes(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-21 (sincronização primeiro)
+    a, x, extra = _sincronizacao_antes_do_cancelamento(
+        relogio, simulador_pagamentos, monkeypatch, com_reembolso=False
+    )
+    _conferir_o_pagamento_tardio(a, x, extra, com_reembolso=False, alerta=False)
+
+
+def _cancelamento_antes_da_sincronizacao(
+    relogio: RelogioControlado,
+    sim: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    com_reembolso: bool,
+) -> tuple[Any, Pedido, str]:
+    """O cancelamento pausado depois das travas, antes do commit; a sincronização espera a
+    situação de X e decide depois do commit."""
+    from apps.pedidos import cancelamento_da_rodada as modulo
+    from tests.apoio.cancelamento import arranjo_ap_r
+    from tests.apoio.corrida import Corrida
+    from tests.apoio.pedidos import sincronizar
+
+    a, x, extra = arranjo_ap_r(relogio, sim, segunda_cobranca=True)
+    assert extra is not None
+
+    def aprovar_e_sincronizar() -> None:
+        sim.aprovar(extra, em=T0 + 47 * H)
+        sincronizar(extra)
+
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, modulo, "_gravar_o_cancelamento")
+    ra, rb = corrida.rodar(
+        lambda: _cancelar(a, com_reembolso=com_reembolso),
+        aprovar_e_sincronizar,
+        a_atomica=False,
+        b_atomica=False,
+    )
+    assert ra.excecao is None, repr(ra.excecao)
+    assert rb.excecao is None, repr(rb.excecao)
+    assert corrida.b_esperou
+    return a, x, extra
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_pagamento_tardio_sincronizado_depois_do_cancelamento_com_reembolso(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-20
+    a, x, extra = _cancelamento_antes_da_sincronizacao(
+        relogio, simulador_pagamentos, monkeypatch, com_reembolso=True
+    )
+    _conferir_o_pagamento_tardio(a, x, extra, com_reembolso=True, alerta=True)
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_pagamento_tardio_sincronizado_depois_do_cancelamento_sem_reembolso(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-21 (cancelamento primeiro)
+    a, x, extra = _cancelamento_antes_da_sincronizacao(
+        relogio, simulador_pagamentos, monkeypatch, com_reembolso=False
+    )
+    _conferir_o_pagamento_tardio(a, x, extra, com_reembolso=False, alerta=None)
