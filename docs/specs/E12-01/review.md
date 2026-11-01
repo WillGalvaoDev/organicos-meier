@@ -5,7 +5,7 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_da_rodada.py` (arquivo 
 | Etapa | Commit | Resultado |
 |---|---|---|
 | Testes A-1 a A-20 | `c9d2d08` | **Red: 25 failed.** `ModuleNotFoundError: apps.pedidos.cancelamento_da_rodada` e `ImportError: CancelamentoDaRodada` (o serviço e o modelo não existem, o Red esperado do A-1) |
-| Modelo `CancelamentoDaRodada` (só inserção, migração 0012 com a trava), serviço `cancelar_rodada`, `CancelamentoRecusado`, travas de `_travar` da apuração, auditoria `rodada.cancelar` | ver o commit seguinte | **25 passed** |
+| Modelo `CancelamentoDaRodada` (só inserção, migração 0012 com a trava), serviço `cancelar_rodada`, `CancelamentoRecusado`, travas de `_travar` da apuração, auditoria `rodada.cancelar` | `670dee8` | **25 passed** |
 
 ## Decisões técnicas
 - As travas reusam `_travar` da apuração (contas, fornecedor, rodada, produtos, estoques, parcelas, todas `FOR NO KEY UPDATE`).
