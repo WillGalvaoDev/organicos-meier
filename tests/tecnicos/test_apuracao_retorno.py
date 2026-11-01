@@ -400,19 +400,75 @@ def test_motivo_da_e06_continua_exigindo_o_fechamento_encerrado(
     assert recusa.value.codigo == "fora_de_fechamento_encerrado"
 
 
-def test_comprador_suspenso_nao_tem_as_reservas_restauradas(
-    relogio: RelogioControlado, sim: Any
-) -> None:  # A-17
-    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE)
+def _retorno_com_a_conta_impedida(
+    relogio: RelogioControlado, sim: Any, *, remover: bool = False, com_c: bool = False
+) -> tuple[Any, Pedido]:
+    """AP-insuficiente, limites 11 e 12; X pago; A suspenso (ou removido) antes da apuração."""
+    from apps.contas.moderacao import remover as remover_conta
+
+    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE, limites=(11, 12))
+    if com_c:
+        ParcelaFactory.create(
+            comprador=ContaFactory.create(nome="Comprador C"),
+            produto=a.p1,
+            quantidade_original=D("4"),
+            quantidade_reservada=D("0"),
+            quantidade_pendente=D("4"),
+            situacao="pendente",
+        )
     pagar(relogio, sim, x)
-    suspender(a.admin, a.a)
+    (remover_conta if remover else suspender)(a.admin, a.a)
     relogio.congelar(PRAZO)
     _iniciar(a)
-    assert {p.situacao for p in ParcelaDeInteresse.objects.filter(comprador=a.a)} == {"em_pedido"}
+    return a, x
+
+
+def _conferir_a_conta_impedida(a: Any, x: Pedido, motivo: str) -> None:
+    assert {p.situacao for p in ParcelaDeInteresse.objects.filter(comprador=a.a)} == {"removida"}
+    for parcela in ParcelaDeInteresse.objects.filter(comprador=a.a):
+        assert (parcela.quantidade_reservada, parcela.quantidade_pendente) == (D("0"), D("0"))
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
     assert Reembolso.objects.filter(pedido=x, motivo="minimo_nao_atingido").count() == 1
+    assert not Notificacao.objects.filter(conta=a.a, evento="retorno_para_interesse").exists()
     (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
-    motivos = {n["motivo"] for n in auditoria.alteracoes["retorno"]["nao_restauradas"]}
-    assert motivos == {"conta_suspensa"}
+    removidas = auditoria.alteracoes["retorno"]["removidas_por_conta_impedida"]
+    assert {r["motivo"] for r in removidas} == {motivo}
+    assert sorted((r["reservada"], r["pendente"]) for r in removidas) == [
+        ("4.000", "0.000"),
+        ("6.000", "0.000"),
+    ]
+
+
+def test_conta_suspensa_nao_prende_estoque_no_retorno(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-19 (R02)
+    a, x = _retorno_com_a_conta_impedida(relogio, sim)
+    _conferir_a_conta_impedida(a, x, "conta_suspensa")
+    assert total_reservado(a.p1) == D("0")
+    assert total_reservado(a.p2) == D("0")
+    assert Reembolso.objects.get(pedido=x).produtos + Reembolso.objects.get(
+        pedido=x
+    ).servico + Reembolso.objects.get(pedido=x).frete == D("94.35")
+
+
+def test_estoque_liberado_pela_conta_impedida_atende_o_pendente_antigo(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-20 (R02, R-5)
+    a, _x = _retorno_com_a_conta_impedida(relogio, sim, com_c=True)
+    (da_c,) = ParcelaDeInteresse.objects.filter(produto=a.p1, quantidade_original=D("4"))
+    assert (da_c.situacao, da_c.quantidade_reservada, da_c.quantidade_pendente) == (
+        "ativa",
+        D("4.000"),
+        D("0.000"),
+    )
+
+
+def test_conta_removida_no_retorno_tem_o_mesmo_efeito(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-21 (R02)
+    a, x = _retorno_com_a_conta_impedida(relogio, sim, remover=True)
+    _conferir_a_conta_impedida(a, x, "conta_removida")
+    assert total_reservado(a.p1) == D("0")
 
 
 def test_dois_pagantes_recebem_a_devolucao_integral_na_mesma_apuracao(
