@@ -157,3 +157,114 @@ def test_falha_do_email_nao_afeta_o_cancelamento_nem_o_aviso_no_site(
     envio = Envio.objects.get(notificacao=aviso, canal="email")
     assert envio.situacao != "enviado"
     assert envio.tentativas >= 1
+
+
+# --- R02: o pagante de ciclo anterior (A-8 a A-11) ---------------------------------------------
+
+SEM_NOVAS = (
+    "O cancelamento não inicia novas devoluções. As devoluções já devidas continuam em andamento."
+)
+
+
+def _nada_novo_no_livro() -> tuple[int, int, int]:
+    from apps.financeiro.models import MovimentoFinanceiro, ObrigacaoComComprador
+
+    return (
+        Reembolso.objects.count(),
+        ObrigacaoComComprador.objects.count(),
+        MovimentoFinanceiro.objects.count(),
+    )
+
+
+def test_aviso_sem_reembolso_reconhece_pedido_pago_de_ciclo_anterior(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-8 (a prova do parecer)
+    from tests.apoio.cancelamento import arranjo_ap_r
+
+    a, x, _extra = arranjo_ap_r(relogio, sim)
+    antes = _nada_novo_no_livro()
+    _cancelar(a, com_reembolso=False)
+    corpo = _aviso(a.a).corpo
+    assert SEM_NOVAS in corpo
+    assert "Seus interesses nesta rodada foram removidos." not in corpo
+    assert "Sem novas devoluções." not in corpo
+    assert _aviso(a.a).link == f"/pedidos/{x.pk}/"
+    assert _nada_novo_no_livro() == antes
+
+
+def test_aviso_com_reembolso_e_pedido_de_ciclo_anterior_sem_saldo(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-9
+    from tests.apoio.cancelamento import arranjo_ap_r
+
+    a, x, _extra = arranjo_ap_r(relogio, sim)
+    _cancelar(a, com_reembolso=True)
+    aviso = _aviso(a.a)
+    assert "As devoluções já devidas do seu pedido continuam em andamento." in aviso.corpo
+    assert "será devolvido integralmente" not in aviso.corpo
+    assert "R$" not in aviso.corpo
+    assert aviso.link == f"/pedidos/{x.pk}/"
+
+
+def test_pagante_suspenso_recebe_o_aviso_e_so_pendente_sem_pedido_nao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-10
+    from apps.contas.moderacao import suspender
+    from apps.interesses.models import ParcelaDeInteresse
+    from apps.pedidos.apuracao import iniciar_apuracao
+    from tests.fabricas import ContaFactory, ParcelaFactory
+
+    a, x, _y = arranjo_ap(relogio, minimo="100.00", limites=(11, 12))
+    c = ContaFactory.create(nome="Comprador C")
+    ParcelaFactory.create(
+        comprador=c,
+        produto=a.p1,
+        quantidade_original=D("4"),
+        quantidade_reservada=D("0"),
+        quantidade_pendente=D("4"),
+        situacao="pendente",
+    )
+    pagar(relogio, sim, x)
+    suspender(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    parcelas_de_a = list(ParcelaDeInteresse.objects.filter(comprador=a.a).order_by("pk").values())
+    _cancelar(a, com_reembolso=False)
+    assert list(ParcelaDeInteresse.objects.filter(comprador=a.a).order_by("pk").values()) == (
+        parcelas_de_a
+    )
+    aviso = _aviso(a.a)
+    assert SEM_NOVAS in aviso.corpo
+    assert aviso.link == f"/pedidos/{x.pk}/"
+    assert not Notificacao.objects.filter(conta=c, evento=EVENTO).exists()
+
+
+def test_pagante_de_ciclo_anterior_com_pedido_do_ciclo_atual_cancelado_agora(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-11
+    from apps.interesses.servicos import adicionar_interesse
+    from apps.pedidos.abertura import abrir_pagamento
+    from apps.pedidos.apuracao import iniciar_apuracao
+    from apps.rodadas.fechamento import encerrar_fechamento, iniciar_fechamento
+    from tests.fabricas import ContaFactory
+
+    a, x, _y = arranjo_ap(relogio, minimo="100.00", limites=(11, 12))
+    pagar(relogio, sim, x)
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    adicionar_interesse(ContaFactory.create(nome="Comprador C"), a.p1, D("5"))
+    iniciar_fechamento(a.admin, a.rodada)
+    relogio.congelar(PRAZO + 25 * H)
+    encerrar_fechamento(a.rodada)
+    a.rodada.refresh_from_db()
+    abrir_pagamento(a.admin, a.rodada, D("10.00"))
+    do_ciclo_2 = Pedido.objects.get(comprador=a.a, abertura__ciclo__numero=2)
+    assert do_ciclo_2.estado.situacao == "aguardando_pagamento"
+    _cancelar(a, com_reembolso=False)
+    aviso = _aviso(a.a)
+    atual = "Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele."
+    assert atual in aviso.corpo
+    assert SEM_NOVAS in aviso.corpo
+    assert aviso.corpo.index(atual) < aviso.corpo.index(SEM_NOVAS)
+    assert aviso.corpo.index("foi cancelada pelo administrador.") < aviso.corpo.index(atual)
+    assert aviso.link == f"/pedidos/{do_ciclo_2.pk}/"
