@@ -284,6 +284,7 @@ class MotivoDoCancelamento(models.TextChoices):
     SUSPENSAO = "suspensao", "Suspensão da conta"
     REMOCAO_DA_CONTA = "remocao_da_conta", "Remoção da conta"
     INADIMPLENCIA = "inadimplencia", "Falta de pagamento"
+    CANCELAMENTO_DA_RODADA = "cancelamento_da_rodada", "Cancelamento da rodada"
 
 
 class SituacaoDoPedido(models.Model):
@@ -295,7 +296,7 @@ class SituacaoDoPedido(models.Model):
     quitado_em = models.DateTimeField(null=True, blank=True)
     cancelado_em = models.DateTimeField(null=True, blank=True)
     motivo_do_cancelamento = models.CharField(
-        max_length=20, choices=MotivoDoCancelamento.choices, blank=True, default=""
+        max_length=30, choices=MotivoDoCancelamento.choices, blank=True, default=""
     )
 
     class Meta:

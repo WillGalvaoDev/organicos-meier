@@ -31,6 +31,7 @@ CANCELAMENTOS_POR_EXTENSO = {
     MotivoDoCancelamento.SUSPENSAO: "Cancelado (suspensão)",
     MotivoDoCancelamento.REMOCAO_DA_CONTA: "Cancelado (remoção da conta)",
     MotivoDoCancelamento.INADIMPLENCIA: "Cancelado (falta de pagamento)",
+    MotivoDoCancelamento.CANCELAMENTO_DA_RODADA: "Cancelado (rodada cancelada)",
 }
 
 

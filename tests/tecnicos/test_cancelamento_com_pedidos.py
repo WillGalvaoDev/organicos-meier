@@ -184,7 +184,7 @@ def test_a_tentativa_solicitada_nao_recebe_cancelamento_e_a_criacao_e_recusada(
     processar_chamadas()
     tentativa.refresh_from_db()
     assert tentativa.situacao == "nao_criada"
-    chamada = ChamadaAoProvedor.objects.get(operacao="criar_cobranca")
+    chamada = ChamadaAoProvedor.objects.get(operacao="criar_cobranca", alvo=f"t{tentativa.pk}")
     assert "pedido_cancelado" in (chamada.ultimo_erro or "")
     assert tuple(obter_provedor().buscar_por_referencia(y.referencia_externa)) == ()
 
