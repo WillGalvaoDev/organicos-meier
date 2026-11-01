@@ -122,3 +122,12 @@ A fonte da distinção é o registro da apuração:
 - a auditoria das parcelas não restauradas, no retorno.
 
 A tela não deduz nada da situação atual da conta.
+
+## Correção da revalidação: R02 residual (2026-11-01)
+
+Origem: revalidação sobre `0af24ad` (`docs/specs/E11-08/review.md`, "R02 residual"). Vale a regra 2-A da E11-05 (`spec.md`, "Correção da revalidação").
+
+- **A fonte:** saber se o pedido pago de uma rodada que voltou para interesse tinha a conta impedida na apuração vem de `retorno.contas_impedidas`, na auditoria da apuração. Deixa de vir de `removidas_por_conta_impedida`, que só lista as remoções feitas no retorno.
+- **O texto:** com o comprador em `contas_impedidas`, a página mostra só "A rodada voltou para interesse. O valor pago será devolvido integralmente.", sem afirmar interesses reservados (`interesses_reservados` falso no contexto). Fora dela, o texto continua o mesmo.
+- **Sem estado atual:** a tela não consulta a situação atual da conta para isso. Reativar a conta depois da apuração não faz a página prometer reservas; suspendê-la depois não muda o que a página diz do efeito da apuração.
+- **Sem a auditoria da apuração** (situação que não deve ocorrer num pedido pago apurado): a página não afirma interesses reservados.

@@ -41,3 +41,18 @@ Valem a seção "Correções da revisão" do `spec.md` e as regras comuns da E11
 | Critério | Arquivo de teste |
 |---|---|
 | A-18 a A-21 | `tests/tecnicos/test_pedidos_apuracao_do_comprador.py` |
+
+## Correção da revalidação: R02 residual (2026-11-01)
+
+Vale a seção "Correção da revalidação: R02 residual" do `spec.md`. Arranjo RR como na E11-05 (`acceptance.md`, "Correção da revalidação").
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-22 | R02 residual | positivo | o E11-05 A-25 (A suspenso com a parcela já removida) | `efeitos_da_apuracao_no_pedido(X)` e GET `pedidos/<X>/` como A | `interesses_reservados` falso; a página com "A rodada voltou para interesse. O valor pago será devolvido integralmente." e sem "continuam reservados". **Red esperado:** `interesses_reservados` verdadeiro |
+| A-23 | R02 residual | positivo | o E11-05 A-26 (conta removida, parcela já removida) | `efeitos_da_apuracao_no_pedido(X)` | `interesses_reservados` falso |
+| A-24 | Regra 2-A | positivo | o A-22; depois `reativar(admin, A)` | `efeitos_da_apuracao_no_pedido(X)` e GET `pedidos/<X>/` como A | `interesses_reservados` continua falso; o mesmo texto do A-22 |
+| A-25 | Regra 2-A | positivo | RR com A ativa na apuração; depois `suspender(admin, A)` | `efeitos_da_apuracao_no_pedido(X)` | `interesses_reservados` verdadeiro: o registro da apuração não muda com a situação posterior |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-22 a A-25 | `tests/tecnicos/test_pedidos_apuracao_do_comprador.py` |

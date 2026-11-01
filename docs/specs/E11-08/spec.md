@@ -125,3 +125,17 @@ O implementador repete a verificação final da E11 e registra os resultados nes
 - `ruff format --check`;
 - `mypy`;
 - `makemigrations --check`.
+
+## Correção da revalidação da E11: R02 residual (2026-11-01)
+
+Origem: a revalidação independente sobre `0af24ad` (`review.md`, "Revalidação independente das correções — agente 3 — 2026-11-01"), com o veredito REPROVADO só pelo R02 residual. R01, R03 e R04 estão encerrados. Nenhuma regra comercial muda e não há decisão pendente.
+
+| Achado | Decisão | Onde está a especificação | Critérios |
+|---|---|---|---|
+| R02 residual — o pagante com conta impedida e sem parcela removível recebia o aviso e via a promessa de reservas | A apuração registra a situação da conta de cada pagante (`retorno.contas_impedidas`), com ou sem parcela removível, e guarda as não restauradas; o aviso e a tela usam esse registro, nunca a situação atual | E11-05, "Correção da revalidação: R02 residual" (regra 2-A); E11-07, "Correção da revalidação: R02 residual" | E11-05 A-25 a A-29; E11-07 A-22 a A-25; E11-04 A-19 (regressão) |
+
+**Ordem:** primeiro os critérios de serviço (E11-05 A-25 a A-29) e os de tela (E11-07 A-22 a A-25), escritos e vistos falhar juntos; depois a correção do serviço e da tela. O E11-04 A-19 e o E11-05 A-27 e A-28 são regressões: podem passar de primeira e são registrados como tal. Valem as regras comuns de Red/Green e de registro da seção anterior. Um commit para os testes (Red) e outro para a correção.
+
+**Provas:** a prova `test_conta_impedida_com_parcela_ja_removida` do parecer, com os dois parâmetros, e as seis provas anteriores têm de passar como estão.
+
+**Verificação final:** a mesma da seção anterior, registrada neste `review.md`.

@@ -50,3 +50,15 @@ A prova `test_remover_sobra_nao_impede_restauracao_da_caixa_paga` do parecer tem
 | Critério | Arquivo de teste |
 |---|---|
 | A-15 a A-18 | `tests/tecnicos/test_apuracao_viavel.py` |
+
+## Confirmação da revalidação: R02 residual (2026-11-01)
+
+Vale a regra 2-A da E11-05 (`spec.md`, "Correção da revalidação"); no ramo viável, a regra 4 já depende só da conta.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-19 | R02 residual, regra 4 | positivo, regressão | o arranjo R sem a remoção da sobra; A suspenso depois de pagar (a parcela de A em P2, `pendente`, fica `removida` pela E05-07) e ainda suspenso na apuração | `iniciar_apuracao`; o aviso `itens_cancelados` de A; GET `pedidos/<X>/` como A | nenhuma `RestauracaoDeCaixa` de A; `nao_restauradas` do pedido X com `conta_suspensa`; o aviso e a página com o estorno proporcional, sem a frase da fila de pendentes |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-19 | `tests/tecnicos/test_apuracao_viavel.py` |

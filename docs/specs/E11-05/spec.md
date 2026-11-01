@@ -158,3 +158,21 @@ O A-3 desta fatia afirmava a parcela de A com reservado 6 e **pendente 2** depoi
 - depois do retorno inteiro, com a fila atendida, reservado 8 e pendente 0, desde que haja estoque livre.
 
 O A-3 original fica substituído pelo abaixo.
+
+## Correção da revalidação: R02 residual (2026-11-01)
+
+Origem: revalidação independente sobre `0af24ad` (`docs/specs/E11-08/review.md`, "R02 residual — importante"). Nenhuma regra comercial muda: a regra 2 reescrita já determina o comportamento. O defeito está na fonte do registro.
+
+**Diagnóstico.** A identificação do pagante com conta impedida saía da lista das parcelas efetivamente removidas no retorno. Quando a suspensão (ou a remoção da conta) já tinha removido todas as parcelas do pagante antes da apuração (E05-07), essa lista ficava vazia. O pagante passava por conta ativa: recebia o `retorno_para_interesse`, que promete interesses reservados, e a tela do pedido afirmava o mesmo. Não ter parcela a remover não significa que a conta esteja ativa.
+
+**Regra 2-A — a situação da conta registrada na apuração:**
+- **O registro:** na transação da apuração, depois das travas, a apuração registra, para cada comprador com pedido pago, se a conta dele pode ter interesses naquele momento. A auditoria `rodada.apuracao_final`, em `retorno`, ganha `contas_impedidas`: uma entrada por pagante com conta suspensa ou removida, com o comprador e o motivo (`conta_suspensa` ou `conta_removida`). A entrada existe mesmo sem nenhuma parcela removível.
+- **As remoções efetivas continuam:** `removidas_por_conta_impedida` fica como está, só com as parcelas que a regra 2 removeu agora e as quantidades que elas tinham. As parcelas que já estavam `removida` não entram nela e não mudam.
+- **As não restauradas:** as parcelas de pedidos pagos que a regra 1 deixou de restaurar por conta impedida passam a constar em `retorno.nao_restauradas`, com a parcela e o motivo. Hoje elas são descartadas.
+- **Uma fonte só:** a situação da conta é lida uma vez, com a conta travada pela apuração (`_travar`). O mesmo resultado decide a remoção da regra 2, a não restauração da regra 1, os destinatários da regra 8 e o registro acima. Não há segunda leitura da situação no mesmo ato.
+- **Destinatários do aviso (regra 8):** os pagantes fora de `contas_impedidas`. O pagante com conta impedida não recebe o `retorno_para_interesse`, tenha ou não parcela removida agora.
+- **Depois da apuração:** o registro é histórico. Reativar ou suspender a conta depois não muda o registro, o aviso já emitido nem o que a tela mostra do efeito da apuração (E11-07).
+
+**Rodada viável (E11-04):** já usa a situação da conta, independente da parcela, e registra `nao_restauradas` por pedido; não muda. O critério E11-04 A-19 só confirma o caso da parcela já removida.
+
+**Dados anteriores:** não há dado de produção (Fase 1). Nenhuma migração de dados nem leitura de compatibilidade para auditorias antigas.

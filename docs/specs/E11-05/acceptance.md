@@ -49,3 +49,27 @@ As provas `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_suspens
 | A-3 e A-18 a A-21 | `tests/tecnicos/test_apuracao_retorno.py` |
 | A-22 e A-23 | `tests/tecnicos/test_apuracao_retorno.py`, com transações PostgreSQL reais |
 | A-24 | os arquivos de concorrência existentes |
+
+## Correção da revalidação: R02 residual (2026-11-01)
+
+Vale a seção "Correção da revalidação: R02 residual" do `spec.md`.
+
+**Arranjo RR** (o da prova do parecer):
+- AP-insuficiente, com mínimo 100,00;
+- P1 com as parcelas A 6 e B 5; P2 com B 12;
+- A com `pendente_a_p1=2`: a única parcela de A fica `pendente`, com 6 congeladas no pedido X;
+- A paga X pelo simulador; B não paga.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-25 | R02 residual | positivo | RR; `suspender(admin, A)` antes da apuração (a parcela de A fica `removida` pela E05-07) | `iniciar_apuracao` em `T0 + 48h` | resultado `retorno_para_interesse`; `total_reservado(P1) = 0`; A sem nenhum `retorno_para_interesse`; na auditoria, `retorno.contas_impedidas` = [A, `conta_suspensa`], `retorno.removidas_por_conta_impedida` sem parcela de A e `retorno.nao_restauradas` com a parcela de A e `conta_suspensa`; o reembolso integral de X registrado. **Red esperado:** A recebe o aviso |
+| A-26 | R02 residual | positivo | o A-25 com `remover(admin, A)` no lugar da suspensão | `iniciar_apuracao` | o mesmo do A-25, com o motivo `conta_removida` |
+| A-27 | R02, preservação | positivo | o E11-05 A-19 (A suspenso com as parcelas ainda `em_pedido`) | `iniciar_apuracao` | `contas_impedidas` com A; `removidas_por_conta_impedida` com as parcelas de A e as quantidades anteriores (reservada 6 e 4), como antes |
+| A-28 | Regra 8, regressão | positivo | RR com A ativa | `iniciar_apuracao` | `contas_impedidas` vazio; A recebe o `retorno_para_interesse`; a parcela de A restaurada |
+| A-29 | Regra 2-A | positivo | o A-25; depois `reativar(admin, A)` | inspecionar a auditoria e as notificações | a auditoria igual; nenhum `retorno_para_interesse` para A; a parcela de A continua `removida` |
+
+A prova `test_conta_impedida_com_parcela_ja_removida` do parecer, com os dois parâmetros (`aviso` e `tela`), tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-25 a A-29 | `tests/tecnicos/test_apuracao_retorno.py` |
