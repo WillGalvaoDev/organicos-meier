@@ -30,8 +30,8 @@ class ConsultaAoProvedorFalhou(Exception):
     """O provedor não respondeu à consulta: a decisão fica bloqueada. `motivo`: `indisponivel`,
     `recusa` ou `nao_encontrado`. A mensagem não leva dado pessoal nem valor."""
 
-    def __init__(self, referencia_externa: str, motivo: str) -> None:
-        super().__init__(f"consulta ao provedor falhou: {motivo}")
+    def __init__(self, referencia_externa: str, motivo: str, mensagem: str | None = None) -> None:
+        super().__init__(mensagem or f"consulta ao provedor falhou: {motivo}")
         self.referencia_externa = referencia_externa
         self.motivo = motivo
 

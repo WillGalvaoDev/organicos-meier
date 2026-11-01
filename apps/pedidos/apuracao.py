@@ -36,7 +36,15 @@ from apps.notificacoes.eventos import Evento
 from apps.nucleo.auditoria import SISTEMA, registrar_auditoria
 from apps.nucleo.tempo import agora, no_fuso_da_operacao
 from apps.nucleo.valores import arredondar_centavos
-from apps.pagamentos.consulta import consultar_antes_de_decidir, exigir_fora_de_transacao
+from apps.pagamentos.chamadas import agendar_chamada, executar_chamada_agora
+from apps.pagamentos.consulta import (
+    ConsultaAoProvedorFalhou,
+    consultar_antes_de_decidir,
+    exigir_fora_de_transacao,
+    pendentes_das_referencias,
+    situacao_registrada,
+)
+from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pedidos.models import (
     AberturaDoPagamento,
     AprovacaoDoResultado,
@@ -63,6 +71,7 @@ from apps.rodadas.models import Ciclo, EstoqueDaRodada, Etapa, Rodada
 logger = logging.getLogger(__name__)
 
 MOTIVO_DA_TENTATIVA = "apuracao"
+MENSAGEM_DO_CANCELAMENTO = "O provedor não confirmou o cancelamento da cobrança {id_externo}."
 MAIOR_TITULO = 150
 ZERO = Decimal("0.000")
 ZERO_DINHEIRO = Decimal("0.00")
@@ -77,6 +86,7 @@ MENSAGENS = {
     "sem_apuracao": "A apuração deste ciclo ainda não foi feita.",
     "resultado_nao_valido": "Só um resultado válido pode ser aprovado.",
     "ja_aprovado": "O resultado desta apuração já foi aprovado.",
+    "cobranca_aberta": "Há cobrança ainda aberta no provedor; tente de novo.",
 }
 
 
@@ -279,15 +289,52 @@ def _avisar_o_cancelamento(pedidos: list[Pedido], fornecedor: Fornecedor) -> Non
         )
 
 
-def _cancelar_as_cobrancas_pendentes(pedido_ids: list[int]) -> None:
-    """Para cada pedido da abertura, pago ou não, agenda o cancelamento das tentativas `criada`
-    cujo pagamento não é terminal (E08-03). O alvo próprio do motivo evita esperar uma chamada
-    em andamento (E07-R01)."""
-    tentativas = TentativaDePagamento.objects.filter(
-        pedido_id__in=pedido_ids, situacao=SituacaoDaTentativa.CRIADA
-    ).order_by("pedido_id", "numero")
-    for tentativa in tentativas:
-        agendar_cancelamento(tentativa, MOTIVO_DA_TENTATIVA)
+def _agendar_o_cancelamento(id_externo: str) -> ChamadaAoProvedor | None:
+    """Agenda, numa transação curta só para isso, o cancelamento da cobrança com um alvo próprio da
+    apuração (E07-R01): `t<tentativa>:apuracao` quando há tentativa, `<id_externo>:apuracao` para
+    a cobrança sem tentativa vinculada. Uma chamada pendente do mesmo alvo é absorvida."""
+    with transaction.atomic():
+        tentativa = TentativaDePagamento.objects.filter(
+            id_externo=id_externo, situacao=SituacaoDaTentativa.CRIADA
+        ).first()
+        if tentativa is not None:
+            return agendar_cancelamento(tentativa, MOTIVO_DA_TENTATIVA)
+        return agendar_chamada(
+            "cancelar_cobranca",
+            f"{id_externo}:{MOTIVO_DA_TENTATIVA}",
+            parametros={"id_externo": id_externo},
+        )
+
+
+def _cancelar_no_provedor(pedidos: list[Pedido]) -> list[dict[str, str]]:
+    """O passo 4-A da infraestrutura 4.3: cancela e confirma no provedor, fora de qualquer
+    transação de negócio, cada cobrança `pendente` registrada com a referência de um pedido da
+    abertura (as das tentativas `criada` e as órfãs). Se o provedor aprovar o pagamento no
+    instante do cancelamento, vale o que ele registrou (P-6). Cancelamento não confirmado bloqueia
+    a apuração com `ConsultaAoProvedorFalhou`; a chamada fica para o executor periódico."""
+    referencias = [pedido.referencia_externa for pedido in pedidos]
+    ordem = {referencia: posicao for posicao, referencia in enumerate(referencias)}
+    pendentes = sorted(
+        pendentes_das_referencias(referencias),
+        key=lambda pagamento: (ordem[pagamento.referencia_externa], pagamento.id_externo),
+    )
+    canceladas: list[dict[str, str]] = []
+    for pagamento in pendentes:
+        id_externo, referencia = pagamento.id_externo, pagamento.referencia_externa
+        chamada = _agendar_o_cancelamento(id_externo)
+        if chamada is None:
+            continue
+        if executar_chamada_agora(chamada.pk).situacao == SituacaoDaChamada.FALHOU:
+            consultar_antes_de_decidir(referencia)  # a recusa pode ser um pagamento já terminal
+        situacao = situacao_registrada(id_externo)
+        if situacao in (None, "pendente"):
+            raise ConsultaAoProvedorFalhou(
+                referencia,
+                "cancelamento_nao_confirmado",
+                MENSAGEM_DO_CANCELAMENTO.format(id_externo=id_externo),
+            )
+        canceladas.append({"id_externo": id_externo, "situacao": str(situacao)})
+    return canceladas
 
 
 def _gravar_a_apuracao(
@@ -581,6 +628,7 @@ def _auditar_a_apuracao(
     calculo: CalculoDoResultado,
     efeitos: list[EfeitoNoPedido],
     retorno: dict[str, Any] | None,
+    cobrancas_canceladas: list[dict[str, str]],
 ) -> None:
     pagos = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     nao_pagos = [s.pedido_id for s in situacoes if s.situacao != SituacaoDePagamento.PAGO]
@@ -597,6 +645,7 @@ def _auditar_a_apuracao(
         "minimo": str(calculo.minimo),
         "resultado": calculo.resultado,
         "pedidos": [efeito.como_dados() for efeito in efeitos],
+        "cobrancas_canceladas": cobrancas_canceladas,
     }
     if retorno is not None:
         dados["retorno"] = retorno
@@ -734,11 +783,14 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
     pedidos = list(Pedido.objects.filter(abertura=abertura).order_by("pk"))
     for pedido in pedidos:
         consultar_antes_de_decidir(pedido.referencia_externa)
+    canceladas_no_provedor = _cancelar_no_provedor(pedidos)
     pedido_ids = [p.pk for p in pedidos]
     with transaction.atomic():
         travada = _travar(atual.pk, atual.fornecedor_id, sorted({p.comprador_id for p in pedidos}))
         instante = agora()  # lido depois das travas
         _conferir(travada, instante)
+        if pendentes_das_referencias([p.referencia_externa for p in pedidos]):
+            raise ApuracaoRecusada("cobranca_aberta")
         situacoes = list(
             SituacaoDoPedido.objects.select_for_update()
             .filter(pedido_id__in=pedido_ids)
@@ -750,7 +802,6 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
         compradores = [p.comprador_id for p in pedidos if p.pk in nao_pagos]
         inadimplentes = _remover_as_parcelas_dos_inadimplentes(travada.fornecedor_id, compradores)
         calculo = _calcular_o_resultado(abertura, nao_pagos)
-        _cancelar_as_cobrancas_pendentes(pedido_ids)
         _avisar_o_cancelamento([p for p in pedidos if p.pk in cancelados], travada.fornecedor)
         apuracao = _gravar_a_apuracao(administrador, abertura, instante, situacoes, calculo)
         efeitos: list[EfeitoNoPedido] = []
@@ -772,5 +823,6 @@ def iniciar_apuracao(autor: Conta | None, rodada: Rodada) -> ApuracaoFinal:
             calculo,
             efeitos,
             retorno,
+            canceladas_no_provedor,
         )
         return apuracao

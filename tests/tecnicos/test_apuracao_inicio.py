@@ -374,19 +374,20 @@ def test_cobranca_que_reaparece_pendente_antes_da_decisao_recusa(
     a, _x, y, id_y, _ = _y_com_cobranca_pendente(relogio, sim)
     relogio.congelar(PRAZO)
     original = apuracao._cancelar_no_provedor
+    depois_do_passo_4a: list[Any] = []
 
     def cancelar_e_reabrir(*args: Any, **kwargs: Any) -> Any:
         resultado = original(*args, **kwargs)
         PagamentoNoProvedor.objects.filter(id_externo=id_y).update(situacao="pendente")
+        depois_do_passo_4a.append(_foto())  # o efeito do passo 4-A no provedor fica
         return resultado
 
     monkeypatch.setattr(apuracao, "_cancelar_no_provedor", cancelar_e_reabrir)
-    antes = _foto()
     with pytest.raises(ApuracaoRecusada) as recusa:
         _iniciar(a)
     assert recusa.value.codigo == "cobranca_aberta"
     assert str(recusa.value) == "Há cobrança ainda aberta no provedor; tente de novo."
-    assert _foto() == antes
+    assert _foto() == depois_do_passo_4a[0]  # a decisão recusada não escreve
     assert _situacao(y).situacao == "aguardando_pagamento"
 
 
@@ -697,14 +698,20 @@ def test_aviso_espera_a_apuracao_que_ja_cancelou_y(
 
     a, x, y = arranjo_ap(relogio)
     pagar(relogio, simulador_pagamentos, x)
-    pagar(relogio, simulador_pagamentos, y, quando=T0 + 47 * H, entregar=False)
+    id_y = cobranca(relogio, y)
     relogio.congelar(PRAZO)
-    _reconsulta_de_y_pendente(monkeypatch, y)
+
+    def aprovar_e_receber() -> None:
+        # o provedor informa, durante a decisão, uma aprovação de T0 + 47h da cobrança que a
+        # apuração já cancelou (L-3): o aviso espera a trava da situação de Y
+        simulador_pagamentos.aprovar(id_y, em=T0 + 47 * H)
+        _receber_o_aviso(simulador_pagamentos)
+
     corrida = Corrida()
     corrida.depois_de(monkeypatch, apuracao, "_cancelar_os_nao_pagos")
     ra, rb = corrida.rodar(
         lambda: apuracao.iniciar_apuracao(a.admin, a.rodada),
-        lambda: _receber_o_aviso(simulador_pagamentos),
+        aprovar_e_receber,
         a_atomica=False,
         b_atomica=False,
     )
