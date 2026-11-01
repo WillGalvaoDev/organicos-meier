@@ -23,3 +23,30 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-13 | `tests/tecnicos/test_apuracao_viavel.py` |
 | A-14 | `tests/tecnicos/test_apuracao_viavel.py`, com transações PostgreSQL reais |
+
+## Correção E11-R01 (2026-11-01)
+
+Valem a seção "Correção E11-R01" do `spec.md` e as regras comuns da E11-08 (`spec.md`, "Correções da revisão da E11").
+
+**Arranjo R:**
+- P2 com múltiplo 6 e as parcelas, em ordem de sequência:
+  - A, com original 6, reservado 4 e pendente 2;
+  - B 6;
+  - B 2.
+- Na abertura: a caixa 1 tem A 4 e B 2; a parcela de A fica `pendente`, com 2 pendentes e a parte congelada (4) só no pedido.
+- AP-viável no resto (P1 como no AP).
+- A paga pelo simulador e depois remove as 2 pendentes (`remover_pendente(A, P2, 2)`): a parcela fica `removida`.
+- B não paga.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-15 | R01, §5.2, §8.2 3.4 | positivo | R | `iniciar_apuracao` em `T0 + 48h` | a parcela de A em P2 `pendente`, com pendente 4, reservado 0 e a sequência original; uma `RestauracaoDeCaixa` de 4; o reembolso das 4 unidades registrado; nenhuma auditoria de não restauração. **Red esperado:** a parcela continua `removida`, com pendente zero |
+| A-16 | R01 | negativo | o A-15 | executar de novo o passo de estorno e restauração, pela função interna | nenhuma restauração nova; pendente 4 (não 8); a sobra removida (2) não volta |
+| A-17 | R01, E05-07 | positivo | o arranjo R sem a remoção; A suspenso depois de pagar (a parcela `pendente` com sobra fica `removida`) e reativado antes da apuração | `iniciar_apuracao` | a parcela de A `pendente`, com 4 (as unidades pagas da caixa invalidada); a sobra de 2 não volta |
+| A-18 | Regra 4 | positivo | o arranjo R, com A suspenso depois da remoção e ainda suspenso na apuração | `iniciar_apuracao` | nenhuma restauração; a auditoria com o motivo `conta_suspensa` |
+
+A prova `test_remover_sobra_nao_impede_restauracao_da_caixa_paga` do parecer tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-15 a A-18 | `tests/tecnicos/test_apuracao_viavel.py` |

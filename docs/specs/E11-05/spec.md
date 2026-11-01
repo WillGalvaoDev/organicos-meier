@@ -109,3 +109,52 @@ Com `resultado = retorno_para_interesse`, na transação da apuração, depois d
 ## Dependências e decisões em aberto
 
 Depende de E11-03, E10-02 e E06-06. Nenhuma decisão em aberto.
+
+## Correções da revisão: R01, R02 e R04 no retorno ao interesse (2026-11-01)
+
+Origem: revisão independente sobre `1a36495` (`docs/specs/E11-05/review.md` e `docs/specs/E11-08/review.md`). Vale o resumo na E11-08 (`spec.md`, "Correções da revisão da E11").
+
+### R01 — remover a sobra pendente não impede restaurar a reserva paga
+
+A regra da correção E11-R01 da E11-04 vale também para a regra 1 desta fatia.
+- **Quem impede é só a conta:** a restauração da reserva de um pagante depende só de a conta poder ter interesses na apuração, e nunca da situação atual da parcela. A parcela `removida` porque o comprador removeu toda a sobra pendente passa a `ativa`, com a reserva igual à parte congelada.
+- **A pendência fica como está:** zero, porque a sobra removida não volta.
+- **Fim do motivo `parcela_removida`.**
+
+### R02 — a reserva de uma conta impedida não pode ocupar o estoque no retorno
+
+**Diagnóstico.** A regra 2 mandava só não restaurar a parcela de um pagante suspenso ou removido. A parcela `em_pedido` dele continuava `em_pedido`, com a reserva congelada contada em `total_reservado`. A rodada de volta ao interesse ficava com estoque preso por uma conta que não pode ter interesses (§2, E05-07). O pedido congelado preserva a compra, mas não exige uma reserva operacional no novo ciclo.
+
+**Regra 2, reescrita:**
+- **O que muda na parcela:** no retorno, cada `ParcelaDeInteresse` de um pagante cuja conta não pode ter interesses (suspensa ou removida) e que ainda está `em_pedido`, `ativa` ou `pendente` em produto do fornecedor passa a `removida`, com reserva e pendência zero. É o efeito da suspensão sobre interesses (E05-07), aplicado agora à parte que estava congelada.
+- **O que não muda:** a sequência e a quantidade original.
+- **O pedido:** fica como está, pago, com a devolução integral da regra 5. Nenhum registro do pedido muda.
+- **Antes da fila:** a remoção acontece antes da conferência do estoque (regra 3) e do atendimento da fila (regra 4). Assim, o estoque liberado atende os pendentes e novas reservas como qualquer outra liberação (R-5).
+- **Auditoria:** registra, por parcela, o motivo (`conta_suspensa` ou `conta_removida`) e as quantidades que ela tinha.
+- **Aviso:** o pagante com conta impedida não recebe o `retorno_para_interesse`, que fala de interesses reservados. A devolução integral é avisada pela E10 quando autorizada. A regra 8 vale só para pagantes com conta ativa.
+
+O ramo viável (E11-04) não muda: a rodada não volta ao interesse e ninguém reserva nela. O fim das `em_pedido` no encerramento da rodada continua com a E14.
+
+### R04 — o retorno não pode promover as travas da apuração
+
+**Diagnóstico.** A apuração trava fornecedor, rodada, produtos, estoques e parcelas com `FOR NO KEY UPDATE` (decisão técnica da implementação, registrada na E11-01). Com isso, outras transações podem inserir registros com chave estrangeira para essas linhas: a conferência da chave pede `FOR KEY SHARE`, compatível com `FOR NO KEY UPDATE`.
+
+O retorno reutiliza `voltar_para_interesse` e `alocar_pendentes` (com `travar_rodada_para_interesses`, `travar_estoque` e `travar_parcelas`), que travam as mesmas linhas com `FOR UPDATE`. A trava sobe de nível. Uma tarefa de tarifa tardia (`registrar_tarifas_pendentes_agora`) já segura contas do livro-razão e insere uma despesa com chave para a rodada. Ela espera a apuração, e a apuração espera as contas dela. O resultado é um impasse (`deadlock detected`).
+
+**Regras:**
+- **Nenhuma trava mais forte que `FOR NO KEY UPDATE`.** Durante toda a transação da apuração (E11-01 a E11-05), nenhuma linha de fornecedor, rodada, produto, estoque, parcela ou conta de comprador é travada com `FOR UPDATE` ou `FOR SHARE`. Isso vale também dentro dos serviços reutilizados (`voltar_para_interesse`, `alocar_pendentes`, `_alocar_produto` e as funções de trava que eles chamam). A gravação da etapa (`UPDATE` de campo que não é chave) já usa o nível compatível.
+- **A forma é escolha do implementador,** registrada no `review.md`. Dois caminhos aceitos:
+  - **(a)** os serviços reutilizados recebem a indicação de que as travas já foram tomadas pela apuração, ou de travar com `FOR NO KEY UPDATE`;
+  - **(b)** as funções de trava de interesse passam a usar `FOR NO KEY UPDATE` em todo o sistema.
+
+  O caminho (b) mantém a exclusão mútua entre as operações de interesse, porque `FOR NO KEY UPDATE` conflita consigo mesmo. Mesmo assim, a suíte de concorrência existente (E05, E06, E08) tem de continuar verde.
+- **A ordem das travas não muda:** contas dos compradores, fornecedor, rodada, produtos por `pk`, estoques, parcelas, situações dos pedidos e, por último, as contas do livro-razão (regra única da E09).
+- **A aprovação (E11-06)** já trava com `FOR NO KEY UPDATE` e não muda. O critério novo também a cobre.
+
+### A-3 — texto do critério
+
+O A-3 desta fatia afirmava a parcela de A com reservado 6 e **pendente 2** depois da apuração inteira. Isso contradiz a regra 4: o estoque liberado por B atende o pendente de A, que é o mais antigo (R-5). Como observou o implementador e confirmou o revisor, o critério passa a afirmar os dois momentos:
+- logo depois da restauração (regra 1), reservado 6 e pendente 2;
+- depois do retorno inteiro, com a fila atendida, reservado 8 e pendente 0, desde que haja estoque livre.
+
+O A-3 original fica substituído pelo abaixo.

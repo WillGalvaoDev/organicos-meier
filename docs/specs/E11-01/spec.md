@@ -195,3 +195,55 @@ A E11-03 acrescenta o resultado.
 ## Dependências e decisões em aberto
 
 Depende de E08-02 a E08-06 e de E07-06. Nenhuma decisão em aberto. O comportamento real do provedor na busca por referência continua limite L-6.
+
+## Correção E11-R03 — o cancelamento no provedor vem antes da decisão (2026-11-01)
+
+Origem: revisão independente sobre `1a36495`, R03 (`docs/specs/E11-01/review.md` e `docs/specs/E11-08/review.md`). Vale o resumo na E11-08 (`spec.md`, "Correções da revisão da E11").
+
+### Diagnóstico
+
+A infraestrutura 4.3 manda a apuração, nesta ordem:
+1. reconsultar as tentativas e buscar pela referência;
+2. **cancelar no provedor** as tentativas ainda não terminais;
+3. aplicar a P-6 pelo horário de aprovação;
+4. seguir os passos do §8.2.
+
+Com o provedor indisponível, a apuração fica bloqueada. Esta especificação mandava só **agendar** o cancelamento dentro da transação da decisão (passo 5, "Tentativas não terminais", e o A-8). Com isso, a apuração decidia com a cobrança ainda aberta no provedor, e uma falha do cancelamento não a bloqueava.
+
+### Decisão
+
+A especificação se alinha à fonte superior (AGENTS.md §2: a infraestrutura prevalece sobre a especificação da tarefa). Isso não é decisão comercial nova: a ordem já estava aprovada, e não há decisão que permita adiar o cancelamento. A regra abaixo substitui o item "Tentativas não terminais" do passo 5 e o A-8 original.
+
+O contrato da infraestrutura 4.2 continua valendo: nenhuma chamada ao provedor dentro da transação da decisão, e nenhuma trava de negócio segurada durante uma chamada.
+
+### Regras
+
+**Passo 4-A, "Cancelamento no provedor"**, depois da reconsulta (passo 4) e antes da transação da decisão (passo 5), fora de qualquer transação de negócio:
+
+1. **O que cancelar:** cada `PagamentoNoProvedor` registrado com a referência de um pedido da abertura e situação `pendente`. Entram:
+   - os de tentativas `criada`;
+   - os achados pela busca por referência sem tentativa vinculada (órfãos da E08-03).
+2. **Como cancelar:** para cada um, na ordem do `pk` do pedido e do `id_externo`:
+   - **agendar** a chamada `cancelar_cobranca` numa transação curta, só para isso, com um alvo próprio da apuração:
+     - com tentativa: `agendar_cancelamento(tentativa, "apuracao")`, alvo `t<tentativa>:apuracao`;
+     - sem tentativa: `agendar_chamada("cancelar_cobranca", "<id_externo>:apuracao", parametros={"id_externo": ...})`;
+   - **executar** a chamada logo em seguida, pelo mesmo caminho de `processar_chamadas`: `_tentar` com a linha da chamada travada, numa transação só dela.
+     - Se o executor periódico estiver com a mesma chamada, a apuração espera a trava dela, sem `skip_locked`.
+     - A forma é escolha do implementador. Por exemplo, uma função `executar_chamada_agora(chamada)` em `apps.pagamentos.chamadas`, com o comportamento de uma iteração de `processar_chamadas`.
+3. **Resultado:**
+   - **Chamada `concluida`:** a resposta do provedor foi sincronizada (`_concluir_cancelamento`, E08-03). Se o provedor aprovou o pagamento no instante do cancelamento, vale o que ele registrou, e a decisão de destino aplica a P-6 (infraestrutura 4.3, "bloqueio ativo").
+   - **Chamada `pendente`** (indisponível ou falha temporária): a apuração é bloqueada com `ConsultaAoProvedorFalhou`, com a mensagem "O provedor não confirmou o cancelamento da cobrança {id_externo}.", sem decisão e sem escrita. A chamada continua pendente para o executor periódico, e uma nova apuração tenta de novo.
+   - **Chamada `falhou`** (recusa definitiva, por exemplo porque o pagamento ficou terminal ao mesmo tempo): a referência é reconsultada (`consultar_antes_de_decidir`).
+     - Se o pagamento ainda estiver `pendente`, a apuração é bloqueada como no item anterior.
+     - Se a reconsulta falhar, `ConsultaAoProvedorFalhou` se propaga.
+4. **Conferência na transação da decisão:** no passo 5, sob as travas, nenhum `PagamentoNoProvedor` das referências da abertura pode estar `pendente`. Senão, `ApuracaoRecusada("cobranca_aberta")` sem escrita, com a mensagem "Há cobrança ainda aberta no provedor; tente de novo." Uma nova cobrança só nasceria por anomalia, porque as tentativas são recusadas depois de `T0 + 24h`.
+5. **O efeito no provedor fica,** mesmo que a apuração seja recusada depois. Exemplos: `ja_apurada` por uma apuração concorrente, ou `cobranca_aberta`. Cancelar uma cobrança depois de `T0 + 24h` já é a regra do bloqueio ativo (E08-05).
+6. **Auditoria:** a da apuração passa a listar as cobranças canceladas no passo 4-A, com o `id_externo` e a situação final sincronizada.
+
+O passo 5 deixa de agendar cancelamentos. A conferência prévia do passo 3 continua antes das consultas, e o passo 4-A não roda quando ela recusa.
+
+### Casos-limite e concorrência acrescentados
+
+- **Pagamento aprovado no instante do cancelamento** (o simulador aprova na resposta do cancelamento): a sincronização quita o pedido pela P-6, e ele entra como pago.
+- **Cancelamento do bloqueio de `T0 + 24h` ainda pendente com erro:** a apuração agenda e executa a sua própria chamada (outro alvo). O provedor recebe dois cancelamentos da mesma cobrança, o que não muda nada: o segundo encontra a cobrança já cancelada.
+- **Duas apurações concorrentes:** as duas podem cancelar a mesma cobrança, com chamadas do mesmo alvo absorvidas pelo agendamento (E07-R01). Só uma decide (A-14).

@@ -105,3 +105,20 @@ O carrinho continua mostrando reservado e pendente separados (E05). Esta fatia e
 ## Dependências e decisões em aberto
 
 Depende das fatias E11-01 a E11-06 e de E10-07. Nenhuma decisão em aberto.
+
+## Correções da revisão: textos ao comprador nos casos de R01 e R02 (2026-11-01)
+
+Origem: revisão independente sobre `1a36495` (`docs/specs/E11-08/review.md`, matriz: "revalidar afirmações ao comprador nos casos R01/R02"). Vale o resumo na E11-08 (`spec.md`, "Correções da revisão da E11").
+
+- **Pedido pago de rodada que voltou para interesse, com a conta ativa:** o texto continua o mesmo, inclusive no caso do R01 (a reserva da parte paga volta mesmo depois da remoção da sobra).
+- **Pedido pago de rodada que voltou para interesse, com a conta suspensa ou removida na apuração** (R02): a página mostra só "A rodada voltou para interesse. O valor pago será devolvido integralmente." Ela não afirma que os interesses continuam reservados. O comprador suspenso pode consultar os pedidos pagos (§2).
+- **Pedido pago com unidades em caixa invalidada:**
+  - **com a parcela restaurada** (inclusive o caso do R01): continua "… estorno proporcional e unidades na fila de pendentes do fornecedor";
+  - **sem restauração** (conta impedida na apuração): "… estorno proporcional", sem a menção à fila.
+- **O aviso `itens_cancelados` de caixa incompleta (E11-04, regra 7)** segue a mesma distinção. Sem restauração, o corpo não tem a frase da fila de pendentes.
+
+A fonte da distinção é o registro da apuração:
+- a `RestauracaoDeCaixa`, na rodada viável;
+- a auditoria das parcelas não restauradas, no retorno.
+
+A tela não deduz nada da situação atual da conta.

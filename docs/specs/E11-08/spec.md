@@ -77,3 +77,51 @@ Num cenário com um segundo fornecedor G, a rodada e os produtos de G são indep
 Depende de E11-04, E11-06 e das fatias E05-02 a E05-05. Nenhuma decisão em aberto.
 
 **Registro para a E14:** o encerramento da rodada precisa tirar as parcelas `em_pedido` da contagem de `total_reservado`. Sem isso, a próxima rodada de um produto que teve unidades válidas conta essas unidades no estoque. O arranjo FP evita esse caso de propósito, e ele fica para a especificação da E14.
+
+## Correções da revisão da E11 (2026-11-01)
+
+Origem: a revisão independente sobre `1a36495` (`review.md`, "Parecer independente — agente 3 — 2026-10-31"), com o veredito REPROVADO e o R03 bloqueado por decisão. Os quatro achados se resolvem com regras técnicas derivadas dos documentos-base. Nenhuma regra comercial muda.
+
+**R03.** A infraestrutura 4.3 já estabelece a ordem: reconsultar, cancelar no provedor, aplicar a P-6 e só então decidir, com bloqueio se o provedor falhar. A especificação local estava abaixo dela e foi alinhada (AGENTS.md §2). Não há decisão que permita adiar o cancelamento, e alinhar à fonte superior não precisa de decisão nova. Com isso, o ponto deixa de estar bloqueado.
+
+| Achado | Decisão | Onde está a especificação | Critérios |
+|---|---|---|---|
+| R01 — remover a sobra pendente impedia recuperar as unidades pagas | A restauração depende só da conta, e nunca da situação da parcela; a sobra removida não volta | E11-04, "Correção E11-R01"; E11-05, "Correções da revisão", R01 | E11-04 A-15 a A-18; E11-05 A-18 |
+| R02 — a reserva de conta suspensa ou removida ocupava o estoque no retorno | No retorno, as parcelas da conta impedida passam a `removida`, antes da conferência do estoque e da fila; o pedido não muda | E11-05, "Correções da revisão", R02 | E11-05 A-19 a A-21 |
+| R03 — o cancelamento no provedor era só agendado depois da decisão | Passo 4-A: cancelar e confirmar no provedor antes da transação da decisão, sem travas de negócio; falha bloqueia; conferência sob as travas | E11-01, "Correção E11-R03" | E11-01 A-8 (substituído) e A-22 a A-29 |
+| R04 — o retorno promovia as travas e causava impasse com a tarifa tardia | Nenhuma trava mais forte que `FOR NO KEY UPDATE` em toda a transação da apuração, inclusive nos serviços reutilizados | E11-05, "Correções da revisão", R04 | E11-05 A-22 a A-24 |
+| Textos ao comprador (reflexo de R01 e R02) | O texto segue o registro da apuração (restaurada ou não) | E11-07, "Correções da revisão" | E11-07 A-18 a A-21 |
+
+**Pontos do implementador:**
+- **E11-05 A-3:** reescrito com os dois momentos, a restauração e o retorno inteiro.
+- **E11-02 A-4 e A-6:** os ajustes dos testes ficam aceitos (`acceptance.md` da E11-02).
+- **Conta suspensa depois do commit da restauração:** a suspensão a remove (E11-04 A-14). Isso já estava coberto e não muda.
+
+### Ordem e regras comuns
+
+1. **R04 primeiro:** muda as travas que os outros testes de retorno exercitam.
+2. **R03.**
+3. **R01, nos dois ramos, e R02, cada um com os critérios de tela da E11-07 junto.** A prevenção da E10-07 vale aqui: os critérios de tela do mesmo achado são escritos e vistos falhar antes da correção do serviço.
+
+**Para cada critério novo:** Red real antes do código de produção, registrado no `review.md` da fatia, com o comando, o arquivo inteiro (sem `-k`), a falha pelo motivo esperado e o Green. Os critérios marcados como regressão podem passar de primeira e são registrados como regressão, como na correção E10-R08.
+
+**Commits separados por achado.**
+
+### Provas do parecer
+
+As seis provas do parecer têm de passar como estão:
+- `test_remover_sobra_nao_remove_reserva_paga_no_retorno`;
+- `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`;
+- `test_suspenso_nao_prende_estoque_no_retorno`;
+- `test_cancelamento_no_provedor_precede_apuracao`;
+- `test_falha_do_cancelamento_bloqueia_apuracao`;
+- `test_retorno_concorre_com_tarifa_sem_impasse`.
+
+### Verificação final
+
+O implementador repete a verificação final da E11 e registra os resultados neste `review.md`:
+- a suíte completa;
+- `ruff check --no-cache`;
+- `ruff format --check`;
+- `mypy`;
+- `makemigrations --check`.

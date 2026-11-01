@@ -26,3 +26,18 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-12 e A-17 | `tests/tecnicos/test_apuracao_telas.py` |
 | A-13 a A-16 | `tests/tecnicos/test_pedidos_apuracao_do_comprador.py` |
+
+## Correções da revisão (2026-11-01)
+
+Valem a seção "Correções da revisão" do `spec.md` e as regras comuns da E11-08 (`spec.md`, "Correções da revisão da E11").
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-18 | R02, §2 | positivo | o E11-05 A-19 (A suspenso, retorno ao interesse) | GET `pedidos/<X>/` como A (suspenso pode consultar pedidos pagos) | "A rodada voltou para interesse. O valor pago será devolvido integralmente."; sem "seus interesses continuam reservados". **Red esperado:** o texto com os interesses reservados |
+| A-19 | R01 | positivo | o E11-05 A-18 (A removeu a sobra; retorno) | GET `pedidos/<X>/` e GET `carrinho/` como A | o texto do retorno com os interesses reservados; no carrinho, P1 com "reservado: 6" e sem pendente |
+| A-20 | R01 | positivo | o E11-04 A-15 | GET `pedidos/<X>/` e GET `carrinho/` como A; o aviso `itens_cancelados` de A | no pedido, a frase da caixa incompleta com a fila de pendentes; no carrinho, P2 com "pendente: 4"; o aviso com a frase da fila |
+| A-21 | Regra 4 da E11-04 | positivo | o E11-04 A-18 (A suspenso na apuração, sem restauração) | o aviso `itens_cancelados` de A e GET `pedidos/<X>/` como A | o estorno proporcional mencionado; sem a frase da fila de pendentes |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-18 a A-21 | `tests/tecnicos/test_pedidos_apuracao_do_comprador.py` |

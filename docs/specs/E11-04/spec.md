@@ -111,3 +111,26 @@ Com `resultado = valida`, para cada pedido pago com unidades em caixas invalidad
 ## Dependências e decisões em aberto
 
 Depende de E11-03, E10-02 e E05. Nenhuma decisão em aberto.
+
+## Correção E11-R01 — remover a sobra pendente não impede restaurar as unidades pagas (2026-11-01)
+
+Origem: revisão independente sobre `1a36495`, R01 (`docs/specs/E11-04/review.md`). Vale o resumo na E11-08 (`spec.md`, "Correções da revisão da E11"). A mesma regra vale para o retorno ao interesse (E11-05, "Correções").
+
+### Diagnóstico
+
+Uma parcela que tinha pendente na abertura fica `pendente`, com a parte congelada só no pedido (E08-02). Se o comprador remove toda essa pendência durante o pagamento (`remover_pendente`, permitido em qualquer fase, §5.2), a parcela passa a `removida`, como manda a E05-03. Isso não cancela as unidades pagas dela: a remoção de pendentes "atualiza só a quantidade pendente" e "não modifica pedidos congelados" (§5.2).
+
+A implementação tratava toda parcela `removida` como impedimento à restauração, além da conta suspensa ou removida da regra 4. As unidades pagas em caixa invalidada não voltavam à fila.
+
+### Regras
+
+- **Quem impede a restauração é a conta, não a situação da parcela.** A restauração da regra 2 vale para toda `ParcelaNoPedido` de pedido pago em caixa invalidada cujo comprador pode ter interesses no momento da apuração (conta ativa de comprador, lida sob a trava da conta, como já faz a implementação). A situação atual da `ParcelaDeInteresse` (`em_pedido`, `pendente` ou `removida`) não muda isso.
+- **Efeito na parcela `removida`:** a mesma da regra 2.
+  - `quantidade_pendente += quantidade` restaurada;
+  - `situacao = pendente`;
+  - `quantidade_reservada = 0`;
+  - a sequência original.
+- **A sobra que o comprador removeu não volta:** a restauração soma só as unidades congeladas da caixa invalidada, nunca a pendência removida. A restrição reservado + pendente ≤ original continua valendo, porque a pendência removida saiu do total.
+- **A regra 4 continua:** conta suspensa ou removida não restaura, com a auditoria do motivo. O motivo `parcela_removida` deixa de existir.
+- **Conta suspensa e reativada antes da apuração:** a suspensão removeu os interesses (E05-07), inclusive a parcela `pendente` com parte congelada. Com a conta ativa de novo na apuração, as unidades pagas em caixa invalidada são restauradas pela regra acima. São unidades pagas do pedido, preservado pela suspensão (§2), e não interesses que a reativação devolveria.
+- **Idempotência:** continua pela unicidade de `RestauracaoDeCaixa` por `ParcelaNoPedido`.

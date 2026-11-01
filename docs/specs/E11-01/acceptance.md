@@ -47,3 +47,25 @@ As fatias da E11 usam o mesmo arranjo, montado pelo apoio de testes da E08 (`tes
 |---|---|
 | A-1 a A-13 e A-17 a A-21 | `tests/tecnicos/test_apuracao_inicio.py` |
 | A-14 a A-16 | `tests/tecnicos/test_apuracao_inicio.py`, com transações PostgreSQL reais (`transaction=True`) |
+
+## Correção E11-R03 (2026-11-01)
+
+Valem a seção "Correção E11-R03" do `spec.md` e as regras comuns da E11-08 (`spec.md`, "Correções da revisão da E11"). O A-8 original fica substituído pelo A-8 abaixo.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-8 | Infra 4.3, R03 | positivo | AP-viável; X pago; Y com uma tentativa `criada` e a cobrança pendente no simulador | `iniciar_apuracao` | antes da `ApuracaoFinal`, a cobrança de Y `cancelado` no simulador e no `PagamentoNoProvedor`. No registro de operações do simulador, a consulta vem antes do cancelamento. A chamada `cancelar_cobranca` de alvo `t<tentativa>:apuracao` `concluida`; Y cancelado por `inadimplencia`. **Red esperado:** a chamada só agendada (`pendente`) e a cobrança ainda `pendente` no provedor |
+| A-22 | Infra 4.3, R03 | negativo | o arranjo do A-8; `falhar_proximas(1, operacao="cancelar_cobranca")` | `iniciar_apuracao` | `ConsultaAoProvedorFalhou` com o `id_externo` na mensagem; sem `ApuracaoFinal`; Y `aguardando_pagamento`; as parcelas iguais; a chamada `pendente` com o erro. **Red esperado:** a apuração termina |
+| A-23 | Infra 4.3 (bloqueio ativo), P-6 | positivo | o arranjo do A-8, com o simulador aprovando a cobrança de Y na resposta do cancelamento, em `T0 + 47h` (`aprovacao_no_cancelamento`) | `iniciar_apuracao` em `T0 + 48h` | Y `pago`, com um destino `quita`; 2 pagos e 0 não pagos; nenhuma devolução |
+| A-24 | Infra 4.3, R03 | positivo | AP-viável; X pago; uma cobrança pendente com a referência de Y no simulador, sem tentativa vinculada (órfã) | `iniciar_apuracao` | a cobrança órfã cancelada no provedor pela chamada de alvo `<id_externo>:apuracao`, antes da decisão; Y cancelado |
+| A-25 | R03 | positivo | o arranjo do A-8, com o cancelamento recusado pelo simulador (`estado_invalido`) e a cobrança já `cancelado` na reconsulta | `iniciar_apuracao` | a reconsulta registra `cancelado`; a apuração prossegue; Y cancelado por `inadimplencia` |
+| A-26 | R03 | negativo | o arranjo do A-8, com o cancelamento recusado e a cobrança ainda `pendente` na reconsulta | `iniciar_apuracao` | `ConsultaAoProvedorFalhou`; sem `ApuracaoFinal` |
+| A-27 | R03 | negativo | o A-8 até o fim do passo 4-A; depois um dublê que deixa um `PagamentoNoProvedor` da abertura `pendente` antes da transação da decisão | a decisão | `ApuracaoRecusada("cobranca_aberta")`, sem escrita |
+| A-28 | R03 | positivo | o arranjo do A-8, com a chamada do bloqueio de `T0 + 24h` (alvo do bloqueio) pendente com erro | `iniciar_apuracao` | a chamada de alvo `t<tentativa>:apuracao` executada e `concluida`; a do bloqueio continua como estava; a cobrança cancelada uma vez no provedor (o segundo cancelamento, quando o executor rodar, não muda nada) |
+| A-29 | Auditoria | positivo | o A-8 | ler a auditoria `rodada.apuracao_final` | a cobrança de Y nas canceladas pelo passo 4-A, com a situação `cancelado` |
+
+As provas `test_cancelamento_no_provedor_precede_apuracao` e `test_falha_do_cancelamento_bloqueia_apuracao` do parecer têm de passar como estão.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-8 e A-22 a A-29 | `tests/tecnicos/test_apuracao_inicio.py` |

@@ -19,3 +19,11 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-9 | `tests/tecnicos/test_apuracao_inadimplentes.py` |
 | A-10 | `tests/tecnicos/test_apuracao_inadimplentes.py`, com transações PostgreSQL reais |
+
+## Ajuste de redação: A-4 e A-6 diante das fatias seguintes (2026-11-01)
+
+Origem: ponto do implementador, "Conflito entre critérios de fatias" (`docs/specs/E11-04/review.md`).
+
+O A-4 e o A-6 foram escritos para o estado da E11-02. As fatias seguintes mudam parcelas e avisos de A. Os ajustes que o implementador fez nos testes ficam **aceitos**, sem afrouxar asserção:
+- **A-4:** passa a conferir a parcela de A em P1, que nenhuma fatia seguinte toca. A de P2 passa a `pendente` na E11-04 e a `ativa` na E11-05.
+- **A-6:** "A não recebe `itens_cancelados` por inadimplência" é conferido pela chave `itens_cancelados:inadimplencia:`. A recebe, na E11-04, o `itens_cancelados` de caixa incompleta, com outra chave.

@@ -26,3 +26,26 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-14, A-16 e A-17 | `tests/tecnicos/test_apuracao_retorno.py` |
 | A-15 | `tests/tecnicos/test_apuracao_retorno.py`, com transações PostgreSQL reais |
+
+## Correções da revisão: R01, R02 e R04 (2026-11-01)
+
+Valem a seção "Correções da revisão" do `spec.md` e as regras comuns da E11-08 (`spec.md`, "Correções da revisão da E11"). O A-3 original fica substituído pelo abaixo.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-3 | Herdado E08, R-5 | positivo | AP-insuficiente, com A tendo 2 unidades pendentes em P1 na abertura (`montar_arranjo(pendente_a_p1=2)`), limites 11 e 12 | (i) a restauração da regra 1, pela função interna, numa transação do teste; (ii) `iniciar_apuracao` | (i) a parcela de A em P1 `ativa`, com reservado 6, pendente 2 e a mesma sequência. (ii) Depois do retorno inteiro, `ativa` com reservado 8 e pendente 0, porque a fila atendeu o pendente de A com o estoque liberado por B; reservado + pendente ≤ original |
+| A-18 | R01 | positivo | AP-insuficiente com `pendente_a_p1=2`, limites 11 e 12; X pago; depois `remover_pendente(A, P1, 2)`: a parcela de A em P1 `removida` | `iniciar_apuracao` | a parcela `ativa`, com reservado 6, pendente 0 e a sequência original. **Red esperado:** `removida`, com reservado 0 |
+| A-19 | R02 | positivo | AP-insuficiente, limites 11 e 12; X pago; A suspenso antes da apuração | `iniciar_apuracao` | as parcelas de A em P1 e P2 `removida`, com quantidades zero; `total_reservado(P1) = 0` e `total_reservado(P2) = 0`; o pedido X pago e intacto; o reembolso integral de 94,35; A sem `retorno_para_interesse`; a auditoria com `conta_suspensa` e as quantidades. **Red esperado:** P1 com 6 reservadas |
+| A-20 | R02, R-5 | positivo | o A-19, com um pendente antigo de C de 4 unidades em P1 | `iniciar_apuracao` | C recebe as 4 reservadas de P1, porque A e B liberaram o estoque |
+| A-21 | R02 | positivo | o A-19 com A removido (remoção da conta) no lugar da suspensão | `iniciar_apuracao` | o mesmo do A-19, com o motivo `conta_removida` |
+| A-22 | R04 | concorrência | AP-insuficiente; a tarifa do pagamento de X pendente (o pagamento sincronizado sem tarifa e a tarifa definida no simulador) | a prova do parecer: a apuração passa das consultas e espera; `registrar_tarifas_pendentes_agora` registra a tarifa e pausa antes do commit; a apuração faz o retorno e chega à devolução; a tarefa confirma | as duas terminam sem exceção, em qualquer ordem de vítima; a despesa da tarifa registrada uma vez; a rodada em interesse; nenhum `deadlock detected`. **Red esperado:** `OperationalError: deadlock detected` |
+| A-23 | R04 | concorrência | AP-insuficiente; X pago | a apuração pausada no fim do retorno, antes do commit (depois de `voltar_para_interesse` e `alocar_pendentes`); em paralelo, uma transação que insere um registro com chave estrangeira para a rodada, o fornecedor e um produto (por exemplo, uma `Despesa` de teste da rodada) e confirma | a outra transação confirma sem esperar a apuração. **Red esperado:** ela espera a trava (`FOR UPDATE` promovido) |
+| A-24 | R04, regressão | positivo | a suíte de concorrência das etapas E05, E06 e E08 | rodar | verde: as operações de interesse continuam mutuamente exclusivas |
+
+As provas `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_suspenso_nao_prende_estoque_no_retorno` e `test_retorno_concorre_com_tarifa_sem_impasse` do parecer têm de passar como estão.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-3 e A-18 a A-21 | `tests/tecnicos/test_apuracao_retorno.py` |
+| A-22 e A-23 | `tests/tecnicos/test_apuracao_retorno.py`, com transações PostgreSQL reais |
+| A-24 | os arquivos de concorrência existentes |
