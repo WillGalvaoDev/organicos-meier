@@ -32,3 +32,23 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-14 | `tests/tecnicos/test_cancelamento_com_pedidos.py` |
 | A-15 e A-16 | `tests/tecnicos/test_cancelamento_com_pedidos.py`, com transações PostgreSQL reais |
+
+## Correção da revisão: R03 (2026-11-01)
+
+**Arranjo AP-R (retorno ao interesse):**
+- `arranjo_ap(minimo="100.00", limites=(11, 12))`;
+- X pago (`pagar`) e Y sem pagamento;
+- o relógio em `T0 + 48h` e `iniciar_apuracao(admin, rodada)`: o resultado é o retorno ao interesse (E11-05), com a obrigação integral de mínimo de X pendente;
+- a rodada em `interesse`, no ciclo 2.
+
+É o arranjo das provas do parecer.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-17 | R03, regra 2 | concorrência | AP-R; uma conexão segura a `SituacaoDoPedido` de X (`select_for_update`, transação aberta) | `cancelar_rodada(..., com_reembolso=True)` em paralelo; com `esperar_outra_conexao_na_trava()`, uma terceira conexão tenta `select_for_update(nowait=True)` sobre as contas do livro das obrigações de X (`contas_das_obrigacoes` do ciclo 1, inclusive a receita de serviço) | o cancelamento fica esperando na situação de X; a terceira conexão trava as contas sem erro (o cancelamento ainda não as travou); depois de liberada a primeira conexão, o cancelamento conclui. **Red esperado:** a terceira conexão recebe `LockNotAvailable` (hoje o cancelamento já travou as contas) ou o cancelamento não espera |
+| A-18 | R03, regra 2 | positivo | AP-R | `cancelar_rodada` nas duas indicações, com a captura das consultas SQL (`CaptureQueriesContext`) | a primeira consulta `FOR NO KEY UPDATE`/`FOR UPDATE` sobre `pedidos_situacaodopedido` alcança X (do ciclo 1) e vem antes de qualquer trava de conta do livro; nenhuma trava sobre a tabela do pagamento no provedor. **Red esperado:** X ausente da trava de situações |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-17 | `tests/tecnicos/test_cancelamento_com_pedidos.py`, com transações PostgreSQL reais |
+| A-18 | `tests/tecnicos/test_cancelamento_com_pedidos.py` |

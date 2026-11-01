@@ -116,3 +116,25 @@ Acréscimos a `cancelar_rodada` quando `com_reembolso = True`, em qualquer etapa
 ## Dependências e decisões em aberto
 
 Depende das E12-01 e E12-02 e das E09-06, E10-02, E10-04 e E10-06. Nenhuma decisão em aberto.
+
+## Correção da revisão: R03, impasse com pagamento tardio de ciclo anterior (2026-11-01)
+
+Origem: revisão independente sobre `8e236e5` (`docs/specs/E12-07/review.md`, "R03 — bloqueador"). Nenhuma regra comercial muda.
+
+**Regra 3, complemento:**
+- **"Depois das travas da E12-02":** inclui as situações de todos os pedidos de todas as aberturas (E12-02, regra 2 reescrita).
+- **Lista dos pagos (regra 1):** é lida depois dessas travas. As contas de `contas_das_obrigacoes` são calculadas a partir dela e travadas por último.
+- **Pedido sem saldo:** um pedido pago sem nada a devolver (por exemplo, o do ciclo 1 já coberto pela devolução de mínimo) não acrescenta trava nova ao chamar `reembolso_integral_do_pedido`.
+
+**Caso-limite novo — pagamento tardio de ciclo anterior durante o cancelamento:**
+- **Situação:** rodada que voltou para interesse (AP-R, E12-02). Uma segunda cobrança de X, criada antes do prazo, é aprovada no provedor e sincronizada enquanto o cancelamento com reembolso está entre a consulta prévia e o commit.
+- **Ordem igual nos dois fluxos:** a situação de X e depois as contas do livro. Um espera o outro, sem impasse.
+- **Sincronização antes:** ela decide o destino `devolucao` por `duplicidade` (X já está pago). A obrigação integral do pagamento é financiada por ele mesmo (E09-04), sem o alerta `pagamento_depois_do_cancelamento`, porque o cancelamento ainda não existe.
+- **Cancelamento antes:** a sincronização decide depois, também por `duplicidade` (a ordem dos motivos da E12-04 não muda), e o alerta `pagamento_depois_do_cancelamento` abre (E12-04, regra 4).
+- **Nos dois casos:**
+  - o cancelamento conclui;
+  - X não ganha reembolso do cancelamento (sem saldo);
+  - a obrigação da duplicidade não é autorizada pela indicação (E12-04);
+  - nenhuma devolução é duplicada.
+
+Critérios: A-19 a A-21 (`acceptance.md`).

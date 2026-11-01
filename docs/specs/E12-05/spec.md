@@ -77,3 +77,35 @@ O evento `rodada_cancelada` já existe na matriz de canais da E04-01 (site, e-ma
 ## Dependências e decisões em aberto
 
 Depende das E12-01 a E12-03 e da E04. Nenhuma decisão em aberto.
+
+## Correção da revisão: R02, o pagante de ciclo anterior (2026-11-01)
+
+Origem: revisão independente sobre `8e236e5` (`docs/specs/E12-07/review.md`, "R02 — importante").
+
+Nenhuma regra comercial muda. A regra 4 já manda informar a quem tem pedido pago que "As devoluções já devidas continuam em andamento". O defeito está na fonte: o código só considerava pagante quem tinha pedido pago na abertura vigente, ou, com reembolso, um pedido sem saldo. Um comprador com pedido pago de ciclo anterior (rodada que voltou para interesse) e devolução de mínimo pendente recebia, sem reembolso, o texto de quem não pagou e o link do carrinho.
+
+**Regra 2-A — quem pagou na rodada:**
+- **Definição:** o comprador tem pedido pago na rodada quando algum pedido dele, de qualquer abertura da rodada, está `pago` na leitura feita sob as travas do cancelamento (E12-02, regra 2 reescrita).
+- **Mesma fonte nas duas indicações:** a classificação não depende de `com_reembolso` nem de haver reembolso gerado.
+
+**Regra 2, complemento — destinatários:**
+- **Inclusão:** entram também os compradores com pedido pago na rodada (regra 2-A), em qualquer abertura e nas duas indicações. O cancelamento muda o estado da rodada desses pedidos e o que a página deles mostra (E12-06), e por isso os afeta.
+- **Exclusão mantida:** quem só tem quantidades pendentes na fila do fornecedor, sem reserva alterada, sem pedido da abertura vigente e sem pedido pago na rodada, continua sem aviso.
+- **Nenhum dado novo:** o aviso não cria, não autoriza e não altera devolução. O ramo sem reembolso continua sem movimento no livro (E12-02, regra 10).
+
+**Regra 4, complemento — a situação do comprador:**
+- **Pagante sem reembolso gerado:** "pedido pago" nas frases da regra 4 é o da regra 2-A.
+  - Sem reembolso, ele recebe "O cancelamento não inicia novas devoluções. As devoluções já devidas continuam em andamento.";
+  - com reembolso e sem saldo, ele recebe "As devoluções já devidas do seu pedido continuam em andamento.".
+- **Quem não pagou:** as frases de "para quem não tinha pedido pago" só valem para quem não tem pedido pago na rodada.
+- **Pagante de ciclo anterior com pedido cancelado agora:**
+  - **caso:** o comprador tem pedido pago de ciclo anterior e o pedido dele da abertura vigente foi cancelado agora (estava aguardando pagamento);
+  - **frases:** depois da frase 1, "Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele." e, em seguida, a frase de pagante da indicação (com o valor, quando houver reembolso gerado).
+
+**Regra 5, reescrita — link, na ordem:**
+1. o pedido do comprador na abertura vigente;
+2. senão, o pedido com reembolso do cancelamento de menor `pk`;
+3. senão, o pedido pago na rodada de maior `pk` (o mais recente);
+4. senão, `/carrinho/`.
+
+Critérios: A-8 a A-11 (`acceptance.md`).

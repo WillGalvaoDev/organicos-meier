@@ -107,3 +107,41 @@ Acréscimos a `cancelar_rodada` (E12-01), nas etapas `pagamento` e `aguardando_f
 
 - Depende da E12-01, da E08 (tentativas e cancelamento no provedor) e da E11 (apuração e aprovação). Nenhuma decisão em aberto.
 - **Herdado para a E13:** uma rodada cancelada em `aguardando_fornecedor` não envia pedido formal nem permite reenviar (a E13 confere a etapa). O tratamento de um repasse posterior ao cancelamento segue as regras da E13 e de P-2.
+
+## Correção da revisão: R03, a ordem das travas com os pedidos de ciclos anteriores (2026-11-01)
+
+Origem: revisão independente sobre `8e236e5` (`docs/specs/E12-07/review.md`, "R03 — bloqueador").
+
+Nenhuma regra comercial muda. A correção alinha esta fatia ao uso real da E12-03: o reembolso integral relê e trava a situação dos pedidos pagos de **todas** as aberturas. A ordem global do projeto vale também para o cancelamento:
+
+| Fluxo | Ordem das travas |
+|---|---|
+| Sincronização (E08-04, E09-04) | o pagamento → a `SituacaoDoPedido` → as contas do livro |
+| Apuração (E11-01, E11-06) | as travas da E11 → as situações → as contas do livro |
+
+O defeito: o cancelamento travava as contas do livro antes da situação de um pedido de ciclo anterior. Uma sincronização concorrente de pagamento tardio desse pedido travava a situação e esperava as contas, e o banco acusava impasse.
+
+**Regra 2, reescrita — travas:**
+- **Alcance:** depois das travas da E12-01, as `SituacaoDoPedido` de **todos os pedidos de todas as aberturas da rodada**, numa única consulta `select_for_update` ordenada por `pedido_id` (a mesma posição da E11-01).
+- **Etapas e indicações:**
+  - vale nas duas indicações e em todas as etapas canceláveis;
+  - nas etapas antes do pagamento, alcança os pedidos dos ciclos anteriores (rodada que voltou para interesse);
+  - sem pedido, não trava nada.
+- **Uso:**
+  - só os pedidos da abertura vigente podem mudar de situação (regra 3);
+  - os demais são travados para que a leitura deles (pago ou não, E12-03 regra 1; destinatários e texto do aviso, E12-05) seja estável e para que nenhuma trava de situação venha depois de uma conta do livro.
+- **Contas do livro:** nenhuma trava de conta do livro (`travar_contas`, E09) acontece antes desta consulta.
+- **Reembolso:** as travas de situação feitas depois, dentro de `reembolso_integral_do_pedido` (E10-02), alcançam linhas já travadas e não mudam a ordem.
+
+**Invariantes da ordem** (conferidos por teste e registrados no `review.md` pelo implementador):
+- a transação do cancelamento não trava nenhum `PagamentoNoProvedor` (sincronização) nem `DestinoDoPagamento`;
+- toda trava de tentativa ou de chamada (`agendar_cancelamento`, `agendar_chamada`) acontece depois das situações, como na E08;
+- as contas do livro são as últimas travas da transação.
+
+O implementador confere no código das E08-04, E09-04 e E10-02 que a ordem acima é a de todos os fluxos que travam a situação e as contas. Uma divergência encontrada volta ao especificador com evidência.
+
+**Decisão técnica substituída:** a decisão "Só a abertura do ciclo vigente tem situação travada" deixa de valer. Ela trocou leitura sem trava por trava de linha já necessária para o reembolso, e é essa inversão que gerou o impasse.
+
+**Caso-limite reescrito — cancelamento de rodada que voltou para interesse:** as situações dos pedidos do ciclo 1 são travadas (regra 2) e nenhuma muda.
+
+Critérios: A-17 e A-18 (`acceptance.md`) e E12-03 A-19 a A-21.

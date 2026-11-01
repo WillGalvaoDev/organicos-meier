@@ -31,3 +31,20 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-16 | `tests/tecnicos/test_cancelamento_com_reembolso.py` |
 | A-17 e A-18 | `tests/tecnicos/test_cancelamento_com_reembolso.py`, com transações PostgreSQL reais |
+
+## Correção da revisão: R03 (2026-11-01)
+
+- **Arranjo AP-R:** o da E12-02 (correção R03), acrescido de uma segunda cobrança de X criada no simulador antes de `T0 + 24h`, pendente (`criar_cobranca` com a referência de X, como na prova do parecer).
+- **Conexões e simulador:** as duas conexões são reais e o provedor é o simulador real. Os pontos de pausa são os de `tests/apoio/trava.py` e `tests/apoio/concorrencia.py`.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-19 | R03 | concorrência | AP-R com a segunda cobrança | o cancelamento com reembolso pausado depois da consulta prévia; a cobrança aprovada no simulador (`em=T0 + 47h`) e `sincronizar` pausado logo depois de travar a situação de X; o cancelamento retomado; com `esperar_outra_conexao_na_trava()` confirmado, a sincronização retomada | nenhuma exceção nas duas execuções (nenhum `deadlock detected`); a rodada `cancelada`; o destino da cobrança `devolucao` com `duplicidade` e a obrigação integral; X sem reembolso do cancelamento e na auditoria entre os pagos sem reembolso novo; nenhuma parcela de devolução para a obrigação da duplicidade; o invariante financeiro sem violação. **Red esperado:** `OperationalError` de impasse, como no parecer |
+| A-20 | R03 | concorrência | o A-19 | a ordem inversa: o cancelamento pausado depois das travas de situação, antes do commit; a sincronização da cobrança aprovada em paralelo; o cancelamento retomado depois de a sincronização estar esperando na trava | nenhuma exceção; a sincronização decide depois do commit do cancelamento: `devolucao` com `duplicidade` e o alerta crítico `pagamento_depois_do_cancelamento`; X sem reembolso novo; o invariante sem violação |
+| A-21 | R03 | concorrência | o A-19 | o mesmo par com `com_reembolso=False`, nas duas ordens | nenhuma exceção; nenhum reembolso nem obrigação do cancelamento; a obrigação da duplicidade criada pela sincronização; o invariante sem violação |
+
+A prova `test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio` do parecer é a base do A-19. Ela não pode rodar sem mudança depois da correção: a pausa dela espera a trava das contas do livro pelo cancelamento, e, com a ordem corrigida, essa trava só acontece depois de a sincronização liberar a situação de X. A pausa passa a esperar o cancelamento bloqueado na situação (`esperar_outra_conexao_na_trava()`); as demais conferências do teste ficam iguais. O implementador registra no `review.md` a prova original falhando com o impasse antes da correção (Red).
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-19 a A-21 | `tests/tecnicos/test_cancelamento_com_reembolso.py`, com transações PostgreSQL reais |

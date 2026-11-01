@@ -69,3 +69,31 @@ Esta fatia não cria comportamento novo. Ela exercita, pelo caminho real (telas,
 
 - Depende das E12-01 a E12-06. Nenhuma decisão em aberto.
 - **Herdado para a E13:** o cenário "cancelamento depois do repasse", com a obrigação de devolução financiada depois do repasse (receita de serviço, reserva ou aporte; infraestrutura 3.2), e a recusa do pedido formal numa rodada cancelada.
+
+## Correção da revisão: R01 a R03 e o alinhamento dos critérios (2026-11-01)
+
+Origem: revisão independente sobre `8e236e5` (`docs/specs/E12-07/review.md`). Nenhuma regra comercial muda.
+
+**Cenário 8, novo — cancelamento depois de um retorno ao interesse** (R01 a R03):
+- **Arranjo:** AP-R (E12-02, correção R03): X pago no ciclo 1, a apuração com retorno ao interesse e a devolução de mínimo pendente. O caso concorrente traz uma segunda cobrança de X.
+- **Ação:** o administrador cancela pela tela, em execuções separadas, com reembolso e sem reembolso. Em paralelo, no caso concorrente, a segunda cobrança de X é aprovada no simulador e sincronizada.
+- **Esperado:**
+  - sem impasse (E12-03 A-19 a A-21);
+  - o aviso e a página do pedido coerentes com o estado vigente (E12-05 A-8 e A-9; E12-06 A-20 e A-21);
+  - a devolução de mínimo continua no fluxo dela, sem duplicar;
+  - o invariante sem violação.
+
+**Regra comum, reforço:**
+- **Invariante:** todo critério desta fatia termina com `verificar_invariante_agora()` sem alerta `invariante_violado` (no teste, `_invariante_ok()`), inclusive os de concorrência, de rota e de nova rodada (A-6 a A-8).
+- **Teste sem a chamada:** a chamada é a última asserção de cada teste. Um teste sem ela não atende ao critério.
+
+**Alinhamento dos critérios** com o comportamento já especificado:
+- **A-3:**
+  - **liberação do saldo:** o pagamento aprovado depois da margem só fica liberado para estorno no simulador depois do prazo de liberação do saldo. Antes dele, o estorno falha como falha temporária (`saldo_insuficiente`, E10);
+  - **autorização:** acontece depois da liberação, com o relógio em `PRAZO + 3 dias`, ou no primeiro instante em que o simulador libera o saldo;
+  - **conferências:** as do critério não mudam.
+- **A-5:**
+  - **pedido:** produtos 7,99, serviço 0,40 e frete 1,60, total pago 9,99;
+  - **devolução parcial anterior (0,25 kg):** 2,50, com 2,00 de produtos, 0,10 de serviço e 0,40 de frete, pela regra proporcional da E10-02;
+  - **cancelamento:** devolve 7,49, com 5,99 de produtos, 0,30 de serviço e 1,20 de frete;
+  - **soma por componente:** igual ao pago.

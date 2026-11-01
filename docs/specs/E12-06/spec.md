@@ -98,3 +98,23 @@ A rota recusa lista de compradores, aceita requisição sem motivo e recusa comp
 ## Dependências e decisões em aberto
 
 Depende das E12-01 a E12-05, da E10-07 e da E11-07. Nenhuma decisão em aberto.
+
+## Correção da revisão: R01, a página do pedido depois de um retorno ao interesse (2026-11-01)
+
+Origem: revisão independente sobre `8e236e5` (`docs/specs/E12-07/review.md`, "R01 — importante").
+
+Nenhuma regra comercial muda. Pela E12-01 (regra 6), o cancelamento zera as reservas da rodada. A página de um pedido pago de ciclo anterior, porém, ainda mostrava o efeito da apuração de retorno como atual: "seus interesses continuam reservados na rodada" (E11-05/E11-07). O registro histórico da apuração está certo. O defeito é apresentar como vigente um efeito que o cancelamento superou.
+
+**Regra 7-A — pedido de rodada cancelada com apuração anterior:**
+- **Estado vigente primeiro:** quando a rodada do pedido tem `CancelamentoDaRodada`, o bloco do cancelamento (regra 7) vem antes de qualquer efeito da apuração e é o estado vigente da página.
+- **Retorno ao interesse como histórico:** o efeito de retorno ao interesse da apuração do pedido (E11-07) aparece como fato anterior, com o texto "Antes do cancelamento, a apuração deste ciclo levou a rodada de volta para interesse, e o valor pago deste pedido será devolvido integralmente."
+  - Sem nenhuma promessa de reserva atual: a frase "seus interesses continuam reservados na rodada" não aparece em nenhuma indicação.
+  - O que vale depois do cancelamento é a regra 9 (carrinho) e a fila de pendentes.
+- **Fonte:** a existência do `CancelamentoDaRodada` da rodada do pedido, lida na montagem da página.
+  - A informação de contas impedidas da apuração (`retorno.contas_impedidas`, E11-05 regra 2-A) continua registrada e não muda.
+  - Não se apaga nem se reescreve nenhum registro da apuração.
+- **Demais efeitos da apuração:** o cancelamento por falta de pagamento e as caixas incompletas com o estorno proporcional continuam como na E11-07. A fila de pendentes não é afetada pelo cancelamento (E12-01, regra 6).
+- **Pago com reembolso, sem saldo novo:** o pedido pago sem reembolso do cancelamento numa rodada cancelada com reembolso (por exemplo, já coberto pela devolução de mínimo) mostra, depois de "A rodada foi cancelada pelo administrador.", a frase "As devoluções já devidas deste pedido continuam em andamento.". É o mesmo fato do aviso (E12-05, regra 4).
+- **Fora do pedido:** pedidos, apuração, reembolsos e devoluções anteriores continuam consultáveis (cenário 45). A seção de estornos mostra a devolução de mínimo com a situação real.
+
+Critérios: A-20 a A-22 (`acceptance.md`).

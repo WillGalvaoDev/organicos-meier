@@ -32,3 +32,19 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-13 e A-18 | `tests/tecnicos/test_cancelamento_telas.py` |
 | A-14 a A-17 e A-19 | `tests/tecnicos/test_cancelamento_do_comprador.py` |
+
+## Correção da revisão: R01 (2026-11-01)
+
+Arranjo AP-R: o da E12-02 (correção R03). X é o pedido pago de A no ciclo 1, com o retorno ao interesse e a devolução de mínimo pendente.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-20 | R01, regra 7-A | positivo | AP-R; `cancelar_rodada(..., com_reembolso=False)`; `total_reservado(P1) = 0` conferido | GET `pedidos/<X>/` como A | 200; "A rodada foi cancelada pelo administrador." e "O cancelamento não inicia novas devoluções." antes de "Antes do cancelamento, a apuração deste ciclo levou a rodada de volta para interesse, e o valor pago deste pedido será devolvido integralmente."; sem "seus interesses continuam reservados na rodada"; sem "A rodada voltou para interesse." no presente; a devolução de mínimo na seção de estornos com a situação real. **Red esperado:** a prova `test_cancelamento_nao_promete_reservas_do_retorno_anterior` do parecer falhando |
+| A-21 | R01, regra 7-A | positivo | AP-R; `cancelar_rodada(..., com_reembolso=True)` | GET `pedidos/<X>/` como A | "A rodada foi cancelada pelo administrador." e "As devoluções já devidas deste pedido continuam em andamento."; sem "O valor será devolvido integralmente." na frase do cancelamento (não houve reembolso novo); a frase histórica do retorno; sem "seus interesses continuam reservados na rodada" |
+| A-22 | R01, regressão E11-07 | positivo | AP-R sem cancelamento | GET `pedidos/<X>/` como A | o texto atual da E11-07, com "seus interesses continuam reservados na rodada" (A não impedida); sem a frase histórica |
+
+A prova `test_cancelamento_nao_promete_reservas_do_retorno_anterior` do parecer tem de passar como está.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-20 a A-22 | `tests/tecnicos/test_cancelamento_do_comprador.py` |
