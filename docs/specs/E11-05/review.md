@@ -72,3 +72,21 @@ Mais dois testes existentes afirmavam o texto "FOR UPDATE" no SQL da leitura tra
 Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
 
 **REPROVADO — R02 residual (importante). R01 e R04 encerrados.** As provas anteriores de reserva após remover sobra, liberação de estoque da conta suspensa e corrida com tarifa passam. Porém, se a suspensão já removeu todas as parcelas do pagante antes da apuração, `removidas_por_conta_impedida` fica vazio. O filtro de destinatários deduz desse conjunto vazio que o comprador não está impedido e emite `retorno_para_interesse`, contrariando o adendo R02 (aviso só a conta ativa). A lista de não restaurações também é descartada em `_retornar_para_interesse`. A reserva permanece corretamente zero; o residual é de registro e comunicação, não repetição do estoque preso. Prova e encaminhamento no consolidado.
+
+## Correção do R02 residual — agente 2 — 2026-11-01
+
+Comando: `uv run pytest tests/tecnicos/test_apuracao_retorno.py tests/tecnicos/test_apuracao_viavel.py tests/tecnicos/test_pedidos_apuracao_do_comprador.py` (arquivos inteiros, sem `-k`).
+
+| Etapa | Commit | Resultado |
+|---|---|---|
+| Testes E11-05 A-25 a A-29, E11-04 A-19, E11-07 A-22 a A-25 | `f86423d` | **Red: 8 failed, 52 passed.** A-25/A-26: `KeyError: 'contas_impedidas'` (e A recebia o aviso); A-27 e A-29: `KeyError: 'contas_impedidas'`; A-28: `KeyError: 'contas_impedidas'`; tela A-22, A-23 e A-24: `assert True is False` (`interesses_reservados` verdadeiro). **Passaram de primeira (regressão prevista):** E11-04 A-19 e E11-07 A-25 |
+| `_contas_impedidas_dos_pagantes` lê a situação uma só vez e alimenta a remoção, a não restauração, os destinatários do aviso e o registro `retorno.contas_impedidas`; `retorno.nao_restauradas` deixa de ser descartado; a tela lê `contas_impedidas` | `14f634e` | **60 passed** nos três arquivos |
+
+**Decisões técnicas.**
+- `_restaurar_as_reservas_dos_pagantes` recebe `impedidas` (opcional): a chamada direta do teste existente `test_parcela_com_pendente_volta_a_ativa_com_a_parte_congelada` continua sem alteração e deriva a situação pelo mesmo auxiliar. A apuração sempre passa o resultado único.
+- Tela: sem a auditoria da apuração a página não afirma interesses reservados (spec E11-07).
+- **Expectativa corrigida no meu teste novo A-28** (antes do Green): previ reserva 6 para a parcela de A, mas a pendência de 2 é atendida pela fila com o estoque liberado por B (R-5), então a parcela fica `ativa` com reserva 8 e pendência 0. O Red do A-28 foi o `KeyError: 'contas_impedidas'`, não essa expectativa.
+
+Prova do parecer `test_conta_impedida_com_parcela_ja_removida` (aviso e tela): **2 passed** (arquivo temporário, removido).
+
+**Verificação final:** `uv run pytest` = **2795 passed** (antes 2785; +10). `ruff check --no-cache` limpo, `ruff format --check` conforme (359 arquivos), `mypy .` sem erros (434 arquivos), `makemigrations --check` sem mudanças.

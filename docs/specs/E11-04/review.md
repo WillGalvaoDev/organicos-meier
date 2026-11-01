@@ -59,3 +59,7 @@ Prova do parecer `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`: pass
 Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
 
 **APROVADO nesta revalidação — R01 encerrado.** A elegibilidade depende da conta, não do estado da parcela cuja sobra foi removida. Conferidos A-15 a A-18 e a prova independente da caixa paga, que passa sem alteração; restauração limitada às unidades congeladas e idempotência preservadas. A etapa E11 permanece REPROVADA por R02 residual.
+
+## Correção do R02 residual — agente 2 — 2026-11-01
+
+Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.

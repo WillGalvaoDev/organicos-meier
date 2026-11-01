@@ -302,3 +302,7 @@ def test_conta_impedida_com_parcela_ja_removida(relogio, simulador_pagamentos, c
 R01, R03 e R04 encerrados. **R02 residual importante impede aprovação da E11** até corrigir o registro histórico e seus consumidores e revalidar o cenário acima. A suíte verde não cobre essa combinação. Sem achado adicional nas fatias E11-02, E11-03 e E11-06. Sem nova melhoria não impeditiva.
 
 Entrega: somente os oito `review.md`, conteúdo versionado anterior integralmente preservado por comparação de prefixo. Código e testes de produção não alterados. Sem push ou PR; README não alterado, pois não há PR para main nesta entrega. Próximo gate: correção TDD do residual e nova revisão independente.
+
+## Correção do R02 residual — agente 2 — 2026-11-01
+
+Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.

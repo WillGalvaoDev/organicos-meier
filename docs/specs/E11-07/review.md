@@ -46,3 +46,7 @@ A tela não deduz nada da situação atual da conta.
 Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
 
 **REPROVADO — manifestação de R02 residual (importante), sem novo número de achado.** A-18 passa no arranjo com parcelas ainda `em_pedido`, mas não cobre a conta cujas parcelas já foram removidas pela suspensão. Nesse caso, `_conta_impedida_no_retorno` lê uma lista vazia e `efeitos_da_apuracao_no_pedido` retorna `interesses_reservados=True`, embora a reserva seja zero, contrariando o adendo R02 desta spec. A prova parametrizada no consolidado reproduz tela e aviso. Correções de R01 e da mensagem de caixa sem restauração validadas. Sem inspeção visual em navegador; evidência de tela por código e testes.
+
+## Correção do R02 residual — agente 2 — 2026-11-01
+
+Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.
