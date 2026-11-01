@@ -368,8 +368,10 @@ def voltar_para_interesse(
         raise TransactionManagementError("voltar_para_interesse exige uma transação aberta.")
     if motivo not in MOTIVOS_DE_RETORNO:
         raise ValueError(f"motivo desconhecido: {motivo!r}")
-    Fornecedor.objects.select_for_update().get(pk=rodada.fornecedor_id)
-    travada = Rodada.objects.select_for_update().filter(pk=rodada.pk).first()
+    # FOR NO KEY UPDATE: o retorno por pagamentos insuficientes roda dentro da transação da
+    # apuração, que não pode promover as travas dela (E11-R04)
+    Fornecedor.objects.select_for_update(no_key=True).get(pk=rodada.fornecedor_id)
+    travada = Rodada.objects.select_for_update(no_key=True).filter(pk=rodada.pk).first()
     do_pagamento = motivo == MOTIVO_DO_RETORNO_DO_PAGAMENTO
     etapa_exigida = Etapa.PAGAMENTO if do_pagamento else Etapa.FECHAMENTO_ENCERRADO
     if travada is None or travada.etapa != etapa_exigida:

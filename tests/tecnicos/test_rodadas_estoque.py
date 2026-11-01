@@ -545,8 +545,9 @@ def test_travar_estoque_exige_transacao_e_trava_a_linha() -> None:
         travado = travar_estoque(estoque.rodada, estoque.produto)
     assert travado.pk == estoque.pk
     sqls = [c["sql"] for c in consultas]
-    assert any("FOR UPDATE" in s and "rodadas_estoque" in s for s in sqls)
-    assert any("FOR UPDATE" in s and "catalogo_produto" in s for s in sqls)
+    # FOR NO KEY UPDATE desde a E11-R04: continua excluindo as outras operações de interesse
+    assert any("FOR NO KEY UPDATE" in s and "rodadas_estoque" in s for s in sqls)
+    assert any("FOR NO KEY UPDATE" in s and "catalogo_produto" in s for s in sqls)
     assert isinstance(travado.produto_id, int)
     assert Produto.objects.filter(pk=travado.produto_id).exists()
 

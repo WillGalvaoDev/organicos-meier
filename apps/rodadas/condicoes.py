@@ -33,9 +33,9 @@ def travar_condicoes(fornecedor: Fornecedor) -> Rodada:
     """
     if not connection.in_atomic_block:
         raise TransactionManagementError("travar_condicoes exige uma transação aberta.")
-    Fornecedor.objects.select_for_update().get(pk=fornecedor.pk)
+    Fornecedor.objects.select_for_update(no_key=True).get(pk=fornecedor.pk)
     rodada = (
-        Rodada.objects.select_for_update()
+        Rodada.objects.select_for_update(no_key=True)
         .filter(fornecedor_id=fornecedor.pk, etapa__in=ETAPAS_ATIVAS)
         .first()
     )
@@ -99,9 +99,9 @@ def travar_rodada_para_interesses(fornecedor: Fornecedor) -> Rodada:
         raise TransactionManagementError(
             "travar_rodada_para_interesses exige uma transação aberta."
         )
-    Fornecedor.objects.select_for_update().get(pk=fornecedor.pk)
+    Fornecedor.objects.select_for_update(no_key=True).get(pk=fornecedor.pk)
     rodada = (
-        Rodada.objects.select_for_update()
+        Rodada.objects.select_for_update(no_key=True)
         .filter(fornecedor_id=fornecedor.pk, etapa__in=ETAPAS_ATIVAS)
         .first()
     )

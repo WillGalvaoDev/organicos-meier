@@ -26,7 +26,7 @@ SITUACOES_QUE_RESERVAM = (SituacaoParcela.ATIVA, SituacaoParcela.EM_PEDIDO)
 
 def _parcelas(produto: Produto, travar: bool) -> QuerySet[ParcelaDeInteresse]:
     parcelas = ParcelaDeInteresse.objects.filter(produto_id=produto.pk).order_by("sequencia")
-    return parcelas.select_for_update() if travar else parcelas
+    return parcelas.select_for_update(no_key=True) if travar else parcelas
 
 
 def total_reservado(produto: Produto, *, travar: bool = False) -> Decimal:
