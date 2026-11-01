@@ -346,3 +346,94 @@ def test_dois_pagantes_com_estorno_na_mesma_apuracao(
     assert len(_reembolsos(z)) == 1
     assert {p.situacao for p in _parcela(a.a, a.p2)} == {"pendente"}
     assert {p.situacao for p in _parcela(a.c, a.p2)} == {"pendente"}
+
+
+# --- E11-R01: remover a sobra pendente não impede restaurar as unidades pagas -------------------
+
+
+def _r_com_a_sobra_removida(
+    relogio: RelogioControlado, sim: Any
+) -> tuple[Any, Pedido, ParcelaDeInteresse]:
+    from apps.interesses.servicos import remover_pendente
+    from tests.apoio.apuracao import arranjo_r
+
+    a, x, _y = arranjo_r(relogio)
+    (parcela,) = _parcela(a.a, a.p2)
+    assert (parcela.situacao, parcela.quantidade_pendente) == ("pendente", D("2.000"))
+    pagar(relogio, sim, x)
+    remover_pendente(a.a, a.p2, D("2"))
+    parcela.refresh_from_db()
+    assert parcela.situacao == "removida"
+    return a, x, parcela
+
+
+def test_sobra_removida_nao_impede_a_restauracao_da_caixa_paga(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-15 (R01)
+    a, x, parcela = _r_com_a_sobra_removida(relogio, sim)
+    sequencia = parcela.sequencia
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.quantidade_pendente, parcela.quantidade_reservada) == (
+        "pendente",
+        D("4.000"),
+        D("0.000"),
+    )
+    assert parcela.sequencia == sequencia
+    (restauracao,) = _restauracoes()
+    assert restauracao.quantidade == D("4.000")
+    (reembolso,) = _reembolsos(x)
+    (linha,) = ItemReembolsado.objects.filter(reembolso=reembolso)
+    assert linha.quantidade == D("4.000")
+    (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
+    assert all(not p["nao_restauradas"] for p in auditoria.alteracoes["pedidos"])
+
+
+def test_repetir_o_passo_nao_traz_a_sobra_removida_de_volta(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-16 (R01)
+    from apps.pedidos import apuracao as modulo
+
+    a, _x, parcela = _r_com_a_sobra_removida(relogio, sim)
+    relogio.congelar(PRAZO)
+    apuracao = _iniciar(a)
+    calculo = modulo._calcular_o_resultado(AberturaDoPagamento.objects.get(), _nao_pagos())
+    with transaction.atomic():
+        modulo._estornar_e_restaurar(apuracao, calculo)
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.quantidade_pendente) == ("pendente", D("4.000"))
+    assert len(_restauracoes()) == 1
+
+
+def test_suspensao_e_reativacao_antes_da_apuracao_nao_perdem_as_unidades_pagas(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-17 (R01)
+    from apps.contas.moderacao import reativar
+    from tests.apoio.apuracao import arranjo_r
+
+    a, x, _y = arranjo_r(relogio)
+    pagar(relogio, sim, x)
+    suspender(a.admin, a.a)
+    (parcela,) = _parcela(a.a, a.p2)
+    assert parcela.situacao == "removida"
+    reativar(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.quantidade_pendente) == ("pendente", D("4.000"))
+
+
+def test_conta_suspensa_depois_da_remocao_da_sobra_nao_recebe_a_restauracao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-18 (R01)
+    a, x, parcela = _r_com_a_sobra_removida(relogio, sim)
+    suspender(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    parcela.refresh_from_db()
+    assert parcela.situacao == "removida"
+    assert _restauracoes() == []
+    (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
+    (do_pedido,) = [p for p in auditoria.alteracoes["pedidos"] if p["pedido"] == x.pk]
+    assert {n["motivo"] for n in do_pedido["nao_restauradas"]} == {"conta_suspensa"}

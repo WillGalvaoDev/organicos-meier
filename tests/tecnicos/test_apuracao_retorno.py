@@ -525,3 +525,28 @@ def test_registro_com_chave_para_a_rodada_nao_espera_o_fim_do_retorno(
     assert ra.excecao is None, ra.excecao
     assert rb.excecao is None, rb.excecao
     assert not corrida.b_esperou, "a inserção esperou a apuração: a trava foi promovida"
+
+
+# --- E11-R01: remover a sobra pendente não impede restaurar a reserva paga ----------------------
+
+
+def test_sobra_removida_nao_impede_a_reserva_paga_no_retorno(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-18 (R01)
+    from apps.interesses.servicos import remover_pendente
+
+    a, x, _y = arranjo_ap(relogio, minimo=INSUFICIENTE, pendente_a_p1=2, limites=(11, 12))
+    pagar(relogio, sim, x)
+    remover_pendente(a.a, a.p1, D("2"))
+    (parcela,) = ParcelaDeInteresse.objects.filter(comprador=a.a, produto=a.p1)
+    assert parcela.situacao == "removida"
+    sequencia = parcela.sequencia
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    parcela.refresh_from_db()
+    assert (parcela.situacao, parcela.quantidade_reservada, parcela.quantidade_pendente) == (
+        "ativa",
+        D("6.000"),
+        D("0.000"),
+    )
+    assert parcela.sequencia == sequencia

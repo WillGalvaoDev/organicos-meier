@@ -88,3 +88,28 @@ def pagar(
         sim.entregar_avisos()
         processar_chamadas()
     return id_externo
+
+
+def arranjo_r(relogio: RelogioControlado) -> tuple[Arranjo, Pedido, Pedido]:
+    """O arranjo R da correção E11-R01: P2 com as parcelas, em ordem de sequência, de A (original
+    6, reservado 4 e pendente 2), de B com 6 e de B com 2. Na abertura, a parcela de A fica
+    `pendente`, com a parte congelada (4) só no pedido. AP-viável no resto."""
+    from tests.fabricas import ParcelaFactory
+
+    relogio.congelar(T0)
+    arranjo = montar_arranjo(minimo=VIAVEL, parcelas_de_p2=())
+    for dono, original, reservado, pendente in (
+        (arranjo.a, 6, 4, 2),
+        (arranjo.b, 6, 6, 0),
+        (arranjo.b, 2, 2, 0),
+    ):
+        ParcelaFactory.create(
+            comprador=dono,
+            produto=arranjo.p2,
+            quantidade_original=D(original),
+            quantidade_reservada=D(reservado),
+            quantidade_pendente=D(pendente),
+        )
+    abrir(arranjo, "22.00")
+    relogio.congelar(T0 + H)
+    return arranjo, pedido_de(arranjo.a), pedido_de(arranjo.b)
