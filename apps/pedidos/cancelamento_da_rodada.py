@@ -6,7 +6,8 @@ o efeito nos interesses; as seguintes acrescentam os pedidos, o reembolso e o av
 
 Ordem das travas: a mesma da apuração (E11, com a correção E11-R04, `FOR NO KEY UPDATE`): as contas
 dos compradores envolvidos, o fornecedor, a rodada, os produtos do fornecedor, os estoques da
-rodada e as parcelas não removidas. O cancelamento concorre com a apuração, as operações de
+rodada e as parcelas não removidas; depois as situações de todos os pedidos da rodada (E12-R03);
+depois as tentativas e chamadas; por último as contas do livro. O cancelamento concorre com a apuração, as operações de
 interesse, a moderação e o encerramento do fechamento, e essa ordem evita impasse com eles.
 """
 
@@ -113,6 +114,19 @@ def _pedidos_da_abertura_vigente(rodada: Rodada) -> list[Pedido]:
     if abertura is None:
         return []
     return list(Pedido.objects.filter(abertura=abertura).order_by("pk"))
+
+
+def _travar_as_situacoes(rodada: Rodada) -> None:
+    """Regra 2 (E12-02, correção R03): trava, numa só consulta e por `pedido_id`, a situação de
+    todos os pedidos de todas as aberturas da rodada. É a ordem da sincronização do pagamento
+    (o pagamento, a situação e só depois as contas do livro): nenhuma conta do livro é travada
+    antes desta consulta. Só os pedidos da abertura vigente podem mudar; os demais são travados
+    para a leitura estável (quem pagou, o aviso) e para o reembolso integral, que os relê."""
+    list(
+        SituacaoDoPedido.objects.select_for_update()
+        .filter(pedido_id__in=Pedido.objects.filter(abertura__rodada_id=rodada.pk).values("pk"))
+        .order_by("pedido_id")
+    )
 
 
 def _cancelar_os_pedidos_nao_pagos(
@@ -485,6 +499,7 @@ def cancelar_rodada(
         instante = agora()  # lido depois das travas
         _conferir_a_etapa(travada.etapa)  # relida sob a trava
         etapa_anterior = str(travada.etapa)
+        _travar_as_situacoes(travada)
         pedidos = _pedidos_da_abertura_vigente(travada)
         cancelados, pagos = _cancelar_os_pedidos_nao_pagos(pedidos, instante)
         parcelas = _remover_os_interesses(travada.fornecedor_id)
