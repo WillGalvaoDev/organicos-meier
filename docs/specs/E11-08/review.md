@@ -306,3 +306,43 @@ Entrega: somente os oito `review.md`, conteúdo versionado anterior integralment
 ## Correção do R02 residual — agente 2 — 2026-11-01
 
 Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.
+
+
+## Revalidação final do R02 residual — agente 3 — 2026-11-01
+
+Base auditada: `160421d`, branch `e11-implementacao`, correções desde `90f3ee7`. Adendos de `c42e911` confrontados com os requisitos, implementação `14f634e`, testes e registros de TDD. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E11-08](../E11-08/review.md).
+
+### Conformidade da correção
+
+**R02 residual encerrado.** A situação de cada pagante é consultada na transação, com as contas travadas por `_travar`, e compartilhada entre remoção, restauração, destinatários e auditoria. `contas_impedidas` independe de parcelas ainda removíveis, `nao_restauradas` deixa de ser descartado e `removidas_por_conta_impedida` continua descrevendo apenas remoções efetivas. A tela usa o registro histórico; sem auditoria não afirma reserva. Não há migração de dados de produção nesta fase, conforme o adendo.
+
+Matriz desta correção: E11-05 A-25/A-26 (suspensa/removida, parcela já removida, reserva zero, reembolso e ausência de aviso), A-27 (quantidades anteriores preservadas), A-28 (ativa com aviso e fila), A-29 (reativação não modifica auditoria); E11-07 A-22/A-23 (contexto e HTTP conforme acesso permitido), A-24/A-25 (reativação/suspensão posterior); E11-04 A-19 (ramo viável sem promessa de fila). Código e testes conferidos contra os adendos, funcional §2 e infraestrutura §4.10. Nenhuma nova regra comercial ou conflito documental identificado.
+
+### TDD e preservação de testes
+
+Histórico conferido: especificação `c42e911` → testes `f86423d` → implementação `14f634e` → registros `160421d`. O commit de testes não altera produção. Registro Red: 8 failed/52 passed; Green: 60 passed nos três arquivos. Não reexecutei o commit histórico Red nesta rodada; executei independentemente a base corrigida.
+
+A única mudança de teste no commit Green ajusta o novo A-28 de reserva 6 para 8, acrescentando a asserção de pendência zero: as 2 pendentes são atendidas pela fila com a liberação de B (R-5 e adendo anterior de E11-05 A-3). O ajuste está documentado, decorre da regra vigente e não enfraquece o requisito. Os testes anteriores não foram removidos ou afrouxados.
+
+### Provas independentes
+
+Os dois blocos Python preservados neste documento foram extraídos literalmente, concatenados em `tests/tecnicos/test_e11_revisao_temporaria.py` e executados: **8 passed in 8.85s**. Incluem as seis provas iniciais (R01 a R04) e os dois parâmetros da prova residual de R02, sem alterar suas asserções. Arquivo temporário próprio removido após conferir `git status`; conteúdo das provas continua preservado neste documento.
+
+Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e11_provas.py" tests/tecnicos/test_e11_revisao_temporaria.py -q -p no:cacheprovider --tb=short`, com `PYTHONPATH` na raiz. Runner de pytest com `DJANGO_SETTINGS_MODULE=config.settings.test` e banco PostgreSQL isolado `test_organicos_revisor_e11_provas`, como na revisão anterior.
+
+### Verificações estáticas independentes
+
+- `.venv/Scripts/ruff.exe check .`: All checks passed.
+- `.venv/Scripts/ruff.exe format --check .`: 359 files already formatted.
+- `.venv/Scripts/mypy.exe .`: Success, 434 source files sem erros.
+- `DJANGO_SETTINGS_MODULE=config.settings.test`, `.venv/Scripts/python.exe manage.py check`: 0 issues; `manage.py makemigrations --check --dry-run`: No changes detected.
+
+Verificações executadas antes de criar a prova temporária. Sem inspeção visual em navegador e sem integração com provedor real (Fase 1). Validações de fases futuras continuam nos gates próprios; esta revisão não autoriza produção com simulador.
+
+### Suíte completa e veredito final
+
+Suíte independente, sem filtro, sobre `160421d`: **2795 passed in 447.71s (0:07:27)**. Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e11_final.py" -q -p no:cacheprovider --tb=short`, com `PYTHONPATH` na raiz. O runner define `DJANGO_SETTINGS_MODULE=config.settings.test`, troca apenas `settings.DATABASES[*]["TEST"]["NAME"]` para `test_organicos_revisor_e11_160421d` e chama `pytest.main(sys.argv[1:])`. Configurações versionadas intactas; banco de teste isolado. A coleta ocorreu antes da criação do arquivo com as oito provas, executadas separadamente.
+
+**Veredito final da E11: APROVADO sobre `160421d`.** R01, R02 (incluindo o residual), R03 e R04 encerrados. Nenhum achado impeditivo ou nova melhoria identificado nesta revalidação. As aprovações anteriores das fatias sem alterações são mantidas, com regressão completa verde. Aprovação baseada na conformidade dos requisitos, revisão de código e registros de TDD, além dos testes.
+
+Entrega: oito `review.md`, preservando integralmente o conteúdo versionado anterior por comparação de prefixo. Nenhuma alteração de produção, nenhum push ou PR. Próximo gate: integração pelo responsável pela branch, com atualização bilíngue do estado nos READMEs antes do merge, conforme AGENTS.md §10.

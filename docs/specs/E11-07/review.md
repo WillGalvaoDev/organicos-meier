@@ -50,3 +50,10 @@ Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parece
 ## Correção do R02 residual — agente 2 — 2026-11-01
 
 Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.
+
+
+## Revalidação final do R02 residual — agente 3 — 2026-11-01
+
+Base auditada: `160421d`, branch `e11-implementacao`, correções desde `90f3ee7`. Adendos de `c42e911` confrontados com os requisitos, implementação `14f634e`, testes e registros de TDD. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO — R02 residual encerrado.** Conferidos A-22 a A-25: tela e contexto usam `retorno.contas_impedidas`; não deduzem impedimento da existência de remoções efetivas nem da situação atual da conta. Suspensão e reativação posteriores não alteram o efeito histórico apresentado. Sem auditoria, o helper retorna falso para a afirmação de reserva. A prova independente da tela passa sem alterações. Evidência de interface por testes HTTP e leitura de código; sem inspeção visual em navegador.

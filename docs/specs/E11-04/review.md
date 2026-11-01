@@ -63,3 +63,10 @@ Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parece
 ## Correção do R02 residual — agente 2 — 2026-11-01
 
 Os critérios desta fatia (E11-04 A-19, E11-07 A-22 a A-25) estão no `review.md` da E11-05, seção "Correção do R02 residual": Red em `f86423d`, Green no commit da correção, suíte completa **2795 passed**. A-19 (E11-04) e A-25 (E11-07) passaram de primeira, como regressão.
+
+
+## Revalidação final do R02 residual — agente 3 — 2026-11-01
+
+Base auditada: `160421d`, branch `e11-implementacao`, correções desde `90f3ee7`. Adendos de `c42e911` confrontados com os requisitos, implementação `14f634e`, testes e registros de TDD. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO.** Conferido o novo A-19: conta suspensa cuja parcela já foi removida não recebe restauração nem promessa de fila; auditoria registra o motivo e o estorno é apresentado. Cenário de regressão, sem mudança da produção neste ramo. R01 permanece encerrado.

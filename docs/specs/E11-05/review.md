@@ -90,3 +90,10 @@ Comando: `uv run pytest tests/tecnicos/test_apuracao_retorno.py tests/tecnicos/t
 Prova do parecer `test_conta_impedida_com_parcela_ja_removida` (aviso e tela): **2 passed** (arquivo temporário, removido).
 
 **Verificação final:** `uv run pytest` = **2795 passed** (antes 2785; +10). `ruff check --no-cache` limpo, `ruff format --check` conforme (359 arquivos), `mypy .` sem erros (434 arquivos), `makemigrations --check` sem mudanças.
+
+
+## Revalidação final do R02 residual — agente 3 — 2026-11-01
+
+Base auditada: `160421d`, branch `e11-implementacao`, correções desde `90f3ee7`. Adendos de `c42e911` confrontados com os requisitos, implementação `14f634e`, testes e registros de TDD. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO — R02 residual encerrado.** Conferidos A-25 a A-29: conta suspensa ou removida sem parcela removível consta em `contas_impedidas`; `nao_restauradas` é preservado; remoções efetivas mantêm suas quantidades anteriores; aviso só é destinado a pagantes elegíveis. A leitura da conta ocorre sob trava na transação e alimenta os quatro consumidores. Reativação posterior não modifica registro nem aviso. A prova independente que falhava para o aviso agora passa sem alterações. R01 e R04 continuam encerrados.

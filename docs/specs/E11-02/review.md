@@ -37,3 +37,10 @@ O ajuste registrado de A-4 é coerente com a composição das fatias: a remoçã
 Base auditada: `0af24ad`, branch `e11-implementacao`; correções desde o parecer `3aa8858` sobre `1a36495`. Requisitos corrigidos em `732b7bb`, código, testes e registros Red/Green confrontados. Conteúdo anterior preservado. Evidências e prova residual no [parecer consolidado E11-08](../E11-08/review.md).
 
 **APROVADO nesta revalidação, sem achado próprio.** Regressões de inadimplência incluídas na suíte completa. O esclarecimento de A-4/A-6 distingue a alteração legítima da parcela em fatias seguintes e a chave do aviso de inadimplência; não remove a obrigação de isolamento dos pagantes. A etapa E11 permanece REPROVADA por R02 residual.
+
+
+## Revalidação final do R02 residual — agente 3 — 2026-11-01
+
+Base auditada: `160421d`, branch `e11-implementacao`, correções desde `90f3ee7`. Adendos de `c42e911` confrontados com os requisitos, implementação `14f634e`, testes e registros de TDD. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E11-08](../E11-08/review.md).
+
+**APROVADO, mantido o parecer anterior desta fatia.** Sem mudança de produção específica nesta correção; regressões incluídas na verificação consolidada. Os achados anteriormente encerrados não foram reabertos.
