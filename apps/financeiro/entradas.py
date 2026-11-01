@@ -42,6 +42,7 @@ from apps.nucleo.auditoria import SISTEMA
 from apps.pagamentos.consulta import pagamentos_com_tarifa_e_destino, travar_pagamento
 from apps.pedidos.models import (
     ApuracaoFinal,
+    CancelamentoDaRodada,
     DestinoDaDecisao,
     DestinoDoPagamento,
     MotivoDoDestino,
@@ -200,6 +201,8 @@ def _entrada_para_devolucao(destino: DestinoDoPagamento) -> MovimentoFinanceiro:
         )
     if nova and destino.motivo == MotivoDoDestino.PEDIDO_CANCELADO:
         _alertar_o_pagamento_no_prazo_depois_da_apuracao(destino)
+    if nova:
+        _alertar_o_pagamento_depois_do_cancelamento(destino)
     return movimento
 
 
@@ -226,6 +229,32 @@ def _alertar_o_pagamento_no_prazo_depois_da_apuracao(destino: DestinoDoPagamento
             "aprovado_em": pagamento.aprovado_no_provedor_em.isoformat()
             if pagamento.aprovado_no_provedor_em
             else None,
+        },
+    )
+
+
+def _alertar_o_pagamento_depois_do_cancelamento(destino: DestinoDoPagamento) -> None:
+    """Pagamento de pedido de rodada cancelada que gera obrigação de devolução: alerta crítico
+    aberto uma vez por pagamento, ao lado dos alertas do motivo (E12-04). O pedido não muda."""
+    pedido = destino.pedido
+    if pedido is None:
+        return
+    cancelamento = CancelamentoDaRodada.objects.filter(rodada_id=pedido.abertura.rodada_id).first()
+    if cancelamento is None:
+        return
+    pagamento = destino.pagamento
+    abrir_alerta(
+        TipoDeAlerta.PAGAMENTO_DEPOIS_DO_CANCELAMENTO,
+        pagamento.id_externo,
+        {
+            "pagamento": pagamento.id_externo,
+            "pedido": pedido.pk,
+            "comprador": pedido.comprador_id,
+            "valor": pagamento.valor,
+            "aprovado_em": pagamento.aprovado_no_provedor_em.isoformat()
+            if pagamento.aprovado_no_provedor_em
+            else None,
+            "cancelada_em": cancelamento.cancelada_em.isoformat(),
         },
     )
 

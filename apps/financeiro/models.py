@@ -74,6 +74,10 @@ class TipoDeAlerta(models.TextChoices):
         "aprovado_no_prazo_depois_da_apuracao",
         "Aprovado no prazo depois da apuração",
     )
+    PAGAMENTO_DEPOIS_DO_CANCELAMENTO = (
+        "pagamento_depois_do_cancelamento",
+        "Pagamento depois do cancelamento da rodada",
+    )
 
 
 class Gravidade(models.TextChoices):

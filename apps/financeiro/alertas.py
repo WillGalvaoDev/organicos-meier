@@ -40,6 +40,7 @@ GRAVIDADE_POR_TIPO: dict[str, str] = {
     TipoDeAlerta.DEVOLUCAO_ELEGIVEL_EXCEPCIONAL: Gravidade.AVISO,
     TipoDeAlerta.DEVOLUCAO_CONCLUIDA_TARDIAMENTE: Gravidade.CRITICO,
     TipoDeAlerta.APROVADO_NO_PRAZO_DEPOIS_DA_APURACAO: Gravidade.CRITICO,
+    TipoDeAlerta.PAGAMENTO_DEPOIS_DO_CANCELAMENTO: Gravidade.CRITICO,
 }
 
 
@@ -126,6 +127,15 @@ def _corpo_do_prazo_depois_da_apuracao(dados: dict[str, Any]) -> str:
     )
 
 
+def _corpo_do_pagamento_depois_do_cancelamento(dados: dict[str, Any]) -> str:
+    return (
+        f"O pagamento do pedido {dados.get('pedido', '-')} ({_valor(dados, 'valor')}) foi aprovado "
+        f"em {dados.get('aprovado_em', '-')}, depois do cancelamento da rodada em "
+        f"{dados.get('cancelada_em', '-')}: o pedido não mudou e o valor gerou obrigação de "
+        "devolução integral, que depende da autorização do administrador."
+    )
+
+
 TEXTO_POR_TIPO: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
     TipoDeAlerta.INVARIANTE_VIOLADO: (
         "Alerta crítico: saldo do provedor abaixo das obrigações",
@@ -161,6 +171,10 @@ TEXTO_POR_TIPO: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
     TipoDeAlerta.APROVADO_NO_PRAZO_DEPOIS_DA_APURACAO: (
         "Alerta crítico: pagamento no prazo informado depois da apuração",
         _corpo_do_prazo_depois_da_apuracao,
+    ),
+    TipoDeAlerta.PAGAMENTO_DEPOIS_DO_CANCELAMENTO: (
+        "Alerta crítico: pagamento depois do cancelamento da rodada",
+        _corpo_do_pagamento_depois_do_cancelamento,
     ),
 }
 

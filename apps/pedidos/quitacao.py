@@ -26,6 +26,7 @@ from apps.nucleo.tempo import agora, ate_o_limite
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.pedidos.models import (
     ApuracaoFinal,
+    CancelamentoDaRodada,
     DestinoDaDecisao,
     DestinoDoPagamento,
     MotivoDoCancelamento,
@@ -138,6 +139,9 @@ def _motivo_da_devolucao(
         return MotivoDoDestino.APROVADO_APOS_A_MARGEM
     if situacao.situacao == SituacaoDePagamento.PAGO:
         return MotivoDoDestino.DUPLICIDADE
+    if CancelamentoDaRodada.objects.filter(rodada_id=abertura.rodada_id).exists():
+        # na rodada cancelada nenhum pagamento quita, qualquer que seja o horário (E12-04)
+        return MotivoDoDestino.PEDIDO_CANCELADO
     cancelado_em = situacao.cancelado_em
     if situacao.situacao == SituacaoDePagamento.CANCELADO and (
         cancelado_em is None
