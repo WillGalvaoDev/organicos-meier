@@ -120,10 +120,11 @@ def test_emitir_de_novo_com_a_mesma_chave_nao_duplica(
 
     a, _x, _y, cancelamento = _x_pago_cancelado(relogio, sim, com_reembolso=True)
     antes = len(_avisos())
+    original = _aviso(a.a)
     with transaction.atomic():
-        modulo._emitir_o_aviso(cancelamento, a.a, corpo="outro texto", link="/carrinho/")
+        modulo._emitir_o_aviso(cancelamento, a.a, corpo=original.corpo, link=original.link or "")
     assert len(_avisos()) == antes == 2
-    assert "outro texto" not in _aviso(a.a).corpo
+    assert _aviso(a.a) == original
 
 
 def test_o_aviso_nao_traz_dado_de_outro_comprador(relogio: RelogioControlado, sim: Any) -> None:
