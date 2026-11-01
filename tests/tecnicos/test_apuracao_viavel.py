@@ -437,3 +437,32 @@ def test_conta_suspensa_depois_da_remocao_da_sobra_nao_recebe_a_restauracao(
     (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
     (do_pedido,) = [p for p in auditoria.alteracoes["pedidos"] if p["pedido"] == x.pk]
     assert {n["motivo"] for n in do_pedido["nao_restauradas"]} == {"conta_suspensa"}
+
+
+def test_conta_suspensa_com_a_parcela_ja_removida_nao_recebe_a_restauracao(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-19 (R02 residual, regressão)
+    from django.test import Client
+
+    from apps.notificacoes.models import Notificacao
+    from tests.apoio.apuracao import arranjo_r
+
+    a, x, _y = arranjo_r(relogio)
+    pagar(relogio, sim, x)
+    suspender(a.admin, a.a)
+    (parcela,) = _parcela(a.a, a.p2)
+    assert parcela.situacao == "removida"
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    assert _restauracoes() == []
+    (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
+    (do_pedido,) = [p for p in auditoria.alteracoes["pedidos"] if p["pedido"] == x.pk]
+    assert {n["motivo"] for n in do_pedido["nao_restauradas"]} == {"conta_suspensa"}
+    aviso = Notificacao.objects.get(conta=a.a, chave__startswith="itens_cancelados:caixa:")
+    assert "estorno" in aviso.corpo
+    assert "fila de pendentes" not in aviso.corpo
+    cliente = Client()
+    cliente.force_login(a.a)
+    pagina = cliente.get(f"/pedidos/{x.pk}/").content.decode()
+    assert "estorno proporcional" in pagina
+    assert "fila de pendentes" not in pagina

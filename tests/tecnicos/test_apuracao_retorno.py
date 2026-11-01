@@ -608,3 +608,90 @@ def test_sobra_removida_nao_impede_a_reserva_paga_no_retorno(
         D("0.000"),
     )
     assert parcela.sequencia == sequencia
+
+
+# --- E11-R02 residual: a situação da conta fica registrada na apuração ---------------------------
+
+
+def _retorno_rr(relogio: RelogioControlado, sim: Any, *, impedir: str | None) -> tuple[Any, Pedido]:
+    """O arranjo RR: A só com a parcela de P1 (6 pagas e 2 pendentes), B sem pagar; a conta de A
+    é suspensa ou removida (a parcela fica `removida` pela E05-07) antes da apuração."""
+    from apps.contas.moderacao import remover as remover_conta
+
+    a, x, _y = arranjo_ap(
+        relogio,
+        minimo=INSUFICIENTE,
+        pendente_a_p1=2,
+        parcelas_de_p1=(("a", 6), ("b", 5)),
+        parcelas_de_p2=(("b", 12),),
+    )
+    pagar(relogio, sim, x)
+    if impedir == "suspensa":
+        suspender(a.admin, a.a)
+    elif impedir == "removida":
+        remover_conta(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    _iniciar(a)
+    return a, x
+
+
+def _auditoria_do_retorno() -> dict[str, Any]:
+    (auditoria,) = EntradaAuditoria.objects.filter(acao="rodada.apuracao_final")
+    retorno: dict[str, Any] = auditoria.alteracoes["retorno"]
+    return retorno
+
+
+@pytest.mark.parametrize(
+    ("impedir", "motivo"), [("suspensa", "conta_suspensa"), ("removida", "conta_removida")]
+)
+def test_conta_impedida_sem_parcela_removivel_fica_registrada_e_sem_aviso(
+    relogio: RelogioControlado, sim: Any, impedir: str, motivo: str
+) -> None:  # A-25 e A-26 (R02 residual)
+    a, x = _retorno_rr(relogio, sim, impedir=impedir)
+    assert {p.situacao for p in ParcelaDeInteresse.objects.filter(comprador=a.a)} == {"removida"}
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "pago"
+    assert total_reservado(a.p1) == D("0")
+    assert not Notificacao.objects.filter(conta=a.a, evento="retorno_para_interesse").exists()
+    retorno = _auditoria_do_retorno()
+    assert retorno["contas_impedidas"] == [{"comprador": a.a.pk, "motivo": motivo}]
+    assert not [r for r in retorno["removidas_por_conta_impedida"] if r["comprador"] == a.a.pk]
+    (parcela_de_a,) = ParcelaDeInteresse.objects.filter(comprador=a.a)
+    assert retorno["nao_restauradas"] == [{"parcela": parcela_de_a.pk, "motivo": motivo}]
+    assert Reembolso.objects.filter(pedido=x, motivo="minimo_nao_atingido").count() == 1
+
+
+def test_a_conta_impedida_fica_registrada_com_as_remocoes_efetivas(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-27 (R02, preservação)
+    a, _x = _retorno_com_a_conta_impedida(relogio, sim)
+    retorno = _auditoria_do_retorno()
+    assert retorno["contas_impedidas"] == [{"comprador": a.a.pk, "motivo": "conta_suspensa"}]
+    removidas = retorno["removidas_por_conta_impedida"]
+    assert sorted((r["reservada"], r["pendente"]) for r in removidas) == [
+        ("4.000", "0.000"),
+        ("6.000", "0.000"),
+    ]
+
+
+def test_conta_ativa_nao_entra_nas_contas_impedidas_e_recebe_o_aviso(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-28 (regressão)
+    a, _x = _retorno_rr(relogio, sim, impedir=None)
+    retorno = _auditoria_do_retorno()
+    assert retorno["contas_impedidas"] == []
+    assert Notificacao.objects.filter(conta=a.a, evento="retorno_para_interesse").count() == 1
+    (parcela,) = ParcelaDeInteresse.objects.filter(comprador=a.a)
+    assert (parcela.situacao, parcela.quantidade_reservada) == ("ativa", D("6.000"))
+
+
+def test_reativar_depois_da_apuracao_nao_muda_o_registro(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-29 (regra 2-A)
+    from apps.contas.moderacao import reativar
+
+    a, _x = _retorno_rr(relogio, sim, impedir="suspensa")
+    antes = _auditoria_do_retorno()
+    reativar(a.admin, a.a)
+    assert _auditoria_do_retorno() == antes
+    assert not Notificacao.objects.filter(conta=a.a, evento="retorno_para_interesse").exists()
+    assert {p.situacao for p in ParcelaDeInteresse.objects.filter(comprador=a.a)} == {"removida"}

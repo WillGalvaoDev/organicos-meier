@@ -167,3 +167,77 @@ def test_caixa_incompleta_sem_restauracao_nao_promete_a_fila(
     aviso = Notificacao.objects.get(conta=a.a, chave__startswith="itens_cancelados:caixa:")
     assert "estorno" in aviso.corpo
     assert "fila de pendentes" not in aviso.corpo
+
+
+# --- E11-R02 residual: a tela segue `retorno.contas_impedidas` ------------------------------------
+
+
+def _rr(relogio: RelogioControlado, sim: Any, *, impedir: str | None) -> tuple[Any, Any]:
+    """O arranjo RR da E11-05: a única parcela de A, `pendente`, com 6 pagas no pedido X."""
+    from apps.contas.moderacao import remover, suspender
+    from apps.pedidos.apuracao import iniciar_apuracao
+
+    a, x, _y = arranjo_ap(
+        relogio,
+        minimo="100.00",
+        pendente_a_p1=2,
+        parcelas_de_p1=(("a", 6), ("b", 5)),
+        parcelas_de_p2=(("b", 12),),
+    )
+    pagar(relogio, sim, x)
+    if impedir == "suspensa":
+        suspender(a.admin, a.a)
+    elif impedir == "removida":
+        remover(a.admin, a.a)
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    return a, x
+
+
+def _efeito(x: Any) -> dict[str, Any]:
+    from apps.pedidos.apuracao_tela import efeitos_da_apuracao_no_pedido
+    from apps.pedidos.models import Pedido
+
+    return efeitos_da_apuracao_no_pedido(Pedido.objects.get(pk=x.pk))
+
+
+def _sem_promessa(a: Any, x: Any) -> None:
+    texto = _texto(_como(a.a).get(f"/pedidos/{x.pk}/"))
+    assert "A rodada voltou para interesse. O valor pago será devolvido integralmente." in texto
+    assert "continuam reservados" not in texto
+
+
+def test_conta_suspensa_com_a_parcela_ja_removida_nao_promete_reservas(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-22
+    a, x = _rr(relogio, sim, impedir="suspensa")
+    assert _efeito(x)["interesses_reservados"] is False
+    _sem_promessa(a, x)
+
+
+def test_conta_removida_com_a_parcela_ja_removida_nao_promete_reservas(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-23
+    _a, x = _rr(relogio, sim, impedir="removida")
+    assert _efeito(x)["interesses_reservados"] is False
+
+
+def test_reativar_depois_da_apuracao_nao_faz_a_tela_prometer_reservas(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-24
+    from apps.contas.moderacao import reativar
+
+    a, x = _rr(relogio, sim, impedir="suspensa")
+    reativar(a.admin, a.a)
+    assert _efeito(x)["interesses_reservados"] is False
+    _sem_promessa(a, x)
+
+
+def test_suspender_depois_da_apuracao_nao_muda_o_que_a_tela_diz(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-25
+    from apps.contas.moderacao import suspender
+
+    a, x = _rr(relogio, sim, impedir=None)
+    suspender(a.admin, a.a)
+    assert _efeito(x)["interesses_reservados"] is True
