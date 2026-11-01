@@ -217,3 +217,15 @@ Entrega do revisor: somente os oito review.md, com conteúdo anterior preservado
 Ordem seguida: R04, R03, R01 e R02 (com os critérios de tela). Commits: `6a19f6d`/`0ac4ba0` (R04), `ffcefc6`/`e510c4f` (R03), `be1b362`/`b3949f7`/`ee1a720` (R01 e R02). Detalhes e Red de cada critério nos `review.md` das E11-01, E11-04, E11-05 e E11-07.
 
 Provas do parecer (arquivo temporário, removido): `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`, `test_suspenso_nao_prende_estoque_no_retorno`, `test_cancelamento_no_provedor_precede_apuracao` e `test_falha_do_cancelamento_bloqueia_apuracao`: **5 passed**. A sexta, `test_retorno_concorre_com_tarifa_sem_impasse`, é o E11-05 A-22 e passa na suíte.
+
+### Verificação final das correções (agente 2, 2026-11-01)
+
+```
+uv run pytest                                 # 2785 passed in 318.16s, sem filtro
+uv run ruff check . --no-cache                # All checks passed
+uv run ruff format --check .                  # arquivos conformes
+uv run mypy .                                 # Success: no issues found
+uv run python manage.py makemigrations --check --dry-run   # No changes detected
+```
+
+Antes das correções a suíte tinha 2.764 testes; as correções acrescentaram 21. Commits locais em `e11-implementacao`, sem push nem PR.
