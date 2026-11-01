@@ -44,3 +44,24 @@ O resultado do A-3 questionado pelo implementador está correto pela regra 4 e R
 Prova com duas conexões reais, sem retirar validações: consulta da apuração termina; a tarefa registra a tarifa e pausa antes do commit; a apuração retorna para interesse e começa a devolução; a tarefa tenta confirmar. PostgreSQL: **`OperationalError: deadlock detected`**, contexto `rodadas_rodada ... FOR KEY SHARE`. Reproduzido duas vezes após ajustar a chamada do helper na prova. Em ambas a tarefa financeira foi a vítima; o banco pode escolher outra vítima. As pausas só ordenam uma execução possível. Corrigir a ordem/compatibilidade de travas em todo o ramo, não apenas em `_travar`; acrescentar regressão contra a tarifa tardia. Não é necessário alterar regra de negócio.
 
 TDD: `67e5bd2 → 47a4689` e correção de múltiplos pagantes `3066566 → aae9149`, registros conferidos; os cenários novos deste parecer não estavam cobertos.
+
+## Correções R01, R02 e R04 — agente 2 — 2026-11-01
+
+Comando: `uv run pytest tests/tecnicos/test_apuracao_retorno.py` (arquivo inteiro, sem `-k`).
+
+| Achado | Testes (commit) | Red | Correção (commit) |
+|---|---|---|---|
+| R04 (primeiro) | `6a19f6d` A-22, A-23 | **2 failed.** A-22: `OperationalError: deadlock detected` com `FOR KEY SHARE` em `rodadas_rodada`; A-23: a inserção com chave para a rodada esperou o fim do retorno (trava promovida) | `0ac4ba0`: `travar_condicoes`, `travar_rodada_para_interesses`, `travar_estoque`, `travar_parcelas` e `voltar_para_interesse` travam com `FOR NO KEY UPDATE`. 20 passed |
+| R01 | `be1b362` A-18 | **1 failed** (`('removida', 0) != ('ativa', 6)`) | `ee1a720`: só a conta impede a restauração da reserva |
+| R02 | `b3949f7` A-19, A-21 | **2 failed** (`{'em_pedido'} != {'removida'}`; auditoria sem `removidas_por_conta_impedida`). **A-20 passou** (regressão: a reserva liberada por B bastava para o pendente de C; o critério vale mesmo assim) | `ee1a720`: `_remover_as_parcelas_das_contas_impedidas` antes da restauração, da conferência do estoque e da fila; o aviso `retorno_para_interesse` só aos pagantes com conta ativa |
+
+**Decisões técnicas.**
+- **R04, forma (b):** as funções de trava de interesse passam a usar `FOR NO KEY UPDATE` em todo o sistema (a exclusão mútua continua, porque ele conflita consigo mesmo e com `FOR UPDATE`). O teste existente `test_travar_estoque_exige_transacao_e_trava_a_linha` (E03) afirmava o texto "FOR UPDATE" no SQL; passou a afirmar "FOR NO KEY UPDATE" nas duas tabelas. É consequência direta do caminho (b), e a asserção de que a linha é travada continua.
+- **R02, auditoria:** a chave `retorno.nao_restauradas` deu lugar a `retorno.removidas_por_conta_impedida` (comprador, parcela, motivo, reservada e pendente). O E11-05 A-17 foi substituído pelo A-19.
+- **A-3:** o teste já afirmava os dois momentos; acrescentei a sequência no primeiro.
+- **A-24 (regressão):** os arquivos de concorrência de interesses, moderação, pedidos, rodadas, catálogo e a fila de ponta a ponta passaram (suíte completa, abaixo).
+- Os commits de R01 e R02 ficaram juntos (`ee1a720`) porque as duas correções mexem nas mesmas funções do retorno; os testes de cada um estão em commits separados.
+
+Provas do parecer `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_suspenso_nao_prende_estoque_no_retorno` e `test_retorno_concorre_com_tarifa_sem_impasse` (esta é o A-22): passam como estão.
+
+Mais dois testes existentes afirmavam o texto "FOR UPDATE" no SQL da leitura travada das parcelas (`test_catalogo_incremento.py::test_leitura_das_parcelas_e_travada_em_ordem_de_sequencia` e `test_interesses_consultas.py::test_leitura_com_trava_usa_for_update_ordenado_pela_sequencia`); passaram a afirmar "FOR NO KEY UPDATE", pela mesma consequência do R04 (a suíte completa os acusou). A ordem por `sequencia` e a trava da linha continuam afirmadas.

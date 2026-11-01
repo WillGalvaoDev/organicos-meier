@@ -41,3 +41,14 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 Prova da rodada viável: A tem 4 unidades de P2 no pedido e 2 pendentes; paga e remove apenas as 2 pendentes. A caixa das 4 é invalidada pela inadimplência de B. A apuração gera reembolso, mas mantém a parcela `removida`, pendente zero, em vez de restaurar 4. Prova de retorno: A tem 6 unidades pagas e 2 pendentes de P1; remove as 2; a rodada volta ao interesse, mas não recupera as 6 reservadas. Ambas falharam independentemente. Corrigir distinguindo a remoção da sobra da elegibilidade da conta, preservando identidade/quantidade congelada e sem ressuscitar a sobra que o comprador removeu; testar ambos os ramos e idempotência.
 
 TDD: `b75e61e → df2b910`, e `3066566 → aae9149` para mais de um pagante; registros conferidos. A trava das contas de usuários antes do fornecedor é uma decisão técnica coerente com a moderação. O impedimento adicional `parcela_removida`, porém, não decorre da regra de conta suspensa.
+
+## Correção E11-R01 — agente 2 — 2026-11-01
+
+Comando: `uv run pytest tests/tecnicos/test_apuracao_viavel.py` (arquivo inteiro, sem `-k`) e, para a tela, `tests/tecnicos/test_pedidos_apuracao_do_comprador.py`.
+
+| Etapa | Commit | Resultado |
+|---|---|---|
+| Testes A-15 a A-18 (arranjo R em `tests/apoio/apuracao.py`) e os de tela A-19 e A-20 da E11-07 | `be1b362` | **Red.** A-15, A-16 e A-17: a parcela continua `removida` com pendente zero (`('removida', 0) != ('pendente', 4)`). **A-18 passou** (regressão: conta suspensa não restaura). Tela: A-20 sem "Pendente: 4" no carrinho |
+| `_restaurar_na_fila` deixa de tratar a parcela `removida` como impedimento (o motivo `parcela_removida` acabou) | `ee1a720` | **63 passed** (viável, retorno, telas) |
+
+Prova do parecer `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`: passa como está. A restauração soma só as unidades congeladas da caixa invalidada; a sobra removida (2) não volta (A-16).

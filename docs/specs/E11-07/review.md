@@ -28,3 +28,14 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 **Sem achado próprio nos cenários A-1 a A-17; aprovação da etapa não concedida.** Conferidas as rotas POST, autorização administrativa e nova autenticação por passkey, 409/503, disponibilidade por prazo, apresentação do resultado, links de devolução, situação do comprador e isolamento de dados. As mensagens de fila/reservas não correspondem ao estado real nos casos R01/R02, originados nas fatias de restauração; devem ser revalidadas junto dessas correções.
 
 A mensagem específica de 503 na aprovação evita afirmar que nada foi apurado depois de já existir apuração: adaptação técnica coerente, sem mudar a regra de bloqueio. TDD: `2e5c00c → 33c0cd2`, registros conferidos. Não foi feita inspeção visual em navegador; evidência de tela nesta revisão é leitura de templates/rotas e testes HTTP da suíte.
+
+## Correções da revisão (textos ao comprador) — agente 2 — 2026-11-01
+
+Comando: `uv run pytest tests/tecnicos/test_pedidos_apuracao_do_comprador.py` (arquivo inteiro, sem `-k`).
+
+| Etapa | Commit | Resultado |
+|---|---|---|
+| Testes A-18 a A-21 | `be1b362` | **Red: 4 failed.** A-18: o texto afirma interesses reservados; A-19 e A-20: `Reservado: 6` e `Pendente: 4` ausentes do carrinho (parcela `removida`); A-21: "fila de pendentes" presente sem restauração |
+| `efeitos_da_apuracao_no_pedido` lê o registro da apuração: `RestauracaoDeCaixa` para a frase da fila e a auditoria `removidas_por_conta_impedida` para a frase dos interesses reservados | `ee1a720` | 8 passed no arquivo |
+
+A tela não deduz nada da situação atual da conta.

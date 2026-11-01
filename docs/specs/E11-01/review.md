@@ -34,3 +34,21 @@ Base auditada: `1a36495`, branch `e11-implementacao`, comparada à base E10 inte
 O código segue o detalhamento local, mas há conflito com a fonte superior. Não se trata de mandar fazer rede sob travas: a solução deve preservar também o contrato da infraestrutura §4.2. Solicitei ao responsável identificar eventual decisão aprovada que permita postergar o cancelamento. Não foi localizada tal decisão nos documentos auditados. O ponto exige alinhamento pelo especificador: cumprir a ordem existente ou formalizar uma alteração autorizada, com tratamento da corrida e da indisponibilidade. Não presumi essa autorização.
 
 TDD: conferidos `e092f5b → bbc9e7f` e o registro dos Reds intermediários de destino/concorrência; não reexecutei versões históricas nesta rodada. A solução `FOR NO KEY UPDATE` inicial é pertinente, mas o ramo de retorno a perde depois (R04, E11-05).
+
+## Correção E11-R03 — agente 2 — 2026-11-01
+
+Comando: `uv run pytest tests/tecnicos/test_apuracao_inicio.py` (arquivo inteiro, sem `-k`).
+
+| Etapa | Commit | Resultado |
+|---|---|---|
+| Testes A-8 (substituído) e A-22 a A-29 | `ffcefc6` | **Red: 9 failed.** A-8: a chamada só agendada e a cobrança ainda `pendente` no provedor; A-22 e A-26: `DID NOT RAISE ConsultaAoProvedorFalhou`; A-23: Y `cancelado` em vez de `pago`; A-24 e A-28: chamada inexistente ou `pendente`; A-27: `_cancelar_no_provedor` inexistente; A-29: sem `cobrancas_canceladas` na auditoria. A-25 passou (a cobrança já estava cancelada na reconsulta: regressão) |
+| Passo 4-A `_cancelar_no_provedor` (agenda numa transação curta e executa com `executar_chamada_agora`, fora de transação de negócio); `executar_chamada_agora` em `apps/pagamentos/chamadas.py`; `ConsultaAoProvedorFalhou` com mensagem própria; conferência `cobranca_aberta` sob as travas; o passo 5 deixa de agendar | `e510c4f` | **30 passed** |
+
+**Decisões técnicas.** `executar_chamada_agora` espera a trava da chamada (sem `skip_locked`) e relê a situação; uma exceção inesperada deixa a chamada pendente, o que bloqueia a apuração. A mensagem de bloqueio é "O provedor não confirmou o cancelamento da cobrança {id_externo}.". A ordem do passo 4-A é pelo pedido e pelo `id_externo`.
+
+**Testes que mudaram por consequência da correção (sem afrouxar o que afirmam):**
+- **A-16:** a cobrança de Y aprovada no simulador antes da apuração, com a reconsulta "pendente" por dublê, deixou de ser um cenário coerente: o passo 4-A cancela, o provedor responde `aprovado` e Y quita antes da decisão. O teste passou a aprovar a cobrança, já cancelada, durante a pausa da decisão (L-3), que é o cenário "pagamento depois da apuração" que o critério quer: o aviso espera a trava da situação e vira devolução com alerta.
+- **A-15 (ii):** continua com o dublê só na reconsulta; a espera passa a acontecer na sincronização do cancelamento, e o resultado (Y pago, um destino `quita`) é o mesmo. **Ponto para o especificador:** a redação do A-15 (ii) e do A-16 fala de "reconsulta devolvendo pendente"; vale ajustá-la ao passo 4-A.
+- **A-27:** o instantâneo de "sem escrita" é tirado depois do passo 4-A, porque o efeito no provedor fica (regra 5).
+
+Provas do parecer `test_cancelamento_no_provedor_precede_apuracao` e `test_falha_do_cancelamento_bloqueia_apuracao`: passam como estão (arquivo temporário, removido).

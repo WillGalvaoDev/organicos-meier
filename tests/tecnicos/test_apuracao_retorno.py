@@ -106,6 +106,7 @@ def test_parcela_com_pendente_volta_a_ativa_com_a_parte_congelada(
     relogio.congelar(PRAZO)
     (parcela,) = _parcelas(a.a, a.p1)
     assert (parcela.situacao, parcela.quantidade_reservada) == ("pendente", D("0.000"))
+    sequencia = parcela.sequencia
     # a restauração, sozinha: a reserva é a parte congelada e a pendência não muda
     with transaction.atomic():
         restauradas, _ = modulo._restaurar_as_reservas_dos_pagantes(
@@ -118,6 +119,7 @@ def test_parcela_com_pendente_volta_a_ativa_com_a_parte_congelada(
             D("2.000"),
         )
         assert [parcela.pk, "6.000"] in restauradas
+        assert parcela.sequencia == sequencia
         transaction.set_rollback(True)
     # o retorno inteiro atende a fila com o estoque liberado por B: o pendente de A (anterior a
     # qualquer reserva nova, R-5) recebe a reserva; ver o ponto para o especificador no review.md

@@ -95,7 +95,7 @@ def test_leitura_com_trava_usa_for_update_ordenado_pela_sequencia(
     sqls = [c["sql"] for c in consultas if "interesses_parcela" in c["sql"]]
     assert sqls, "a leitura precisa consultar as parcelas"
     for sql in sqls:
-        assert "FOR UPDATE" in sql
+        assert "FOR NO KEY UPDATE" in sql  # desde a E11-R04
         assert 'ORDER BY "interesses_parcela"."sequencia"' in sql
 
 

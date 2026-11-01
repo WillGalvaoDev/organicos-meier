@@ -211,3 +211,9 @@ R01/R02/R04 voltam ao implementador com testes Red/Green e revalidação indepen
 L-6 (provedor real), pedido formal/parte do T-47 (E13) e encerramento que retira `em_pedido` da contagem na rodada seguinte (E14) permanecem fora desta entrega conforme spec. R02 ocorre no retorno da própria rodada, dentro da E11, e não pode ser transferido para a E14. Nenhuma nova melhoria não impeditiva foi aberta; docs/melhorias.md não foi alterado.
 
 Entrega do revisor: somente os oito review.md, com conteúdo anterior preservado. Nenhum push nem PR. A E11 não está pronta para aprovação enquanto esses pontos permanecerem abertos.
+
+## Correções da revisão — agente 2 — 2026-11-01
+
+Ordem seguida: R04, R03, R01 e R02 (com os critérios de tela). Commits: `6a19f6d`/`0ac4ba0` (R04), `ffcefc6`/`e510c4f` (R03), `be1b362`/`b3949f7`/`ee1a720` (R01 e R02). Detalhes e Red de cada critério nos `review.md` das E11-01, E11-04, E11-05 e E11-07.
+
+Provas do parecer (arquivo temporário, removido): `test_remover_sobra_nao_remove_reserva_paga_no_retorno`, `test_remover_sobra_nao_impede_restauracao_da_caixa_paga`, `test_suspenso_nao_prende_estoque_no_retorno`, `test_cancelamento_no_provedor_precede_apuracao` e `test_falha_do_cancelamento_bloqueia_apuracao`: **5 passed**. A sexta, `test_retorno_concorre_com_tarifa_sem_impasse`, é o E11-05 A-22 e passa na suíte.

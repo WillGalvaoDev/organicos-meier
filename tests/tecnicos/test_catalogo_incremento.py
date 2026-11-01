@@ -274,7 +274,9 @@ def test_leitura_das_parcelas_e_travada_em_ordem_de_sequencia() -> None:
         alterar_incremento(_admin(), produto, "0.25")
     sqls = [c["sql"] for c in consultas if 'FROM "interesses_parcela"' in c["sql"]]
     assert sqls
-    assert all("FOR UPDATE" in s and 'ORDER BY "interesses_parcela"."sequencia"' in s for s in sqls)
+    assert all(
+        "FOR NO KEY UPDATE" in s and 'ORDER BY "interesses_parcela"."sequencia"' in s for s in sqls
+    )
 
 
 def test_incremento_ids_inexistentes_dao_404(admin_client: Client) -> None:
