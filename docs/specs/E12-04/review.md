@@ -11,3 +11,10 @@ Comando: `uv run pytest tests/tecnicos/test_pagamento_depois_do_cancelamento.py`
 - A regra vale depois de `valor_divergente`, `iniciado_fora_do_prazo`, `aprovado_apos_a_margem` e `duplicidade`: com `CancelamentoDaRodada` na rodada, o motivo é `pedido_cancelado`.
 - O alerta abre junto com a obrigação (`nova`), chave `id_externo`, ao lado dos alertas do motivo.
 - O alerta não é resolvido sozinho quando a devolução conclui (a spec só manda o administrador resolver); a regra de resolução automática dos outros motivos não foi estendida. **Ponto para o especificador.**
+
+
+## Parecer independente — agente 3 — 2026-11-01
+
+Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
+
+**Sem achado próprio nos critérios A-1 a A-8; aprovação da etapa não concedida.** Conferidos prioridade dos motivos, pagamento anterior informado depois, duplicidade, obrigação financiada pelo próprio pagamento, alerta crítico idempotente e ausência de autorização automática desse destino. A integração concorrente com cancelamento de ciclo anterior está reprovada por R03. A resolução manual do alerta novo não contraria requisito expresso da fatia; não foi inferida resolução automática.

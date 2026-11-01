@@ -17,3 +17,10 @@ Comandos: `uv run pytest tests/tecnicos/test_cancelamento_telas.py tests/tecnico
 - **E03 A-25** (`test_rodadas_estoque.py::test_409_do_servico_e_pagina_so_de_leitura_com_a_etapa_relida`) exigia nenhum formulário na página só de leitura. A E12-06 (regra 4) manda mostrar o formulário de cancelamento em toda etapa cancelável, inclusive `fechamento`. A asserção passou a excluir só as ações com `/cancelar/`. **Ponto para o especificador.**
 - Nos testes das telas o administrador entra de novo depois de cada avanço do relógio (padrão da E11-07).
 - A-13 usa o prefixo `/administracao/financeiro/devolucoes/`.
+
+
+## Parecer independente — agente 3 — 2026-11-01
+
+Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
+
+**REPROVADO — R01 (importante).** A-1 a A-19 confrontados com rotas, templates e testes HTTP; controles de acesso, reautenticação, campos extras, isolamento e tratamento de falhas passam. Após retorno ao interesse seguido de cancelamento, a página do pedido renderiza simultaneamente o cancelamento e a frase antiga de que os interesses continuam reservados. A reserva real é zero. A integração de `cancelamento` e `apuracao` precisa distinguir histórico de estado atual, preservando os registros financeiros. Referências: funcional §7/§7.2, E12-01 regra 6 e E12-06 regra 7. Não houve inspeção visual em navegador.

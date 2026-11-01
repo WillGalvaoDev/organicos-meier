@@ -13,3 +13,10 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_com_pedidos.py` (arquiv
 - Os agendamentos não disparam a execução no commit: a tarefa periódica de chamadas as processa (infraestrutura 4.8).
 - Acréscimo fora do texto das fatias, para o painel não quebrar com o motivo novo: `CANCELAMENTOS_POR_EXTENSO` ganhou "Cancelado (rodada cancelada)" (o texto da E12-06). O teste da tela é da E12-06.
 - Auditoria: `pedidos_cancelados` (pedido e situação anterior), `pedidos_pagos` e `cobrancas` (alvo e `id_externo`).
+
+
+## Parecer independente — agente 3 — 2026-11-01
+
+Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
+
+**REPROVADO — R03 (bloqueador), em conjunto com E12-03.** A-1 a A-16 confrontados com código e testes. Composição, motivos anteriores, ausência de novos movimentos sem reembolso, tentativas/órfãs, apuração e aprovação conferidos. A regra 2 diz que só as situações da abertura vigente são travadas e que as anteriores só são lidas, mas E12-03 chama `reembolso_integral_do_pedido` para pedidos anteriores e trava suas situações depois das contas financeiras. A prova concorrente demonstra deadlock. Alinhar esse detalhamento técnico à ordem global antes de aprovar; não é necessária decisão comercial nova.

@@ -19,3 +19,10 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_da_rodada.py` (arquivo 
 - **A-13:** a lista de parcelas alteradas inclui D (`ativa` sem reserva e 3 pendentes passa a `pendente`, A-2); a spec diz "por parcela alterada".
 - **A-19:** o limite é 20, e não 15: com 15 a fila (C e D, 6 unidades) consome o livre e a adição de A é recusada por estoque, sem exercitar a corrida. **Ponto para o especificador.**
 - **A-16:** a regra da E05 atende a fila quando o produto é incluído na rodada nova (`incluir_produto_na_rodada`).
+
+
+## Parecer independente — agente 3 — 2026-11-01
+
+Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
+
+**Sem achado próprio nos critérios A-1 a A-20; aprovação da etapa não concedida.** Conferidos registro único e só inserção, permissões, booleano obrigatório, mensagem, recusas, remoção de reservas, preservação da fila, nova rodada e corridas com interesse/fechamento. Os ajustes do arranjo A-19 (limite 20 para efetivamente haver estoque depois da fila) e A-5 (administrador inativo só em memória, pois o banco proíbe esse estado) são justificados e não alteram negócio. A guarda para etapa encerrada segue o escopo aprovado; a decisão de E14 continua fora desta entrega. A ordem global das travas precisa da correção R03 ao alcançar pedidos anteriores na E12-03.
