@@ -681,7 +681,12 @@ def test_conta_ativa_nao_entra_nas_contas_impedidas_e_recebe_o_aviso(
     assert retorno["contas_impedidas"] == []
     assert Notificacao.objects.filter(conta=a.a, evento="retorno_para_interesse").count() == 1
     (parcela,) = ParcelaDeInteresse.objects.filter(comprador=a.a)
-    assert (parcela.situacao, parcela.quantidade_reservada) == ("ativa", D("6.000"))
+    # 6 restauradas do pedido e 2 atendidas pela fila com o estoque liberado por B
+    assert (parcela.situacao, parcela.quantidade_reservada, parcela.quantidade_pendente) == (
+        "ativa",
+        D("8.000"),
+        D("0.000"),
+    )
 
 
 def test_reativar_depois_da_apuracao_nao_muda_o_registro(

@@ -430,8 +430,25 @@ def _restaurar_na_fila(
         )
 
 
+def _contas_impedidas(compradores: set[int]) -> dict[int, str]:
+    """A situação da conta de cada comprador: comprador -> motivo, só se suspensa ou removida."""
+    impedidas: dict[int, str] = {}
+    for comprador_id in sorted(compradores):
+        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(Conta.objects.get(pk=comprador_id).situacao))
+        if motivo is not None:
+            impedidas[comprador_id] = motivo
+    return impedidas
+
+
+def _contas_impedidas_dos_pagantes(pagos: list[Pedido]) -> dict[int, str]:
+    """A situação da conta dos pagantes, lida uma só vez, com as contas travadas pela apuração
+    (E11-05 regra 2-A). Decide a remoção das parcelas, a não restauração, os destinatários do aviso
+    e o registro da auditoria."""
+    return _contas_impedidas({p.comprador_id for p in pagos})
+
+
 def _restaurar_as_reservas_dos_pagantes(
-    abertura: AberturaDoPagamento, pagos: list[int]
+    abertura: AberturaDoPagamento, pagos: list[int], impedidas: dict[int, str] | None = None
 ) -> tuple[list[list[object]], list[dict[str, Any]]]:
     """No retorno para interesse as reservas de quem pagou continuam na própria rodada, com a
     ordem original (E11-05): cada parcela que aparece num pedido pago passa a `ativa`, com a
@@ -449,12 +466,13 @@ def _restaurar_as_reservas_dos_pagantes(
     for linha in linhas.order_by("pk"):
         somas[linha.parcela_id] = somas.get(linha.parcela_id, ZERO) + linha.quantidade
         donos[linha.parcela_id] = linha.item.pedido.comprador_id
-    contas = {c.pk: c for c in Conta.objects.filter(pk__in=set(donos.values()))}
+    if impedidas is None:  # chamada direta: a mesma leitura da situação, para os donos
+        impedidas = _contas_impedidas(set(donos.values()))
     restauradas: list[list[object]] = []
     nao_restauradas: list[dict[str, Any]] = []
     for parcela_pk in sorted(somas):
         parcela = ParcelaDeInteresse.objects.get(pk=parcela_pk)
-        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(contas[donos[parcela_pk]].situacao))
+        motivo = impedidas.get(donos[parcela_pk])
         if motivo is not None:
             nao_restauradas.append({"parcela": parcela.pk, "motivo": motivo})
             continue
@@ -466,7 +484,7 @@ def _restaurar_as_reservas_dos_pagantes(
 
 
 def _remover_as_parcelas_das_contas_impedidas(
-    rodada: Rodada, pagos: list[Pedido]
+    rodada: Rodada, impedidas: dict[int, str]
 ) -> list[dict[str, Any]]:
     """No retorno, a reserva de uma conta que não pode ter interesses (suspensa ou removida) não
     pode ocupar o estoque da rodada devolvida ao interesse (§2, E05-07): cada parcela do pagante
@@ -474,12 +492,8 @@ def _remover_as_parcelas_das_contas_impedidas(
     pendência zero. A sequência e a quantidade original ficam, e o pedido não muda (E11-R02).
     Acontece antes da conferência do estoque e da fila, que usam o que sobra. Devolve, por
     parcela, o motivo e as quantidades que ela tinha."""
-    contas = {p.comprador_id: Conta.objects.get(pk=p.comprador_id) for p in pagos}
     removidas: list[dict[str, Any]] = []
-    for comprador_id in sorted(contas):
-        motivo = MOTIVO_DA_NAO_RESTAURACAO.get(str(contas[comprador_id].situacao))
-        if motivo is None:
-            continue
+    for comprador_id, motivo in sorted(impedidas.items()):
         parcelas = ParcelaDeInteresse.objects.filter(
             comprador_id=comprador_id,
             produto__fornecedor_id=rodada.fornecedor_id,
@@ -705,19 +719,26 @@ def _retornar_para_interesse(
     gera a devolução integral dos pedidos pagos. Não apura no livro: não há frete efetivo."""
     pagos_ids = [s.pedido_id for s in situacoes if s.situacao == SituacaoDePagamento.PAGO]
     pagos = [p for p in pedidos if p.pk in pagos_ids]
-    removidas = _remover_as_parcelas_das_contas_impedidas(rodada, pagos)
-    restauradas, _ = _restaurar_as_reservas_dos_pagantes(abertura, pagos_ids)
+    impedidas = _contas_impedidas_dos_pagantes(pagos)
+    removidas = _remover_as_parcelas_das_contas_impedidas(rodada, impedidas)
+    restauradas, nao_restauradas = _restaurar_as_reservas_dos_pagantes(
+        abertura, pagos_ids, impedidas
+    )
     _conferir_o_estoque(rodada)
     voltar_para_interesse(rodada, motivo=MOTIVO_DO_RETORNO_DO_PAGAMENTO, destinatarios=[])
     reembolsos = _devolver_integralmente(apuracao, pagos)
-    impedidos = {r["comprador"] for r in removidas}
     # o aviso fala de interesses reservados: só quem tem conta ativa o recebe (E11-R02)
     _avisar_o_retorno(
-        apuracao, rodada.fornecedor, [p for p in pagos if p.comprador_id not in impedidos]
+        apuracao, rodada.fornecedor, [p for p in pagos if p.comprador_id not in impedidas]
     )
     return {
         "restauradas": restauradas,
+        "contas_impedidas": [
+            {"comprador": comprador_id, "motivo": motivo}
+            for comprador_id, motivo in sorted(impedidas.items())
+        ],
         "removidas_por_conta_impedida": removidas,
+        "nao_restauradas": nao_restauradas,
         "reembolsos": reembolsos,
     }
 

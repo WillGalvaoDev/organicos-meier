@@ -144,9 +144,10 @@ def _apuracao_do_pedido(pedido: Pedido) -> ApuracaoFinal | None:
     return apuracao
 
 
-def _conta_impedida_no_retorno(apuracao: ApuracaoFinal, pedido: Pedido) -> bool:
-    """O comprador teve as parcelas removidas no retorno por conta impedida? A fonte é o registro
-    da apuração (a auditoria), e não a situação atual da conta (E11-R02)."""
+def _interesses_reservados_no_retorno(apuracao: ApuracaoFinal, pedido: Pedido) -> bool:
+    """Os interesses do comprador continuaram reservados no retorno? A fonte é o registro da
+    apuração (`retorno.contas_impedidas`), e não a situação atual da conta (E11-R02). Sem a
+    auditoria da apuração a página não afirma reservas."""
     auditoria = EntradaAuditoria.objects.filter(
         acao="rodada.apuracao_final",
         objeto_tipo="rodadas.rodada",
@@ -155,8 +156,8 @@ def _conta_impedida_no_retorno(apuracao: ApuracaoFinal, pedido: Pedido) -> bool:
     ).first()
     if auditoria is None:
         return False
-    removidas = auditoria.alteracoes.get("retorno", {}).get("removidas_por_conta_impedida", [])
-    return any(r["comprador"] == pedido.comprador_id for r in removidas)
+    impedidas = auditoria.alteracoes.get("retorno", {}).get("contas_impedidas", [])
+    return not any(c["comprador"] == pedido.comprador_id for c in impedidas)
 
 
 def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
@@ -175,7 +176,7 @@ def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
         return efeitos
     if apuracao.resultado == ResultadoDaApuracao.RETORNO_PARA_INTERESSE:
         efeitos["rodada_voltou_para_interesse"] = True
-        efeitos["interesses_reservados"] = not _conta_impedida_no_retorno(apuracao, pedido)
+        efeitos["interesses_reservados"] = _interesses_reservados_no_retorno(apuracao, pedido)
         return efeitos
     invalidadas = set(
         CaixaInvalidada.objects.filter(apuracao=apuracao).values_list("produto_id", "numero")
