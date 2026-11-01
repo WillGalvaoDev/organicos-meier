@@ -7,8 +7,9 @@ o efeito nos interesses; as seguintes acrescentam os pedidos, o reembolso e o av
 Ordem das travas: a mesma da apuração (E11, com a correção E11-R04, `FOR NO KEY UPDATE`): as contas
 dos compradores envolvidos, o fornecedor, a rodada, os produtos do fornecedor, os estoques da
 rodada e as parcelas não removidas; depois as situações de todos os pedidos da rodada (E12-R03);
-depois as tentativas e chamadas; por último as contas do livro. O cancelamento concorre com a apuração, as operações de
-interesse, a moderação e o encerramento do fechamento, e essa ordem evita impasse com eles.
+depois as tentativas e chamadas; por último as contas do livro. O cancelamento concorre com a
+apuração, as operações de interesse, a moderação, o encerramento do fechamento e a sincronização
+do pagamento, e essa ordem evita impasse com eles.
 """
 
 import logging

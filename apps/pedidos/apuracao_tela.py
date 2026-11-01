@@ -17,6 +17,7 @@ from apps.pedidos.models import (
     AberturaDoPagamento,
     ApuracaoFinal,
     CaixaInvalidada,
+    CancelamentoDaRodada,
     MotivoDoCancelamento,
     ParcelaNoPedido,
     Pedido,
@@ -170,11 +171,17 @@ def efeitos_da_apuracao_no_pedido(pedido: Pedido) -> dict[str, Any]:
         "caixas_incompletas": [],
         "rodada_voltou_para_interesse": False,
         "interesses_reservados": False,
+        "retorno_anterior_ao_cancelamento": False,
     }
     apuracao = _apuracao_do_pedido(pedido)
     if apuracao is None or pedido.estado.situacao != SituacaoDePagamento.PAGO:
         return efeitos
     if apuracao.resultado == ResultadoDaApuracao.RETORNO_PARA_INTERESSE:
+        if CancelamentoDaRodada.objects.filter(rodada_id=pedido.abertura.rodada_id).exists():
+            # o cancelamento zerou as reservas (E12-01): o retorno é fato anterior, não estado
+            # vigente, e a página não promete reserva nenhuma (E12-06, regra 7-A)
+            efeitos["retorno_anterior_ao_cancelamento"] = True
+            return efeitos
         efeitos["rodada_voltou_para_interesse"] = True
         efeitos["interesses_reservados"] = _interesses_reservados_no_retorno(apuracao, pedido)
         return efeitos

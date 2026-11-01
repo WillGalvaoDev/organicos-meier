@@ -21,6 +21,9 @@
       {% endfor %}
     </ul>
   {% endif %}
+  {% if apuracao.retorno_anterior_ao_cancelamento %}
+    <p>Antes do cancelamento, a apuração deste ciclo levou a rodada de volta para interesse, e o valor pago deste pedido será devolvido integralmente.</p>
+  {% endif %}
   {% if apuracao.rodada_voltou_para_interesse %}
     <p>A rodada voltou para interesse. O valor pago será devolvido integralmente{% if apuracao.interesses_reservados %}, e seus interesses continuam reservados na rodada{% endif %}.</p>
   {% endif %}

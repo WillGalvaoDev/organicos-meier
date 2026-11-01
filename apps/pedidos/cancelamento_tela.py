@@ -87,4 +87,6 @@ def aviso_no_pedido(pedido: Pedido) -> dict[str, Any] | None:
             frases[0] += " O valor será devolvido integralmente."
         elif not registro.com_reembolso:
             frases.append("O cancelamento não inicia novas devoluções.")
+        else:  # com reembolso e sem saldo novo neste pedido (já coberto por devolução anterior)
+            frases.append("As devoluções já devidas deste pedido continuam em andamento.")
     return {"frases": frases, "mensagem": registro.mensagem}
