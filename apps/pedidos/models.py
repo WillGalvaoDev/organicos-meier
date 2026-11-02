@@ -213,6 +213,21 @@ class AprovacaoDoResultado(RegistroDoPedido):
         return f"aprovação {self.pk}"
 
 
+class CancelamentoDaRodada(RegistroDoPedido):
+    """O administrador cancelou a rodada inteira (E12-01): uma por rodada, só inserção. A mensagem
+    é dado do cancelamento (serve ao aviso e às telas), e não motivo: a auditoria não a guarda."""
+
+    rodada = models.OneToOneField(Rodada, on_delete=models.PROTECT, related_name="cancelamento")
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    cancelada_em = models.DateTimeField()
+    com_reembolso = models.BooleanField()
+    mensagem = models.CharField(max_length=1000, blank=True, default="")
+    etapa_anterior = models.CharField(max_length=30)
+
+    def __str__(self) -> str:
+        return f"cancelamento da rodada {self.rodada_id}"
+
+
 class CaixaInvalidada(RegistroDoPedido):
     """Uma caixa do produto no ciclo que ficou incompleta por inadimplência (E11-03). Só inserção:
     a caixa inteira é invalidada, e nenhuma é refeita."""
@@ -269,6 +284,7 @@ class MotivoDoCancelamento(models.TextChoices):
     SUSPENSAO = "suspensao", "Suspensão da conta"
     REMOCAO_DA_CONTA = "remocao_da_conta", "Remoção da conta"
     INADIMPLENCIA = "inadimplencia", "Falta de pagamento"
+    CANCELAMENTO_DA_RODADA = "cancelamento_da_rodada", "Cancelamento da rodada"
 
 
 class SituacaoDoPedido(models.Model):
@@ -280,7 +296,7 @@ class SituacaoDoPedido(models.Model):
     quitado_em = models.DateTimeField(null=True, blank=True)
     cancelado_em = models.DateTimeField(null=True, blank=True)
     motivo_do_cancelamento = models.CharField(
-        max_length=20, choices=MotivoDoCancelamento.choices, blank=True, default=""
+        max_length=30, choices=MotivoDoCancelamento.choices, blank=True, default=""
     )
 
     class Meta:

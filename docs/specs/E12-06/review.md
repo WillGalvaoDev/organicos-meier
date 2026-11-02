@@ -1,0 +1,44 @@
+# E12-06 — Registro da implementação (agente 2, 2026-11-01)
+
+Comandos: `uv run pytest tests/tecnicos/test_cancelamento_telas.py tests/tecnicos/test_cancelamento_do_comprador.py` (arquivos inteiros, sem `-k`).
+
+| Etapa | Commit | Resultado |
+|---|---|---|
+| Testes A-1 a A-19 | `7fc01ec` | **Red: 19 failed, 2 passed.** Rota inexistente (404 em vez de 302/400/405/409/503), página sem o bloco, `views.cancelar_rodada` inexistente, devolução sem o texto do cancelamento, pedido do comprador sem as frases. **Passaram de primeira (regressão):** A-17 (outro comprador recebe 404) e A-19 (carrinho sem a rodada cancelada, com o pendente) |
+| Rota `rodadas_cancelar`, `cancelamento_tela.py`, blocos em `estoque.html` e `detalhe.html`, texto das devoluções do cancelamento, "Cancelado (rodada cancelada)" | `4a07358` | **21 passed**; suíte completa **2892 passed**; `ruff`, `mypy`, `makemigrations --check` limpos |
+
+## Decisões técnicas
+- A rota recusa qualquer campo fora de `reembolso`, `mensagem` e o CSRF, com 400, antes de chamar o serviço.
+- Rodada cancelada: o bloco "Pedidos" lista os da abertura mais recente; as devoluções vêm das obrigações de motivo `cancelamento_da_rodada`.
+- Devolução do cancelamento sem parcela: "Autorizada pelo cancelamento da rodada · aguardando cobertura" ou "· aguardando o envio ao provedor"; o botão "Autorizar" some, as ações de cobertura (em outras telas) não mudam.
+- Pedido de rodada cancelada: o parágrafo "Pague até…" é omitido.
+
+## Ajustes de testes (autorizados pelo conflito entre critérios; sem afrouxar o resto)
+- **E03 A-25** (`test_rodadas_estoque.py::test_409_do_servico_e_pagina_so_de_leitura_com_a_etapa_relida`) exigia nenhum formulário na página só de leitura. A E12-06 (regra 4) manda mostrar o formulário de cancelamento em toda etapa cancelável, inclusive `fechamento`. A asserção passou a excluir só as ações com `/cancelar/`. **Ponto para o especificador.**
+- Nos testes das telas o administrador entra de novo depois de cada avanço do relógio (padrão da E11-07).
+- A-13 usa o prefixo `/administracao/financeiro/devolucoes/`.
+
+
+## Parecer independente — agente 3 — 2026-11-01
+
+Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
+
+**REPROVADO — R01 (importante).** A-1 a A-19 confrontados com rotas, templates e testes HTTP; controles de acesso, reautenticação, campos extras, isolamento e tratamento de falhas passam. Após retorno ao interesse seguido de cancelamento, a página do pedido renderiza simultaneamente o cancelamento e a frase antiga de que os interesses continuam reservados. A reserva real é zero. A integração de `cancelamento` e `apuracao` precisa distinguir histórico de estado atual, preservando os registros financeiros. Referências: funcional §7/§7.2, E12-01 regra 6 e E12-06 regra 7. Não houve inspeção visual em navegador.
+
+## Correção da revisão — agente 2 — 2026-11-01
+
+**R01 — o retorno ao interesse como histórico (A-20 a A-22).**
+
+- **Red** (`1b45103`, `uv run pytest tests/tecnicos/test_cancelamento_do_comprador.py`): A-20 (a prova do parecer) encontrou "seus interesses continuam reservados na rodada" na página; A-21 não trazia "As devoluções já devidas deste pedido continuam em andamento."; A-22 passou (regressão da E11-07).
+- **Green** (`42084bd`):
+  - `efeitos_da_apuracao_no_pedido` marca `retorno_anterior_ao_cancelamento` quando a rodada tem `CancelamentoDaRodada` e deixa `rodada_voltou_para_interesse` e `interesses_reservados` falsos; nenhum registro da apuração muda;
+  - `detalhe.html` mostra a frase histórica depois do bloco do cancelamento;
+  - `aviso_no_pedido` acrescenta "As devoluções já devidas deste pedido continuam em andamento." ao pedido pago de rodada cancelada com reembolso e sem reembolso novo.
+- **Resultado:** 8 passed no arquivo do comprador; telas do administrador (E12-06 A-1 a A-13) seguem verdes.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO — R01 encerrado.** Conferidos A-20 a A-22: cancelamento é apresentado antes do histórico de retorno; não há promessa atual de reservas; devoluções anteriores permanecem consultáveis; sem cancelamento, a E11 mantém seu comportamento. O registro histórico de contas impedidas não é reescrito. A prova HTTP anterior passou sem alteração. Evidência de tela por código e testes HTTP, sem inspeção visual em navegador.

@@ -23,6 +23,8 @@ from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.acompanhamento import devolucoes_devidas, situacao_dos_pedidos
 from apps.pedidos.apuracao import ApuracaoRecusada, aprovar_resultado, iniciar_apuracao
 from apps.pedidos.apuracao_tela import bloco_da_apuracao
+from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado, cancelar_rodada
+from apps.pedidos.cancelamento_tela import bloco_do_cancelamento
 from apps.pedidos.models import AberturaDoPagamento, ResultadoDaApuracao
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
 from apps.rodadas.ciclos import ciclo_vigente
@@ -131,6 +133,7 @@ def _pagina_do_estoque(
         "progresso": progresso,
         "fechamento": bloco,
         "apuracao": bloco_da_apuracao(rodada, agora()),
+        "cancelamento": bloco_do_cancelamento(rodada),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
@@ -359,6 +362,42 @@ def apuracao_aprovar(request: HttpRequest, pk: int) -> HttpResponse:
             503,
         )
     messages.success(request, "Resultado aprovado. A rodada aguarda o fornecedor.")
+    return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+CAMPOS_DO_CANCELAMENTO = {"reembolso", "mensagem", "csrfmiddlewaretoken"}
+MENSAGEM_DOS_CAMPOS = (
+    "O cancelamento vale para a rodada inteira e só recebe a indicação de reembolso e a "
+    "mensagem opcional."
+)
+MENSAGEM_DO_PROVEDOR_NO_CANCELAMENTO = (
+    "Não foi possível consultar o provedor; nada foi cancelado. Tente de novo."
+)
+
+
+@exige_reautenticacao_por_passkey
+@require_POST
+def cancelar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    autor: Conta = request.user  # type: ignore[assignment]
+    if set(request.POST) - CAMPOS_DO_CANCELAMENTO:
+        return _apuracao_recusada(request, rodada, MENSAGEM_DOS_CAMPOS, 400)
+    indicacao = {"sim": True, "nao": False}.get(request.POST.get("reembolso", ""))
+    if indicacao is None:
+        return _apuracao_recusada(
+            request, rodada, CancelamentoRecusado.mensagem_de("indicacao_obrigatoria"), 400
+        )
+    try:
+        cancelar_rodada(
+            autor, rodada, com_reembolso=indicacao, mensagem=request.POST.get("mensagem", "")
+        )
+    except CancelamentoRecusado as erro:
+        return _apuracao_recusada(request, rodada, str(erro), 409)
+    except ConsultaAoProvedorFalhou:
+        return _apuracao_recusada(request, rodada, MENSAGEM_DO_PROVEDOR_NO_CANCELAMENTO, 503)
+    messages.success(request, "Rodada cancelada.")
+    if indicacao:
+        messages.success(request, "As devoluções integrais foram geradas e autorizadas.")
     return redirect("rodadas_estoque", pk=rodada.pk)
 
 

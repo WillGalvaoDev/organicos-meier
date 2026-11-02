@@ -12,12 +12,12 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 
 | | |
 |---|---|
-| **Última atualização** | 2026-11-01, com o PR #84 (E11) |
+| **Última atualização** | 2026-11-01, com o PR #85 (E12) |
 | **Fase** | Fase 1: plataforma completa rodando contra um **simulador** de pagamentos. Ainda sem dinheiro real e sem implantação em produção. |
-| **Progresso** | 11 de 16 etapas entregues (E01–E11), 80 fatias, cada uma aprovada por revisão independente |
-| **Última etapa entregue** | E11 — Apuração final e fila de pendentes (PR #84) |
-| **Próxima etapa** | E12 — Cancelamento da rodada (não iniciada) |
-| **Suíte de testes** | 2.795 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
+| **Progresso** | 12 de 16 etapas entregues (E01–E12), 87 fatias, cada uma aprovada por revisão independente |
+| **Última etapa entregue** | E12 — Cancelamento da rodada (PR #85) |
+| **Próxima etapa** | E13 — Pedido formal, repasse e portal do fornecedor (não iniciada) |
+| **Suíte de testes** | 2.916 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
 | **Bloqueadores abertos** | Nenhum |
 | **Melhorias não impeditivas** | 8 abertas (1 encerrada) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
 
@@ -33,8 +33,9 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 - Livro-razão de partidas dobradas, com movimentos imutáveis e segregados por destinação (custódia, obrigação com o fornecedor, frete, receita do serviço, reserva), a reserva do administrador e suas coberturas, as obrigações com compradores, o invariante financeiro verificado a cada 10 minutos e a conciliação diária com o provedor, com alertas.
 - Devoluções: reembolso parcial proporcional por item, serviço e frete, e devolução integral do pedido; estornos pelo provedor simulado com idempotência, nova tentativa segura e tratamento da conclusão tardia; conciliação dos estornos; devolução excepcional confirmada pelo administrador com comprovante; avisos de estorno e as telas do administrador e do comprador. O simulador também reproduz estornos e contestações.
 - Apuração final a partir de `T0 + 48h`, em dois atos do administrador (apurar e aprovar o resultado): reconsulta ao provedor e cancelamento das cobranças abertas antes de decidir, cancelamento dos pedidos não pagos, caixas invalidadas com estorno proporcional e as unidades de volta à fila de pendentes, o mínimo do fornecedor, o retorno ao interesse com devolução integral quando o mínimo não é atingido, a apuração no livro-razão na aprovação, as telas do administrador e do comprador e a fila de pendentes testada de ponta a ponta.
+- Cancelamento da rodada pelo administrador, para a rodada inteira e com indicação obrigatória de reembolso: reservas removidas com a fila de pendentes mantida, pedidos não pagos cancelados, novas tentativas de pagamento bloqueadas e cobranças abertas canceladas no provedor; com reembolso, devolução integral a todos os que pagaram (descontado o já devolvido ou pendente), já autorizada e com nova tentativa periódica; pagamentos informados depois do cancelamento sempre vão para devolução, com alerta crítico; o aviso do cancelamento, as telas do administrador e do comprador e os cenários de ponta a ponta com o simulador.
 
-**Ainda não construído:** o cancelamento da rodada (E12), o pedido formal e o repasse ao fornecedor (E13), a retirada e as ocorrências de entrega (E14), o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
+**Ainda não construído:** o pedido formal e o repasse ao fornecedor (E13), a retirada e as ocorrências de entrega (E14), o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
 
 | Etapa | Escopo | Estado |
 |---|---|---|
@@ -49,8 +50,8 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 | E09 | Livro-razão, reserva e conciliação | ✅ Entregue |
 | E10 | Devoluções | ✅ Entregue |
 | E11 | Apuração final e fila de pendentes | ✅ Entregue |
-| E12 | Cancelamento da rodada | ⏳ Próxima |
-| E13 | Pedido formal, repasse e portal do fornecedor | — |
+| E12 | Cancelamento da rodada | ✅ Entregue |
+| E13 | Pedido formal, repasse e portal do fornecedor | ⏳ Próxima |
 | E14 | Recebimento, ocorrências, retirada e descarte | — |
 | E15 | Painel administrativo e alertas operacionais | — |
 | E16 | Homologação e encerramento da fase 1 | — |

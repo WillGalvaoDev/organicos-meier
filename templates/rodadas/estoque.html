@@ -152,6 +152,47 @@
     {% endif %}
   {% endif %}
 
+  {% if cancelamento %}
+    {% if cancelamento.cancelavel %}
+      <h2>Cancelar rodada</h2>
+      <p>O cancelamento vale para todos os compradores da rodada e não pode ser desfeito.</p>
+      <form method="post" action="{% url 'rodadas_cancelar' pk=rodada.pk %}">
+        {% csrf_token %}
+        <label><input type="radio" name="reembolso" value="sim"> Com reembolso integral para quem pagou</label>
+        <label><input type="radio" name="reembolso" value="nao"> Sem reembolso (não inicia novas devoluções)</label>
+        <label for="mensagem">Mensagem aos compradores (opcional)</label>
+        <textarea id="mensagem" name="mensagem" maxlength="1000"></textarea>
+        <button type="submit">Cancelar rodada</button>
+      </form>
+    {% elif cancelamento.cancelada %}
+      <h2>Rodada cancelada</h2>
+      <p>Cancelada em {{ cancelamento.em }} (horário de Brasília) por {{ cancelamento.por }},
+        {% if cancelamento.com_reembolso %}com reembolso{% else %}sem reembolso{% endif %}.</p>
+      {% if cancelamento.mensagem %}<p>Mensagem aos compradores: {{ cancelamento.mensagem }}</p>{% endif %}
+      <h3>Pedidos</h3>
+      <table>
+        <thead><tr><th>Comprador</th><th>Total</th><th>Situação</th></tr></thead>
+        <tbody>
+          {% for linha in cancelamento.pedidos %}
+            <tr><td>{{ linha.comprador }}</td><td>{{ linha.total|reais }}</td><td>{{ linha.situacao }}</td></tr>
+          {% empty %}
+            <tr><td colspan="3">Nenhum pedido.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if cancelamento.com_reembolso %}
+        <h3>Devoluções do cancelamento</h3>
+        <ul>
+          {% for d in cancelamento.devolucoes %}
+            <li>Pedido {{ d.pedido }} · {{ d.comprador }} · {{ d.valor|reais }} · {{ d.situacao }} · <a href="{% url 'financeiro_devolucao' pk=d.obrigacao %}">ver devolução</a></li>
+          {% empty %}
+            <li>Nenhuma devolução gerada.</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
   <h2>Produtos na rodada</h2>
   {% if na_rodada %}
     <table>

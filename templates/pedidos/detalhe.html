@@ -6,6 +6,11 @@
   {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
   <p>Situação: {{ situacao }}.</p>
   {% if quitado_em %}<p>Pago em {{ quitado_em }} (horário de Brasília).</p>{% endif %}
+  {% if cancelamento %}
+    {% for frase in cancelamento.frases %}<p>{{ frase }}</p>{% endfor %}
+    {% if cancelamento.mensagem %}<p>Mensagem do administrador: {{ cancelamento.mensagem }}</p>{% endif %}
+    {% if situacao == "Cancelado (rodada cancelada)" %}<p>Nada foi cobrado neste pedido.</p>{% endif %}
+  {% endif %}
   {% if apuracao.cancelado_por_inadimplencia %}
     <p>O pagamento não foi identificado até o fim do prazo. Nada foi cobrado neste pedido.</p>
   {% endif %}
@@ -15,6 +20,9 @@
         <li>{{ linha.nome }}: {{ linha.quantidade }} em caixa que ficou incompleta: estorno proporcional{% if linha.na_fila %} e unidades na fila de pendentes do fornecedor{% endif %}</li>
       {% endfor %}
     </ul>
+  {% endif %}
+  {% if apuracao.retorno_anterior_ao_cancelamento %}
+    <p>Antes do cancelamento, a apuração deste ciclo levou a rodada de volta para interesse, e o valor pago deste pedido será devolvido integralmente.</p>
   {% endif %}
   {% if apuracao.rodada_voltou_para_interesse %}
     <p>A rodada voltou para interesse. O valor pago será devolvido integralmente{% if apuracao.interesses_reservados %}, e seus interesses continuam reservados na rodada{% endif %}.</p>
@@ -39,7 +47,7 @@
     <dt>Frete</dt><dd>{{ pedido.frete|reais }}</dd>
     <dt>Total</dt><dd>{{ pedido.total|reais }}</dd>
   </dl>
-  <p>Pague até {{ prazo }} (horário de Brasília). Esse prazo de 24 horas não é prorrogado.</p>
+  {% if not cancelamento %}<p>Pague até {{ prazo }} (horário de Brasília). Esse prazo de 24 horas não é prorrogado.</p>{% endif %}
 
   {% if pagamento.codigo_pix %}
     <h2>Pagamento por Pix</h2>

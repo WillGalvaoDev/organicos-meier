@@ -31,6 +31,7 @@ from apps.pedidos.models import (
     TentativaDePagamento,
 )
 from apps.pedidos.prazos import aceita_tentativas, prazo_de_pagamento
+from apps.rodadas.models import Etapa, Rodada
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ MENSAGENS = {
         "O prazo para pagar este pedido terminou em {prazo:%d/%m/%Y} às {prazo:%H:%M} "
         "(horário de Brasília)."
     ),
+    "rodada_cancelada": "A rodada foi cancelada pelo administrador; não há pagamento a fazer.",
     "pedido_pago": "Este pedido já está pago.",
     "pedido_cancelado": "Este pedido foi cancelado e não pode mais ser pago.",
     "conta_inativa": "Sua conta não pode fazer pagamentos no momento.",
@@ -103,6 +105,12 @@ def pedir_pagamento(comprador: Conta, pedido: Pedido) -> TentativaDePagamento:
         atual = Conta.objects.get(pk=comprador.pk)
         if travado.comprador_id != comprador.pk:
             raise PagamentoRecusado("nao_e_seu")
+        # a etapa é lida depois da trava da situação, que o cancelamento segura até o commit
+        if (
+            Rodada.objects.values_list("etapa", flat=True).get(pk=travado.abertura.rodada_id)
+            == Etapa.CANCELADA
+        ):
+            raise PagamentoRecusado("rodada_cancelada")
         if not aceita_tentativas(travado.abertura, instante):
             raise PagamentoRecusado(
                 "prazo_encerrado", no_fuso_da_operacao(prazo_de_pagamento(travado.abertura))
