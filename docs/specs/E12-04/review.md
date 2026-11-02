@@ -18,3 +18,10 @@ Comando: `uv run pytest tests/tecnicos/test_pagamento_depois_do_cancelamento.py`
 Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
 
 **Sem achado próprio nos critérios A-1 a A-8; aprovação da etapa não concedida.** Conferidos prioridade dos motivos, pagamento anterior informado depois, duplicidade, obrigação financiada pelo próprio pagamento, alerta crítico idempotente e ausência de autorização automática desse destino. A integração concorrente com cancelamento de ciclo anterior está reprovada por R03. A resolução manual do alerta novo não contraria requisito expresso da fatia; não foi inferida resolução automática.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO, mantida a avaliação anterior.** Sem alteração de produção específica nesta rodada. A integração concorrente dos ciclos anteriores é coberta pela correção R03 e pelos novos critérios E12-03. O alinhamento sobre resolução manual do alerta corresponde à leitura já aceita, sem ampliar regras de autorização.

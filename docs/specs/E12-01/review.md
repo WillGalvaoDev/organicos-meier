@@ -26,3 +26,10 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_da_rodada.py` (arquivo 
 Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
 
 **Sem achado próprio nos critérios A-1 a A-20; aprovação da etapa não concedida.** Conferidos registro único e só inserção, permissões, booleano obrigatório, mensagem, recusas, remoção de reservas, preservação da fila, nova rodada e corridas com interesse/fechamento. Os ajustes do arranjo A-19 (limite 20 para efetivamente haver estoque depois da fila) e A-5 (administrador inativo só em memória, pois o banco proíbe esse estado) são justificados e não alteram negócio. A guarda para etapa encerrada segue o escopo aprovado; a decisão de E14 continua fora desta entrega. A ordem global das travas precisa da correção R03 ao alcançar pedidos anteriores na E12-03.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO nesta revalidação, sem achado próprio.** Mantida a avaliação anterior dos critérios A-1 a A-20. Os ajustes de A-5/A-19 foram incorporados pelo especificador, sem mudar regra de negócio. As correções da etapa não modificam remoção de reservas, preservação da fila ou guarda de etapa encerrada.

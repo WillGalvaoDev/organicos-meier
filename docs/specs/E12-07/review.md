@@ -187,3 +187,65 @@ R03 volta ao implementador e ao especificador para alinhar o detalhamento técni
 | `test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio` | sem impasse; a pausa do teste original espera a trava das contas, que agora vem depois da liberação da situação (E12-03 A-19, adaptada como o `acceptance.md` prevê) |
 
 Os mesmos casos estão nos testes permanentes: E12-06 A-20, E12-05 A-8 e E12-03 A-19.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+### Avaliação das correções
+
+**R01 encerrado:** a existência do cancelamento transforma o retorno ao interesse em informação histórica no contexto; o template não apresenta a frase de reserva atual. O estado vigente aparece primeiro, e o pedido sem novo reembolso informa a continuidade das devoluções anteriores. Registros históricos e cálculos não mudam.
+
+**R02 encerrado:** pagantes de qualquer abertura são identificados pela mesma fonte nas duas indicações, depois das travas de situação; a classificação independe de reembolso novo. A implementação contempla o pagante suspenso sem parcelas restauradas e o pagante de ciclo anterior cujo pedido atual foi cancelado. Destinatários, textos, links e ausência de novos movimentos no ramo sem reembolso foram confrontados com os novos critérios.
+
+**R03 encerrado:** `_travar_as_situacoes` é executado depois das travas de contas de compradores/fornecedor/rodada/estoque/parcelas e antes dos efeitos em pedidos, chamadas e contas financeiras. A consulta única, ordenada por `pedido_id`, alcança todas as aberturas. Ao executar o reembolso de um pedido antigo, sua situação já está travada. Isso elimina a inversão situação ↔ fontes financeiras demonstrada na revisão anterior. A correção não adquire trava de pagamento ou destino dentro dessa transação. O adendo substitui explicitamente a decisão técnica que causava a inversão; nenhum conflito de regra comercial permanece.
+
+A cobertura adicional E12-07 A-9 exercita o cancelamento após retorno pela tela, com as duas indicações. A-10 acrescenta `_invariante_ok()` ao final dos testes A-6/A-7/A-8, fechando a limitação registrada anteriormente. Os demais critérios e os gates futuros E13/E14 mantêm seu escopo.
+
+### Provas independentes e adaptação necessária de R03
+
+Os três testes do bloco Python do parecer anterior foram extraídos para `tests/tecnicos/test_cancelamento_revisao_temporaria.py`. R01 e R02 foram executados literalmente. Em R03, preservados arranjo, operações, wrappers das funções reais e asserção final de ausência de exceções, houve apenas esta adaptação:
+
+```python
+from tests.apoio.trava import esperar_outra_conexao_na_trava
+# Dentro do wrapper motivo(), depois de estado_travado.set():
+# antes: assert fontes_travadas.wait(10)
+esperar_outra_conexao_na_trava()
+```
+
+Esperar a aquisição das contas pelo cancelamento enquanto a sincronização retém a situação criaria uma espera circular no próprio teste corrigido. A nova pausa espera o cancelamento bloquear na situação e então libera a sincronização. A correção E12-03/acceptance.md prevê exatamente essa adaptação. O Red real da implementação anterior continua preservado neste documento; timeout do harness antigo não seria evidência de regressão.
+
+Resultado independente: **3 passed in 13.97s**. Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e12_provas.py" tests/tecnicos/test_cancelamento_revisao_temporaria.py -q -p no:cacheprovider --tb=short`, com `PYTHONPATH` na raiz, `config.settings.test` e banco PostgreSQL isolado `test_organicos_revisor_e12_provas`. O arquivo temporário próprio foi removido após conferir `git status`; nenhum arquivo de produção foi alterado.
+
+Os testes permanentes reforçam a prova: E12-02 A-17 usa uma terceira conexão para demonstrar que as fontes ainda estão livres enquanto o cancelamento espera a situação; A-18 inspeciona alcance e ordem das travas SQL. E12-03 A-19 a A-21 verificam ambas as ordens, com e sem reembolso, incluindo os efeitos financeiros e o invariante. Não foi feito afrouxamento de asserções anteriores.
+
+### TDD e verificações estáticas
+
+Histórico conferido: R03 `da9f6aa → 8d1a899`; R02 `07692a5 → 36c97c3`; R01 `1b45103 → 42084bd`. Os commits Red alteram somente testes/apoios, antes da produção correspondente. Registros distinguem os cenários já verdes dos que falharam. Não reexecutei commits históricos Red nesta rodada. O ensaio por reversão temporária registrado pelo implementador na E12-07 é evidência de regressão/mutação sobre comportamento já implementado, não substitui a sequência Red anterior das três correções.
+
+Verificações independentes (antes da prova temporária):
+- `.venv/Scripts/ruff.exe check .`: All checks passed.
+- `.venv/Scripts/ruff.exe format --check .`: 370 files already formatted.
+- `.venv/Scripts/mypy.exe .`: 448 source files sem erros.
+- `DJANGO_SETTINGS_MODULE=config.settings.test`, `.venv/Scripts/python.exe manage.py check`: 0 issues; `manage.py makemigrations --check --dry-run`: No changes detected.
+
+### Suíte completa e veredito final
+
+Suíte independente, sem filtro, sobre `5705e5d`: **2916 passed in 368.77s (0:06:08)**, incluindo os novos critérios e regressões E11/E12. Comando: `.venv/Scripts/python.exe -u "$env:TEMP/revisor_e12_correcao.py" -q -p no:cacheprovider --tb=short`, com `PYTHONPATH` na raiz. Runner define `DJANGO_SETTINGS_MODULE=config.settings.test`, altera somente `settings.DATABASES[*]["TEST"]["NAME"]` para `test_organicos_revisor_e12_5705e5d` e executa `pytest.main(sys.argv[1:])`. Banco PostgreSQL isolado; configurações versionadas intactas. Coleta feita antes da criação das três provas, executadas separadamente.
+
+| Fatia | Critérios desta correção | Resultado |
+|---|---|---|
+| E12-01 | Alinhamentos A-5/A-19 e regressões | APROVADO |
+| E12-02 | A-17/A-18, alcance e ordem das travas | APROVADO, R03 encerrado |
+| E12-03 | A-19 a A-21, duas ordens e indicações | APROVADO, R03 encerrado |
+| E12-04 | Alinhamento do alerta e regressões | APROVADO |
+| E12-05 | A-8 a A-11, pagantes de ciclos anteriores | APROVADO, R02 encerrado |
+| E12-06 | A-20 a A-22, estado vigente e histórico | APROVADO, R01 encerrado |
+| E12-07 | A-9/A-10 e regressões ponta a ponta | APROVADO |
+
+**Veredito final da E12: APROVADO sobre `5705e5d`.** R01, R02 e R03 encerrados. Nenhum novo achado impeditivo ou melhoria identificado nesta revalidação. Aprovação fundamentada na conformidade dos requisitos, revisão de código, sequência e registros de TDD, provas independentes e regressão completa verde.
+
+Limites: não houve inspeção visual em navegador nem validação com provedor real; telas avaliadas por HTTP e leitura de templates/contexto. Os gates já documentados de E13/E14 permanecem fora desta aprovação.
+
+Entrega: sete `review.md`, conteúdo anterior integralmente preservado por comparação de prefixo; nenhum código de produção alterado, sem push ou PR. Próximo gate: integração pelo responsável pela branch, com atualização bilíngue dos READMEs antes do merge conforme AGENTS.md §10.

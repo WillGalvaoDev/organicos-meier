@@ -35,3 +35,10 @@ Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada
   - `detalhe.html` mostra a frase histórica depois do bloco do cancelamento;
   - `aviso_no_pedido` acrescenta "As devoluções já devidas deste pedido continuam em andamento." ao pedido pago de rodada cancelada com reembolso e sem reembolso novo.
 - **Resultado:** 8 passed no arquivo do comprador; telas do administrador (E12-06 A-1 a A-13) seguem verdes.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO — R01 encerrado.** Conferidos A-20 a A-22: cancelamento é apresentado antes do histórico de retorno; não há promessa atual de reservas; devoluções anteriores permanecem consultáveis; sem cancelamento, a E11 mantém seu comportamento. O registro histórico de contas impedidas não é reescrito. A prova HTTP anterior passou sem alteração. Evidência de tela por código e testes HTTP, sem inspeção visual em navegador.

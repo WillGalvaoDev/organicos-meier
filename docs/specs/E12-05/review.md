@@ -26,3 +26,10 @@ Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada
 - **Green** (`36c97c3`): em `_avisar_os_compradores`, a fonte do pagante passou a ser o pedido `pago` em qualquer abertura da rodada, lido sob as travas da E12-02; entra nos destinatários e define o texto nas duas indicações. O link segue a regra 5 (pedido da abertura vigente, o de menor `pk` com reembolso, o pago de maior `pk`, `/carrinho/`). `_corpo_do_aviso` traz "Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele." antes da frase de pagante. O parâmetro `sem_reembolso` deixou de ser usado e saiu da função; a auditoria continua com `pagos_sem_reembolso`.
 - **Resultado:** 11 passed no arquivo; nenhum movimento, reembolso ou obrigação novos no ramo sem reembolso (A-8 compara as contagens).
 - **Arranjo do A-10:** C entra na fila depois da apuração, por `ParcelaFactory`, porque o estoque que A suspensa libera é distribuído na própria apuração e C ganharia reserva (e, com ela, um aviso legítimo). O critério trata de quem só tem pendente.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO — R02 encerrado.** Conferidos A-8 a A-11: pagantes de todas as aberturas são classificados e incluídos no aviso sob as travas, nas duas indicações; o link segue a prioridade especificada. Pagante suspenso sem parcela alterada recebe aviso; quem só possui fila sem pedido continua excluído. Pedido atual não pago de pagante anterior recebe a frase específica antes da informação das devoluções. O ramo sem reembolso preserva contagens de reembolsos, obrigações e movimentos. A prova anterior passou sem alteração.

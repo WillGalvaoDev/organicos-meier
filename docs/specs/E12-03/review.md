@@ -32,3 +32,10 @@ Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada
 - **Green** (`8d1a899`, mesma correção da E12-02): os cinco testes passam. Nenhum `deadlock detected`; a rodada `cancelada`; a cobrança extra com destino `devolucao`/`duplicidade` e obrigação integral sem parcela; X sem reembolso do cancelamento e entre os `pagos_sem_reembolso`; o alerta `pagamento_depois_do_cancelamento` só quando o cancelamento vem antes (A-20); invariante sem violação.
 - **A prova original do parecer** (`test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio`), copiada sem mudança para um arquivo temporário (removido, nunca commitado): o cancelamento termina sem exceção e não há impasse; a thread da sincronização falha na própria pausa (`fontes_travadas.wait(10)` vence), porque agora o cancelamento só trava as contas depois de a sincronização soltar a situação. É a mudança de pausa que o `acceptance.md` prevê; o A-19 usa `esperar_outra_conexao_na_trava()` no lugar dela.
 - Ajuste de arranjo do A-19: a obrigação da duplicidade é buscada por `origem_tipo="pedidos.destinodopagamento"` e `origem_id`, pois só o `origem_id` podia coincidir com a obrigação de mínimo.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO — R03 encerrado.** Conferidos A-19 a A-21, nas duas ordens e indicações: as situações dos ciclos anteriores já estão travadas quando o reembolso as relê; contas financeiras continuam adquiridas depois. Os testes verificam destino de duplicidade, obrigação integral sem autorização pelo cancelamento, ausência de reembolso novo para X, alerta conforme a ordem e invariante financeiro. A prova independente não apresenta deadlock. Nenhuma validação, trava ou efeito foi removido para fazê-la passar.

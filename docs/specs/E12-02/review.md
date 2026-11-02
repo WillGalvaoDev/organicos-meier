@@ -35,3 +35,10 @@ Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada
   - A-18 confere que a transação do cancelamento (da primeira trava de conta de comprador em diante) não trava `PagamentoNoProvedor` nem `DestinoDoPagamento`, e que nenhuma conta do livro é travada antes da primeira trava de situação;
   - a consulta prévia sincroniza pagamentos por conta própria, antes da transação; por isso a conferência começa na primeira trava de conta de comprador.
 - A trava das tentativas e chamadas (`agendar_cancelamento`, `agendar_chamada`) continua depois das situações, e `travar_contas` do reembolso continua por último.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-01
+
+Base auditada: `5705e5d`, branch `e12-implementacao`, correções desde `4370b11`. Adendos `0fdfe8f`/`f429fc6` lidos e confrontados com o código, os critérios e os registros Red/Green. Conteúdo anterior preservado. Evidências completas no [parecer consolidado E12-07](../E12-07/review.md).
+
+**APROVADO — R03 encerrado nesta fatia.** Conferidos A-17/A-18: `_travar_as_situacoes` alcança todos os pedidos de todas as aberturas, ordenados por `pedido_id`, antes de qualquer conta do livro, nas duas indicações. A consulta não inclui junções que travem pagamentos ou destinos. Só a abertura vigente tem estados alterados. A regra 2 e a decisão técnica antiga foram alinhadas à ordem global. Prova independente da corrida passa com a adaptação de pausa documentada no consolidado.
