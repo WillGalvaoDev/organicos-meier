@@ -20,3 +20,18 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_com_pedidos.py` (arquiv
 Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
 
 **REPROVADO — R03 (bloqueador), em conjunto com E12-03.** A-1 a A-16 confrontados com código e testes. Composição, motivos anteriores, ausência de novos movimentos sem reembolso, tentativas/órfãs, apuração e aprovação conferidos. A regra 2 diz que só as situações da abertura vigente são travadas e que as anteriores só são lidas, mas E12-03 chama `reembolso_integral_do_pedido` para pedidos anteriores e trava suas situações depois das contas financeiras. A prova concorrente demonstra deadlock. Alinhar esse detalhamento técnico à ordem global antes de aprovar; não é necessária decisão comercial nova.
+
+## Correção da revisão — agente 2 — 2026-11-01
+
+**R03 — ordem das travas (E12-02 regra 2 reescrita; A-17 e A-18).**
+
+- **Red** (`da9f6aa`, `uv run pytest tests/tecnicos/test_cancelamento_com_pedidos.py tests/tecnicos/test_cancelamento_com_reembolso.py`):
+  - A-17 `test_cancelamento_espera_a_situacao_de_ciclo_anterior_antes_das_contas_do_livro`: a terceira conexão recebeu `OperationalError: could not obtain lock on row in relation "financeiro_contafinanceira"` (o cancelamento já tinha travado as contas);
+  - A-18 `test_a_primeira_trava_de_situacao_alcanca_o_pedido_do_ciclo_anterior[True]`: "uma conta do livro veio antes"; `[False]`: a primeira trava de situação não alcançava X.
+- **Green** (`8d1a899`): `_travar_as_situacoes(rodada)` em `apps/pedidos/cancelamento_da_rodada.py`, chamada logo depois das travas da E12-01 e da relida da etapa: uma consulta `select_for_update()` sobre `SituacaoDoPedido` com `pedido_id` em subconsulta dos pedidos de todas as aberturas da rodada (sem junção, para não travar `pedido` nem `abertura`), `order_by("pedido_id")`.
+- **Resultado:** os dois arquivos, 43 passed.
+- **Invariantes da ordem, conferidos no código e por teste:**
+  - sincronização (`quitacao.py:236`): pagamento, situação, contas do livro; apuração (`apuracao.py:862`): travas da E11, situações, contas; reembolso (`reembolsos.py:87`): situação já travada, sem mudar a ordem;
+  - A-18 confere que a transação do cancelamento (da primeira trava de conta de comprador em diante) não trava `PagamentoNoProvedor` nem `DestinoDoPagamento`, e que nenhuma conta do livro é travada antes da primeira trava de situação;
+  - a consulta prévia sincroniza pagamentos por conta própria, antes da transação; por isso a conferência começa na primeira trava de conta de comprador.
+- A trava das tentativas e chamadas (`agendar_cancelamento`, `agendar_chamada`) continua depois das situações, e `travar_contas` do reembolso continua por último.

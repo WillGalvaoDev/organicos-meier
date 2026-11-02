@@ -17,3 +17,12 @@ Comando: `uv run pytest tests/tecnicos/test_cancelamento_aviso.py` (arquivo inte
 Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
 
 **REPROVADO — R02 (importante).** A-1 a A-7 passam, mas não cobrem cancelamento sem reembolso após retorno ao interesse. Um comprador com pedido pago anterior e devolução de mínimo pendente recebe o texto de quem não tinha pedido pago. `pagos` e `pedidos` só contemplam a abertura vigente; `sem_reembolso` só é preenchido no ramo com reembolso. Referência: regra 4 (texto para pagante sem reembolso), funcional §7.2/§12. Corrigir a classificação histórica dos destinatários já afetados pelo cancelamento, sem criar obrigação nova nem autorizar a anterior. Prova no consolidado.
+
+## Correção da revisão — agente 2 — 2026-11-01
+
+**R02 — o pagante de ciclo anterior (A-8 a A-11).**
+
+- **Red** (`07692a5`, `uv run pytest tests/tecnicos/test_cancelamento_aviso.py`): A-8 (a prova do parecer) recebia "Seus interesses nesta rodada foram removidos. Sem novas devoluções." e o link `/carrinho/`; A-10 e A-11 também falharam (sem o aviso de pagante; sem a frase do ciclo atual). A-9 já passava (regressão do ramo com reembolso).
+- **Green** (`36c97c3`): em `_avisar_os_compradores`, a fonte do pagante passou a ser o pedido `pago` em qualquer abertura da rodada, lido sob as travas da E12-02; entra nos destinatários e define o texto nas duas indicações. O link segue a regra 5 (pedido da abertura vigente, o de menor `pk` com reembolso, o pago de maior `pk`, `/carrinho/`). `_corpo_do_aviso` traz "Seu pedido do ciclo atual foi cancelado e nada foi cobrado nele." antes da frase de pagante. O parâmetro `sem_reembolso` deixou de ser usado e saiu da função; a auditoria continua com `pagos_sem_reembolso`.
+- **Resultado:** 11 passed no arquivo; nenhum movimento, reembolso ou obrigação novos no ramo sem reembolso (A-8 compara as contagens).
+- **Arranjo do A-10:** C entra na fila depois da apuração, por `ParcelaFactory`, porque o estoque que A suspensa libera é distribuído na própria apuração e C ganharia reserva (e, com ela, um aviso legítimo). O critério trata de quem só tem pendente.

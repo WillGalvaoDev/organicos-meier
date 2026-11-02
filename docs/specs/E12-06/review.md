@@ -24,3 +24,14 @@ Comandos: `uv run pytest tests/tecnicos/test_cancelamento_telas.py tests/tecnico
 Base auditada: `8e236e5`, branch `e12-implementacao`, comparada à E11 integrada em `d098654`. Funcional v1.7, infraestrutura v1.8, especificações e critérios das sete fatias lidos antes da avaliação da implementação. Conteúdo anterior preservado integralmente. Evidências, veredito da etapa e reproduções no [parecer consolidado E12-07](../E12-07/review.md).
 
 **REPROVADO — R01 (importante).** A-1 a A-19 confrontados com rotas, templates e testes HTTP; controles de acesso, reautenticação, campos extras, isolamento e tratamento de falhas passam. Após retorno ao interesse seguido de cancelamento, a página do pedido renderiza simultaneamente o cancelamento e a frase antiga de que os interesses continuam reservados. A reserva real é zero. A integração de `cancelamento` e `apuracao` precisa distinguir histórico de estado atual, preservando os registros financeiros. Referências: funcional §7/§7.2, E12-01 regra 6 e E12-06 regra 7. Não houve inspeção visual em navegador.
+
+## Correção da revisão — agente 2 — 2026-11-01
+
+**R01 — o retorno ao interesse como histórico (A-20 a A-22).**
+
+- **Red** (`1b45103`, `uv run pytest tests/tecnicos/test_cancelamento_do_comprador.py`): A-20 (a prova do parecer) encontrou "seus interesses continuam reservados na rodada" na página; A-21 não trazia "As devoluções já devidas deste pedido continuam em andamento."; A-22 passou (regressão da E11-07).
+- **Green** (`42084bd`):
+  - `efeitos_da_apuracao_no_pedido` marca `retorno_anterior_ao_cancelamento` quando a rodada tem `CancelamentoDaRodada` e deixa `rodada_voltou_para_interesse` e `interesses_reservados` falsos; nenhum registro da apuração muda;
+  - `detalhe.html` mostra a frase histórica depois do bloco do cancelamento;
+  - `aviso_no_pedido` acrescenta "As devoluções já devidas deste pedido continuam em andamento." ao pedido pago de rodada cancelada com reembolso e sem reembolso novo.
+- **Resultado:** 8 passed no arquivo do comprador; telas do administrador (E12-06 A-1 a A-13) seguem verdes.

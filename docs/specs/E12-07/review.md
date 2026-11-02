@@ -169,3 +169,21 @@ def test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio(relogio,si
 ### Encaminhamento
 
 R03 volta ao implementador e ao especificador para alinhar o detalhamento técnico da ordem das travas; R01/R02 voltam ao implementador com testes Red/Green. Não há decisão comercial necessária para resolver os três. Reexecutar as provas preservadas, os critérios afetados e regressões relevantes antes de nova revisão. Nenhuma melhoria não impeditiva nova foi aberta. Entrega: somente os sete `review.md`, com conteúdo anterior preservado, sem push ou PR.
+
+## Correção da revisão — agente 2 — 2026-11-01
+
+**Cenário 8 e invariante em todos os testes (A-9 e A-10).**
+
+- **A-9** (`7a10818`, `test_cancelamento_depois_de_um_retorno_ao_interesse[sim|nao]`): AP-R pela tela, `processar_chamadas`. Este arquivo não cria comportamento novo; como o Red da fatia depende das correções R01 a R03, reverti temporariamente os arquivos de `apps/` para `8e236e5` (`git apply -R` do diff, reaplicado em seguida, árvore limpa) e rodei o arquivo: **2 failed, 8 passed**, as duas variantes do A-9 falhando por "seus interesses continuam reservados na rodada" e pelo link `/carrinho/` no lugar de `/pedidos/<X>/`. Com a produção atual: 10 passed.
+- **A-10:** `_invariante_ok()` passou a ser a última asserção de A-6, A-7 e A-8 (e dos demais já tinha). Todos passam.
+- **Alinhamentos A-3 e A-5:** os valores e o prazo já eram os do critério corrigido (7,49 e 94,35; autorização em `PRAZO + 3 dias`).
+
+**Provas do revisor (arquivo temporário, removido, nunca commitado):**
+
+| Prova | Resultado sobre a correção |
+|---|---|
+| `test_cancelamento_nao_promete_reservas_do_retorno_anterior` | passa sem mudança |
+| `test_aviso_sem_reembolso_reconhece_pedido_pago_de_ciclo_anterior` | passa sem mudança |
+| `test_cancelamento_de_ciclo_anterior_concorre_com_pagamento_tardio` | sem impasse; a pausa do teste original espera a trava das contas, que agora vem depois da liberação da situação (E12-03 A-19, adaptada como o `acceptance.md` prevê) |
+
+Os mesmos casos estão nos testes permanentes: E12-06 A-20, E12-05 A-8 e E12-03 A-19.
