@@ -12,12 +12,12 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-01, with PR #84 (E11) |
+| **Last updated** | 2026-11-01, with PR #85 (E12) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 11 of 16 stages delivered (E01–E11), 80 slices, each approved by an independent review |
-| **Last stage delivered** | E11 — Final settlement and pending queue (PR #84) |
-| **Next stage** | E12 — Round cancellation (not started) |
-| **Test suite** | 2,795 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
+| **Progress** | 12 of 16 stages delivered (E01–E12), 87 slices, each approved by an independent review |
+| **Last stage delivered** | E12 — Round cancellation (PR #85) |
+| **Next stage** | E13 — Formal order, payout and supplier portal (not started) |
+| **Test suite** | 2,916 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
 | **Open blockers** | None |
 | **Non-blocking improvements** | 8 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
@@ -33,8 +33,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Double-entry ledger with immutable movements segregated by destination (custody, supplier obligation, freight, service revenue, reserve), the administrator's reserve with its coverage, buyer obligations, the financial invariant checked every 10 minutes and the daily reconciliation against the provider, with alerts.
 - Refunds: partial refunds proportional by item, service and freight, and full order refunds; refunds through the simulated provider with idempotency, safe retries and late-conclusion handling; refund reconciliation; the exceptional refund confirmed by the administrator with a receipt; refund notices and the admin and buyer screens. The simulator also produces refunds and chargebacks.
 - Final settlement from `T0 + 48h`, in two administrator acts (settle, then approve the result): provider reconsultation and cancellation of open charges before deciding, cancellation of unpaid orders, invalidated boxes with proportional refunds and the units back in the pending queue, the supplier minimum, the return to interest with full refunds when the minimum is not met, the ledger settlement on approval, the admin and buyer screens, and the pending queue tested end to end.
+- Round cancellation by the administrator, for the whole round and with a mandatory refund indication: reservations removed while the pending queue is kept, unpaid orders cancelled, new payment attempts blocked and open charges cancelled at the provider; with refund, a full refund for every buyer who paid (minus what was already refunded or pending), already authorized and retried periodically; payments reported after the cancellation always go to refund with a critical alert; the cancellation notice, the admin and buyer screens and the end-to-end scenarios with the simulator.
 
-**Not built yet:** round cancellation (E12), the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+**Not built yet:** the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -49,8 +50,8 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E09 | Ledger, reserve and reconciliation | ✅ Delivered |
 | E10 | Refunds | ✅ Delivered |
 | E11 | Final settlement and pending queue | ✅ Delivered |
-| E12 | Round cancellation | ⏳ Next |
-| E13 | Formal order, payout and supplier portal | — |
+| E12 | Round cancellation | ✅ Delivered |
+| E13 | Formal order, payout and supplier portal | ⏳ Next |
 | E14 | Receiving, delivery issues, pickup and disposal | — |
 | E15 | Admin dashboard and operational alerts | — |
 | E16 | Homologation and Phase 1 closing | — |
