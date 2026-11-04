@@ -8,13 +8,15 @@ from typing import Any
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.pedidos.models import (
     EnvioDoPedidoFormal,
+    OrigemDaPrevisao,
     PedidoFormal,
+    PrevisaoDeEntrega,
     SituacaoDoEnvio,
     TentativaDeEnvioDoPedidoFormal,
     TipoDaTentativaDeEnvio,
 )
 from apps.pedidos.reenvio_do_pedido_formal import pode_reenviar
-from apps.rodadas.models import Rodada
+from apps.rodadas.models import Etapa, Rodada
 
 TENTATIVAS_AUTOMATICAS = 3
 NOTA_DA_ENTREGA = "A aceitação pelo serviço de e-mail não comprova a entrega ao fornecedor."
@@ -62,6 +64,32 @@ def _tentativas(pedido_formal: PedidoFormal) -> list[dict[str, Any]]:
     ]
 
 
+def _previsoes(pedido_formal: PedidoFormal) -> dict[str, Any]:
+    """O bloco da previsão: a vigente, o histórico e se o ajuste está aberto."""
+    registros = list(
+        PrevisaoDeEntrega.objects.filter(ciclo_id=pedido_formal.ciclo_id)
+        .select_related("autor")
+        .order_by("-pk")
+    )
+    return {
+        "vigente": registros[0].data if registros else pedido_formal.previsao_inicial,
+        "historico": [
+            {
+                "data": p.data,
+                "origem": (
+                    f"Prazo padrão de {pedido_formal.prazo_entrega_dias} dias"
+                    if p.origem == OrigemDaPrevisao.PADRAO
+                    else "Ajuste"
+                ),
+                "autor": p.autor.nome if p.autor is not None else "",
+                "momento": _data_hora(p.registrada_em),
+            }
+            for p in registros
+        ],
+        "ajustavel": pedido_formal.rodada.etapa == Etapa.AGUARDANDO_FORNECEDOR,
+    }
+
+
 def pagina_do_pedido_formal(pedido_formal: PedidoFormal) -> dict[str, Any]:
     """O contexto da página do pedido formal. O token do formulário é novo a cada carregamento."""
     envio = EnvioDoPedidoFormal.objects.get(pedido_formal=pedido_formal)
@@ -77,6 +105,7 @@ def pagina_do_pedido_formal(pedido_formal: PedidoFormal) -> dict[str, Any]:
         "tentativas": _tentativas(pedido_formal),
         "pode_reenviar": pode,
         "mensagem_do_reenvio": mensagem,
+        "previsao": _previsoes(pedido_formal),
         "token": uuid.uuid4(),
     }
 

@@ -29,6 +29,25 @@
   <p>Assunto: {{ pedido_formal.assunto }}</p>
   <pre>{{ pedido_formal.corpo }}</pre>
 
+  <h2>Previsão de entrega</h2>
+  <p>Previsão vigente: {{ previsao.vigente|date:"d/m/Y" }}</p>
+  <table>
+    <thead><tr><th>Data</th><th>Origem</th><th>Administrador</th><th>Registrada em</th></tr></thead>
+    <tbody>
+      {% for p in previsao.historico %}
+        <tr><td>{{ p.data|date:"d/m/Y" }}</td><td>{{ p.origem }}</td><td>{{ p.autor }}</td><td>{{ p.momento }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if previsao.ajustavel %}
+    <form method="post" action="{% url 'rodadas_previsao' pk=rodada.pk %}">
+      {% csrf_token %}
+      <label for="data">Nova previsão</label>
+      <input type="date" id="data" name="data" required>
+      <button type="submit">Alterar previsão</button>
+    </form>
+  {% endif %}
+
   <h2>Envio</h2>
   <p>Destino atual: {{ fornecedor.email_pedido }}</p>
   <p>{{ situacao_do_envio }}</p>

@@ -1,6 +1,7 @@
+import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.contrib import messages
@@ -29,6 +30,7 @@ from apps.pedidos.cancelamento_tela import bloco_do_cancelamento
 from apps.pedidos.models import AberturaDoPagamento, PedidoFormal, ResultadoDaApuracao
 from apps.pedidos.pedido_formal_tela import bloco_do_pedido_formal, pagina_do_pedido_formal
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
+from apps.pedidos.previsao_de_entrega import PrevisaoRecusada, ajustar_previsao_de_entrega
 from apps.pedidos.reenvio_do_pedido_formal import ReenvioRecusado, reenviar_pedido_formal
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
@@ -497,4 +499,37 @@ def pedido_formal_reenviar(request: HttpRequest, pk: int) -> HttpResponse:
             request,
             f"Reenvio registrado: o serviço de e-mail recusou ({registrado.tentativa.resposta}).",
         )
+    return redirect("rodadas_pedido_formal", pk=rodada.pk)
+
+
+DATA_ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _ler_data(texto: str) -> date | None:
+    if not DATA_ISO.fullmatch(texto):
+        return None
+    try:
+        return date.fromisoformat(texto)
+    except ValueError:
+        return None
+
+
+@somente_administrador
+@require_POST
+def previsao(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada, pk=pk)
+    pedido = get_object_or_404(
+        PedidoFormal.objects.select_related("fornecedor", "ciclo"), rodada=rodada
+    )
+    autor: Conta = request.user  # type: ignore[assignment]
+    data = _ler_data(request.POST.get("data", ""))
+    if data is None:
+        return _pedido_formal_recusado(request, pedido, "Informe uma data válida.", 400)
+    try:
+        ajustar_previsao_de_entrega(autor, rodada, data)
+    except PrevisaoRecusada as erro:
+        return _pedido_formal_recusado(
+            request, pedido, str(erro), 400 if erro.codigo == "data_invalida" else 409
+        )
+    messages.success(request, f"Previsão de entrega alterada para {data:%d/%m/%Y}.")
     return redirect("rodadas_pedido_formal", pk=rodada.pk)

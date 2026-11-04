@@ -6,6 +6,7 @@
   {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
   <p>Situação: {{ situacao }}.</p>
   {% if quitado_em %}<p>Pago em {{ quitado_em }} (horário de Brasília).</p>{% endif %}
+  {% if previsao_de_entrega %}<p>Previsão de entrega: {{ previsao_de_entrega|date:"d/m/Y" }}.</p>{% endif %}
   {% if cancelamento %}
     {% for frase in cancelamento.frases %}<p>{{ frase }}</p>{% endfor %}
     {% if cancelamento.mensagem %}<p>Mensagem do administrador: {{ cancelamento.mensagem }}</p>{% endif %}

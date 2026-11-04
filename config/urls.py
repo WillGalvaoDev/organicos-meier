@@ -180,6 +180,11 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="rodadas_pedido_formal_reenviar",
     ),
     path(
+        "administracao/rodadas/<int:pk>/previsao/",
+        rodadas_views.previsao,
+        name="rodadas_previsao",
+    ),
+    path(
         "administracao/rodadas/<int:pk>/apuracao/iniciar/",
         rodadas_views.apuracao_iniciar,
         name="rodadas_apuracao_iniciar",
