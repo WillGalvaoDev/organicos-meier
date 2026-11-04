@@ -130,6 +130,10 @@ PREFIXOS_COM_SIMULADOR = (
     "test_t08_",
     "test_t09_",
     "test_simulador_estornos",
+    "test_pedido_formal",
+    "test_previsao_de_entrega",
+    "test_repasse",
+    "test_portal_do_fornecedor",
 )
 
 
