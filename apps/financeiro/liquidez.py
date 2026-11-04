@@ -76,7 +76,7 @@ SAIDAS: dict[str, tuple[TipoDeMovimento, Destinacao, bool, bool]] = {
         True,
         True,
     ),
-    "pagamento_do_frete": (TipoDeMovimento.PAGAMENTO_DO_FRETE, Destinacao.FRETE, False, False),
+    "pagamento_do_frete": (TipoDeMovimento.PAGAMENTO_DO_FRETE, Destinacao.FRETE, True, False),
 }
 
 
@@ -100,9 +100,17 @@ def _liberado_em(custodia: ContaFinanceira) -> datetime | None:
 
 
 def liquidez(conta: ContaFinanceira) -> Liquidez:
-    """A parte liberada e a parte a liberar da obrigação com um fornecedor ou da receita."""
-    if conta.destinacao not in (Destinacao.OBRIGACAO_FORNECEDOR, Destinacao.RECEITA_SERVICO):
-        raise ValueError("só a obrigação com fornecedor e a receita de serviço têm liquidez")
+    """A parte liberada e a parte a liberar da obrigação com um fornecedor, da receita ou do frete
+    da rodada. No frete, as coberturas de déficit (da receita de serviço ou da reserva) contam
+    como liberadas: são recursos da plataforma, e não de outro fornecedor (E13-06)."""
+    if conta.destinacao not in (
+        Destinacao.OBRIGACAO_FORNECEDOR,
+        Destinacao.RECEITA_SERVICO,
+        Destinacao.FRETE,
+    ):
+        raise ValueError(
+            "só a obrigação com fornecedor, a receita de serviço e o frete têm liquidez"
+        )
     instante = agora()
     entradas = TransferenciaFinanceira.objects.filter(
         para=conta, movimento__tipo=TipoDeMovimento.APURACAO
@@ -112,6 +120,11 @@ def liquidez(conta: ContaFinanceira) -> Liquidez:
         quando = _liberado_em(transferencia.de) if transferencia.de is not None else None
         if quando is not None and quando <= instante:
             liberado_pelos_pagamentos += transferencia.valor
+    if conta.destinacao == Destinacao.FRETE:
+        cobertas = TransferenciaFinanceira.objects.filter(
+            para=conta, movimento__tipo=TipoDeMovimento.COBERTURA_DE_DESPESA
+        ).aggregate(s=Sum("valor"))["s"]
+        liberado_pelos_pagamentos += Decimal(cobertas) if cobertas is not None else ZERO
     saiu = TransferenciaFinanceira.objects.filter(de=conta).aggregate(s=Sum("valor"))["s"]
     pode_sair = liberado_pelos_pagamentos - (Decimal(saiu) if saiu is not None else ZERO)
     em_conta = saldo(conta)
