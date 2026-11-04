@@ -25,12 +25,20 @@ from apps.pagamentos.consulta import ConsultaAoProvedorFalhou, consultar_antes_d
 from apps.pedidos.models import (
     EnvioDoPedidoFormal,
     Pedido,
+    PedidoFormal,
     ResultadoDoEnvio,
     SituacaoDoEnvio,
     TentativaDeEnvioDoPedidoFormal,
     TipoDaTentativaDeEnvio,
 )
 from apps.rodadas.models import Etapa, Rodada
+
+__all__ = [
+    "consultar_antes_de_decidir",
+    "enviar_email",
+    "estado_do_envio",
+    "processar_pedidos_formais",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +50,7 @@ MOTIVO_RODADA_CANCELADA = "rodada_cancelada"
 TENTATIVAS_AUTOMATICAS = 3
 
 
-def estado_do_envio(pedido_formal: object) -> str:
+def estado_do_envio(pedido_formal: PedidoFormal) -> str:
     """A situação gravada do envio, sem trava, para as telas."""
     return str(
         EnvioDoPedidoFormal.objects.filter(pedido_formal=pedido_formal)
