@@ -290,7 +290,7 @@ def test_a_auditoria_do_reenvio(
         "pedido_formal": pedido.pk,
         "numero": 4,
         "resultado": "sucesso",
-        "token": str(token),
+        "acionamento": str(token),
     }
 
 
