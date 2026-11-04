@@ -204,9 +204,8 @@ def test_token_que_nao_e_uuid_e_recusado(
 def test_o_token_de_outro_pedido_formal_e_recusado(
     relogio: RelogioControlado, sim: Any, settings: Any
 ) -> None:  # A-9
-    from apps.pedidos.reenvio_do_pedido_formal import ReenvioRecusado
-
     from apps.pedidos.models import PedidoFormal, TentativaDeEnvioDoPedidoFormal
+    from apps.pedidos.reenvio_do_pedido_formal import ReenvioRecusado
 
     a, _x, _y, primeiro = af_falhas(relogio, sim, settings)
     _a2, _x2, _y2, segundo = af_falhas(relogio, sim, settings)
