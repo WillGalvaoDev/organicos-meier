@@ -22,6 +22,11 @@ ROTAS_DE_PEDIDOS_PERMITIDAS = {
     "pedidos_detalhe",
     "pedidos_pagar",
     "rodadas_pagamento_abrir",
+    # E13: nenhuma altera o pedido congelado, os itens, o T0 nem o frete cobrado
+    "rodadas_pedido_formal",
+    "rodadas_pedido_formal_reenviar",
+    "fornecedor_pedido_formal_csv",
+    "rodadas_saidas_frete",
 }
 
 
