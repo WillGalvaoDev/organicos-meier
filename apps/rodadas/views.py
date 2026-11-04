@@ -7,14 +7,17 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.forms import Form
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.catalogo.models import Produto
-from apps.catalogo.templatetags.catalogo import quantidade_br
+from apps.catalogo.templatetags.catalogo import quantidade_br, reais
 from apps.contas.administracao import exige_reautenticacao_por_passkey, somente_administrador
 from apps.contas.models import Conta
+from apps.financeiro.liquidez import LiquidezInsuficiente, SaidaRepetida, liquidez
+from apps.financeiro.livro import MovimentoInvalido, SaldoInsuficiente, conta
+from apps.financeiro.models import Destinacao
 from apps.fornecedores.models import Fornecedor
 from apps.interesses.consultas import total_reservado
 from apps.interesses.progresso import progresso_da_rodada
@@ -32,6 +35,12 @@ from apps.pedidos.pedido_formal_tela import bloco_do_pedido_formal, pagina_do_pe
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
 from apps.pedidos.previsao_de_entrega import PrevisaoRecusada, ajustar_previsao_de_entrega
 from apps.pedidos.reenvio_do_pedido_formal import ReenvioRecusado, reenviar_pedido_formal
+from apps.pedidos.repasse import (
+    RepasseRecusado,
+    registrar_pagamento_do_frete,
+    registrar_repasse,
+)
+from apps.pedidos.repasse_tela import pagina_das_saidas, rodada_tem_apuracao_no_livro
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
@@ -140,6 +149,7 @@ def _pagina_do_estoque(
         "apuracao": bloco_da_apuracao(rodada, agora()),
         "cancelamento": bloco_do_cancelamento(rodada),
         "pedido_formal": bloco_do_pedido_formal(rodada),
+        "com_saidas": rodada_tem_apuracao_no_livro(rodada),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
@@ -533,3 +543,109 @@ def previsao(request: HttpRequest, pk: int) -> HttpResponse:
         )
     messages.success(request, f"Previsão de entrega alterada para {data:%d/%m/%Y}.")
     return redirect("rodadas_pedido_formal", pk=rodada.pk)
+
+
+# --- as saídas da rodada: repasse ao fornecedor e pagamento do frete (E13-06) -----------------
+
+MENSAGEM_DO_VALOR_DAS_SAIDAS = (
+    "Informe um valor em reais maior que zero, com até duas casas decimais (por exemplo, 1000,00)."
+)
+
+
+def _valor_das_saidas(texto: str) -> Decimal | None:
+    try:
+        valor = ler_decimal_digitado(texto, 2)
+    except ValorInvalido:
+        return None
+    return valor if valor > 0 else None
+
+
+def _pagina_das_saidas(
+    request: HttpRequest, rodada: Rodada, erro: str = "", status: int = 200
+) -> HttpResponse:
+    atual = Rodada.objects.select_related("fornecedor").get(pk=rodada.pk)
+    return render(
+        request, "rodadas/saidas.html", pagina_das_saidas(atual) | {"erro": erro}, status=status
+    )
+
+
+def _rodada_com_saidas(pk: int) -> Rodada:
+    rodada = get_object_or_404(Rodada.objects.select_related("fornecedor"), pk=pk)
+    if not rodada_tem_apuracao_no_livro(rodada):
+        raise Http404
+    return rodada
+
+
+@somente_administrador
+@require_GET
+def saidas(request: HttpRequest, pk: int) -> HttpResponse:
+    return _pagina_das_saidas(request, _rodada_com_saidas(pk))
+
+
+def _registrar_saida_da_tela(request: HttpRequest, pk: int, *, frete: bool) -> HttpResponse:
+    rodada = _rodada_com_saidas(pk)
+    autor: Conta = request.user  # type: ignore[assignment]
+    valor = _valor_das_saidas(request.POST.get("valor", ""))
+    identificacao = request.POST.get("identificacao", "").strip()
+    justificativa = request.POST.get("justificativa", "").strip()
+    if valor is None:
+        return _pagina_das_saidas(request, rodada, MENSAGEM_DO_VALOR_DAS_SAIDAS, 400)
+    if not identificacao:
+        return _pagina_das_saidas(
+            request, rodada, "Informe a identificação da saída no provedor.", 400
+        )
+    if not justificativa:
+        return _pagina_das_saidas(request, rodada, "Informe a justificativa.", 400)
+    registrar = registrar_pagamento_do_frete if frete else registrar_repasse
+    try:
+        registrar(
+            autor, rodada, valor=valor, identificacao=identificacao, justificativa=justificativa
+        )
+    except LiquidezInsuficiente:
+        origem = (
+            conta(Destinacao.FRETE, rodada=rodada.pk)
+            if frete
+            else conta(
+                Destinacao.OBRIGACAO_FORNECEDOR, fornecedor=rodada.fornecedor_id, rodada=rodada.pk
+            )
+        )
+        parte = liquidez(origem)
+        return _pagina_das_saidas(
+            request,
+            rodada,
+            f"Só {reais(parte.liberado)} estão liberados no provedor "
+            f"({reais(parte.a_liberar)} a liberar).",
+            409,
+        )
+    except SaidaRepetida:
+        return _pagina_das_saidas(
+            request, rodada, "Esta identificação de saída já foi registrada.", 409
+        )
+    except RepasseRecusado as erro:
+        return _pagina_das_saidas(request, rodada, str(erro), 409)
+    except ConsultaAoProvedorFalhou:
+        return _pagina_das_saidas(
+            request,
+            rodada,
+            "Não foi possível consultar o provedor; o repasse não foi registrado. Tente de novo.",
+            503,
+        )
+    except (SaldoInsuficiente, MovimentoInvalido):
+        return _pagina_das_saidas(request, rodada, MENSAGEM_DO_VALOR_DAS_SAIDAS, 400)
+    if frete:
+        messages.success(request, f"Pagamento do frete de {reais(valor)} registrado.")
+    else:
+        messages.success(request, f"Repasse de {reais(valor)} registrado.")
+    return redirect("rodadas_saidas", pk=rodada.pk)
+
+
+@exige_reautenticacao_por_passkey
+@require_POST
+def saidas_repasse(request: HttpRequest, pk: int) -> HttpResponse:
+    return _registrar_saida_da_tela(request, pk, frete=False)
+
+
+@exige_reautenticacao_por_passkey
+@require_POST
+def saidas_frete(request: HttpRequest, pk: int) -> HttpResponse:
+    return _registrar_saida_da_tela(request, pk, frete=True)

@@ -199,6 +199,7 @@
     <p>{{ pedido_formal.situacao }}</p>
     <p><a href="{% url 'rodadas_pedido_formal' pk=rodada.pk %}">Ver pedido formal</a></p>
   {% endif %}
+  {% if com_saidas %}<p><a href="{% url 'rodadas_saidas' pk=rodada.pk %}">Saídas da rodada</a></p>{% endif %}
 
   <h2>Produtos na rodada</h2>
   {% if na_rodada %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Saídas da rodada · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Saídas da rodada {{ rodada.pk }} de {{ fornecedor.nome }}</h1>
+  <p>Registre só depois de fazer a saída pela conta do provedor. Cada saída vai até o valor já liberado.</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+
+  <h2>Repasse ao fornecedor</h2>
+  <p>Saldo: {{ obrigacao.saldo|reais }}</p>
+  <p>Liberado no provedor: {{ obrigacao.liquidez.liberado|reais }}</p>
+  <p>A liberar: {{ obrigacao.liquidez.a_liberar|reais }}</p>
+  <table>
+    <thead><tr><th>Momento</th><th>Valor</th><th>Identificação</th><th>Justificativa</th><th>Administrador</th></tr></thead>
+    <tbody>
+      {% for r in obrigacao.historico %}
+        <tr><td>{{ r.momento }}</td><td>{{ r.valor|reais }}</td><td>{{ r.identificacao }}</td><td>{{ r.justificativa }}</td><td>{{ r.autor }}</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhum repasse registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{% url 'rodadas_saidas_repasse' pk=rodada.pk %}">
+    {% csrf_token %}
+    <label>Valor (R$) <input name="valor" inputmode="decimal" required></label>
+    <label>Identificação da saída no provedor <input name="identificacao" maxlength="64" required></label>
+    <label>Justificativa <input name="justificativa" required></label>
+    <button type="submit">Registrar repasse</button>
+  </form>
+
+  <h2>Frete</h2>
+  <p>Frete efetivo: {{ frete.relatorio.efetivo|reais }}</p>
+  <p>Arrecadado: {{ frete.relatorio.arrecadado|reais }}</p>
+  <p>Déficit: {{ frete.relatorio.deficit|reais }}</p>
+  <p>Déficit coberto: {{ frete.relatorio.deficit_coberto|reais }}</p>
+  <p>Saldo do frete: {{ frete.saldo|reais }}</p>
+  <p>Liberado do frete: {{ frete.liquidez.liberado|reais }}</p>
+  <p>A liberar do frete: {{ frete.liquidez.a_liberar|reais }}</p>
+  <table>
+    <thead><tr><th>Momento</th><th>Valor</th><th>Identificação</th><th>Justificativa</th><th>Administrador</th></tr></thead>
+    <tbody>
+      {% for r in frete.historico %}
+        <tr><td>{{ r.momento }}</td><td>{{ r.valor|reais }}</td><td>{{ r.identificacao }}</td><td>{{ r.justificativa }}</td><td>{{ r.autor }}</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhum pagamento do frete registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{% url 'rodadas_saidas_frete' pk=rodada.pk %}">
+    {% csrf_token %}
+    <label>Valor (R$) <input name="valor" inputmode="decimal" required></label>
+    <label>Identificação da saída no provedor <input name="identificacao" maxlength="64" required></label>
+    <label>Justificativa <input name="justificativa" required></label>
+    <button type="submit">Registrar pagamento do frete</button>
+  </form>
+{% endblock %}

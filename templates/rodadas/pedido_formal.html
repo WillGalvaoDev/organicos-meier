@@ -29,6 +29,8 @@
   <p>Assunto: {{ pedido_formal.assunto }}</p>
   <pre>{{ pedido_formal.corpo }}</pre>
 
+  {% if com_saidas %}<p><a href="{% url 'rodadas_saidas' pk=rodada.pk %}">Saídas da rodada</a></p>{% endif %}
+
   <h2>Previsão de entrega</h2>
   <p>Previsão vigente: {{ previsao.vigente|date:"d/m/Y" }}</p>
   <table>

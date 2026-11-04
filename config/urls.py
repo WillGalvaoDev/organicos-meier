@@ -184,6 +184,17 @@ urlpatterns: list[URLPattern | URLResolver] = [
         rodadas_views.previsao,
         name="rodadas_previsao",
     ),
+    path("administracao/rodadas/<int:pk>/saidas/", rodadas_views.saidas, name="rodadas_saidas"),
+    path(
+        "administracao/rodadas/<int:pk>/saidas/repasse/",
+        rodadas_views.saidas_repasse,
+        name="rodadas_saidas_repasse",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/saidas/frete/",
+        rodadas_views.saidas_frete,
+        name="rodadas_saidas_frete",
+    ),
     path(
         "administracao/rodadas/<int:pk>/apuracao/iniciar/",
         rodadas_views.apuracao_iniciar,

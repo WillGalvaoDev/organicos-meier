@@ -16,6 +16,7 @@ from apps.pedidos.models import (
     TipoDaTentativaDeEnvio,
 )
 from apps.pedidos.reenvio_do_pedido_formal import pode_reenviar
+from apps.pedidos.repasse_tela import rodada_tem_apuracao_no_livro
 from apps.rodadas.models import Etapa, Rodada
 
 TENTATIVAS_AUTOMATICAS = 3
@@ -106,6 +107,7 @@ def pagina_do_pedido_formal(pedido_formal: PedidoFormal) -> dict[str, Any]:
         "pode_reenviar": pode,
         "mensagem_do_reenvio": mensagem,
         "previsao": _previsoes(pedido_formal),
+        "com_saidas": rodada_tem_apuracao_no_livro(pedido_formal.rodada),
         "token": uuid.uuid4(),
     }
 
