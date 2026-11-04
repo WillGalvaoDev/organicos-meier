@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -25,8 +26,10 @@ from apps.pedidos.apuracao import ApuracaoRecusada, aprovar_resultado, iniciar_a
 from apps.pedidos.apuracao_tela import bloco_da_apuracao
 from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado, cancelar_rodada
 from apps.pedidos.cancelamento_tela import bloco_do_cancelamento
-from apps.pedidos.models import AberturaDoPagamento, ResultadoDaApuracao
+from apps.pedidos.models import AberturaDoPagamento, PedidoFormal, ResultadoDaApuracao
+from apps.pedidos.pedido_formal_tela import bloco_do_pedido_formal, pagina_do_pedido_formal
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
+from apps.pedidos.reenvio_do_pedido_formal import ReenvioRecusado, reenviar_pedido_formal
 from apps.rodadas.ciclos import ciclo_vigente
 from apps.rodadas.condicoes import MENSAGEM, CondicoesCongeladas
 from apps.rodadas.estoque import (
@@ -134,6 +137,7 @@ def _pagina_do_estoque(
         "fechamento": bloco,
         "apuracao": bloco_da_apuracao(rodada, agora()),
         "cancelamento": bloco_do_cancelamento(rodada),
+        "pedido_formal": bloco_do_pedido_formal(rodada),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,
     }
@@ -439,3 +443,58 @@ def pagamento_abrir(request: HttpRequest, pk: int) -> HttpResponse:
             f"Pagamento aberto. Prazo: {prazo:%d/%m/%Y} às {prazo:%H:%M} (horário de Brasília).",
         )
     return redirect("rodadas_estoque", pk=rodada.pk)
+
+
+@somente_administrador
+@require_GET
+def pedido_formal(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada, pk=pk)
+    pedido = get_object_or_404(
+        PedidoFormal.objects.select_related("fornecedor", "ciclo"), rodada=rodada
+    )
+    return render(request, "rodadas/pedido_formal.html", pagina_do_pedido_formal(pedido))
+
+
+def _pedido_formal_recusado(
+    request: HttpRequest, pedido: PedidoFormal, mensagem: str, status: int
+) -> HttpResponse:
+    contexto = pagina_do_pedido_formal(pedido) | {"erro": mensagem}
+    return render(request, "rodadas/pedido_formal.html", contexto, status=status)
+
+
+MENSAGEM_DO_TOKEN = "Recarregue a página e tente de novo."  # noqa: S105
+MENSAGEM_DO_PROVEDOR_NO_REENVIO = (
+    "Não foi possível consultar o provedor; o pedido não foi reenviado. Tente de novo."
+)
+
+
+@somente_administrador
+@require_POST
+def pedido_formal_reenviar(request: HttpRequest, pk: int) -> HttpResponse:
+    rodada = get_object_or_404(Rodada, pk=pk)
+    pedido = get_object_or_404(
+        PedidoFormal.objects.select_related("fornecedor", "ciclo"), rodada=rodada
+    )
+    autor: Conta = request.user  # type: ignore[assignment]
+    try:
+        token = uuid.UUID(request.POST.get("token", ""))
+    except ValueError:
+        return _pedido_formal_recusado(request, pedido, MENSAGEM_DO_TOKEN, 400)
+    try:
+        registrado = reenviar_pedido_formal(autor, pedido, token=token)
+    except ReenvioRecusado as erro:
+        if erro.codigo == "token_invalido":
+            return _pedido_formal_recusado(request, pedido, MENSAGEM_DO_TOKEN, 400)
+        return _pedido_formal_recusado(request, pedido, str(erro), 409)
+    except ConsultaAoProvedorFalhou:
+        return _pedido_formal_recusado(request, pedido, MENSAGEM_DO_PROVEDOR_NO_REENVIO, 503)
+    if not registrado.nova:
+        messages.success(request, "Este reenvio já tinha sido registrado.")
+    elif registrado.tentativa.resultado == "sucesso":
+        messages.success(request, "Reenvio registrado: aceito pelo serviço de e-mail.")
+    else:
+        messages.warning(
+            request,
+            f"Reenvio registrado: o serviço de e-mail recusou ({registrado.tentativa.resposta}).",
+        )
+    return redirect("rodadas_pedido_formal", pk=rodada.pk)

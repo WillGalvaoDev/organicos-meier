@@ -170,6 +170,16 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="rodadas_cancelar",
     ),
     path(
+        "administracao/rodadas/<int:pk>/pedido-formal/",
+        rodadas_views.pedido_formal,
+        name="rodadas_pedido_formal",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/pedido-formal/reenviar/",
+        rodadas_views.pedido_formal_reenviar,
+        name="rodadas_pedido_formal_reenviar",
+    ),
+    path(
         "administracao/rodadas/<int:pk>/apuracao/iniciar/",
         rodadas_views.apuracao_iniciar,
         name="rodadas_apuracao_iniciar",
