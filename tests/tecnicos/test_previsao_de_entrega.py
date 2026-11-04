@@ -172,9 +172,8 @@ def test_a_mesma_data_da_vigente_e_recusada(relogio: RelogioControlado, sim: Any
 def test_fora_de_aguardando_fornecedor_e_recusado(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-9
-    from apps.pedidos.previsao_de_entrega import PrevisaoRecusada
-
     from apps.pedidos.cancelamento_da_rodada import cancelar_rodada
+    from apps.pedidos.previsao_de_entrega import PrevisaoRecusada
 
     a, _x, _y, _pedido = _af(relogio, sim)
     cancelar_rodada(a.admin, a.rodada, com_reembolso=False)
@@ -190,7 +189,6 @@ def test_fora_de_aguardando_fornecedor_e_recusado(
 
 def test_rodada_em_pagamento_e_recusada(relogio: RelogioControlado) -> None:  # A-9
     from apps.pedidos.previsao_de_entrega import PrevisaoRecusada
-
     from tests.apoio.apuracao import arranjo_ap
 
     a, _x, _y = arranjo_ap(relogio)

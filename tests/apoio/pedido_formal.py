@@ -18,16 +18,26 @@ EMAIL_DO_PEDIDO = "pedidos@f.example"
 
 
 def arranjo_af(
-    relogio: RelogioControlado, sim: Any, *, pagar_y: bool = True, **arranjo: Any
+    relogio: RelogioControlado,
+    sim: Any,
+    *,
+    pagar_y: bool = True,
+    liberacao_horas: int | None = None,
+    pago_y_em: datetime | None = None,
+    **arranjo: Any,
 ) -> tuple[Any, Any, Any, PedidoFormal]:
-    """O AF aprovado. Devolve o arranjo, X, Y e o pedido formal. O relógio fica em `T0 + 48h`."""
+    """O AF aprovado. Devolve o arranjo, X, Y e o pedido formal. O relógio fica em `T0 + 48h`.
+    `liberacao_horas` configura a liberação do Pix no simulador; `pago_y_em` é o instante em que Y
+    é aprovado (por padrão, `T0 + 2h`, como X)."""
     from apps.pedidos.apuracao import aprovar_resultado, iniciar_apuracao
 
+    if liberacao_horas is not None:
+        sim.definir_liberacao("pix", horas=liberacao_horas)
     a, x, y = arranjo_ap(relogio, **arranjo)
     Fornecedor.objects.filter(pk=a.fornecedor.pk).update(email_pedido=EMAIL_DO_PEDIDO)
     pagar(relogio, sim, x)
     if pagar_y:
-        pagar(relogio, sim, y)
+        pagar(relogio, sim, y, quando=pago_y_em)
     relogio.congelar(PRAZO)
     iniciar_apuracao(a.admin, a.rodada)
     aprovar_resultado(a.admin, a.rodada)

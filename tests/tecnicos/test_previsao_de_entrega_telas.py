@@ -135,7 +135,6 @@ def test_o_comprador_ve_a_previsao_vigente(
     client: Client, relogio: RelogioControlado, sim: Any
 ) -> None:  # A-17
     from apps.pedidos.previsao_de_entrega import ajustar_previsao_de_entrega
-
     from tests.apoio.pedidos import pedido_de
 
     a, _x, _y, _pedido = _af_logado(client, relogio, sim)
