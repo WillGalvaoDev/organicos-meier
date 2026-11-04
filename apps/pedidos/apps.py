@@ -13,7 +13,9 @@ class PedidosConfig(AppConfig):
             cancelar_pedidos_na_remocao,
             cancelar_pedidos_na_suspensao,
             decidir_destino_do_pagamento_aprovado,
+            gerar_o_pedido_formal,
         )
+        from apps.pedidos.sinais import resultado_aprovado
 
         registrar_operacoes()
         situacao_do_pagamento_mudou.connect(
@@ -22,3 +24,4 @@ class PedidosConfig(AppConfig):
         # depois dos receptores de interesses (E05-07): `apps.interesses` vem antes na lista
         conta_suspensa.connect(cancelar_pedidos_na_suspensao, dispatch_uid="pedidos.suspensao")
         conta_removida.connect(cancelar_pedidos_na_remocao, dispatch_uid="pedidos.remocao")
+        resultado_aprovado.connect(gerar_o_pedido_formal, dispatch_uid="pedidos.pedido_formal")

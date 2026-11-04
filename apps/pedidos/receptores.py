@@ -10,6 +10,7 @@ from typing import Any
 from apps.pagamentos.models import PagamentoNoProvedor
 from apps.pagamentos.provedor import SituacaoNoProvedor
 from apps.pedidos.cancelamento import cancelar_pedidos_nao_pagos
+from apps.pedidos.pedido_formal import gerar_pedido_formal
 from apps.pedidos.quitacao import decidir_destino
 
 
@@ -30,3 +31,8 @@ def cancelar_pedidos_na_suspensao(sender: Any, conta: Any, **kwargs: Any) -> Non
 
 def cancelar_pedidos_na_remocao(sender: Any, conta: Any, **kwargs: Any) -> None:
     cancelar_pedidos_nao_pagos(conta, motivo="remocao_da_conta")
+
+
+def gerar_o_pedido_formal(sender: Any, apuracao: Any, **kwargs: Any) -> None:
+    """O pedido formal nasce com a aprovação do resultado, na mesma transação (E13-01)."""
+    gerar_pedido_formal(apuracao.aprovacao)

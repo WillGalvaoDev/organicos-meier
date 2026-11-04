@@ -1,5 +1,8 @@
 """E13-01: o pedido formal, registro único e congelado do ciclo aprovado (acceptance A-1 a A-17)."""
 
+# o sinal de multiplicação faz parte do texto do e-mail (E13-01, regra 6)
+# ruff: noqa: RUF001
+
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -147,9 +150,8 @@ def test_o_total_e_o_que_a_apuracao_transferiu_ao_fornecedor(
 def test_a_previsao_inicial_conta_o_prazo_do_fornecedor(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-4
-    from apps.pedidos.pedido_formal import previsao_vigente
-
     from apps.pedidos.models import PrevisaoDeEntrega
+    from apps.pedidos.pedido_formal import previsao_vigente
 
     a, _x, _y, _aprovacao = _af(relogio, sim)
     (previsao,) = PrevisaoDeEntrega.objects.all()
@@ -213,9 +215,9 @@ def test_o_pedido_formal_nao_identifica_comprador_nem_cobranca(
         textos.append(repr(sorted(vars(linha).items(), key=lambda par: par[0])))
     proibidos = [
         a.a.nome,
-        a.a.email,
+        a.a.email_normalizado,
         a.b.nome,
-        a.b.email,
+        a.b.email_normalizado,
         "Comprador",
         "serviço",
         "8,50",
@@ -303,14 +305,13 @@ def test_so_a_caixa_invalidada_sai_do_pedido_formal(
 def test_gerar_de_novo_devolve_o_existente_sem_escrever(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-11
-    from apps.pedidos.pedido_formal import gerar_pedido_formal
-
     from apps.pedidos.models import (
         EnvioDoPedidoFormal,
         LinhaDoPedidoFormal,
         PedidoFormal,
         PrevisaoDeEntrega,
     )
+    from apps.pedidos.pedido_formal import gerar_pedido_formal
 
     _a, _x, _y, aprovacao = _af(relogio, sim)
     existente = _pedido_formal()
@@ -335,13 +336,12 @@ def test_gerar_de_novo_devolve_o_existente_sem_escrever(
 def test_sem_aprovacao_valida_nao_ha_pedido_formal(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-12
-    from apps.pedidos.pedido_formal import gerar_pedido_formal
-
     from apps.pedidos.models import ApuracaoFinal, PedidoFormal
+    from apps.pedidos.pedido_formal import gerar_pedido_formal
 
     a, _x, _y = _apurar(relogio, sim)  # apurada e não aprovada
     assert not PedidoFormal.objects.exists()
-    with pytest.raises(ValueError), transaction.atomic():
+    with pytest.raises(ValueError, match="aprovação"), transaction.atomic():
         gerar_pedido_formal(None)  # type: ignore[arg-type]
     assert not PedidoFormal.objects.exists()
     assert ApuracaoFinal.objects.filter(ciclo=a.ciclo).exists()
@@ -350,10 +350,9 @@ def test_sem_aprovacao_valida_nao_ha_pedido_formal(
 def test_retorno_para_interesse_nunca_gera_pedido_formal(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-12
-    from apps.pedidos.pedido_formal import gerar_pedido_formal
-
     from apps.pedidos.apuracao import iniciar_apuracao
     from apps.pedidos.models import AprovacaoDoResultado, ApuracaoFinal, PedidoFormal
+    from apps.pedidos.pedido_formal import gerar_pedido_formal
 
     a, x, _y = arranjo_ap(relogio, minimo="100.00", limites=(11, 12))
     pagar(relogio, sim, x)
@@ -366,7 +365,7 @@ def test_retorno_para_interesse_nunca_gera_pedido_formal(
     aprovacao = AprovacaoDoResultado.objects.create(
         apuracao=apuracao, autor=a.admin, aprovada_em=PRAZO
     )
-    with pytest.raises(ValueError), transaction.atomic():
+    with pytest.raises(ValueError, match="válido"), transaction.atomic():
         gerar_pedido_formal(aprovacao)
     assert not PedidoFormal.objects.exists()
 
@@ -413,10 +412,10 @@ def test_o_pedido_formal_so_aceita_insercao(relogio: RelogioControlado, sim: Any
     for tabela, atribuicao in tabelas.items():
         with pytest.raises(IntegrityError), transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute(f"UPDATE {tabela} SET {atribuicao}")
+                cursor.execute(f"UPDATE {tabela} SET {atribuicao}")  # noqa: S608
         with pytest.raises(IntegrityError), transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute(f"DELETE FROM {tabela}")
+                cursor.execute(f"DELETE FROM {tabela}")  # noqa: S608
 
 
 def test_uma_linha_incoerente_desfaz_a_aprovacao(
