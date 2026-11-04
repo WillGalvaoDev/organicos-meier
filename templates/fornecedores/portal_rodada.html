@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Rodada · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Rodada {{ numero }}</h1>
+  <p>Etapa: {{ rodada.etapa }}.</p>
+  <p><a href="{% url 'fornecedor_painel' %}">Minhas rodadas</a></p>
+
+  {% if produtos %}
+    <h2>Andamento</h2>
+    <p>Progresso: {{ rodada.progresso_percentual }}%</p>
+    <table>
+      <thead><tr><th>Produto</th><th>Unidade</th><th>Preço unitário</th><th>Total em interesse</th><th>Caixas completas</th><th>Faltam para a próxima caixa</th><th>Excedente</th><th>Valor total</th></tr></thead>
+      <tbody>
+        {% for p in produtos %}
+          <tr>
+            <td>{{ p.nome }}</td>
+            <td>{{ p.unidade }}</td>
+            <td>{{ p.preco_unitario|reais }}</td>
+            <td>{{ p.total_em_interesse|quantidade_br }}</td>
+            <td>{% if p.caixas_completas is None %}—{% else %}{{ p.caixas_completas }}{% endif %}</td>
+            <td>{% if p.faltam_para_proxima_caixa is None %}—{% else %}{{ p.faltam_para_proxima_caixa|quantidade_br }}{% endif %}</td>
+            <td>{{ p.excedente|quantidade_br }}</td>
+            <td>{{ p.valor_total|reais }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if frase_do_pagamento %}<p>{{ frase_do_pagamento }}</p>{% endif %}
+
+  {% if pedido_formal %}
+    <h2>Pedido formal nº {{ pedido_formal.numero }}</h2>
+    <p>Emitido em {{ pedido_formal.emitido_em }} (horário de Brasília)</p>
+    <table>
+      <thead><tr><th>Produto</th><th>Quantidade</th><th>Caixas</th><th>Preço unitário</th><th>Valor total</th></tr></thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td>{{ linha.nome }}</td>
+            <td>{{ linha.quantidade|quantidade_br }} {{ linha.unidade }}</td>
+            <td>{% if linha.caixas is None %}—{% else %}{{ linha.caixas }}{% endif %}</td>
+            <td>{{ linha.preco_unitario|reais }}</td>
+            <td>{{ linha.valor_total|reais }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p>Total dos produtos: {{ pedido_formal.total_produtos|reais }}</p>
+    {% if previsao_de_entrega %}<p>Previsão de entrega: {{ previsao_de_entrega|date:"d/m/Y" }}</p>{% endif %}
+    <p><a href="{% url 'fornecedor_pedido_formal_csv' pk=numero %}">Baixar pedido formal (CSV)</a></p>
+  {% endif %}
+{% endblock %}

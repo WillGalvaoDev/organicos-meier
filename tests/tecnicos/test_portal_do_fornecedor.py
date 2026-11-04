@@ -287,13 +287,18 @@ def test_o_comprador_nao_entra_no_portal(
 
 
 def test_administrador_e_anonimo_nao_entram_no_portal(
-    client: Client, relogio: RelogioControlado, sim: Any
+    client: Client, relogio: RelogioControlado, sim: Any, webauthn: Any
 ) -> None:  # A-15
-    a, _x, _y, _pedido, _conta = _af(relogio, sim)
+    from tests.apoio.admin_fluxos import administrador_com_passkey
+    from tests.apoio.devolucoes import entrar_de_novo
+
+    relogio.congelar(T0)
+    _conta, credencial = administrador_com_passkey(client)
+    a, _x, _y, _pedido, _conta_f = _af(relogio, sim)
     anonimo = client.get("/fornecedor/")
     assert anonimo.status_code == 302
     assert settings.LOGIN_URL in anonimo["Location"]
-    client.force_login(a.admin)
+    entrar_de_novo(client, credencial, a.admin)
     assert client.get("/fornecedor/").status_code == 403
 
 

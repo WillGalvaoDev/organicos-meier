@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Minhas rodadas · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>{{ fornecedor.nome }}</h1>
+
+  <h2>Produtos</h2>
+  <table>
+    <thead><tr><th>Produto</th><th>Unidade</th><th>Preço unitário</th><th>Múltiplo</th></tr></thead>
+    <tbody>
+      {% for p in produtos %}
+        <tr>
+          <td>{{ p.nome }}</td>
+          <td>{{ p.unidade }}</td>
+          <td>{{ p.preco_unitario|reais }}</td>
+          <td>{% if p.multiplo is None %}—{% else %}{{ p.multiplo|quantidade_br }}{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">Nenhum produto.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Rodadas</h2>
+  <ul>
+    {% for r in rodadas %}
+      <li><a href="{% url 'fornecedor_rodada' pk=r.numero %}">Rodada {{ r.numero }}</a> · {{ r.etapa }} · aberta em {{ r.aberta_em }}</li>
+    {% empty %}
+      <li>Nenhuma rodada.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

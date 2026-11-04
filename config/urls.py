@@ -5,6 +5,7 @@ from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.catalogo import views as catalogo_views
 from apps.contas import views as contas_views
+from apps.fornecedores import portal_views
 from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
@@ -94,6 +95,13 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
     path("administracao/simulador-pagamentos/", include("apps.simulador_pagamentos.urls")),
     path("administracao/financeiro/", include("apps.financeiro.urls")),
+    path("fornecedor/", portal_views.painel, name="fornecedor_painel"),
+    path("fornecedor/rodadas/<int:pk>/", portal_views.rodada, name="fornecedor_rodada"),
+    path(
+        "fornecedor/rodadas/<int:pk>/pedido-formal.csv",
+        portal_views.pedido_formal_csv,
+        name="fornecedor_pedido_formal_csv",
+    ),
     path("pedidos/", pedidos_views.lista, name="pedidos_lista"),
     path("pedidos/<int:pk>/", pedidos_views.detalhe, name="pedidos_detalhe"),
     path("pedidos/<int:pk>/pagar/", pedidos_views.pagar, name="pedidos_pagar"),
