@@ -584,3 +584,74 @@ class EnvioDoPedidoFormal(models.Model):
 
     def __str__(self) -> str:
         return f"envio do pedido formal {self.pedido_formal_id}"
+
+
+class TipoDaTentativaDeEnvio(models.TextChoices):
+    AUTOMATICA = "automatica", "Automática"
+    MANUAL = "manual", "Manual"
+
+
+class ResultadoDoEnvio(models.TextChoices):
+    SUCESSO = "sucesso", "Aceito pelo serviço de e-mail"
+    FALHA = "falha", "Falha"
+
+
+class TentativaDeEnvioDoPedidoFormal(RegistroSoInsercao):
+    """Uma tentativa de enviar o pedido formal por e-mail (E13-02), automática ou manual. Só
+    inserção. "Sucesso" é aceitação pelo serviço de e-mail, e não entrega (L-13)."""
+
+    pedido_formal = models.ForeignKey(
+        PedidoFormal, on_delete=models.PROTECT, related_name="tentativas"
+    )
+    numero = models.PositiveIntegerField()
+    tipo = models.CharField(max_length=10, choices=TipoDaTentativaDeEnvio.choices)
+    ordem_automatica = models.PositiveSmallIntegerField(null=True, blank=True)
+    iniciada_em = models.DateTimeField()
+    concluida_em = models.DateTimeField()
+    resultado = models.CharField(max_length=10, choices=ResultadoDoEnvio.choices)
+    resposta = models.CharField(max_length=100)
+    destino = models.CharField(max_length=254)
+    autor = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    token = models.UUIDField(null=True, blank=True, unique=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pedido_formal", "numero"], name="tentativa_de_envio_numero_unico"
+            ),
+            models.UniqueConstraint(
+                fields=["pedido_formal", "ordem_automatica"],
+                name="tentativa_de_envio_ordem_automatica_unica",
+            ),
+            models.CheckConstraint(
+                condition=Q(ordem_automatica__isnull=True)
+                | Q(ordem_automatica__gte=1, ordem_automatica__lte=3),
+                name="tentativa_de_envio_ordem_de_1_a_3",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        tipo="automatica",
+                        ordem_automatica__isnull=False,
+                        autor__isnull=True,
+                        token__isnull=True,
+                    )
+                    | Q(
+                        tipo="manual",
+                        ordem_automatica__isnull=True,
+                        autor__isnull=False,
+                        token__isnull=False,
+                    )
+                ),
+                name="tentativa_de_envio_tipo_coerente",
+            ),
+            models.CheckConstraint(
+                condition=Q(resultado__in=ResultadoDoEnvio.values),
+                name="tentativa_de_envio_resultado_valido",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"tentativa de envio {self.pk}"
