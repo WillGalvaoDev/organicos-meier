@@ -130,3 +130,12 @@ O registro no livro já existe (`registrar_saida`, E09-07). Esta fatia acrescent
 
 - Depende da E13-01 (links), da E09-06/E09-07 (livro, liquidez e saídas) e da E07-06 (consulta).
 - Nenhuma decisão em aberto.
+
+## Esclarecimento da implementação (2026-11-09)
+
+**Ajuste de arranjo aceito no E09-07 A-25** (correção R06, `tests/tecnicos/test_financeiro_conciliacao.py::test_identificacao_de_64_caracteres_e_conciliavel`):
+- **Por quê:** o teste semeava o frete por uma apuração simulada, sem pagamento liberado, e pagava 5,00 dele. Pela regra 8, esse pagamento passa a ser recusado (`LiquidezInsuficiente`), e a recusa é o comportamento certo.
+- **O ajuste:** o arranjo passa a semear o frete por uma cobertura de déficit vinda da receita de serviço, que conta como liberada.
+- **O que fica igual:** o objeto do critério, a conciliação de identificações de 64 caracteres. As asserções não mudam.
+
+O A-25 continua valendo com esse arranjo, e nenhuma regra muda.

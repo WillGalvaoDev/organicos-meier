@@ -72,7 +72,8 @@ Até aqui a conta de fornecedor existe (E02), mas não tem nenhuma tela.
 | Rodada | `progresso_percentual` |
 | Produto | `nome`, `unidade`, `preco_unitario`, `total_em_interesse` (o total reservado), `caixas_completas`, `faltam_para_proxima_caixa`, `excedente`, `valor_total` (o valor bruto) |
 
-   Sem o mínimo em valor, sem a participação de nenhum comprador.
+   - **Valores da E05, sem reinterpretação:** `caixas_completas`, `faltam_para_proxima_caixa` e `excedente` são os de `progresso_da_rodada`. Em particular, `faltam_para_proxima_caixa` é `múltiplo − (total % múltiplo)`, como no §6.1 ("faltam seis para outra caixa") e na E05-04. Com as caixas fechadas, o valor é o múltiplo inteiro (12 unidades em caixas de 6: faltam 6), e nunca zero. O fornecedor e o comprador veem o mesmo número.
+   - Sem o mínimo em valor, sem a participação de nenhum comprador.
 7. **Em `pagamento`:** só o andamento e a frase "As quantidades finais serão informadas no pedido formal, depois da apuração." Nada sobre pedidos, pagamentos ou compradores.
 8. **Com pedido formal** (em `aguardando_fornecedor`, `disponivel_para_retirada` ou `cancelada`):
 
@@ -125,3 +126,13 @@ Até aqui a conta de fornecedor existe (E02), mas não tem nenhuma tela.
 
 - Depende das E13-01 e E13-05, da E05-04 (`progresso_da_rodada`) e da E02-10 (políticas).
 - Nenhuma decisão em aberto.
+
+## Esclarecimentos da implementação (2026-11-09)
+
+- **"Faltam" no A-3:** o critério original dizia "0 faltando" para P2 com 12 unidades em caixas de 6. Estava errado: contrariava o §6.1 e a E05-04, que a regra 6 cita como fonte. O valor correto é 6, e a regra 6 agora diz isso. O portal usa o valor de `progresso_da_rodada` sem ajuste. A troca de 6 por 0 feita em `apps/fornecedores/portal.py` (`_faltam`) precisa sair, e o teste precisa seguir o critério corrigido. Nenhuma regra comercial muda.
+- **Lista de rotas do E08-02** (`tests/tecnicos/test_pedidos_abertura_tela.py`): o teste acusa as rotas com "pedido", "item", "t0" ou "frete" no nome que não estão na lista de permitidas. A inclusão das quatro rotas novas da E13 está aceita, porque nenhuma altera pedido congelado, item, `T0` ou frete cobrado:
+  - `rodadas_pedido_formal` e `rodadas_pedido_formal_reenviar`: E13-04 A-1 e A-12;
+  - `fornecedor_pedido_formal_csv`: E13-07, só leitura;
+  - `rodadas_saidas_frete`: E13-06, só baixa a conta do frete.
+
+  O critério do teste não muda. Cada rota acrescentada precisa de um comentário com a fatia que a cobre.

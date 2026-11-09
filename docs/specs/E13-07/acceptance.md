@@ -10,7 +10,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|---|---|---|---|
 | A-1 | §2, cenário 67 | positivo | AF | GET `fornecedor/` como F | 200; "F"; P1 e P2 com unidade, preço e múltiplo (P2: 6); a rodada do AF com "Aguardando fornecedor"; nada de G. **Red esperado:** 404 |
 | A-2 | Infra 4.13 | positivo | AF | chamar a função do painel | as chaves de cada bloco exatamente iguais às da regra 4 |
-| A-3 | §6.2, herdado E05 | positivo | uma rodada de F em `interesse` com as parcelas do AP (antes da abertura) | GET `fornecedor/rodadas/<pk>/` como F | a etapa "Interesse"; P1 com total 11, valor R$ 110,00; P2 com total 12, 2 caixas completas, 0 faltando e excedente 0; o percentual de progresso; nem o mínimo em valor nem nomes de compradores |
+| A-3 | §6.2, herdado E05 | positivo | uma rodada de F em `interesse` com as parcelas do AP (antes da abertura) | GET `fornecedor/rodadas/<pk>/` como F | a etapa "Interesse"; P1 com total 11, valor R$ 110,00; P2 com total 12, 2 caixas completas, 6 faltando para a próxima caixa (o valor da E05) e excedente 0; o percentual de progresso; nem o mínimo em valor nem nomes de compradores |
 | A-4 | Infra 4.13 | positivo | o A-3 | chamar a função da rodada | as chaves exatamente iguais às da regra 6 |
 | A-5 | Regra 7 | positivo | a rodada AP em `pagamento` | GET a rodada como F | "Pagamento" e a frase da regra 7; nenhuma quantidade, valor de pedido ou pagamento |
 | A-6 | §10, cenário 67 | positivo | AF | GET a rodada como F | o pedido formal nº, emitido em 04/11/2026 10:00, as linhas de P1 e P2 com quantidade, caixas, preço e valor, o total R$ 170,00 e a "Previsão de entrega: 11/11/2026"; sem tentativas, destino, frete, serviço ou repasse |

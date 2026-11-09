@@ -63,7 +63,7 @@ Esta fatia entrega o serviço. A tela é da E13-04.
     - o `EnvioDoPedidoFormal` não muda: o estado, `automaticas` e a próxima tentativa continuam os mesmos, então nenhuma tentativa automática é agendada (cenários 92 e 93, T-41);
     - o `PedidoFormal`, as linhas e o conteúdo não mudam, e nenhum pedido formal novo é criado.
 11. **`IntegrityError` no token:** se, apesar da regra 8, a gravação colidir com o `UNIQUE` do token, a transação é desfeita e a tentativa existente é relida e devolvida. O `UNIQUE` garante uma tentativa registrada por token; a garantia de um único envio é a releitura do token sob a trava (regra 8), porque o serviço de e-mail não tem chave de idempotência.
-12. **Auditoria `pedido_formal.reenviar`**, na transação da tentativa: o autor, o pedido formal, o número e o resultado da tentativa e o token.
+12. **Auditoria `pedido_formal.reenviar`**, na transação da tentativa: o autor, o pedido formal, o número e o resultado da tentativa e o UUID do acionamento, sob a chave `acionamento`. A auditoria recusa chaves com o termo `token`, que é reservado a segredos (`TERMOS_DE_SEGREDO`, E01). O UUID não é segredo: ele só identifica a solicitação para a idempotência. Por isso o valor é gravado, com outro nome de chave.
 13. **Sem aviso:** a falha de um reenvio manual não emite `falha_no_pedido_formal` (§12 avisa só depois da terceira automática). O botão continua disponível (cenário 93).
 
 ## Interface
@@ -102,3 +102,7 @@ Esta fatia entrega o serviço. A tela é da E13-04.
 
 - Depende das E13-01 e E13-02.
 - Nenhuma decisão em aberto.
+
+## Esclarecimento da implementação (2026-11-09)
+
+A regra 12 foi reescrita para nomear a chave da auditoria (`acionamento`). A implementação que já grava o UUID sob essa chave está de acordo com a regra.
