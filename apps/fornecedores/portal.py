@@ -69,13 +69,6 @@ def dados_do_painel(fornecedor: Fornecedor) -> dict[str, Any]:
     }
 
 
-def _faltam(faltam: Decimal | None, multiplo: Decimal | None) -> Decimal | None:
-    """O que falta para completar a caixa em aberto: zero quando as caixas estão fechadas."""
-    if faltam is None or multiplo is None:
-        return None
-    return Decimal(0) if faltam == multiplo else faltam
-
-
 def _progresso(rodada: Rodada) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     progresso = progresso_da_rodada(rodada)
     produtos = [
@@ -85,7 +78,7 @@ def _progresso(rodada: Rodada) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "preco_unitario": p.produto.preco,
             "total_em_interesse": p.total_reservado,
             "caixas_completas": p.caixas_completas,
-            "faltam_para_proxima_caixa": _faltam(p.faltam_para_proxima_caixa, p.produto.multiplo),
+            "faltam_para_proxima_caixa": p.faltam_para_proxima_caixa,
             "excedente": p.excedente,
             "valor_total": p.valor_bruto,
         }

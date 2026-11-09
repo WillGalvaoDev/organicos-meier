@@ -13,3 +13,11 @@ Comando: `uv run pytest tests/tecnicos/test_portal_do_fornecedor.py` (arquivo in
 ## Ponto para o especificador
 - **"0 faltando" no A-3.** Para P2 com 12 unidades em caixas de 6, o critério diz "2 caixas completas, 0 faltando". O `progresso_da_rodada` da E05 (que a regra cita como fonte) devolve `faltam_para_proxima_caixa = 6` nesse caso (a conta é `múltiplo − total % múltiplo`; o teste E05 `test_interesses_progresso.py:54` fixa esse valor). O portal segue o critério: mostra **0** quando as caixas estão fechadas e o valor da E05 nos demais casos. Se a intenção era mostrar 6, é uma linha em `_faltam` (`apps/fornecedores/portal.py`) e no teste.
 - No A-15, o administrador chega à rota do fornecedor só com a passkey: com `force_login` (sem prova de passkey) o redirecionamento para cadastrar a passkey vem antes da política da rota. O teste entra por passkey, como nas demais telas.
+
+
+## Correção conforme o esclarecimento do especificador — agente 2 — 2026-11-09
+
+- **Red** (`uv run pytest tests/tecnicos/test_portal_do_fornecedor.py`, arquivo inteiro): com o A-3/A-4 corrigidos (`faltam_para_proxima_caixa` de P2 = 6), `test_as_chaves_da_rodada_em_interesse` falhou com `Decimal('0') != 6`; os outros 17 passaram.
+- **Green:** removi `_faltam` de `apps/fornecedores/portal.py`; o portal usa o valor de `progresso_da_rodada` sem ajuste. 35 passed com `test_pedidos_abertura_tela.py`.
+- A lista de rotas do `test_pedidos_abertura_tela.py` ganhou, em cada rota da E13, o comentário com a fatia que a cobre.
+- E13-03 (chave `acionamento`) e E13-06 (arranjo do A-25) já estavam conforme os esclarecimentos; o "ponto para o especificador" do item "0 faltando" acima está resolvido pela correção.

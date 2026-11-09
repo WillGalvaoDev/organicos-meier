@@ -135,7 +135,7 @@ def test_as_chaves_da_rodada_em_interesse(relogio: RelogioControlado) -> None:  
     assert all(set(p) == RODADA_PRODUTO for p in dados["produtos"])
     p2 = next(p for p in dados["produtos"] if p["nome"] == "P2")
     assert (p2["total_em_interesse"], p2["caixas_completas"]) == (12, 2)
-    assert (p2["faltam_para_proxima_caixa"], p2["excedente"]) == (6, 0)  # o valor da E05: 6 − (12 % 6)
+    assert (p2["faltam_para_proxima_caixa"], p2["excedente"]) == (6, 0)
 
 
 def test_em_pagamento_so_o_andamento(client: Client, relogio: RelogioControlado) -> None:  # A-5
