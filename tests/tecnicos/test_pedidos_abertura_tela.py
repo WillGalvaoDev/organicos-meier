@@ -23,10 +23,10 @@ ROTAS_DE_PEDIDOS_PERMITIDAS = {
     "pedidos_pagar",
     "rodadas_pagamento_abrir",
     # E13: nenhuma altera o pedido congelado, os itens, o T0 nem o frete cobrado
-    "rodadas_pedido_formal",
-    "rodadas_pedido_formal_reenviar",
-    "fornecedor_pedido_formal_csv",
-    "rodadas_saidas_frete",
+    "rodadas_pedido_formal",  # E13-04 A-1: só leitura
+    "rodadas_pedido_formal_reenviar",  # E13-04 A-12: reenvia o e-mail, não muda o pedido
+    "fornecedor_pedido_formal_csv",  # E13-07 A-9: só leitura
+    "rodadas_saidas_frete",  # E13-06 A-21: só baixa a conta do frete no livro
 }
 
 

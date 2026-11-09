@@ -120,6 +120,7 @@ def test_a_rodada_em_interesse_mostra_o_progresso_agregado(
     assert "Interesse" in texto
     assert "R$ 110,00" in texto  # P1: 11 a R$ 10,00
     assert "R$ 60,00" in texto  # P2: 12 a R$ 5,00
+    assert "Faltam para a próxima caixa" in texto
     assert "Comprador" not in texto
     assert "R$ 50,00" not in texto  # o mínimo em valor não é do fornecedor
 
@@ -134,7 +135,7 @@ def test_as_chaves_da_rodada_em_interesse(relogio: RelogioControlado) -> None:  
     assert all(set(p) == RODADA_PRODUTO for p in dados["produtos"])
     p2 = next(p for p in dados["produtos"] if p["nome"] == "P2")
     assert (p2["total_em_interesse"], p2["caixas_completas"]) == (12, 2)
-    assert (p2["faltam_para_proxima_caixa"], p2["excedente"]) == (0, 0)
+    assert (p2["faltam_para_proxima_caixa"], p2["excedente"]) == (6, 0)  # o valor da E05: 6 − (12 % 6)
 
 
 def test_em_pagamento_so_o_andamento(client: Client, relogio: RelogioControlado) -> None:  # A-5
