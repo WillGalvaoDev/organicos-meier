@@ -17,6 +17,7 @@ from apps.financeiro.reembolsos import (
 )
 from apps.pedidos.models import ItemDoPedido, Pedido
 from tests.apoio.devolucoes import (
+    H,
     Item,
     K,
     M,
@@ -28,7 +29,13 @@ from tests.apoio.devolucoes import (
     pedido_pago_com_itens,
 )
 from tests.apoio.financeiro import chave_nova, pedido_composto
-from tests.apoio.pedidos import administrador, cancelar_direto, sincronizar, tentativa_criada
+from tests.apoio.pedidos import (
+    T0,
+    administrador,
+    cancelar_direto,
+    sincronizar,
+    tentativa_criada,
+)
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
 
@@ -165,6 +172,7 @@ def test_cada_devolucao_e_um_registro_separado_e_o_pedido_nao_muda(
 def test_o_reembolso_gera_a_obrigacao_financiada_pela_custodia(
     relogio: RelogioControlado, simulador_pagamentos: Any
 ) -> None:  # A-10
+    relogio.congelar(T0 + H)  # M-10: dentro do prazo de pagamento do pedido de T0
     pedido = pedido_composto(ContaFactory.create())  # 100,00 + 5,00 + 20,00
     id_externo = tentativa_criada(pedido).id_externo
     assert id_externo is not None

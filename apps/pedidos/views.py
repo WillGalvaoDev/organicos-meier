@@ -19,6 +19,7 @@ from apps.pedidos.apuracao_tela import efeitos_da_apuracao_no_pedido
 from apps.pedidos.cancelamento_tela import aviso_no_pedido
 from apps.pedidos.models import Pedido
 from apps.pedidos.pagamento import PagamentoRecusado, pedir_pagamento
+from apps.pedidos.previsao_de_entrega import previsao_do_pedido
 
 
 def _do_comprador(request: HttpRequest, pk: int) -> Pedido:
@@ -51,6 +52,7 @@ def _pagina_do_pedido(
         "estornos": estornos_do_pedido(pedido),
         "apuracao": efeitos_da_apuracao_no_pedido(pedido),
         "cancelamento": aviso_no_pedido(pedido),
+        "previsao_de_entrega": previsao_do_pedido(pedido),
         "erro": erro,
     }
     return render(request, "pedidos/detalhe.html", contexto, status=status)

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Pedido formal · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Pedido formal nº {{ pedido_formal.pk }}</h1>
+  <p>Fornecedor: {{ fornecedor.nome }}</p>
+  <p>Rodada {{ rodada.pk }}, ciclo {{ pedido_formal.ciclo.numero }}</p>
+  <p>Emitido em {{ emitido_em }} (horário de Brasília)</p>
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+
+  <h2>Pedido consolidado</h2>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Caixas</th><th>Preço unitário</th><th>Valor total</th></tr></thead>
+    <tbody>
+      {% for linha in linhas %}
+        <tr>
+          <td>{{ linha.nome }}</td>
+          <td>{{ linha.quantidade|quantidade_br }} {{ linha.unidade }}</td>
+          <td>{% if linha.caixas is None %}—{% else %}{{ linha.caixas }}{% endif %}</td>
+          <td>{{ linha.preco_unitario|reais }}</td>
+          <td>{{ linha.valor_total|reais }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>Total dos produtos: {{ pedido_formal.total_produtos|reais }}</p>
+
+  <h2>Conteúdo enviado</h2>
+  <p>Assunto: {{ pedido_formal.assunto }}</p>
+  <pre>{{ pedido_formal.corpo }}</pre>
+
+  {% if com_saidas %}<p><a href="{% url 'rodadas_saidas' pk=rodada.pk %}">Saídas da rodada</a></p>{% endif %}
+
+  <h2>Previsão de entrega</h2>
+  <p>Previsão vigente: {{ previsao.vigente|date:"d/m/Y" }}</p>
+  <table>
+    <thead><tr><th>Data</th><th>Origem</th><th>Administrador</th><th>Registrada em</th></tr></thead>
+    <tbody>
+      {% for p in previsao.historico %}
+        <tr><td>{{ p.data|date:"d/m/Y" }}</td><td>{{ p.origem }}</td><td>{{ p.autor }}</td><td>{{ p.momento }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if previsao.ajustavel %}
+    <form method="post" action="{% url 'rodadas_previsao' pk=rodada.pk %}">
+      {% csrf_token %}
+      <label for="data">Nova previsão</label>
+      <input type="date" id="data" name="data" required>
+      <button type="submit">Alterar previsão</button>
+    </form>
+  {% endif %}
+
+  <h2>Envio</h2>
+  <p>Destino atual: {{ fornecedor.email_pedido }}</p>
+  <p>{{ situacao_do_envio }}</p>
+  <p>{{ nota_da_entrega }}</p>
+
+  <h2>Tentativas</h2>
+  {% if tentativas %}
+    <table>
+      <thead><tr><th>Nº</th><th>Tipo</th><th>Início</th><th>Resultado</th><th>Resposta</th><th>Destino</th><th>Administrador</th></tr></thead>
+      <tbody>
+        {% for t in tentativas %}
+          <tr>
+            <td>{{ t.numero }}</td>
+            <td>{{ t.tipo }}</td>
+            <td>{{ t.inicio }}</td>
+            <td>{{ t.resultado }}</td>
+            <td>{{ t.resposta }}</td>
+            <td>{{ t.destino }}</td>
+            <td>{{ t.autor }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhuma tentativa ainda.</p>
+  {% endif %}
+
+  {% if pode_reenviar %}
+    <form method="post" action="{% url 'rodadas_pedido_formal_reenviar' pk=rodada.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ token }}">
+      <button type="submit">Reenviar pedido</button>
+      <span>Cada acionamento faz uma única tentativa com o mesmo pedido formal.</span>
+    </form>
+  {% else %}
+    <p>{{ mensagem_do_reenvio }}</p>
+  {% endif %}
+{% endblock %}

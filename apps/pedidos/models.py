@@ -13,6 +13,7 @@ from django.db.models import F, Q
 
 from apps.catalogo.models import Produto, Unidade
 from apps.contas.models import Conta
+from apps.fornecedores.models import Fornecedor
 from apps.interesses.models import ParcelaDeInteresse
 from apps.nucleo.so_insercao import RegistroSoInsercao, SoInsercaoQuerySet
 from apps.nucleo.tempo import agora
@@ -445,3 +446,212 @@ class DestinoDoPagamento(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"destino {self.pk}"
+
+
+class PedidoFormal(RegistroSoInsercao):
+    """O pedido formal ao fornecedor (E13-01): um por ciclo aprovado, gerado na transação da
+    aprovação do resultado. O conteúdo do e-mail fica congelado aqui, e todo envio usa este
+    mesmo registro. Nenhum campo identifica um comprador."""
+
+    aprovacao = models.OneToOneField(
+        AprovacaoDoResultado, on_delete=models.PROTECT, related_name="pedido_formal"
+    )
+    ciclo = models.OneToOneField(Ciclo, on_delete=models.PROTECT, related_name="pedido_formal")
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, related_name="pedidos_formais")
+    fornecedor = models.ForeignKey(
+        Fornecedor, on_delete=models.PROTECT, related_name="pedidos_formais"
+    )
+    emitido_em = models.DateTimeField()
+    prazo_entrega_dias = models.PositiveSmallIntegerField()
+    previsao_inicial = models.DateField()
+    total_produtos = CampoDinheiro()
+    assunto = models.CharField(max_length=200)
+    corpo = models.TextField()
+
+    def __str__(self) -> str:
+        return f"pedido formal {self.pk}"
+
+
+class LinhaDoPedidoFormal(RegistroSoInsercao):
+    """Um produto do pedido formal, com a quantidade final e o valor congelados (E13-01)."""
+
+    pedido_formal = models.ForeignKey(PedidoFormal, on_delete=models.PROTECT, related_name="linhas")
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="+")
+    nome = models.CharField(max_length=150)
+    unidade = models.CharField(max_length=10, choices=Unidade.choices)
+    preco_unitario = CampoDinheiro()
+    multiplo = CampoQuantidade(null=True, blank=True)
+    quantidade = CampoQuantidade()
+    caixas = models.PositiveIntegerField(null=True, blank=True)
+    valor_total = CampoDinheiro()
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pedido_formal", "produto"], name="linha_do_pedido_formal_unica"
+            ),
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="linha_do_pedido_formal_quantidade_positiva"
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_total__gte=0), name="linha_do_pedido_formal_valor_nao_negativo"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(multiplo__isnull=True, caixas__isnull=True)
+                    | Q(multiplo__isnull=False, caixas__isnull=False)
+                ),
+                name="linha_do_pedido_formal_caixas_com_multiplo",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"linha {self.pk} do pedido formal"
+
+
+class OrigemDaPrevisao(models.TextChoices):
+    PADRAO = "padrao", "Prazo padrão"
+    AJUSTE = "ajuste", "Ajuste do administrador"
+
+
+class PrevisaoDeEntrega(RegistroSoInsercao):
+    """A data prevista de entrega de um ciclo (E13-01). Só inserção: a vigente é a de maior
+    `pk`. A inicial é `padrao`, sem autor; um ajuste (E13-05) é `ajuste`, com o administrador."""
+
+    rodada = models.ForeignKey(Rodada, on_delete=models.PROTECT, related_name="previsoes")
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, related_name="previsoes")
+    data = models.DateField()
+    origem = models.CharField(max_length=10, choices=OrigemDaPrevisao.choices)
+    autor = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    registrada_em = models.DateTimeField(default=agora)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=(
+                    Q(origem="padrao", autor__isnull=True) | Q(origem="ajuste", autor__isnull=False)
+                ),
+                name="previsao_de_entrega_origem_e_autor",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"previsão {self.pk}"
+
+
+class SituacaoDoEnvio(models.TextChoices):
+    EM_ANDAMENTO = "em_andamento", "Em andamento"
+    CONCLUIDO_COM_SUCESSO = "concluido_com_sucesso", "Concluído com sucesso"
+    CONCLUIDO_COM_FALHAS = "concluido_com_falhas", "Concluído com falhas"
+    INTERROMPIDO = "interrompido", "Interrompido"
+
+
+class EnvioDoPedidoFormal(models.Model):
+    """O estado do ciclo de envio automático do pedido formal (E13-01 cria, E13-02 usa). É o
+    único registro do pedido formal que muda."""
+
+    pedido_formal = models.OneToOneField(
+        PedidoFormal, on_delete=models.PROTECT, related_name="envio"
+    )
+    situacao = models.CharField(
+        max_length=24, choices=SituacaoDoEnvio.choices, default=SituacaoDoEnvio.EM_ANDAMENTO
+    )
+    automaticas = models.PositiveSmallIntegerField(default=0)
+    proxima_tentativa_em = models.DateTimeField(null=True, blank=True)
+    concluido_em = models.DateTimeField(null=True, blank=True)
+    motivo_da_interrupcao = models.CharField(max_length=30, blank=True, default="")
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(automaticas__gte=0, automaticas__lte=3),
+                name="envio_do_pedido_formal_automaticas_de_0_a_3",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(situacao="em_andamento", proxima_tentativa_em__isnull=False)
+                    | (~Q(situacao="em_andamento") & Q(proxima_tentativa_em__isnull=True))
+                ),
+                name="envio_do_pedido_formal_proxima_so_em_andamento",
+            ),
+            models.CheckConstraint(
+                condition=Q(situacao__in=SituacaoDoEnvio.values),
+                name="envio_do_pedido_formal_situacao_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"envio do pedido formal {self.pedido_formal_id}"
+
+
+class TipoDaTentativaDeEnvio(models.TextChoices):
+    AUTOMATICA = "automatica", "Automática"
+    MANUAL = "manual", "Manual"
+
+
+class ResultadoDoEnvio(models.TextChoices):
+    SUCESSO = "sucesso", "Aceito pelo serviço de e-mail"
+    FALHA = "falha", "Falha"
+
+
+class TentativaDeEnvioDoPedidoFormal(RegistroSoInsercao):
+    """Uma tentativa de enviar o pedido formal por e-mail (E13-02), automática ou manual. Só
+    inserção. "Sucesso" é aceitação pelo serviço de e-mail, e não entrega (L-13)."""
+
+    pedido_formal = models.ForeignKey(
+        PedidoFormal, on_delete=models.PROTECT, related_name="tentativas"
+    )
+    numero = models.PositiveIntegerField()
+    tipo = models.CharField(max_length=10, choices=TipoDaTentativaDeEnvio.choices)
+    ordem_automatica = models.PositiveSmallIntegerField(null=True, blank=True)
+    iniciada_em = models.DateTimeField()
+    concluida_em = models.DateTimeField()
+    resultado = models.CharField(max_length=10, choices=ResultadoDoEnvio.choices)
+    resposta = models.CharField(max_length=100)
+    destino = models.CharField(max_length=254)
+    autor = models.ForeignKey(
+        Conta, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    token = models.UUIDField(null=True, blank=True, unique=True)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=["pedido_formal", "numero"], name="tentativa_de_envio_numero_unico"
+            ),
+            models.UniqueConstraint(
+                fields=["pedido_formal", "ordem_automatica"],
+                name="tentativa_de_envio_ordem_automatica_unica",
+            ),
+            models.CheckConstraint(
+                condition=Q(ordem_automatica__isnull=True)
+                | Q(ordem_automatica__gte=1, ordem_automatica__lte=3),
+                name="tentativa_de_envio_ordem_de_1_a_3",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        tipo="automatica",
+                        ordem_automatica__isnull=False,
+                        autor__isnull=True,
+                        token__isnull=True,
+                    )
+                    | Q(
+                        tipo="manual",
+                        ordem_automatica__isnull=True,
+                        autor__isnull=False,
+                        token__isnull=False,
+                    )
+                ),
+                name="tentativa_de_envio_tipo_coerente",
+            ),
+            models.CheckConstraint(
+                condition=Q(resultado__in=ResultadoDoEnvio.values),
+                name="tentativa_de_envio_resultado_valido",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"tentativa de envio {self.pk}"

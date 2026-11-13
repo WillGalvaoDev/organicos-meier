@@ -347,13 +347,19 @@ def test_identificacao_de_64_caracteres_e_conciliavel(
     relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-25, E09-R06
     from apps.financeiro.conciliacao import limites_do_dia
-    from tests.apoio.financeiro import frete_de, montar_mundo, semear
+    from tests.apoio.financeiro import frete_de, montar_mundo, mover, receita_de, semear
 
     inicio, fim = limites_do_dia(DIA)
     relogio.congelar(inicio + 12 * H)
     mundo = montar_mundo()
     with transaction.atomic():
-        semear(mundo, frete_de(mundo.ra), "10.00")
+        # o frete só paga o que está liberado (E13-06, regra 8): a cobertura de déficit pela
+        # receita de serviço conta como liberada, ao contrário de uma apuração sem pagamento
+        # liberado
+        semear(mundo, receita_de(mundo.ra), "10.00")
+        mover(
+            TipoDeMovimento.COBERTURA_DE_DESPESA, receita_de(mundo.ra), frete_de(mundo.ra), "10.00"
+        )
         registrar_aporte(administrador(), D("100.00"), "a" * 64, "Aporte")
         registrar_saida(
             administrador(),

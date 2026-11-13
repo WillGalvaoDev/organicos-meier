@@ -170,3 +170,14 @@ def autorizar_devolucoes_do_cancelamento(timestamp: int) -> None:
     from apps.pedidos.cancelamento_da_rodada import autorizar_devolucoes_do_cancelamento_agora
 
     autorizar_devolucoes_do_cancelamento_agora()
+
+
+TAREFA_DOS_PEDIDOS_FORMAIS = "enviar_pedidos_formais"
+
+
+@app.periodic(cron="* * * * *")
+@app.task(name=TAREFA_DOS_PEDIDOS_FORMAIS, queueing_lock=TAREFA_DOS_PEDIDOS_FORMAIS)
+def enviar_pedidos_formais(timestamp: int) -> None:
+    from apps.pedidos.envio_do_pedido_formal import processar_pedidos_formais
+
+    processar_pedidos_formais()

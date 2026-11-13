@@ -5,6 +5,7 @@ from django.urls import URLPattern, URLResolver, include, path, re_path
 
 from apps.catalogo import views as catalogo_views
 from apps.contas import views as contas_views
+from apps.fornecedores import portal_views
 from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
@@ -94,6 +95,13 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
     path("administracao/simulador-pagamentos/", include("apps.simulador_pagamentos.urls")),
     path("administracao/financeiro/", include("apps.financeiro.urls")),
+    path("fornecedor/", portal_views.painel, name="fornecedor_painel"),
+    path("fornecedor/rodadas/<int:pk>/", portal_views.rodada, name="fornecedor_rodada"),
+    path(
+        "fornecedor/rodadas/<int:pk>/pedido-formal.csv",
+        portal_views.pedido_formal_csv,
+        name="fornecedor_pedido_formal_csv",
+    ),
     path("pedidos/", pedidos_views.lista, name="pedidos_lista"),
     path("pedidos/<int:pk>/", pedidos_views.detalhe, name="pedidos_detalhe"),
     path("pedidos/<int:pk>/pagar/", pedidos_views.pagar, name="pedidos_pagar"),
@@ -168,6 +176,32 @@ urlpatterns: list[URLPattern | URLResolver] = [
         "administracao/rodadas/<int:pk>/cancelar/",
         rodadas_views.cancelar,
         name="rodadas_cancelar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/pedido-formal/",
+        rodadas_views.pedido_formal,
+        name="rodadas_pedido_formal",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/pedido-formal/reenviar/",
+        rodadas_views.pedido_formal_reenviar,
+        name="rodadas_pedido_formal_reenviar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/previsao/",
+        rodadas_views.previsao,
+        name="rodadas_previsao",
+    ),
+    path("administracao/rodadas/<int:pk>/saidas/", rodadas_views.saidas, name="rodadas_saidas"),
+    path(
+        "administracao/rodadas/<int:pk>/saidas/repasse/",
+        rodadas_views.saidas_repasse,
+        name="rodadas_saidas_repasse",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/saidas/frete/",
+        rodadas_views.saidas_frete,
+        name="rodadas_saidas_frete",
     ),
     path(
         "administracao/rodadas/<int:pk>/apuracao/iniciar/",
