@@ -558,3 +558,60 @@ def test_pagamento_depois_do_cancelamento_com_repasse_feito(
         list(MovimentoFinanceiro.objects.filter(tipo="repasse").order_by("pk").values()) == repasses
     )
     _invariante_ok()
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_mesmo_token_em_post_de_pedidos_diferentes_envia_um_so_email(
+    client: Client,
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-9 (E13-R01)
+    from apps.pedidos import reenvio_do_pedido_formal as modulo
+    from tests.apoio.concorrencia import executar_em_paralelo
+    from tests.apoio.pedido_formal import arranjo_af
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+
+    a, _x, _y, pf1, credencial, _extra = _af_pela_tela(client, relogio, simulador_pagamentos)
+    processar(relogio, PRAZO)
+    a2, _x2, _y2, pf2 = arranjo_af(relogio, simulador_pagamentos)
+    Fornecedor.objects.filter(pk=pf2.fornecedor_id).update(email_pedido="pedidos@g.example")
+    processar(relogio, PRAZO)
+    entrar_de_novo(client, credencial, a.admin)
+    token = _token(client, a)
+    cookies = _cookies_do_administrador(client)
+    mail.outbox.clear()
+    pausado = Event()
+    enviar = modulo.enviar_email
+
+    def pausar(destino: str, *args: Any) -> None:
+        if destino == EMAIL_DO_PEDIDO:
+            pausado.set()
+            esperar_outra_conexao_na_trava()
+        enviar(destino, *args)
+
+    monkeypatch.setattr(modulo, "enviar_email", pausar)
+
+    def primeira(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return _reenviar(_cliente(cookies), a, token)
+
+    def segunda(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        assert pausado.wait(15)
+        return _reenviar(_cliente(cookies), a2, token)
+
+    resultados = executar_em_paralelo(primeira, segunda, tempo_limite=60)
+    assert [r.excecao for r in resultados] == [None, None], [repr(r.excecao) for r in resultados]
+    assert resultados[0].valor.status_code == 302
+    leitor = _cliente(cookies)
+    leitor.cookies.update(resultados[0].valor.cookies)
+    assert "Reenvio registrado: aceito pelo serviço de e-mail." in _texto(leitor.get(_pagina(a)))
+    assert resultados[1].valor.status_code == 400
+    assert "Recarregue a página e tente de novo." in _texto(resultados[1].valor)
+    assert [m.to for m in mail.outbox] == [[EMAIL_DO_PEDIDO]]
+    manuais = TentativaDeEnvioDoPedidoFormal.objects.filter(tipo="manual")
+    assert [t.pedido_formal_id for t in manuais] == [pf1.pk]
+    assert str(manuais[0].token) == token
+    _invariante_ok()
