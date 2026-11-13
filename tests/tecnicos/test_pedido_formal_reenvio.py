@@ -436,7 +436,7 @@ def _af_dois(relogio: RelogioControlado, sim: Any) -> tuple[Any, Any, Any]:
     from apps.fornecedores.models import Fornecedor
 
     a, _x, _y, pf1 = af_sucesso(relogio, sim)
-    a2, _x2, _y2, pf2 = af_sucesso(relogio, sim)
+    _a2, _x2, _y2, pf2 = af_sucesso(relogio, sim)
     Fornecedor.objects.filter(pk=pf2.fornecedor_id).update(email_pedido=EMAIL_DO_SEGUNDO)
     mail.outbox.clear()
     return a, pf1, pf2

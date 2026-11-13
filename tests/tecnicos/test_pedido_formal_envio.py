@@ -517,7 +517,7 @@ def test_consulta_atrasada_que_termina_bem_nao_autoriza_a_terceira(
 ) -> None:  # A-19
     from apps.pedidos.models import EnvioDoPedidoFormal
 
-    a, x, y, _pedido = _af_meio_concorrente(relogio, simulador_pagamentos, settings)
+    _a, x, y, _pedido = _af_meio_concorrente(relogio, simulador_pagamentos, settings)
     resultados, consultadas = _duas_execucoes(
         relogio,
         monkeypatch,
@@ -536,4 +536,4 @@ def test_consulta_atrasada_que_termina_bem_nao_autoriza_a_terceira(
     assert (terceira.ordem_automatica, terceira.resultado) == (3, "falha")
     assert EnvioDoPedidoFormal.objects.get().situacao == "concluido_com_falhas"
     admins = Notificacao.objects.filter(evento=EVENTO)
-    assert admins.count() == admins.values("destinatario").distinct().count() >= 1
+    assert admins.count() == admins.values("conta").distinct().count() >= 1

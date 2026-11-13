@@ -78,7 +78,9 @@ def _rodada_cancelada(envio: EnvioDoPedidoFormal) -> bool:
 
 def _consultar_o_provedor(envio: EnvioDoPedidoFormal) -> bool:
     """A consulta obrigatória antes do envio (infraestrutura 4.2), fora de transação e sem trava.
-    Falhou: a tentativa não acontece e não conta, e a próxima fica para daqui a 5 minutos."""
+    Falhou: a tentativa não acontece e não conta, e a próxima fica para daqui a 5 minutos, mas só se
+    o envio continua como no retrato da seleção (`envio`): uma consulta atrasada não substitui o
+    agendamento de uma tentativa posterior (regra 3-A)."""
     pedidos = Pedido.objects.filter(abertura__ciclo_id=envio.pedido_formal.ciclo_id).order_by("pk")
     try:
         for pedido in pedidos:
@@ -90,7 +92,12 @@ def _consultar_o_provedor(envio: EnvioDoPedidoFormal) -> bool:
         with transaction.atomic():
             travado = (
                 EnvioDoPedidoFormal.objects.select_for_update(skip_locked=True)
-                .filter(pk=envio.pk, situacao=SituacaoDoEnvio.EM_ANDAMENTO)
+                .filter(
+                    pk=envio.pk,
+                    situacao=SituacaoDoEnvio.EM_ANDAMENTO,
+                    automaticas=envio.automaticas,
+                    proxima_tentativa_em=envio.proxima_tentativa_em,
+                )
                 .first()
             )
             if travado is not None:
@@ -122,11 +129,22 @@ def _processar(envio_pk: int) -> int:
         )
         if travado.situacao != SituacaoDoEnvio.EM_ANDAMENTO or not vencido:
             return 0
+        if rodada.etapa != Etapa.CANCELADA and not _igual_ao_retrato(travado, envio):
+            return 0
         if rodada.etapa == Etapa.CANCELADA:
             _interromper(travado, instante)
             return 0
         _tentar(travado)
         return 1
+
+
+def _igual_ao_retrato(travado: EnvioDoPedidoFormal, retrato: EnvioDoPedidoFormal) -> bool:
+    """A consulta que precedeu esta tentativa pertence ao retrato lido na seleção; se uma tentativa
+    ou um reagendamento mudou o envio depois dele, outra execução já agiu (regra 3-A)."""
+    return (
+        travado.automaticas == retrato.automaticas
+        and travado.proxima_tentativa_em == retrato.proxima_tentativa_em
+    )
 
 
 def _interromper(envio: EnvioDoPedidoFormal, instante: datetime) -> None:
