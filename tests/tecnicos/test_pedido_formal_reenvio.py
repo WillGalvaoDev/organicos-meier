@@ -426,3 +426,126 @@ def test_reenvio_durante_a_tentativa_automatica_e_recusado_sem_esperar(
     assert resultados[1].excecao.codigo == "ciclo_em_andamento"
     assert [t.tipo for t in _tentativas()] == ["automatica"] * 3
     settings.EMAIL_BACKEND = LOCMEM
+
+
+EMAIL_DO_SEGUNDO = "pedidos@g.example"
+
+
+def _af_dois(relogio: RelogioControlado, sim: Any) -> tuple[Any, Any, Any]:
+    """AF-dois: dois AF-sucesso de fornecedores distintos. Devolve o administrador, PF1 e PF2."""
+    from apps.fornecedores.models import Fornecedor
+
+    a, _x, _y, pf1 = af_sucesso(relogio, sim)
+    a2, _x2, _y2, pf2 = af_sucesso(relogio, sim)
+    Fornecedor.objects.filter(pk=pf2.fornecedor_id).update(email_pedido=EMAIL_DO_SEGUNDO)
+    mail.outbox.clear()
+    return a, pf1, pf2
+
+
+def _com_a_primeira_pausada(monkeypatch: pytest.MonkeyPatch, depois: Any = None) -> Event:
+    """Só a chamada para o destino do PF1 pausa dentro de `enviar_email`: espera outra conexão
+    na trava, e `depois` (se houver), e só então envia."""
+    from apps.pedidos import reenvio_do_pedido_formal as modulo
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+
+    enviar = modulo.enviar_email
+    pausado = Event()
+
+    def pausar(destino: str, *args: Any) -> None:
+        if destino == EMAIL_DO_PEDIDO:
+            pausado.set()
+            esperar_outra_conexao_na_trava()
+            if depois is not None:
+                depois()
+        enviar(destino, *args)
+
+    monkeypatch.setattr(modulo, "enviar_email", pausar)
+    return pausado
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_o_mesmo_token_em_pedidos_diferentes_envia_um_so_email(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-19
+    from apps.pedidos import reenvio_do_pedido_formal as modulo
+    from apps.pedidos.models import EnvioDoPedidoFormal
+    from tests.apoio.concorrencia import executar_em_paralelo
+
+    admin_a, pf1, pf2 = _af_dois(relogio, simulador_pagamentos)
+    envio2 = list(EnvioDoPedidoFormal.objects.filter(pedido_formal=pf2).values())
+    auditorias = EntradaAuditoria.objects.filter(acao="pedido_formal.reenviar").count()
+    pausado = _com_a_primeira_pausada(monkeypatch)
+    token = uuid.uuid4()
+
+    def primeira(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return modulo.reenviar_pedido_formal(admin_a.admin, pf1, token=token)
+
+    def segunda(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        assert pausado.wait(15)
+        return modulo.reenviar_pedido_formal(admin_a.admin, pf2, token=token)
+
+    resultados = executar_em_paralelo(primeira, segunda, tempo_limite=60)
+    assert resultados[0].excecao is None, repr(resultados[0].excecao)
+    assert resultados[0].valor.nova is True
+    assert resultados[0].valor.tentativa.resultado == "sucesso"
+    assert isinstance(resultados[1].excecao, modulo.ReenvioRecusado), repr(resultados[1].excecao)
+    assert resultados[1].excecao.codigo == "token_invalido"
+    assert [m.to for m in mail.outbox] == [[EMAIL_DO_PEDIDO]]
+    tentativas = [t for t in _tentativas() if t.token == token]
+    assert [t.pedido_formal_id for t in tentativas] == [pf1.pk]
+    assert [t for t in _tentativas() if t.pedido_formal_id == pf2.pk and t.tipo == "manual"] == []
+    assert EntradaAuditoria.objects.filter(acao="pedido_formal.reenviar").count() == auditorias + 1
+    assert list(EnvioDoPedidoFormal.objects.filter(pedido_formal=pf2).values()) == envio2
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_quem_espera_o_token_nao_segura_a_rodada_nem_o_envio(
+    relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-20
+    from apps.pedidos import reenvio_do_pedido_formal as modulo
+    from apps.pedidos.cancelamento_da_rodada import cancelar_rodada
+    from apps.rodadas.models import Etapa, Rodada
+    from tests.apoio.concorrencia import executar_em_paralelo
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+
+    admin_a, pf1, pf2 = _af_dois(relogio, simulador_pagamentos)
+    cancelado = Event()
+    pausado = _com_a_primeira_pausada(monkeypatch, depois=lambda: assert_(cancelado.wait(30)))
+    token = uuid.uuid4()
+
+    def primeira(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        return modulo.reenviar_pedido_formal(admin_a.admin, pf1, token=token)
+
+    def segunda(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        assert pausado.wait(15)
+        return modulo.reenviar_pedido_formal(admin_a.admin, pf2, token=token)
+
+    def terceira(barreira: Any) -> Any:
+        barreira.wait(timeout=10)
+        assert pausado.wait(15)
+        esperar_outra_conexao_na_trava()  # a segunda, esperando o token
+        try:
+            return cancelar_rodada(
+                admin_a.admin, Rodada.objects.get(pk=pf2.rodada_id), com_reembolso=False
+            )
+        finally:
+            cancelado.set()
+
+    resultados = executar_em_paralelo(primeira, segunda, terceira, tempo_limite=90)
+    assert resultados[0].excecao is None, repr(resultados[0].excecao)
+    assert resultados[2].excecao is None, repr(resultados[2].excecao)
+    assert isinstance(resultados[1].excecao, modulo.ReenvioRecusado), repr(resultados[1].excecao)
+    assert resultados[1].excecao.codigo == "token_invalido"
+    assert Rodada.objects.get(pk=pf2.rodada_id).etapa == Etapa.CANCELADA
+    assert [m.to for m in mail.outbox] == [[EMAIL_DO_PEDIDO]]
+    assert [t for t in _tentativas() if t.pedido_formal_id == pf2.pk and t.tipo == "manual"] == []
+
+
+def assert_(condicao: bool) -> None:
+    assert condicao, "o cancelamento não concluiu enquanto a primeira chamada estava pausada"
