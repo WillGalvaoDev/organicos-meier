@@ -17,9 +17,9 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 | **Progresso** | 13 de 16 etapas entregues (E01–E13), 95 fatias, cada uma aprovada por revisão independente |
 | **Última etapa entregue** | E13 — Pedido formal, repasse e portal do fornecedor (PR #86) |
 | **Próxima etapa** | E14 — Recebimento, ocorrências, retirada e descarte (não iniciada) |
-| **Suíte de testes** | 3.073 testes: 3.072 passando e 1 falha conhecida (M-10, teste antigo que não congela o relógio e falha desde 03/11/2026, sem relação com a E13); ruff, mypy (estrito) e verificação de migrações limpos |
+| **Suíte de testes** | 3.073 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
 | **Bloqueadores abertos** | Nenhum |
-| **Melhorias não impeditivas** | 10 abertas (1 encerrada) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
+| **Melhorias não impeditivas** | 9 abertas (2 encerradas) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
 
 **Funciona hoje (com o simulador):**
 

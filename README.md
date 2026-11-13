@@ -17,9 +17,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | **Progress** | 13 of 16 stages delivered (E01–E13), 95 slices, each approved by an independent review |
 | **Last stage delivered** | E13 — Formal order, payout and supplier portal (PR #86) |
 | **Next stage** | E14 — Receiving, delivery issues, pickup and disposal (not started) |
-| **Test suite** | 3,073 tests: 3,072 passing and 1 known failure (M-10, an older test that does not freeze the clock and fails since 2026-11-03, unrelated to E13); ruff, mypy (strict) and migration checks clean |
+| **Test suite** | 3,073 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
 | **Open blockers** | None |
-| **Non-blocking improvements** | 10 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
+| **Non-blocking improvements** | 9 open (2 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
 **Works today (with the simulator):**
 
