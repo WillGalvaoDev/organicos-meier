@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 
 from django.core.exceptions import PermissionDenied
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 
 from apps.contas.models import Conta, Papel, Situacao
 from apps.notificacoes.canais import enviar_email
@@ -42,6 +42,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 MAIOR_RESPOSTA = 100
+CHAVE_DA_TRAVA_DOS_ACIONAMENTOS = 7_151_013
 MENSAGENS = {
     "token_invalido": "O reenvio não pôde ser identificado; recarregue a página e tente de novo.",
     "rodada_cancelada": "A rodada foi cancelada; o pedido formal não é reenviado.",
@@ -151,9 +152,21 @@ def reenviar_pedido_formal(
         return ReenvioRegistrado(existente, nova=False)
 
 
+def _tomar_a_posse_do_token(token: uuid.UUID) -> None:
+    """A posse exclusiva do token no sistema inteiro, retida até o fim da transação. É a primeira
+    instrução da transação, antes de qualquer outra trava, e espera. Dois tokens com o mesmo
+    `hashtext` só se executam em sequência; a conferência continua sendo pelo token."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, hashtext(%s))",
+            [CHAVE_DA_TRAVA_DOS_ACIONAMENTOS, str(token)],
+        )
+
+
 def _tentar(
     administrador: Conta, pedido_formal: PedidoFormal, token: uuid.UUID
 ) -> ReenvioRegistrado:
+    _tomar_a_posse_do_token(token)
     envio = (
         EnvioDoPedidoFormal.objects.select_for_update(of=("self",))
         .select_related("pedido_formal__fornecedor")
