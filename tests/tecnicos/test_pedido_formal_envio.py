@@ -420,3 +420,120 @@ def test_o_log_nao_leva_destino_assunto_nem_corpo(
         assert EMAIL_DO_PEDIDO not in texto
         assert pedido.assunto not in texto
         assert pedido.corpo not in texto
+
+
+def _af_meio_concorrente(
+    relogio: RelogioControlado, sim: Any, settings: Any
+) -> tuple[Any, Any, Any, Any]:
+    """AF-meio-concorrente: a primeira tentativa falhou em `PRAZO`, a próxima está em
+    `PRAZO + 5 min`, o e-mail continua falhando e o relógio fica em `PRAZO + 5 min`."""
+    settings.EMAIL_BACKEND = FALHA
+    af = arranjo_af(relogio, sim)
+    _processar(relogio, PRAZO)
+    relogio.congelar(PRAZO + 5 * M)
+    return af
+
+
+def _duas_execucoes(
+    relogio: RelogioControlado,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    consulta_de_b_falha: bool,
+    antes_de_liberar_b: Any = None,
+) -> tuple[list[Any], list[str]]:
+    """B lê o envio vencido e para na consulta; A roda inteira; só então a consulta de B termina
+    (falhando ou com sucesso). Só a consulta de B é um dublê. Devolve os resultados e as
+    referências consultadas, na ordem."""
+    from threading import local
+
+    from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
+    from apps.pedidos import envio_do_pedido_formal as modulo
+    from tests.apoio.concorrencia import executar_em_paralelo
+
+    consultar = modulo.consultar_antes_de_decidir
+    consultadas: list[str] = []
+    eh_b = local()
+    b_consultando, liberar_b = Event(), Event()
+
+    def consulta(referencia: str) -> Any:
+        if getattr(eh_b, "valor", False):
+            b_consultando.set()
+            assert liberar_b.wait(30)
+            if consulta_de_b_falha:
+                raise ConsultaAoProvedorFalhou(referencia, "indisponivel")
+        consultadas.append(referencia)
+        return consultar(referencia)
+
+    monkeypatch.setattr(modulo, "consultar_antes_de_decidir", consulta)
+
+    def execucao_b(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        eh_b.valor = True
+        return modulo.processar_pedidos_formais()
+
+    def execucao_a(barreira: Any) -> int:
+        barreira.wait(timeout=10)
+        assert b_consultando.wait(15)
+        try:
+            return modulo.processar_pedidos_formais()
+        finally:
+            if antes_de_liberar_b is not None:
+                antes_de_liberar_b()
+            liberar_b.set()
+
+    resultados = executar_em_paralelo(execucao_b, execucao_a, tempo_limite=60)
+    assert [r.excecao for r in resultados] == [None, None], [repr(r.excecao) for r in resultados]
+    return resultados, consultadas
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_consulta_atrasada_que_falha_nao_encurta_o_intervalo_da_terceira(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-18
+    _af_meio_concorrente(relogio, simulador_pagamentos, settings)
+    resultados, _consultadas = _duas_execucoes(relogio, monkeypatch, consulta_de_b_falha=True)
+    assert (resultados[0].valor, resultados[1].valor) == (0, 1)  # B, A
+    envio = _envio()
+    assert envio.automaticas == 2
+    assert envio.proxima_tentativa_em == PRAZO + 35 * M
+    assert envio.situacao == "em_andamento"
+    assert [(t.ordem_automatica, t.resultado) for t in _tentativas()] == [
+        (1, "falha"),
+        (2, "falha"),
+    ]
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+def test_consulta_atrasada_que_termina_bem_nao_autoriza_a_terceira(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-19
+    from apps.pedidos.models import EnvioDoPedidoFormal
+
+    a, x, y, _pedido = _af_meio_concorrente(relogio, simulador_pagamentos, settings)
+    resultados, consultadas = _duas_execucoes(
+        relogio,
+        monkeypatch,
+        consulta_de_b_falha=False,
+        antes_de_liberar_b=lambda: relogio.congelar(PRAZO + 36 * M),
+    )
+    assert (resultados[0].valor, resultados[1].valor) == (0, 1)  # B, A
+    envio = _envio()
+    assert (envio.automaticas, envio.proxima_tentativa_em) == (2, PRAZO + 35 * M)
+    assert len(_tentativas()) == 2
+    consultadas_ate_aqui = len(consultadas)
+    assert _processar(relogio, PRAZO + 36 * M) == 1
+    refs = {x.referencia_externa, y.referencia_externa}
+    assert refs <= set(consultadas[consultadas_ate_aqui:])
+    terceira = _tentativas()[2]
+    assert (terceira.ordem_automatica, terceira.resultado) == (3, "falha")
+    assert EnvioDoPedidoFormal.objects.get().situacao == "concluido_com_falhas"
+    admins = Notificacao.objects.filter(evento=EVENTO)
+    assert admins.count() == admins.values("destinatario").distinct().count() >= 1
