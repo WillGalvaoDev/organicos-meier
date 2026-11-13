@@ -27,3 +27,10 @@ TDD: `918e29e` introduz testes antes do Green `5521462`. O registro distingue co
 ## Revalidação da rota após o E13-R01 — implementador — 2026-11-13
 
 O A-9 do E13-08 (dois POST com o mesmo token em pedidos formais diferentes) está em `tests/tecnicos/test_pedido_formal_ponta_a_ponta.py` e passa; `test_pedido_formal_telas.py` continua verde (68 testes dos quatro módulos do pedido formal). Detalhes em [E13-03](../E13-03/review.md).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO, inclusive a integração antes impedida por E13-R01.** Sem alteração de produção nesta fatia. Seus 18 testes passaram; o novo E13-08 A-9 confirmou o POST vencedor com redirecionamento, o segundo com 400 e apenas um e-mail/tentativa. R01 encerrado pelo serviço corrigido. Evidências em [E13-08](../E13-08/review.md).

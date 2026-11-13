@@ -47,3 +47,16 @@ Especificação: `a858d0d` (regra 3-A, o retrato da seleção; A-18 e A-19).
 - **Green (`0966272`):** em `apps/pedidos/envio_do_pedido_formal.py`, a falha da consulta só reagenda se, sob a trava (`skip_locked`), o envio continua `em_andamento` com `automaticas` e `proxima_tentativa_em` iguais ao retrato lido na seleção; o sucesso da consulta passa pela mesma conferência (`_igual_ao_retrato`) junto às da regra 4. Rodada cancelada continua interrompendo sem depender do retrato. Resultado: 19 passaram (A-5, A-7 e A-11 verdes).
 - Ajuste do próprio teste novo antes do commit do Green: o campo da notificação é `conta`, não `destinatario` (erro meu no teste do A-19; a asserção não foi afrouxada).
 - **Verificações:** ruff, format e mypy limpos; 68 testes dos módulos do pedido formal passaram. Suíte completa: ver E13-08.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO. E13-R02 encerrado.**
+
+Conferidos os requisitos da correção em `a858d0d` (regra 3-A e A-18/A-19), compatíveis com a infraestrutura §4.14 e a consulta prévia. A falha da consulta só reagenda quando contador e próxima tentativa ainda correspondem ao estado lido antes dela. No sucesso, a mesma comparação impede que uma consulta antiga autorize a tentativa seguinte. Cancelamento mantém seu tratamento independente dessa comparação.
+
+A-1 a A-19 reexecutados: **19 testes passaram**, dentro da matriz completa de 157. Incluem falha atrasada preservando os 30 minutos, sucesso atrasado descartado e consulta nova antes da terceira tentativa. A prova independente original do R02, sem alteração, também passou: duas tentativas registradas e agendamento em `PRAZO+35 min`.
+
+TDD: `5ae9f5e` introduz os testes antes da produção em `0966272`. Registro Red: 2 falhas/17 sucessos; Green: 19 sucessos. Conferida a mudança de `destinatario` para `conta` no teste: corrige o nome real do campo sem enfraquecer a asserção. Não foi reexecutado o checkout histórico do Red; histórico/diff e registro corroboram a sequência. Sem achado residual. Comandos e limites em [E13-08](../E13-08/review.md).

@@ -27,3 +27,10 @@ Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisit
 `test_previsao_de_entrega.py` e `test_previsao_de_entrega_telas.py`: **25 testes passaram** na matriz independente. Inspecionadas as travas compartilhadas com cancelamento/envio. Sem achado próprio impeditivo.
 
 TDD: Red `e83683e` antes do Green `783d315`; o registro explicita os dois casos que já passavam e a verificação conjunta de 43 testes com as telas do pedido formal. Evidências gerais em [E13-08](../E13-08/review.md).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO — mantida a aprovação.** Sem alteração de produção nesta fatia. Seus 25 testes passaram na matriz completa. Nenhuma regressão identificada em ajuste, histórico, avisos e permissões. Consolidação em [E13-08](../E13-08/review.md).

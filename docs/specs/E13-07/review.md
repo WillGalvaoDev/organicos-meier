@@ -34,3 +34,10 @@ A-1 a A-18: conferidos os campos fechados dos serializadores, filtro de forneced
 Confirmada a correção do especificador: P2 com 12 unidades e múltiplo 6 informa **6 faltando para a próxima caixa**, usando diretamente o progresso da E05. O ajuste da lista de rotas no teste da E08 foi conferido: as quatro rotas novas não editam o pedido congelado, seus itens, T0 ou frete cobrado; cada inclusão está comentada com a cobertura correspondente.
 
 TDD: `0952f9f` → `9235d17`, com distinção dos testes de recusa já atendidos; para a correção, `c56385e` altera primeiro a expectativa e `9af6251` remove a transformação indevida do valor. Registro Red/Green compatível com a sequência inspecionada. Sem achado próprio impeditivo. Evidências gerais em [E13-08](../E13-08/review.md).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO — mantida a aprovação.** Sem alteração de produção nesta fatia. Seus 18 testes passaram na matriz completa, mantendo campos fechados, isolamento, exportação e recusas. Consolidação em [E13-08](../E13-08/review.md).

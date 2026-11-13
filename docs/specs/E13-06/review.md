@@ -36,3 +36,10 @@ Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisit
 Confirmado o ajuste autorizado do arranjo do E09-07 A-25: a cobertura de frete substitui a apuração simulada sem liquidez; as asserções de identificação de 64 caracteres e conciliação foram preservadas. Não houve afrouxamento desse critério.
 
 TDD: `c054e0e` → `2bdb7bb` (serviços, 17 testes) e `542fb3c` → `90b348f` (tela, 10 testes), com mudanças e registros conferidos. Sem achado próprio impeditivo. Evidências gerais em [E13-08](../E13-08/review.md).
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO — mantida a aprovação.** Sem alteração de produção nesta fatia. Seus 27 testes passaram na matriz completa, incluindo consulta, liquidez, concorrência, segregação e telas. Consolidação em [E13-08](../E13-08/review.md).

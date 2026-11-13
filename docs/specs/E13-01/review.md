@@ -33,3 +33,10 @@ Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisit
 `test_pedido_formal.py`: **19 testes passaram**, dentro da execução independente dos 152 testes da E13. Inspecionados o receptor transacional, `pedido_formal.py`, modelos e migrações 0014/0015. Não foi encontrado achado próprio impeditivo.
 
 TDD: o commit Red `75c589d` contém testes antes do Green `83d2ec9`, que introduz o comportamento. O registro do implementador informa comando completo, 19 falhas pela ausência do modelo e 19 sucessos. A ordem e o conteúdo dos commits corroboram o registro; não se apresenta isso como reexecução histórica do Red. Comandos e limites no parecer consolidado.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO — mantida a aprovação.** Sem alteração de produção nesta fatia. A matriz completa da E13 foi reexecutada: 157 testes passaram. R01/R02 foram encerrados; ver consolidação em [E13-08](../E13-08/review.md).

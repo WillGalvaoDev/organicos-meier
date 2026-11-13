@@ -258,3 +258,149 @@ def test_controle_do_relogio_da_regressao_m10(relogio, simulador_pagamentos):
 Commits: Red `cfc54f2` → Green `36efba3` (R01), A-9 pela rota `f9900d1` (Red tardio, comprovado removendo a trava), Red `5ae9f5e` → Green `0966272` (R02). Detalhes em [E13-03](../E13-03/review.md) e [E13-02](../E13-02/review.md).
 
 Suíte completa (`uv run pytest -q`): **1 failed, 3072 passed** (452 s); a falha é a preexistente M-10 (`test_devolucoes_reembolso.py::test_o_reembolso_gera_a_obrigacao_financiada_pela_custodia`, relógio real). `ruff check --no-cache`, `ruff format --check` e `mypy .` limpos. Sem push, PR ou merge, aguardando a revalidação do agente 3.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**Veredito final: APROVADO. E13-R01 e E13-R02 encerrados, sem novo achado impeditivo.** Este parecer substitui o veredito anterior para a base `5055047`, preservando o histórico da reprovação.
+
+A especificação das correções (`a858d0d`) foi lida antes da análise do código. O delta de produção limita-se a `reenvio_do_pedido_formal.py` e `envio_do_pedido_formal.py`: exclusão global pelo token antes do efeito externo e descarte de consultas obsoletas pelos dois campos do agendamento. Não houve alteração comercial, financeira ou de permissões. Detalhes e conferência TDD nos pareceres [E13-02](../E13-02/review.md) e [E13-03](../E13-03/review.md).
+
+| Fatia | Critérios reexecutados | Testes | Resultado |
+|---|---|---:|---|
+| E13-01 | A-1 a A-17 | 19 | APROVADO |
+| E13-02 | A-1 a A-19 | 19 | APROVADO; R02 encerrado |
+| E13-03 | A-1 a A-17, A-19 e A-20 (A-18 não é usado) | 21 | APROVADO; R01 encerrado |
+| E13-04 | A-1 a A-17 | 18 | APROVADO |
+| E13-05 | A-1 a A-19 | 25 | APROVADO |
+| E13-06 | A-1 a A-22 | 27 | APROVADO |
+| E13-07 | A-1 a A-18 | 18 | APROVADO |
+| E13-08 | A-1 a A-9 | 10 | APROVADO |
+
+**Execução independente: 157 passed em 88,28 s.** Dois testes independentes adicionais das corridas: **2 passed em 5,65 s**. PostgreSQL real, simulador de pagamentos e backend de e-mail de teste. Não houve envio real.
+
+Comandos executados nesta revalidação (PowerShell, raiz do projeto):
+
+```powershell
+$env:PYTHONPATH=(Get-Location).Path
+.venv/Scripts/python.exe -u "$env:TEMP/revisor_e13_correcao.py" tests/tecnicos/test_pedido_formal.py tests/tecnicos/test_pedido_formal_envio.py tests/tecnicos/test_pedido_formal_reenvio.py tests/tecnicos/test_pedido_formal_telas.py tests/tecnicos/test_previsao_de_entrega.py tests/tecnicos/test_previsao_de_entrega_telas.py tests/tecnicos/test_repasse.py tests/tecnicos/test_repasse_telas.py tests/tecnicos/test_portal_do_fornecedor.py tests/tecnicos/test_pedido_formal_ponta_a_ponta.py -q -p no:cacheprovider --tb=short
+.venv/Scripts/python.exe -u "$env:TEMP/revisor_e13_correcao_prova.py" tests/tecnicos/test_pedido_formal_revisao_temporaria.py -q -p no:cacheprovider --tb=short
+.venv/Scripts/ruff.exe check .
+.venv/Scripts/ruff.exe format --check .
+.venv/Scripts/mypy.exe .
+$env:DJANGO_SETTINGS_MODULE='config.settings.test'
+.venv/Scripts/python.exe manage.py check
+.venv/Scripts/python.exe manage.py makemigrations --check --dry-run
+```
+
+Runner idêntico ao documentado na revisão anterior, trocando apenas `TEST.NAME` dos dois aliases para `test_organicos_revisor_e13_5055047` (matriz) e `test_organicos_revisor_e13_5055047_prova` (provas). Ruff limpo; 390 arquivos já formatados; mypy limpo em 470 arquivos; check sem problemas; nenhuma migração pendente. Verificações estáticas feitas sobre a árvore entregue, antes da criação das provas temporárias. Logs locais: `revisor_e13_correcao.log` e `revisor_e13_correcao_prova.log` em `$env:TEMP`.
+
+**Limites e pendências não impeditivas:** a suíte global não foi repetida nesta revalidação; foram reexecutados todos os testes da etapa afetada e as provas adicionais. O implementador registrou em `5055047` 3072 sucessos e a falha preexistente M-10. Esse resultado global é atribuído ao implementador, não à execução independente atual. M-10 já foi diagnosticada independentemente na revisão anterior; seu arquivo não mudou. A aprovação da E13 não significa que a suíte global esteja verde. M-10/M-11 permanecem no registro de melhorias, sem implementação adicional pelo revisor. Permanecem também as limitações documentadas de entrega de e-mail/L-13 e crash após aceitação.
+
+TDD das correções aceito: testes de serviço precedem a produção; o teste HTTP posterior é cobertura integrada complementar e não foi tratado como Red histórico. Não se refez a execução dos commits Red nem a mutação relatada pelo implementador.
+
+Próximo gate: integração da E13, com atualização do estado nos dois README por quem abrir o PR (AGENTS.md §10), e continuidade para E14. Este revisor apenas registra e commita os pareceres; sem push ou merge.
+
+### Provas independentes reexecutadas nesta correção
+
+Arquivo temporário abaixo removido após a execução; preservado integralmente para reprodução. O R02 mantém a prova anterior; o R01 adapta somente a sincronização para permitir que a trava impeça a segunda entrada no envio.
+
+```python
+import uuid
+from threading import Barrier
+
+import pytest
+
+from apps.pedidos import reenvio_do_pedido_formal as reenvio
+from apps.pedidos.models import TentativaDeEnvioDoPedidoFormal
+from tests.apoio.concorrencia import executar_em_paralelo
+from tests.apoio.pedido_formal import af_sucesso
+
+pytestmark = pytest.mark.django_db(
+    transaction=True, databases=["default", "simulador_pagamentos"]
+)
+
+
+def test_token_global_nao_envia_dois_pedidos_concorrentes(
+    relogio, simulador_pagamentos, monkeypatch
+):
+    a, _, _, primeiro = af_sucesso(relogio, simulador_pagamentos)
+    b, _, _, segundo = af_sucesso(relogio, simulador_pagamentos)
+    token = uuid.uuid4()
+    encontro = Barrier(2)
+    enviados = []
+    original = reenvio.enviar_email
+
+    from tests.apoio.trava import esperar_outra_conexao_na_trava
+    tomar = reenvio._tomar_a_posse_do_token
+
+    def disputar(chave):
+        encontro.wait(timeout=10)
+        tomar(chave)
+
+    monkeypatch.setattr(reenvio, "_tomar_a_posse_do_token", disputar)
+
+    def enviar(destino, assunto, corpo):
+        esperar_outra_conexao_na_trava()
+        original(destino, assunto, corpo)
+        enviados.append(assunto)
+
+    monkeypatch.setattr(reenvio, "enviar_email", enviar)
+    resultados = executar_em_paralelo(
+        lambda _: reenvio.reenviar_pedido_formal(a.admin, primeiro, token=token),
+        lambda _: reenvio.reenviar_pedido_formal(b.admin, segundo, token=token),
+    )
+    assert sum(r.excecao is None for r in resultados) == 1
+    recusas = [r.excecao for r in resultados if r.excecao is not None]
+    assert isinstance(recusas[0], reenvio.ReenvioRecusado)
+    assert recusas[0].codigo == "token_invalido"
+    assert TentativaDeEnvioDoPedidoFormal.objects.filter(token=token).count() == 1
+    assert len(enviados) == 1, f"E-mails aceitos: {enviados}; tentativas persistidas: 1"
+
+
+def test_consulta_antiga_nao_encurta_intervalo_da_terceira_tentativa(
+    relogio, simulador_pagamentos, settings, monkeypatch
+):
+    from threading import Event, local
+    from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
+    from apps.pedidos import envio_do_pedido_formal as envio
+    from apps.pedidos.models import EnvioDoPedidoFormal
+    from tests.apoio.pedido_formal import af_meio, FALHA, PRAZO, M
+
+    _, _, _, pedido = af_meio(relogio, simulador_pagamentos, settings)
+    settings.EMAIL_BACKEND = FALHA
+    relogio.congelar(PRAZO + 5 * M)
+    consulta_iniciada, segunda_concluida = Event(), Event()
+    contexto = local()
+    original = envio.consultar_antes_de_decidir
+
+    def consultar(referencia):
+        if getattr(contexto, "falha_atrasada", False):
+            consulta_iniciada.set()
+            assert segunda_concluida.wait(10)
+            raise ConsultaAoProvedorFalhou(referencia, "indisponivel")
+        return original(referencia)
+
+    monkeypatch.setattr(envio, "consultar_antes_de_decidir", consultar)
+
+    def atrasada(_):
+        contexto.falha_atrasada = True
+        return envio.processar_pedidos_formais()
+
+    def segunda(_):
+        assert consulta_iniciada.wait(10)
+        try:
+            return envio.processar_pedidos_formais()
+        finally:
+            segunda_concluida.set()
+
+    resultados = executar_em_paralelo(atrasada, segunda)
+    assert all(r.excecao is None for r in resultados), resultados
+    assert [r.valor for r in resultados] == [0, 1]
+    estado = EnvioDoPedidoFormal.objects.get(pedido_formal=pedido)
+    assert estado.automaticas == 2
+    assert estado.proxima_tentativa_em == PRAZO + 35 * M
+
+```

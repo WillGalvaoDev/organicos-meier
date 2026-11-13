@@ -44,3 +44,18 @@ Especificação: `a858d0d` (regras 7, 8 e 11 corrigidas; A-19 e A-20; E13-08 A-9
 - **Green (`36efba3`):** `_tomar_a_posse_do_token`, em `apps/pedidos/reenvio_do_pedido_formal.py`, é a primeira instrução de `_tentar`: `pg_advisory_xact_lock(7151013, hashtext(<uuid>))` (forma de dois inteiros, chave diferente da `CHAVE_DA_TRAVA_DO_SALDO`), antes do envio e da rodada. Sem migração nem dependência. As conferências do token e da regra 5 seguem relidas sob as travas; o `IntegrityError` ficou como defesa. Resultado: `test_pedido_formal_reenvio.py` 21 passaram.
 - **A-9 pela rota (`f9900d1`, E13-08):** teste escrito depois do Green (**Red tardio**). Para comprovar o Red, a linha `_tomar_a_posse_do_token(token)` foi trocada temporariamente por `pass`: o teste falhou (`assert 400 == 302`: o primeiro POST recebeu a recusa), e com a linha restaurada `test_pedido_formal_ponta_a_ponta.py` passa (10). A trava foi restaurada e o arquivo conferido com `git status`.
 - **Verificações:** `ruff check --no-cache`, `ruff format --check` e `mypy .` (470 arquivos) limpos; os quatro módulos de teste do pedido formal (envio, reenvio, telas, ponta a ponta): 68 passaram.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-13
+
+Base auditada: `5055047`, branch `e13-especificacoes`, comparada com `7616ae8`. Histórico anterior preservado integralmente.
+
+**APROVADO. E13-R01 encerrado.**
+
+Conferidas as regras corrigidas 7/8/11 e A-19/A-20 de `a858d0d`. A trava consultiva transacional do UUID canônico é adquirida antes das travas de envio/rodada. A releitura do token ocorre antes do e-mail: um token de outro pedido é recusado sem efeito externo. O namespace não conflita com a trava de saldo do simulador; colisões de hash apenas serializam tokens distintos, cuja identidade continua sendo conferida pelo UUID completo.
+
+A-1 a A-17 e A-19/A-20 reexecutados: **21 testes passaram**. Confirmados idempotência do mesmo pedido, tokens distintos em sequência, recusa durante o automático, exclusão entre pedidos e cancelamento da segunda rodada enquanto ela espera o token. E13-08 A-9 também passou pela rota HTTP.
+
+Prova independente: duas conexões disputam o mesmo token para pedidos diferentes; **um e-mail aceito, uma tentativa persistida, uma chamada bem-sucedida e uma recusa `token_invalido`**. A barreira da prova anterior foi deslocada para antes da aquisição do token: depois da correção, exigir duas entradas simultâneas em `enviar_email` causaria timeout artificial. No envio vencedor, foi confirmada outra conexão esperando a trava. As asserções funcionais foram preservadas; código no parecer consolidado.
+
+TDD: `cfc54f2` contém testes antes de `36efba3`, que introduz a trava. O registro explica o Red e a captura da exceção do teste pelo canal; foi conferida a exigência de sucesso da primeira chamada, para que esse caminho não esconda o defeito. O teste HTTP de `f9900d1` é posterior ao Green, explicitamente declarado: é cobertura integrada adicional de comportamento já desenvolvido por TDD, não evidência de Red prévio. Sem achado residual. Limitação de crash entre aceitação e commit permanece a já documentada, fora desta corrida corrigida.
