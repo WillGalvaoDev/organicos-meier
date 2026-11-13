@@ -31,3 +31,19 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-10 e A-13 a A-17 | `tests/tecnicos/test_pedido_formal_envio.py` |
 | A-11 e A-12 | `tests/tecnicos/test_pedido_formal_envio.py`, com transações PostgreSQL reais |
+
+## Correção da revisão: E13-R02 (2026-11-13)
+
+- **Arranjo AF-meio-concorrente:** AF-meio (a primeira tentativa automática falhou em `PRAZO`, a próxima está em `PRAZO + 5 min`), com `BackendQueFalha` e o relógio congelado em `PRAZO + 5 min`.
+- **Duas execuções:** em duas conexões, B e A. A execução B lê o envio vencido e começa a consulta, que fica parada por um evento do teste. Só a consulta de B é um dublê; a de A e todo o resto seguem o fluxo real. A execução A começa depois que a consulta de B começou e roda inteira (consulta real, segunda tentativa com `falha`, commit).
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-18 | E13-R02, regra 3-A | concorrência | AF-meio-concorrente | concluída A, a consulta de B levanta `ConsultaAoProvedorFalhou` | A devolve 1 e B devolve 0; `automaticas = 2`; `proxima_tentativa_em = PRAZO + 35 min` (a conclusão da segunda + 30 minutos); duas tentativas registradas; o envio `em_andamento`. **Red esperado:** `proxima_tentativa_em = PRAZO + 10 min` |
+| A-19 | E13-R02, regra 3-A; infra 4.2 | concorrência | AF-meio-concorrente, com o simulador registrando as buscas por referência | concluída A, o relógio vai para `PRAZO + 36 min` e só então a consulta de B termina **com sucesso**; depois, rodar a tarefa de novo em `PRAZO + 36 min` | B devolve 0, sem tentativa e sem escrita (`automaticas = 2`, `proxima_tentativa_em = PRAZO + 35 min`, duas tentativas); a execução seguinte consulta X e Y de novo (buscas registradas depois da conclusão da segunda tentativa) e só então faz a tentativa nº 3 (`ordem_automatica = 3`, `falha`); o envio `concluido_com_falhas`; um aviso `falha_no_pedido_formal` por administrador. **Red esperado:** B faz a terceira tentativa sem consulta posterior à segunda |
+
+Continuam valendo e precisam ficar verdes: A-5, A-7 e A-11.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-18 e A-19 | `tests/tecnicos/test_pedido_formal_envio.py`, com transações PostgreSQL reais |

@@ -33,3 +33,21 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1 a A-14 | `tests/tecnicos/test_pedido_formal_reenvio.py` |
 | A-15 a A-17 | `tests/tecnicos/test_pedido_formal_reenvio.py`, com transações PostgreSQL reais |
+
+## Correção da revisão: E13-R01 (2026-11-13)
+
+A numeração continua em A-19: o A-18 foi retirado (2026-11-04) e não é reaproveitado.
+
+- **Arranjo AF-dois:** dois AF-sucesso de fornecedores distintos (`af_sucesso` duas vezes): o pedido formal PF1 (fornecedor F, `pedidos@f.example`) e o PF2 (o outro fornecedor, com outro e-mail de pedido).
+- **Pausa:** só a chamada do PF1 pausa dentro de `enviar_email`, por exemplo filtrando pelo destino. A do PF2 não pausa, para que um envio indevido apareça.
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-19 | E13-R01; regras 7, 8; §10, T-29 | concorrência | AF-dois; o token t1 sem uso; a chamada do PF1 com t1 pausada dentro de `enviar_email`, com as travas retidas | a chamada do PF2 com t1 numa segunda conexão, confirmada esperando com `esperar_outra_conexao_na_trava()`; depois a primeira retomada | a primeira devolve `nova = True`, com a tentativa manual `sucesso` no PF1; a segunda levanta `ReenvioRecusado("token_invalido")`; **um** e-mail no total, para o destino do PF1; uma `TentativaDeEnvioDoPedidoFormal` com t1, no PF1; nenhuma tentativa nem auditoria `pedido_formal.reenviar` no PF2; o `EnvioDoPedidoFormal` do PF2 igual. **Red esperado:** a segunda conexão não espera (`esperar_outra_conexao_na_trava()` estoura) e sai um segundo e-mail, para o destino do PF2 |
+| A-20 | E13-R01, ordem das travas | concorrência | o A-19, com a segunda chamada esperando o token | numa terceira conexão, `cancelar_rodada(admin, rodada do PF2, com_reembolso=False)`; depois a primeira chamada retomada | o cancelamento da rodada do PF2 conclui **enquanto a primeira chamada ainda está pausada** (a chamada que espera o token não segura a rodada nem o envio do PF2); retomada a primeira, a segunda levanta `token_invalido`; um e-mail; nenhuma tentativa no PF2; sem impasse (`deadlock detected`). **Red esperado:** sem a posse do token, a segunda chamada não espera; com a posse do token tomada depois da rodada, o cancelamento espera |
+
+Continuam valendo e precisam ficar verdes: A-6, A-7, A-9 e A-15 a A-17.
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-19 e A-20 | `tests/tecnicos/test_pedido_formal_reenvio.py`, com transações PostgreSQL reais |

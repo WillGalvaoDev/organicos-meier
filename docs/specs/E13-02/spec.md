@@ -142,3 +142,28 @@ Com isso, o banco recusa uma quarta tentativa automática e um token repetido.
 
 - Depende da E13-01, da E04-03 (`enviar_email`) e da E07-06 (consulta).
 - Nenhuma decisão em aberto.
+
+## Correção da revisão: E13-R02, a consulta vale só para a tentativa que a motivou (2026-11-13)
+
+Origem: revisão independente sobre `9af6251` (`docs/specs/E13-02/review.md`, "E13-R02 — Importante").
+
+**Defeito.** A consulta da regra 3 acontece fora de transação e sem trava. Por isso ela pode terminar depois de outra execução ter feito a tentativa que essa consulta precedia. No caminho de falha, a execução atrasada só confere `em_andamento` e grava agora + 5 minutos. Com isso, o intervalo de 30 minutos da segunda falha vira 5 (regra 5), contra os intervalos crescentes da infraestrutura 4.14. A trava impede escritas simultâneas, mas não uma escrita obsoleta feita depois do commit da outra execução.
+
+O mesmo vale para o caminho de sucesso. Uma consulta bem-sucedida, mas atrasada, ainda permitiria a próxima tentativa, se o relógio já tivesse passado do novo agendamento. Essa tentativa sairia sem consulta posterior à tentativa anterior, contra a regra 3 ("antes de cada tentativa").
+
+**Regra nova 3-A, o retrato da seleção:**
+- **O retrato:** ao começar a tratar um envio, antes da consulta, a execução lê `automaticas` e `proxima_tentativa_em`. A consulta que vem a seguir pertence a esse retrato.
+- **Falha da consulta:** sob a trava do envio (`skip_locked`, como hoje), o reagendamento para agora + 5 minutos só acontece se o envio continua `em_andamento` e com `automaticas` e `proxima_tentativa_em` iguais ao retrato. Se algum deles mudou, a execução não escreve nada e devolve 0; o registro no log da regra 3 continua.
+- **Sucesso da consulta:** às conferências sob as travas da regra 4 (ainda `em_andamento`, vencido, rodada não cancelada), acrescenta-se: `automaticas` e `proxima_tentativa_em` iguais ao retrato.
+  - Se algum deles mudou, a execução não tenta, não escreve e devolve 0.
+  - A próxima execução que encontrar o envio vencido faz uma consulta nova.
+- **Rodada cancelada:** a interrupção da regra 2 não depende do retrato, porque ela não usa a consulta.
+
+**O que não muda:**
+- a falha de consulta do trabalho vigente continua reagendando em 5 minutos, sem contar tentativa (A-7);
+- a segunda execução simultânea continua pulando o envio travado (A-11);
+- os intervalos de 5 e 30 minutos, o limite de três tentativas e o aviso aos administradores.
+
+**Decisão técnica.** O retrato compara os dois campos que toda transição da regra 5 e todo reagendamento da regra 3 mudam. Uma mudança em qualquer um deles mostra que outra execução já agiu depois da consulta. Comparar só `automaticas` não bastaria: um reagendamento por falha de consulta muda apenas `proxima_tentativa_em`.
+
+**Invariante novo:** toda tentativa automática tem uma consulta prévia, feita depois da tentativa anterior do mesmo pedido formal. Nenhum reagendamento por falha de consulta substitui o agendamento gravado por uma tentativa posterior a essa consulta.

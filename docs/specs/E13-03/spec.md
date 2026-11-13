@@ -106,3 +106,41 @@ Esta fatia entrega o serviço. A tela é da E13-04.
 ## Esclarecimento da implementação (2026-11-09)
 
 A regra 12 foi reescrita para nomear a chave da auditoria (`acionamento`). A implementação que já grava o UUID sob essa chave está de acordo com a regra.
+
+## Correção da revisão: E13-R01, a posse do token antes do envio (2026-11-13)
+
+Origem: revisão independente sobre `9af6251` (`docs/specs/E13-03/review.md`, "E13-R01 — Bloqueador").
+
+**Defeito.** O token é único no sistema inteiro (regra 4, infraestrutura 5), mas as travas da regra 7 são do pedido formal. Dois reenvios de pedidos formais diferentes com o mesmo token travam linhas diferentes. Os dois releem o token, não o encontram e enviam. O `UNIQUE` só recusa a segunda gravação depois do e-mail aceito, então saem dois e-mails e a tentativa do perdedor desaparece da auditoria. Isso viola o §10 (proteção contra duplicação, todas as tentativas registradas), a infraestrutura 4.14/T-29 e as regras 4, 8 e 11.
+
+**Regras corrigidas.** As regras abaixo substituem as de mesmo número. As outras continuam valendo.
+
+7. **Transação e travas, nesta ordem:**
+   - **a posse do token, antes de qualquer outra trava:** é a primeira instrução da transação, esperando, e fica retida até o commit ou rollback. Ela é exclusiva por token no sistema inteiro, qualquer que seja o pedido formal;
+   - o `EnvioDoPedidoFormal`, com `select_for_update()`, **esperando**: dois reenvios do mesmo pedido formal se executam um depois do outro (cenário 119);
+   - a `Rodada`, com `select_for_update(no_key=True)`, como na E13-02.
+8. **Conferências sob as travas**, na ordem:
+   - **o token de novo**, como na regra 4: se outra transação já gravou a tentativa com ele neste pedido formal, ela é devolvida, sem envio (cenários 70 e 95). Se ela é de outro pedido formal, `ReenvioRecusado("token_invalido")`, sem envio nem escrita. Com a posse do token, essa releitura enxerga a tentativa gravada por quem o tinha antes;
+   - as conferências da regra 5 de novo, relidas.
+11. **`IntegrityError` no token:** o tratamento continua o mesmo (desfazer, reler e devolver; ou `token_invalido` se a tentativa é de outro pedido formal). Com a posse do token antes do envio, a colisão não acontece em concorrência normal, e o tratamento fica só como defesa.
+
+**Mecanismo (decisão técnica desta correção):**
+- a trava consultiva de transação do PostgreSQL `pg_advisory_xact_lock(<chave fixa dos acionamentos>, hashtext(<UUID na forma canônica, minúsculo>))`, a forma com dois inteiros;
+- a chave fixa é uma constante do módulo do reenvio, diferente da `CHAVE_DA_TRAVA_DO_SALDO` do simulador (que usa a forma de um inteiro);
+- é o mesmo recurso que o simulador já usa (E10-R02), então não entra dependência nova nem migração;
+- dois tokens distintos com o mesmo `hashtext` só se executam em sequência, como dois reenvios do mesmo pedido formal. A correção não muda: a conferência continua sendo pelo token, e não pelo valor da trava.
+
+**Por que a posse do token vem primeiro:**
+- quem espera o token ainda não segura nenhuma outra trava. O cancelamento da própria rodada, o ajuste da previsão e o envio automático do próprio pedido formal não esperam um reenvio que só aguarda o token (critério A-20);
+- nenhum outro fluxo toma essa trava, e cada transação toma uma só. Com isso, a ordem token → envio → rodada não forma ciclo com a ordem envio → rodada da E13-02 nem com o cancelamento da E12.
+
+**O que não muda:**
+- a recusa sem esperar durante o ciclo automático (regra 5, cenário 118) continua antes da transação;
+- a idempotência para o mesmo pedido formal (cenários 70 e 95);
+- a sequência entre tokens distintos do mesmo pedido formal (cenário 119);
+- a recusa do token de outro pedido formal (A-9);
+- a interface, os códigos de recusa e a tela (E13-04: `token_invalido` responde 400).
+
+**Invariante novo:** um token gera no máximo um e-mail no sistema inteiro, e todo e-mail de reenvio tem a tentativa registrada e auditada.
+
+**Teste da revisão.** A prova temporária do revisor (`test_token_global_nao_envia_dois_pedidos_concorrentes`) sincroniza as duas chamadas com uma barreira dentro de `enviar_email`. Corrigido o defeito, a segunda chamada nunca chega a `enviar_email`, então essa barreira expiraria e o teste falharia pelo motivo errado. O teste permanente segue o A-19: a primeira chamada pausada dentro do envio e a segunda confirmada esperando a trava.

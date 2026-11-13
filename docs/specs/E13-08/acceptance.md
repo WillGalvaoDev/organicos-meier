@@ -21,3 +21,13 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|
 | A-1, A-2 e A-4 a A-8 | `tests/tecnicos/test_pedido_formal_ponta_a_ponta.py` |
 | A-3 | `tests/tecnicos/test_pedido_formal_ponta_a_ponta.py`, com transações PostgreSQL reais |
+
+## Correção da revisão: E13-R01 pela rota (2026-11-13)
+
+| ID | Origem | Tipo | Dado | Quando | Então |
+|---|---|---|---|---|---|
+| A-9 | E13-R01; E13-03 A-19; E13-04 | concorrência | dois AF com o ciclo concluído com sucesso, de fornecedores distintos (PF1 e PF2); o POST de reenvio do PF1 com o token t1 pausado dentro de `enviar_email` | pela rota HTTP, com transações reais, o POST de reenvio do PF2 com o mesmo t1, confirmado esperando a trava; depois o primeiro retomado | o primeiro POST redireciona com "Reenvio registrado: aceito pelo serviço de e-mail."; o segundo responde 400 "Recarregue a página e tente de novo." (o `token_invalido` da E13-04); um e-mail no total; uma tentativa com t1, no PF1; nenhuma tentativa no PF2; o invariante sem violação |
+
+| Critério | Arquivo de teste |
+|---|---|
+| A-9 | `tests/tecnicos/test_pedido_formal_ponta_a_ponta.py`, com transações PostgreSQL reais |
