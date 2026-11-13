@@ -23,3 +23,7 @@ A-1 a A-17 conferidos contra views, contexto e template: acesso administrativo, 
 O tratamento HTTP não corrige a corrida do serviço descrita em [E13-03](../E13-03/review.md); após a correção, revalidar também a rota.
 
 TDD: `918e29e` introduz testes antes do Green `5521462`. O registro distingue corretamente o caso que já passava por 404 da rota inexistente (17 falhas/1 sucesso), seguido por 18 sucessos. Não foi encontrado outro achado próprio impeditivo. Evidências gerais em [E13-08](../E13-08/review.md).
+
+## Revalidação da rota após o E13-R01 — implementador — 2026-11-13
+
+O A-9 do E13-08 (dois POST com o mesmo token em pedidos formais diferentes) está em `tests/tecnicos/test_pedido_formal_ponta_a_ponta.py` e passa; `test_pedido_formal_telas.py` continua verde (68 testes dos quatro módulos do pedido formal). Detalhes em [E13-03](../E13-03/review.md).

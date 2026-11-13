@@ -35,3 +35,12 @@ Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisit
 Não é a limitação L-13: não houve crash nem falha de entrega posterior; é uma corrida normal que a aplicação deixa ocorrer. Nenhuma correção de produção foi feita pelo revisor.
 
 TDD histórico: Red `590cfbc` contém os testes antes do Green `9ab5fed`, seguido de `9f2cf8c` para imports. Conferidos os commits e o registro de 19 falhas/19 sucessos. O Red da correção de E13-R01 ainda é necessário.
+
+## Correção do E13-R01 — implementador — 2026-11-13
+
+Especificação: `a858d0d` (regras 7, 8 e 11 corrigidas; A-19 e A-20; E13-08 A-9).
+
+- **Red (`cfc54f2`):** `uv run pytest tests/tecnicos/test_pedido_formal_reenvio.py` → 2 falhas (A-19 e A-20), 19 passaram. No A-19 a segunda chamada não esperou o token e enviou o e-mail do PF2; a asserção `esperar_outra_conexao_na_trava()` da primeira estourou dentro de `enviar_email`, e `_tentar` a converteu em tentativa `falha` (o `except Exception` do envio), de modo que a chamada acabou recusada com `token_invalido` pelo `UNIQUE` depois do e-mail do PF2: o defeito do parecer (efeito externo antes da posse do token), por outro caminho de assertiva. No A-20 o teste falhou pelo mesmo motivo (nenhuma conexão esperando o token).
+- **Green (`36efba3`):** `_tomar_a_posse_do_token`, em `apps/pedidos/reenvio_do_pedido_formal.py`, é a primeira instrução de `_tentar`: `pg_advisory_xact_lock(7151013, hashtext(<uuid>))` (forma de dois inteiros, chave diferente da `CHAVE_DA_TRAVA_DO_SALDO`), antes do envio e da rodada. Sem migração nem dependência. As conferências do token e da regra 5 seguem relidas sob as travas; o `IntegrityError` ficou como defesa. Resultado: `test_pedido_formal_reenvio.py` 21 passaram.
+- **A-9 pela rota (`f9900d1`, E13-08):** teste escrito depois do Green (**Red tardio**). Para comprovar o Red, a linha `_tomar_a_posse_do_token(token)` foi trocada temporariamente por `pass`: o teste falhou (`assert 400 == 302`: o primeiro POST recebeu a recusa), e com a linha restaurada `test_pedido_formal_ponta_a_ponta.py` passa (10). A trava foi restaurada e o arquivo conferido com `git status`.
+- **Verificações:** `ruff check --no-cache`, `ruff format --check` e `mypy .` (470 arquivos) limpos; os quatro módulos de teste do pedido formal (envio, reenvio, telas, ponta a ponta): 68 passaram.

@@ -38,3 +38,12 @@ Os critérios A-1 a A-17 têm cobertura na suíte entregue; `test_pedido_formal_
 O código completo da reprodução está em [E13-08](../E13-08/review.md). Nenhuma correção de produção foi feita pelo revisor.
 
 TDD histórico: `594fcaf` (Red, testes) precede `4568f45` (Green); `002c386` refatora exports/tipos. O registro declara 17 falhas por módulo ausente e 17 sucessos; a ordem dos commits foi conferida. Esse histórico não cobre o E13-R02 descoberto agora.
+
+## Correção do E13-R02 — implementador — 2026-11-13
+
+Especificação: `a858d0d` (regra 3-A, o retrato da seleção; A-18 e A-19).
+
+- **Red (`5ae9f5e`):** `uv run pytest tests/tecnicos/test_pedido_formal_envio.py` → 2 falhas, 17 passaram. A-18: `proxima_tentativa_em` = `PRAZO + 10 min` em vez de `PRAZO + 35 min`. A-19: a execução atrasada fez a terceira tentativa (devolveu 1) sem consulta posterior à segunda.
+- **Green (`0966272`):** em `apps/pedidos/envio_do_pedido_formal.py`, a falha da consulta só reagenda se, sob a trava (`skip_locked`), o envio continua `em_andamento` com `automaticas` e `proxima_tentativa_em` iguais ao retrato lido na seleção; o sucesso da consulta passa pela mesma conferência (`_igual_ao_retrato`) junto às da regra 4. Rodada cancelada continua interrompendo sem depender do retrato. Resultado: 19 passaram (A-5, A-7 e A-11 verdes).
+- Ajuste do próprio teste novo antes do commit do Green: o campo da notificação é `conta`, não `destinatario` (erro meu no teste do A-19; a asserção não foi afrouxada).
+- **Verificações:** ruff, format e mypy limpos; 68 testes dos módulos do pedido formal passaram. Suíte completa: ver E13-08.
