@@ -16,3 +16,25 @@ Comando: `uv run pytest tests/tecnicos/test_pedido_formal_envio.py` (arquivo int
 ## Decisões técnicas
 - O aviso `falha_no_pedido_formal` junta as frases das tentativas num só texto, separadas por espaço; o link é uma string (a página só nasce na E13-04).
 - A-17 (log): a captura do teste inclui uma falha de consulta no meio do ciclo e confere que nenhum registro leva o destino, o assunto ou o corpo.
+
+
+## Revisão independente — agente 3 — 2026-11-13
+
+Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisitos lidos antes do código: especificação funcional v1.7, infraestrutura v1.8 e os `spec.md`/`acceptance.md` das oito fatias. Os registros do implementador acima foram preservados integralmente.
+
+**Veredito da fatia: REPROVADO — E13-R02 aberto.**
+
+Os critérios A-1 a A-17 têm cobertura na suíte entregue; `test_pedido_formal_envio.py`: **17 testes passaram**. Foram conferidos limites de três tentativas, intervalos, consultas prévias, aviso aos administradores, cancelamento, auditoria e exclusão mútua. O caso concorrente adicional abaixo não é coberto pelo A-11 existente, que mantém a primeira execução dentro do envio.
+
+### E13-R02 — Importante: consulta atrasada sobrescreve o intervalo da segunda falha
+
+- **Requisitos:** infraestrutura §4.14 (intervalos crescentes e concorrência), E13-02 regras 3 a 5, A-3/A-5/A-11; AGENTS.md §6.
+- **Referência:** `apps/pedidos/envio_do_pedido_formal.py:79-99`, especialmente a atribuição da próxima tentativa na linha 97.
+- **Reprodução:** depois da primeira falha, duas execuções selecionam o mesmo envio vencido em 13:05 UTC. A consulta da execução B fica pendente. A execução A consulta normalmente, registra a segunda falha de e-mail e agenda a terceira para 13:35. Só então a consulta B falha; B adquire a trava e troca o agendamento para 13:10.
+- **Evidência independente:** `test_consulta_antiga_nao_encurta_intervalo_da_terceira_tentativa` falhou: esperado `2026-11-04 13:35 UTC`, obtido `13:10 UTC`; duas tentativas já registradas. O teste usa conexões PostgreSQL reais e eventos determinísticos; apenas a consulta atrasada é um dublê de falha, o restante segue o fluxo real.
+- **Causa:** o caminho de falha verifica apenas `situacao=em_andamento`; não verifica se o agendamento/contador que motivou aquela consulta já avançou. A trava evita escrita simultânea, mas não uma escrita obsoleta depois do commit do outro worker.
+- **Correção esperada:** sob a trava, uma consulta antiga não pode substituir o agendamento de uma tentativa posterior. Acrescentar Red/Green para esse intercalamento, preservando o reagendamento de cinco minutos quando a falha pertence ao trabalho ainda vigente. Não é necessária decisão comercial nova.
+
+O código completo da reprodução está em [E13-08](../E13-08/review.md). Nenhuma correção de produção foi feita pelo revisor.
+
+TDD histórico: `594fcaf` (Red, testes) precede `4568f45` (Green); `002c386` refatora exports/tipos. O registro declara 17 falhas por módulo ausente e 17 sucessos; a ordem dos commits foi conferida. Esse histórico não cobre o E13-R02 descoberto agora.

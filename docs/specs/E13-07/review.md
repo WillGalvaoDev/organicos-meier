@@ -21,3 +21,16 @@ Comando: `uv run pytest tests/tecnicos/test_portal_do_fornecedor.py` (arquivo in
 - **Green:** removi `_faltam` de `apps/fornecedores/portal.py`; o portal usa o valor de `progresso_da_rodada` sem ajuste. 35 passed com `test_pedidos_abertura_tela.py`.
 - A lista de rotas do `test_pedidos_abertura_tela.py` ganhou, em cada rota da E13, o comentário com a fatia que a cobre.
 - E13-03 (chave `acionamento`) e E13-06 (arranjo do A-25) já estavam conforme os esclarecimentos; o "ponto para o especificador" do item "0 faltando" acima está resolvido pela correção.
+
+
+## Revisão independente — agente 3 — 2026-11-13
+
+Base auditada: `9af6251`, branch `e13-especificacoes`, sobre `9851bb5`. Requisitos lidos antes do código: especificação funcional v1.7, infraestrutura v1.8 e os `spec.md`/`acceptance.md` das oito fatias. Os registros do implementador acima foram preservados integralmente.
+
+**Veredito da fatia: APROVADO.** A etapa E13 permanece REPROVADA por E13-R01/E13-R02.
+
+A-1 a A-18: conferidos os campos fechados dos serializadores, filtro de fornecedor no queryset, etapas, pedido/previsão, CSV, proibição de escrita e recusas de acesso direto por comprador/fornecedor/administrador/anônimo. Templates usam os dados permitidos; as consultas e o CSV não expõem compradores, pagamentos, serviço, frete, reserva ou repasses. `test_portal_do_fornecedor.py`: **18 testes passaram**.
+
+Confirmada a correção do especificador: P2 com 12 unidades e múltiplo 6 informa **6 faltando para a próxima caixa**, usando diretamente o progresso da E05. O ajuste da lista de rotas no teste da E08 foi conferido: as quatro rotas novas não editam o pedido congelado, seus itens, T0 ou frete cobrado; cada inclusão está comentada com a cobertura correspondente.
+
+TDD: `0952f9f` → `9235d17`, com distinção dos testes de recusa já atendidos; para a correção, `c56385e` altera primeiro a expectativa e `9af6251` remove a transformação indevida do valor. Registro Red/Green compatível com a sequência inspecionada. Sem achado próprio impeditivo. Evidências gerais em [E13-08](../E13-08/review.md).
