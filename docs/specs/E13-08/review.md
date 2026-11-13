@@ -252,3 +252,9 @@ def test_controle_do_relogio_da_regressao_m10(relogio, simulador_pagamentos):
     relogio.congelar(T0 + H)
     verificar(relogio, simulador_pagamentos)
 ```
+
+## Correções E13-R01 e E13-R02 — implementador — 2026-11-13
+
+Commits: Red `cfc54f2` → Green `36efba3` (R01), A-9 pela rota `f9900d1` (Red tardio, comprovado removendo a trava), Red `5ae9f5e` → Green `0966272` (R02). Detalhes em [E13-03](../E13-03/review.md) e [E13-02](../E13-02/review.md).
+
+Suíte completa (`uv run pytest -q`): **1 failed, 3072 passed** (452 s); a falha é a preexistente M-10 (`test_devolucoes_reembolso.py::test_o_reembolso_gera_a_obrigacao_financiada_pela_custodia`, relógio real). `ruff check --no-cache`, `ruff format --check` e `mypy .` limpos. Sem push, PR ou merge, aguardando a revalidação do agente 3.
