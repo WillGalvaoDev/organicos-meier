@@ -12,14 +12,14 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-01, with PR #85 (E12) |
+| **Last updated** | 2026-11-13, with PR #86 (E13) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 12 of 16 stages delivered (E01–E12), 87 slices, each approved by an independent review |
-| **Last stage delivered** | E12 — Round cancellation (PR #85) |
-| **Next stage** | E13 — Formal order, payout and supplier portal (not started) |
-| **Test suite** | 2,916 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
+| **Progress** | 13 of 16 stages delivered (E01–E13), 95 slices, each approved by an independent review |
+| **Last stage delivered** | E13 — Formal order, payout and supplier portal (PR #86) |
+| **Next stage** | E14 — Receiving, delivery issues, pickup and disposal (not started) |
+| **Test suite** | 3,073 tests: 3,072 passing and 1 known failure (M-10, an older test that does not freeze the clock and fails since 2026-11-03, unrelated to E13); ruff, mypy (strict) and migration checks clean |
 | **Open blockers** | None |
-| **Non-blocking improvements** | 8 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
+| **Non-blocking improvements** | 10 open (1 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
 **Works today (with the simulator):**
 
@@ -34,8 +34,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Refunds: partial refunds proportional by item, service and freight, and full order refunds; refunds through the simulated provider with idempotency, safe retries and late-conclusion handling; refund reconciliation; the exceptional refund confirmed by the administrator with a receipt; refund notices and the admin and buyer screens. The simulator also produces refunds and chargebacks.
 - Final settlement from `T0 + 48h`, in two administrator acts (settle, then approve the result): provider reconsultation and cancellation of open charges before deciding, cancellation of unpaid orders, invalidated boxes with proportional refunds and the units back in the pending queue, the supplier minimum, the return to interest with full refunds when the minimum is not met, the ledger settlement on approval, the admin and buyer screens, and the pending queue tested end to end.
 - Round cancellation by the administrator, for the whole round and with a mandatory refund indication: reservations removed while the pending queue is kept, unpaid orders cancelled, new payment attempts blocked and open charges cancelled at the provider; with refund, a full refund for every buyer who paid (minus what was already refunded or pending), already authorized and retried periodically; payments reported after the cancellation always go to refund with a critical alert; the cancellation notice, the admin and buyer screens and the end-to-end scenarios with the simulator.
+- Formal order to the supplier, generated once on result approval with frozen content: up to three automatic email attempts (5 and 30 minutes apart) after a provider check, an admin alert after the third failure, and manual resend with a per-click token (duplicate clicks send once, never during the automatic cycle or in a cancelled round); adjustable delivery forecast with buyer notices; supplier payout and freight payment limited to released funds, with recent passkey; the read-only supplier portal with a closed list of fields and CSV export; and the end-to-end scenario of cancellation after payout.
 
-**Not built yet:** the formal order and supplier payout (E13), pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+**Not built yet:** pickup and delivery issues (E14), the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -51,8 +52,8 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E10 | Refunds | ✅ Delivered |
 | E11 | Final settlement and pending queue | ✅ Delivered |
 | E12 | Round cancellation | ✅ Delivered |
-| E13 | Formal order, payout and supplier portal | ⏳ Next |
-| E14 | Receiving, delivery issues, pickup and disposal | — |
+| E13 | Formal order, payout and supplier portal | ✅ Delivered |
+| E14 | Receiving, delivery issues, pickup and disposal | ⏳ Next |
 | E15 | Admin dashboard and operational alerts | — |
 | E16 | Homologation and Phase 1 closing | — |
 
