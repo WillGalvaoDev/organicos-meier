@@ -21,3 +21,19 @@ Agente 2.
 ## Ajuste do especificador (commit e8c967a)
 
 A-6 ganhou a conferência da lista de autores (só "Sistema" e ADM1) e A-10 o autor comprador chamado ADM2. Acrescentei as duas asserções e `test_autor_comprador_com_nome_de_administrador_e_invalido` (guardas: passaram de primeira, o código já filtrava por papel de administrador).
+
+
+## Revisão independente — agente 3 — 2026-11-16
+
+Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E14). Foram lidos os documentos-base (funcional v1.7 e infraestrutura v1.8), as sete especificações e matrizes E15 e os registros Red/Green, antes da comparação com código e testes. Este parecer acrescenta-se ao registro do implementador, preservado integralmente. Evidências globais e código das reproduções estão em [E15-07/review.md](../E15-07/review.md).
+
+**Veredito da fatia: REPROVADO.** A-1 a A-14 confrontados com listagem, paginação, filtros, autores, escape e acesso. Há uma lacuna nos limites de entrada dos filtros.
+
+### R05 — importante — filtros conseguem interromper o histórico
+
+- Requisito: spec.md, regra 3, e acceptance.md A-10: filtro inválido é ignorado com aviso e HTTP 200; datas válidas são inclusivas.
+- Código: `apps/operacao/historico.py:58` usa `isdigit()` antes de `int()`; `:81` sempre soma um dia ao limite superior.
+- Reproduções independentes: `contexto_do_historico({'autor': '\u00b2'})` (caractere ²) levanta `ValueError`; `contexto_do_historico({'ate': '9999-12-31'})` levanta `OverflowError`. A view chama esse serviço sem tratamento, interrompendo a resposta em vez da página prevista.
+- No primeiro caso o autor deve ser ignorado e avisado; no segundo o limite superior válido deve ser tratado sem transbordamento. Cobrir as entradas na rota autenticada, inclusive outras representações numéricas fora da faixa aceita.
+
+TDD: `e189ad7` antes de `32f2a33`; registro 17 falhas e uma guarda passando. O ajuste de autor que é comprador e a lista somente de administradores são coerentes com o documento-base e `e8c967a`. Não reexecutado Red histórico.

@@ -21,3 +21,12 @@ Agente 2.
 3. **Ajuste depois do Red (A-8 e A-10).** Eu tinha escrito `(0, 0)` como retorno da segunda verificação. Os e-mails dos primeiros avisos ficam pendentes (nenhum `processar_envios` roda) e, onze minutos depois, abrem `envios_atrasados`, então o retorno é `(1, 0)` por causa de outro tipo. Os testes passaram a conferir o que o critério pede: nenhum alerta novo de `consulta_com_divergencia`.
 4. **Comparação do fato com o alerta:** "posterior" é implementado como `aberto_em >= instante do fato`; um alerta aberto no mesmo instante do fato o cobre.
 5. **A-19 (concorrência):** 10 recusas em 5 threads, cada uma com o próprio cliente e conexão; `recusas_seguidas = 10` confirma o incremento atômico.
+
+
+## Revisão independente — agente 3 — 2026-11-16
+
+Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E14). Foram lidos os documentos-base (funcional v1.7 e infraestrutura v1.8), as sete especificações e matrizes E15 e os registros Red/Green, antes da comparação com código e testes. Este parecer acrescenta-se ao registro do implementador, preservado integralmente. Evidências globais e código das reproduções estão em [E15-07/review.md](../E15-07/review.md).
+
+**Veredito da fatia: APROVADO no escopo auditado.** A-1 a A-28 confrontados com detectores, contador de recusas, ciência e rotas. Conferidos isolamento de destinatários, ausência de conteúdo de webhook persistido, incremento SQL atômico, falha de registro sem alterar resposta, autorização no serviço e na rota, resolução auditada única sob concorrência e escape na apresentação.
+
+TDD: Red `636d534` anterior a `6f13b60`; 25 falhas e três guardas preexistentes no registro. A mudança na contagem global dos testes A-8/A-10 é coerente com os novos e-mails atrasados; não elimina a asserção do tipo em análise. O ajuste de especificação `e8c967a` resolve o arranjo de administrador único. Comparação `>=` cobre o fato ocorrido no mesmo instante da abertura. Não reexecutei o Red histórico. Dados inseridos diretamente nos testes unitários não constituem validação de um provedor externo; integração restrita ao simulador da fase 1.

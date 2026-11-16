@@ -24,3 +24,19 @@ Agente 2.
 ## Ajuste do especificador (commit e8c967a)
 
 A regra 3 e o A-9 passaram a pedir que a ação do pedido formal continue após um reenvio manual que falhou e some após o aceito, e o A-17 passou a "2 (R$ 11,29)". O código já fazia isso (correção da E15-07). Acrescentei `test_pedido_formal_acao_segue_o_resultado_do_reenvio` (guarda: passou de primeira, sem Red, porque o comportamento já existia). O A-17 já era conferido com "2 (R$ 11,29)".
+
+
+## Revisão independente — agente 3 — 2026-11-16
+
+Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E14). Foram lidos os documentos-base (funcional v1.7 e infraestrutura v1.8), as sete especificações e matrizes E15 e os registros Red/Green, antes da comparação com código e testes. Este parecer acrescenta-se ao registro do implementador, preservado integralmente. Evidências globais e código das reproduções estão em [E15-07/review.md](../E15-07/review.md).
+
+**Veredito da fatia: REPROVADO por R03 e R04.** A-1 a A-25 confrontados, incluindo permissões, leitura sem escrita, valores agregados, prazos, rodadas, reenvio formal e ausência de dados pessoais de compradores. R03 está descrito em E15-03/review.md: o painel precisa apresentar contagem atual sem modificar o alerta histórico.
+
+### R04 — importante — ações ordenadas por etapa antes do fornecedor
+
+- Requisito: spec.md, regra 3 e acceptance.md A-18: ações por nome de fornecedor, depois pk da rodada e ordem da regra; globais no final. A ordem por etapa pertence à tabela de rodadas.
+- Código: `apps/operacao/painel.py:242` reutiliza `_rodadas_do_painel()` (`:94`), que ordena primeiro por etapa.
+- Reprodução: rodada de Zeta em interesse com mínimo atingido e rodada de Alfa em fechamento encerrado. `acoes_necessarias` devolve fornecedores `['Zeta', 'Alfa']`; esperado `['Alfa', 'Zeta']`.
+- O teste A-18 usa Alfa na etapa anterior e Zeta na posterior; assim, as duas ordenações coincidem e não detectam o defeito. Inverter esses fornecedores dá uma regressão discriminante.
+
+TDD: Red `146fbef` antes de `e5640ec`; registro 22 falhas e três guardas passando. Correção do reenvio manual foi precedida do teste `39ceae5` e implementada em `21eb36e`; alinhamento aprovado de requisitos em `e8c967a` e guardas em `2f5958c`. Não reexecutado Red histórico.

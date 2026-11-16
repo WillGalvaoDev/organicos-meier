@@ -30,3 +30,26 @@ Agente 2.
 ## Ajuste do especificador (commit e8c967a)
 
 O A-12 pede também um `Envio` de e-mail para ADM1. Acrescentei a asserção ao teste da corrida (guarda: passou de primeira). Os desvios de administrador único e das matrizes de eventos já estavam registrados aqui e agora são regra da spec.
+
+
+## Revisão independente — agente 3 — 2026-11-16
+
+Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E14). Foram lidos os documentos-base (funcional v1.7 e infraestrutura v1.8), as sete especificações e matrizes E15 e os registros Red/Green, antes da comparação com código e testes. Este parecer acrescenta-se ao registro do implementador, preservado integralmente. Evidências globais e código das reproduções estão em [E15-07/review.md](../E15-07/review.md).
+
+**Veredito da fatia: REPROVADO.** Matriz A-1 a A-15 confrontada com implementação e testes; unicidade de alerta/notificação/Envio permanece íntegra na corrida reproduzida, mas há dois requisitos não atendidos.
+
+### R01 — importante — a verificação acusa a própria execução
+
+- Requisito: spec.md, regra 10: “A verificação não se acusa”; seu atraso aparece no painel e no monitor externo.
+- Código: `apps/operacao/atraso_de_tarefa.py:30` percorre todo o catálogo, incluindo `verificar_operacao`; `apps/operacao/tarefas.py:14` só registra a conclusão depois da verificação.
+- Reprodução: concluir todas as tarefas em I; avançar 16 minutos e concluir as outras; executar `verificar_operacao(0)`. Abre alerta `tarefa_atrasada:verificar_operacao` embora a execução termine normalmente. Esperado: nenhum alerta sobre a própria tarefa, mantendo a leitura do atraso no painel.
+- Impacto: aviso operacional falso na retomada do monitor. Acrescentar regressão dessa retomada, além do cenário de seis minutos já existente.
+
+### R02 — importante — contagem de aberturas incorreta na concorrência
+
+- Requisito: spec.md, regra 6, retorno de quantos alertas a execução abriu; concorrência de A-12.
+- Código: `apps/operacao/verificacao.py:62` lê `ja_aberto` antes da tentativa de abertura e incrementa com base nessa leitura anterior à disputa pelo UNIQUE.
+- Reprodução: o mesmo arranjo e pausa de A-12 (`Corrida.depois_de(..., 'abrir_alerta')`), somando os retornos. Duas execuções devolvem `(1, 0)` cada, mas o banco contém um só alerta. Esperado: uma execução contabiliza a abertura e a outra zero.
+- Não houve duplicação do alerta ou da notificação: o defeito é o resultado público da verificação. A-12 não verifica esse retorno.
+
+TDD: testes em `e207368`, produção em `088335c`; registro Red 14 falhas e um caso preexistente passando. Cronologia e alterações conferidos; não reexecutado Red histórico.
