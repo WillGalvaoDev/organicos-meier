@@ -655,3 +655,30 @@ class TentativaDeEnvioDoPedidoFormal(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"tentativa de envio {self.pk}"
+
+
+class RecebimentoDoFornecedor(RegistroSoInsercao):
+    """Uma entrega do fornecedor, por linha do pedido formal (E14-01). Só inserção. A quantidade
+    é o que chegou fisicamente, inclusive o que depois se revela incorreto. O pedido formal e as
+    linhas não mudam com o recebimento."""
+
+    pedido_formal = models.ForeignKey(
+        PedidoFormal, on_delete=models.PROTECT, related_name="recebimentos"
+    )
+    linha = models.ForeignKey(
+        LinhaDoPedidoFormal, on_delete=models.PROTECT, related_name="recebimentos"
+    )
+    quantidade = CampoQuantidade()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrado_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="recebimento_do_fornecedor_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"recebimento {self.pk}"

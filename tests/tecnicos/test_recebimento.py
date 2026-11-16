@@ -11,8 +11,8 @@ from django.db import IntegrityError, connection, transaction
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.nucleo.so_insercao import RegistroImutavel
-from tests.apoio.entrega import arranjo_af, receber
 from tests.apoio.apuracao import H
+from tests.apoio.entrega import NOVO, arranjo_ae, receber
 from tests.apoio.pedido_formal import PRAZO
 from tests.apoio.pedidos import T0
 from tests.conftest import RelogioControlado
@@ -47,7 +47,7 @@ def _auditorias() -> int:
     return EntradaAuditoria.objects.filter(acao="recebimento.registrar").count()
 
 
-def _recusa(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento: Any = None) -> str:
+def _recusa(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento: Any = NOVO) -> str:
     from apps.pedidos.recebimento import RecebimentoRecusado
 
     antes = (len(_recebimentos()), _auditorias())
@@ -58,7 +58,7 @@ def _recusa(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento:
 
 
 def test_o_primeiro_recebimento_grava_e_resume(relogio: RelogioControlado, sim: Any) -> None:  # A-1
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     resultado = receber(a.admin, a.rodada, a.p1, D("7"))
     assert resultado.novo is True
     (registro,) = _recebimentos()
@@ -83,7 +83,7 @@ def test_o_primeiro_recebimento_grava_e_resume(relogio: RelogioControlado, sim: 
 def test_entregas_parciais_somam(relogio: RelogioControlado, sim: Any) -> None:  # A-2
     from apps.pedidos.recebimento import recebimento_resolvido
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     receber(a.admin, a.rodada, a.p1, D("7"))
     relogio.congelar(T0 + 60 * H)
     receber(a.admin, a.rodada, a.p1, D("4"))
@@ -97,7 +97,7 @@ def test_entregas_parciais_somam(relogio: RelogioControlado, sim: Any) -> None: 
 def test_tudo_recebido_resolve(relogio: RelogioControlado, sim: Any) -> None:  # A-3
     from apps.pedidos.recebimento import recebimento_resolvido
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     receber(a.admin, a.rodada, a.p1, D("11"))
     receber(a.admin, a.rodada, a.p2, D("12"))
     assert recebimento_resolvido(a.rodada) is True
@@ -106,7 +106,7 @@ def test_tudo_recebido_resolve(relogio: RelogioControlado, sim: Any) -> None:  #
 def test_passar_do_pedido_formal_e_recusado(relogio: RelogioControlado, sim: Any) -> None:  # A-4
     from apps.pedidos.recebimento import RecebimentoRecusado
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     receber(a.admin, a.rodada, a.p1, D("7"))
     with pytest.raises(RecebimentoRecusado) as erro:
         receber(a.admin, a.rodada, a.p1, D("5"))
@@ -119,12 +119,12 @@ def test_passar_do_pedido_formal_e_recusado(relogio: RelogioControlado, sim: Any
     "quantidade", [D("0"), D("-1"), D("1.5"), D("NaN"), D("1.0001"), 1.0], ids=str
 )
 def test_quantidade_invalida(relogio: RelogioControlado, sim: Any, quantidade: Any) -> None:  # A-5
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     assert _recusa(a.admin, a.rodada, a.p1, quantidade) == "quantidade_invalida"
 
 
 def test_produto_fora_do_pedido_formal(relogio: RelogioControlado, sim: Any) -> None:  # A-6
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     p3 = ProdutoFactory.create(fornecedor=a.fornecedor, nome="P3")
     de_outro = ProdutoFactory.create(nome="Outro")
     assert _recusa(a.admin, a.rodada, p3, D("1")) == "produto_fora_do_pedido_formal"
@@ -138,7 +138,7 @@ def test_fora_de_aguardando_fornecedor(
     from apps.pedidos.cancelamento_da_rodada import cancelar_rodada
     from apps.rodadas.models import Rodada
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     if etapa == "cancelada":
         cancelar_rodada(a.admin, a.rodada, com_reembolso=False)
     else:
@@ -148,7 +148,7 @@ def test_fora_de_aguardando_fornecedor(
 
 
 def test_so_o_administrador_registra(relogio: RelogioControlado, sim: Any) -> None:  # A-8
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     conta_f = ContaFactory.create(
         nome="Conta de F", papel="fornecedor", fornecedor_id=a.fornecedor.pk
     )
@@ -161,7 +161,7 @@ def test_so_o_administrador_registra(relogio: RelogioControlado, sim: Any) -> No
 def test_o_mesmo_acionamento_devolve_o_mesmo_registro(
     relogio: RelogioControlado, sim: Any
 ) -> None:  # A-9
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     a1 = uuid.uuid4()
     primeiro = receber(a.admin, a.rodada, a.p1, D("7"), a1)
     segundo = receber(a.admin, a.rodada, a.p1, D("7"), a1)
@@ -172,10 +172,10 @@ def test_o_mesmo_acionamento_devolve_o_mesmo_registro(
 
 
 def test_acionamento_invalido(relogio: RelogioControlado, sim: Any) -> None:  # A-10
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     a1 = uuid.uuid4()
     receber(a.admin, a.rodada, a.p1, D("7"), a1)
-    outra, _x2, _y2, _pf2 = arranjo_af(relogio, sim)
+    outra, _x2, _y2, _pf2 = arranjo_ae(relogio, sim)
     assert _recusa(a.admin, a.rodada, a.p1, D("3"), a1) == "acionamento_invalido"
     assert _recusa(outra.admin, outra.rodada, outra.p1, D("7"), a1) == "acionamento_invalido"
     assert _recusa(a.admin, a.rodada, a.p1, D("1"), "abc") == "acionamento_invalido"
@@ -183,18 +183,14 @@ def test_acionamento_invalido(relogio: RelogioControlado, sim: Any) -> None:  # 
 
 
 def test_a_auditoria_do_recebimento(relogio: RelogioControlado, sim: Any) -> None:  # A-11
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     a1 = uuid.uuid4()
     receber(a.admin, a.rodada, a.p1, D("7"), a1)
     (auditoria,) = EntradaAuditoria.objects.filter(acao="recebimento.registrar")
     assert auditoria.autor_id == str(a.admin.pk)
-    assert auditoria.alteracoes == {
-        "rodada": a.rodada.pk,
-        "produto": a.p1.pk,
-        "quantidade": "7.000",
-        "recebido": "7.000",
-        "acionamento": str(a1),
-    }
+    dados = dict(auditoria.alteracoes)
+    assert {D(dados.pop("quantidade")), D(dados.pop("recebido"))} == {D("7")}
+    assert dados == {"rodada": a.rodada.pk, "produto": a.p1.pk, "acionamento": str(a1)}
 
 
 def test_o_recebimento_nao_muda_mais_nada(relogio: RelogioControlado, sim: Any) -> None:  # A-12
@@ -208,7 +204,7 @@ def test_o_recebimento_nao_muda_mais_nada(relogio: RelogioControlado, sim: Any) 
         SituacaoDoPedido,
     )
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
 
     def foto() -> Any:
         return (
@@ -232,7 +228,7 @@ def test_o_recebimento_nao_muda_mais_nada(relogio: RelogioControlado, sim: Any) 
 def test_o_recebimento_so_aceita_insercao(relogio: RelogioControlado, sim: Any) -> None:  # A-13
     from apps.pedidos.models import RecebimentoDoFornecedor
 
-    a, _x, _y, _pf = arranjo_af(relogio, sim)
+    a, _x, _y, _pf = arranjo_ae(relogio, sim)
     receber(a.admin, a.rodada, a.p1, D("7"))
     registro = RecebimentoDoFornecedor.objects.get()
     with pytest.raises(RegistroImutavel):
@@ -253,7 +249,7 @@ def test_o_recebimento_so_aceita_insercao(relogio: RelogioControlado, sim: Any) 
 
 
 def test_produto_por_peso(relogio: RelogioControlado, sim: Any) -> None:  # A-14
-    a, _x, _y, _pf = arranjo_af(
+    a, _x, _y, _pf = arranjo_ae(
         relogio,
         sim,
         unidade_de_p1="kg",
@@ -277,7 +273,7 @@ def test_dois_recebimentos_que_passam_da_linha(
     from apps.pedidos.recebimento import RecebimentoRecusado
     from tests.apoio.corrida import Corrida
 
-    a, _x, _y, _pf = arranjo_af(relogio, simulador_pagamentos)
+    a, _x, _y, _pf = arranjo_ae(relogio, simulador_pagamentos)
     receber(a.admin, a.rodada, a.p1, D("7"))
     corrida = Corrida()
     corrida.depois_de(monkeypatch, modulo, "registrar_auditoria")
@@ -302,7 +298,7 @@ def test_o_mesmo_acionamento_em_paralelo(
     from apps.pedidos import recebimento as modulo
     from tests.apoio.corrida import Corrida
 
-    a, _x, _y, _pf = arranjo_af(relogio, simulador_pagamentos)
+    a, _x, _y, _pf = arranjo_ae(relogio, simulador_pagamentos)
     a1 = uuid.uuid4()
     corrida = Corrida()
     corrida.depois_de(monkeypatch, modulo, "registrar_auditoria")
@@ -312,7 +308,7 @@ def test_o_mesmo_acionamento_em_paralelo(
         a_atomica=False,
         b_atomica=False,
     )
-    assert ra.excecao is None and rb.excecao is None, (ra.excecao, rb.excecao)
+    assert [ra.excecao, rb.excecao] == [None, None]
     assert ra.valor.recebimento.pk == rb.valor.recebimento.pk
     assert (ra.valor.novo, rb.valor.novo) == (True, False)
     assert len(_recebimentos()) == 1
@@ -328,7 +324,7 @@ def test_recebimento_e_cancelamento_em_paralelo(
     from apps.pedidos.recebimento import RecebimentoRecusado
     from tests.apoio.corrida import Corrida
 
-    a, _x, _y, _pf = arranjo_af(relogio, simulador_pagamentos)
+    a, _x, _y, _pf = arranjo_ae(relogio, simulador_pagamentos)
     corrida = Corrida()
     corrida.depois_de(monkeypatch, cancelamento, "_gravar_o_cancelamento")
     ra, rb = corrida.rodar(

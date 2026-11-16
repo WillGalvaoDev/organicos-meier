@@ -3,10 +3,26 @@
 import uuid
 from typing import Any
 
-from apps.pedidos.models import ItemDoPedido
+from apps.pedidos.models import ItemDoPedido, PedidoFormal
+from apps.rodadas.models import CondicaoDoProdutoNoCiclo
 from tests.apoio.pedido_formal import arranjo_af
 
-__all__ = ["arranjo_af", "item_de", "receber"]
+__all__ = ["NOVO", "arranjo_ae", "item_de", "receber"]
+
+NOVO: Any = object()  # "gere um acionamento novo"
+
+
+def arranjo_ae(relogio: Any, sim: Any, **opcoes: Any) -> tuple[Any, Any, Any, PedidoFormal]:
+    """O AE: o AF da E13 com as condições do ciclo que o fechamento congela (incremento e
+    múltiplo de cada produto), que a preparação de teste do fechamento não cria."""
+    a, x, y, pedido_formal = arranjo_af(relogio, sim, **opcoes)
+    for produto in (a.p1, a.p2):
+        CondicaoDoProdutoNoCiclo.objects.get_or_create(
+            ciclo=a.ciclo,
+            produto=produto,
+            defaults={"incremento": produto.incremento, "multiplo": produto.multiplo},
+        )
+    return a, x, y, pedido_formal
 
 
 def item_de(pedido: Any, produto: Any) -> ItemDoPedido:
@@ -14,7 +30,7 @@ def item_de(pedido: Any, produto: Any) -> ItemDoPedido:
     return ItemDoPedido.objects.get(pedido=pedido, produto=produto)
 
 
-def receber(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento: Any = None) -> Any:
+def receber(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento: Any = NOVO) -> Any:
     from apps.pedidos.recebimento import registrar_recebimento
 
     return registrar_recebimento(
@@ -22,5 +38,5 @@ def receber(autor: Any, rodada: Any, produto: Any, quantidade: Any, acionamento:
         rodada,
         produto,
         quantidade,
-        acionamento=acionamento if acionamento is not None else uuid.uuid4(),
+        acionamento=uuid.uuid4() if acionamento is NOVO else acionamento,
     )
