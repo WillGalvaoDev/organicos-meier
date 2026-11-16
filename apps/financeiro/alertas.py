@@ -202,11 +202,19 @@ def _aberto(tipo: str, chave: str) -> AlertaFinanceiro | None:
 
 def abrir_alerta(tipo: str, chave: str, dados: dict[str, Any]) -> AlertaFinanceiro:
     """Abre o alerta e avisa os administradores, ou devolve o que já está aberto para o par."""
+    return abrir_alerta_informando_criacao(tipo, chave, dados)[0]
+
+
+def abrir_alerta_informando_criacao(
+    tipo: str, chave: str, dados: dict[str, Any]
+) -> tuple[AlertaFinanceiro, bool]:
+    """Como `abrir_alerta`, e diz se esta chamada inseriu o alerta (`True`) ou se o par já estava
+    aberto, por leitura ou porque outra transação inseriu primeiro (`False`)."""
     _exigir_transacao("abrir_alerta")
     _validar(tipo, chave, dados)
     existente = _aberto(tipo, chave)
     if existente is not None:
-        return existente
+        return existente, False
     gravidade = CLASSIFICACAO[tipo].gravidade if tipo in CLASSIFICACAO else GRAVIDADE_POR_TIPO[tipo]
     try:
         with transaction.atomic():
@@ -219,10 +227,10 @@ def abrir_alerta(tipo: str, chave: str, dados: dict[str, Any]) -> AlertaFinancei
         existente = _aberto(tipo, chave)
         if existente is None:
             raise
-        return existente
+        return existente, False
     nivel = logging.ERROR if gravidade == Gravidade.CRITICO else logging.WARNING
     logger.log(nivel, "Alerta financeiro aberto: tipo=%s chave=%s", tipo, chave)
-    return alerta
+    return alerta, True
 
 
 def _avisar(alerta: AlertaFinanceiro) -> None:
@@ -265,9 +273,15 @@ def resolver_alerta(tipo: str, chave: str, *, motivo: str) -> AlertaFinanceiro |
     if alerta is None:
         return None
     resolvido_em: datetime = agora()
+    # a condição `resolvido_em IS NULL` no UPDATE decide a corrida: quem chega depois da outra
+    # resolução (que já gravou) não altera nada e recebe `None`
+    resolvidos = AlertaFinanceiro.objects.filter(pk=alerta.pk, resolvido_em__isnull=True).update(
+        resolvido_em=resolvido_em, motivo_da_resolucao=motivo
+    )
+    if resolvidos == 0:
+        return None
     alerta.resolvido_em = resolvido_em
     alerta.motivo_da_resolucao = motivo
-    alerta.save(update_fields=["resolvido_em", "motivo_da_resolucao"])
     return alerta
 
 

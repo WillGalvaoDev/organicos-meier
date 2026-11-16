@@ -282,3 +282,116 @@ def test_comprador_e_fornecedor_nao_recebem(relogio: RelogioControlado, ao: Ao) 
     _atrasar_envios(relogio, INSTANTE + 6 * MIN)
     assert notificacoes(ao.c) == []
     assert notificacoes(ao.f) == []
+
+
+# --- correções da revisão independente (E15-R01 e E15-R02) ----------------------------------------
+
+VERIFICACAO = "verificar_operacao"
+
+
+def test_a_verificacao_nao_se_acusa_na_retomada(relogio: RelogioControlado, ao: Ao) -> None:  # A-16
+    from apps.operacao import tarefas
+    from apps.operacao.models import ExecucaoDaTarefa
+
+    instante = INSTANTE + 16 * MIN
+    concluir_todas(instante, exceto=(VERIFICACAO,))
+    relogio.congelar(instante)
+    tarefas.verificar_operacao(timestamp=0)
+    assert alertas("tarefa_atrasada", abertos=True) == []
+    assert [a for a in alertas() if a.chave == VERIFICACAO] == []
+    assert notificacoes(ao.adm1) == []
+    assert ExecucaoDaTarefa.objects.get(nome=VERIFICACAO).ultima_conclusao_em == instante
+
+
+def test_a_verificacao_atrasada_aparece_no_painel_mas_nao_vira_alerta(
+    relogio: RelogioControlado, ao: Ao
+) -> None:  # A-17
+    from apps.operacao.execucao import ATRASADA, situacao_das_tarefas
+
+    instante = INSTANTE + 20 * MIN
+    concluir_todas(instante, exceto=(VERIFICACAO,))
+    verificar(relogio, instante)
+    assert [a for a in alertas() if a.chave == VERIFICACAO] == []
+    (situacao,) = [s for s in situacao_das_tarefas(instante) if s.nome == VERIFICACAO]
+    assert situacao.estado == ATRASADA
+    assert situacao.atrasada_desde == INSTANTE + 15 * MIN
+
+
+def test_o_alerta_antigo_da_verificacao_e_resolvido(
+    relogio: RelogioControlado, ao: Ao
+) -> None:  # A-18
+    from apps.financeiro.alertas import abrir_alerta
+
+    with transaction.atomic():
+        abrir_alerta(
+            "tarefa_atrasada",
+            VERIFICACAO,
+            {
+                "tarefa": VERIFICACAO,
+                "descricao": "Verificação operacional",
+                "referencia": INSTANTE.isoformat(),
+                "atrasada_desde": (INSTANTE + 15 * MIN).isoformat(),
+                "intervalo_minutos": 5,
+            },
+        )
+    concluir_todas(INSTANTE + 20 * MIN)
+    # o e-mail pendente do alerta gravado abre `envios_atrasados`: o retorno é conferido por tipo
+    verificar(relogio, INSTANTE + 20 * MIN)
+    (alerta,) = [a for a in alertas() if a.chave == VERIFICACAO]
+    assert alerta.motivo_da_resolucao == "condição encerrada"
+    assert alerta.resolvido_em is not None
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_o_retorno_conta_so_o_que_a_execucao_abriu(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-19
+    from apps.operacao import verificacao
+    from tests.apoio.corrida import Corrida
+
+    arranjo_ao(relogio)
+    concluir_todas(INSTANTE + 6 * MIN, exceto=(ENVIOS,))
+    relogio.congelar(INSTANTE + 6 * MIN)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, verificacao, "abrir_alerta")
+    ra, rb = corrida.rodar(
+        verificacao.verificar_operacao_agora,
+        verificacao.verificar_operacao_agora,
+        a_atomica=False,
+        b_atomica=False,
+    )
+    assert ra.excecao is None, repr(ra.excecao)
+    assert rb.excecao is None, repr(rb.excecao)
+    novos = len(alertas("tarefa_atrasada", abertos=True))
+    assert novos == 1
+    assert ra.valor[0] + rb.valor[0] == novos
+    assert sorted([ra.valor, rb.valor]) == [(0, 0), (1, 0)]
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_o_retorno_conta_so_o_que_a_execucao_resolveu(
+    relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-20
+    from apps.operacao import verificacao
+    from tests.apoio.corrida import Corrida
+
+    arranjo_ao(relogio)
+    concluir_todas(INSTANTE + 6 * MIN, exceto=(ENVIOS,))
+    verificar(relogio, INSTANTE + 6 * MIN)
+    concluir_todas(INSTANTE + 7 * MIN)
+    relogio.congelar(INSTANTE + 7 * MIN)
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, verificacao, "resolver_alerta")
+    ra, rb = corrida.rodar(
+        verificacao.verificar_operacao_agora,
+        verificacao.verificar_operacao_agora,
+        a_atomica=False,
+        b_atomica=False,
+    )
+    assert ra.excecao is None, repr(ra.excecao)
+    assert rb.excecao is None, repr(rb.excecao)
+    (alerta,) = alertas("tarefa_atrasada")
+    assert alerta.resolvido_em is not None
+    assert ra.valor[1] + rb.valor[1] == 1

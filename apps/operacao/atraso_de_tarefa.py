@@ -30,6 +30,8 @@ def _corpo(dados: dict[str, Any]) -> str:
 def _verificar(instante: datetime) -> dict[str, dict[str, Any]]:
     atrasadas: dict[str, dict[str, Any]] = {}
     for situacao in situacao_das_tarefas(instante):
+        if situacao.nome == "verificar_operacao":
+            continue  # a verificação não se acusa (regra 10): o atraso dela só aparece no painel
         if situacao.estado != ATRASADA or situacao.atrasada_desde is None:
             continue
         referencia = situacao.ultima_conclusao_em or situacao.monitorada_desde

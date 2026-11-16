@@ -13,7 +13,7 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 
-from apps.financeiro.alertas import abrir_alerta, resolver_alerta
+from apps.financeiro.alertas import abrir_alerta_informando_criacao, resolver_alerta
 from apps.financeiro.models import AlertaFinanceiro
 from apps.nucleo.tempo import agora
 from apps.operacao.catalogo import TAREFAS_MONITORADAS
@@ -54,16 +54,18 @@ def _criar_registros_que_faltam(instante: datetime) -> None:
             pass  # outra execução criou primeiro: o `UNIQUE` decidiu
 
 
+def abrir_alerta(tipo: str, chave: str, dados: dict[str, Any]) -> tuple[AlertaFinanceiro, bool]:
+    """Abre o alerta pelo serviço financeiro e devolve também se ESTA execução o inseriu."""
+    return abrir_alerta_informando_criacao(tipo, chave, dados)
+
+
 def _aplicar(tipo: str, funcao: Verificacao, instante: datetime) -> tuple[int, int]:
     ocorrencias = funcao(instante)
     classificacao = CLASSIFICACAO[tipo]
     abertos = resolvidos = 0
     for chave, dados in ocorrencias.items():
-        ja_aberto = AlertaFinanceiro.objects.filter(
-            tipo=tipo, chave=chave, resolvido_em__isnull=True
-        ).exists()
-        abrir_alerta(tipo, chave, dados)
-        if not ja_aberto:
+        _alerta, criado = abrir_alerta(tipo, chave, dados)
+        if criado:
             abertos += 1
     if classificacao.natureza == Natureza.CONDICAO:
         antigos = AlertaFinanceiro.objects.filter(tipo=tipo, resolvido_em__isnull=True).exclude(
