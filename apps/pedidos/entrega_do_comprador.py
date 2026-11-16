@@ -16,7 +16,7 @@ from apps.financeiro.models import (
 )
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.pedidos.liberacao_da_retirada import liberacao_da_rodada
-from apps.pedidos.models import OcorrenciaDeEntrega, Pedido
+from apps.pedidos.models import CancelamentoDaRodada, OcorrenciaDeEntrega, Pedido, PedidoFormal
 from apps.pedidos.retirada import situacao_da_retirada
 from apps.rodadas.models import Etapa
 
@@ -39,8 +39,23 @@ def _situacao_da_devolucao(reembolso: Reembolso) -> str:
     return "Devida" if situacao == "devida" else str(SituacaoDaParcela(situacao).label)
 
 
+def pedido_valido(pedido: Pedido) -> bool:
+    """Conferida a cada carregamento, com o estado atual (E14-R02): o pedido está no pedido formal
+    do ciclo da rodada e a rodada não foi cancelada."""
+    rodada = pedido.abertura.rodada
+    if CancelamentoDaRodada.objects.filter(rodada=rodada).exists():
+        return False
+    formal = PedidoFormal.objects.filter(rodada=rodada).first()
+    if formal is None:
+        return False
+    return PedidoApurado.objects.filter(apuracao__ciclo_id=formal.ciclo_id, pedido=pedido).exists()
+
+
 def ocorrencias_do_pedido(pedido: Pedido) -> list[dict[str, Any]]:
-    """Uma linha por ocorrência do pedido, da mais antiga para a mais nova."""
+    """Uma linha por ocorrência do pedido, da mais antiga para a mais nova. Pedido que deixou de ser
+    válido (rodada cancelada) não mostra a seção; os registros ficam como estão."""
+    if not pedido_valido(pedido):
+        return []
     linhas = []
     registros = (
         OcorrenciaDeEntrega.objects.filter(item__pedido=pedido)

@@ -158,3 +158,14 @@ def test_recusa_preserva_quantidade(relogio, simulador_pagamentos, descarte, web
 ### Entrega e próximo gate
 
 Alterados apenas os oito `review.md` da E14, preservando os registros anteriores. Sem correção de produção, push, PR ou merge. O próximo gate é o implementador acrescentar testes Red para R01/R02/R03, corrigi-los, apresentar Green e devolver para revalidação independente; a E14 não está liberada para encerramento. Atualização bilíngue dos READMEs continua sendo obrigação de quem abrir o PR para main (AGENTS.md §10).
+
+
+---
+
+## Correção do implementador — verificação da etapa inteira (2026-11-16)
+
+R01, R02 e R03 corrigidos em TDD (Red `e69bedc`, depois o Green; detalhes em E14-05, E14-06 e E14-07/review.md).
+
+- `uv run pytest -q`: 3268 passed (3260 anteriores + 8 novos: A-21, A-22, A-26, A-27, A-28, A-29, A-15, A-16, com A-21/A-22 parametrizados em 2).
+- `uv run mypy .`: 497 arquivos sem erro. `uv run ruff check --no-cache .` e `ruff format --check .`: limpos. `makemigrations --check`: sem mudanças.
+- Nenhum teste existente foi alterado ou afrouxado. Aguarda nova revisão do agente 3.

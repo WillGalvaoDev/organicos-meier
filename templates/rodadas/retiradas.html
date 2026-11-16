@@ -31,7 +31,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="acionamento" value="{{ acionamento }}">
                     <input type="hidden" name="item" value="{{ i.item }}">
-                    <input type="text" name="quantidade" aria-label="Quantidade retirada de {{ i.produto }}">
+                    <input type="text" name="quantidade" {% if digitado.operacao == "retirada" and digitado.item == i.item|stringformat:"s" %}value="{{ digitado.quantidade }}" {% endif %}aria-label="Quantidade retirada de {{ i.produto }}">
                     <button type="submit">Registrar retirada</button>
                   </form>
                 {% endif %}
@@ -54,7 +54,7 @@
             {% csrf_token %}
             <input type="hidden" name="acionamento" value="{{ acionamento }}">
             <input type="hidden" name="item" value="{{ v.item }}">
-            <input type="text" name="quantidade" value="{{ v.saldo|quantidade_br }}" aria-label="Quantidade descartada de {{ v.produto }}">
+            <input type="text" name="quantidade" value="{% if digitado.operacao == "descarte" and digitado.item == v.item|stringformat:"s" %}{{ digitado.quantidade }}{% else %}{{ v.saldo|quantidade_br }}{% endif %}" aria-label="Quantidade descartada de {{ v.produto }}">
             <button type="submit">Registrar descarte</button>
           </form>
         </li>

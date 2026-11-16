@@ -181,7 +181,7 @@ def _registrar(
         return existente, False
     try:
         with transaction.atomic():
-            return _gravar(modelo, acao, autor, item, quantidade_pedida, chave, descarte), True
+            return _gravar(modelo, acao, autor, item, quantidade_pedida, chave, descarte)
     except IntegrityError:
         existente = _repeticao(modelo, chave, item, quantidade_pedida)
         if existente is None:
@@ -197,14 +197,16 @@ def _gravar(
     quantidade_pedida: object,
     chave: uuid.UUID,
     descarte: bool,
-) -> Any:
+) -> tuple[Any, bool]:
+    """O registro e se esta chamada o gravou (`novo`): o encontrado sob as travas, depois de
+    esperar outra conexão, é repetição (E14-R01)."""
     atual = ItemDoPedido.objects.select_related("pedido__abertura").get(pk=item.pk)
     pedido = atual.pedido
     travada = Rodada.objects.select_for_update(no_key=True).get(pk=pedido.abertura.rodada_id)
     SituacaoDoPedido.objects.select_for_update().get(pedido=pedido)
     existente = _repeticao(modelo, chave, atual, quantidade_pedida)
     if existente is not None:
-        return existente
+        return existente, False
     liberacao = liberacao_da_rodada(travada)
     if travada.etapa != Etapa.DISPONIVEL_PARA_RETIRADA or liberacao is None:
         raise RetiradaRecusada("etapa")
@@ -245,7 +247,7 @@ def _gravar(
             "acionamento": str(chave),
         },
     )
-    return registro
+    return registro, True
 
 
 def registrar_retirada(

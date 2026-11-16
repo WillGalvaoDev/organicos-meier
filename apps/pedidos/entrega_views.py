@@ -234,10 +234,22 @@ def _rodada_liberada(pk: int) -> Rodada:
 
 
 def _pagina_das_retiradas(
-    request: HttpRequest, rodada: Rodada, erro: str = "", status: int = 200
+    request: HttpRequest,
+    rodada: Rodada,
+    erro: str = "",
+    status: int = 200,
+    *,
+    descarte: bool = False,
 ) -> HttpResponse:
     atual = Rodada.objects.get(pk=rodada.pk)
     contexto = pagina_das_retiradas(atual, valores=_valores(request), erro=erro)
+    if status == 409:
+        # E14-R03: só o formulário da operação e do item recusados volta com o texto digitado.
+        contexto["digitado"] = {
+            "operacao": "descarte" if descarte else "retirada",
+            "item": request.POST.get("item", ""),
+            "quantidade": request.POST.get("quantidade", ""),
+        }
     return render(request, "rodadas/retiradas.html", contexto, status=status)
 
 
@@ -263,7 +275,7 @@ def _registrar_da_retirada(request: HttpRequest, pk: int, *, descarte: bool) -> 
     except RetiradaRecusada as erro:
         status = 400 if erro.codigo == "acionamento_invalido" else 409
         mensagem = MENSAGEM_DO_ACIONAMENTO if status == 400 else str(erro)
-        return _pagina_das_retiradas(request, rodada, mensagem, status)
+        return _pagina_das_retiradas(request, rodada, mensagem, status, descarte=descarte)
     if resultado.novo:
         rotulo = "Descarte registrado" if descarte else "Retirada registrada"
         messages.success(
