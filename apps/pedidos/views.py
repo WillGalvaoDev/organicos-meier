@@ -17,6 +17,7 @@ from apps.pedidos.apresentacao import (
 )
 from apps.pedidos.apuracao_tela import efeitos_da_apuracao_no_pedido
 from apps.pedidos.cancelamento_tela import aviso_no_pedido
+from apps.pedidos.entrega_do_comprador import ocorrencias_do_pedido, retirada_do_pedido
 from apps.pedidos.models import Pedido
 from apps.pedidos.pagamento import PagamentoRecusado, pedir_pagamento
 from apps.pedidos.previsao_de_entrega import previsao_do_pedido
@@ -53,6 +54,8 @@ def _pagina_do_pedido(
         "apuracao": efeitos_da_apuracao_no_pedido(pedido),
         "cancelamento": aviso_no_pedido(pedido),
         "previsao_de_entrega": previsao_do_pedido(pedido),
+        "ocorrencias": ocorrencias_do_pedido(pedido),
+        "retirada": retirada_do_pedido(pedido),
         "erro": erro,
     }
     return render(request, "pedidos/detalhe.html", contexto, status=status)

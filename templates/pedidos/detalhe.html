@@ -74,5 +74,27 @@
       {% endfor %}
     </ul>
   {% endif %}
+  {% if ocorrencias %}
+    <h2>Ocorrências de entrega</h2>
+    <ul>
+      {% for o in ocorrencias %}
+        <li class="ocorrencia">{{ o.quando }} · {{ o.produto }} · {{ o.tipo }} · {{ o.quantidade|quantidade_br }} {{ o.unidade }}{% if o.reembolso %} · Reembolso de {{ o.reembolso|reais }}{% endif %} · {{ o.situacao }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if retirada %}
+    <h2>Retirada</h2>
+    <p>Retirada liberada em {{ retirada.liberada_em }}. Retire até {{ retirada.prazo_final }} (horário de Brasília).</p>
+    <p>Endereço: {{ retirada.endereco|linebreaksbr }}</p>
+    <table>
+      <thead><tr><th>Produto</th><th>Pedido</th><th>Reembolsado</th><th>Retirado</th><th>Descartado</th><th>A retirar</th></tr></thead>
+      <tbody>
+        {% for i in retirada.itens %}
+          <tr><td>{{ i.produto }}</td><td>{{ i.pedida|quantidade_br }}</td><td>{{ i.reembolsada|quantidade_br }}</td><td>{{ i.retirada|quantidade_br }}</td><td>{{ i.descartada|quantidade_br }}</td><td>{{ i.saldo|quantidade_br }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if retirada.prazo_encerrado %}<p>Prazo de retirada encerrado em {{ retirada.prazo_final }}. Fale com o administrador sobre os itens não retirados.</p>{% endif %}
+  {% endif %}
   <p><a href="{% url 'pedidos_lista' %}">Voltar para meus pedidos</a></p>
 {% endblock %}
