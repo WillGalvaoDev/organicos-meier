@@ -169,3 +169,40 @@ R01, R02 e R03 corrigidos em TDD (Red `e69bedc`, depois o Green; detalhes em E14
 - `uv run pytest -q`: 3268 passed (3260 anteriores + 8 novos: A-21, A-22, A-26, A-27, A-28, A-29, A-15, A-16, com A-21/A-22 parametrizados em 2).
 - `uv run mypy .`: 497 arquivos sem erro. `uv run ruff check --no-cache .` e `ruff format --check .`: limpos. `makemigrations --check`: sem mudanças.
 - Nenhum teste existente foi alterado ou afrouxado. Aguarda nova revisão do agente 3.
+
+
+---
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+**Commit revisado: `eb317b4`**, branch `e14-especificacoes`. Comparação com o parecer `e462a61`; especificação complementar `f530028`; testes Red `e69bedc`. Fontes e requisitos-base permanecem os da revisão anterior. O histórico acima continua válido como registro daquela revisão; o resultado atual é o desta seção.
+
+**Veredito atual: APROVADO. E14-R01, E14-R02 e E14-R03 encerrados.**
+
+| Achado | Resultado da revalidação |
+|---|---|
+| R01 | Replay concorrente de retirada/descarte retorna o mesmo registro com `novo=False`; primeira chamada `True`; registro e auditoria únicos. A-21/A-22 da E14-05 e reflexo HTTP A-26 da E14-06. |
+| R02 | Cancelamento com ou sem reembolso oculta as seções operacionais, preservando o acompanhamento em Estornos. A-15/A-16 da E14-07. |
+| R03 | Resposta 409 preserva o texto da quantidade somente no formulário correspondente à operação e ao item recusados; os demais mantêm seus padrões. A-27 a A-29 da E14-06. |
+
+As aprovações anteriores de E14-01 a E14-04 permanecem; E14-05, E14-06 e E14-07 passam a APROVADO. O gate integrado da E14-08 está atendido. Não surgiu achado novo impeditivo nem melhoria adicional nesta revalidação.
+
+### Execução independente
+
+- **231 passed em 153,38 s** na seleção principal abaixo: todas as fatias E14, os oito testes novos das correções, integração, portal e regressões das telas afetadas. Total desta revalidação, somando a segunda execução: **245 testes aprovados**.
+
+- **14 passed em 18,15 s**: as cinco contraprovas originais do revisor, sem alteração das asserções, mais os nove cenários dos arquivos `test_cenario_22_liberacao.py`, `test_cenario_23_descarte.py` e `test_cenarios_18_48_49_52_ocorrencias.py`. As contraprovas antes falhavam e agora passaram no código corrigido.
+- `ruff check .`: All checks passed; `ruff format --check .`: 412 arquivos formatados; `mypy .`: 497 arquivos sem erros.
+- `manage.py check --settings=config.settings.test`: nenhum problema; `manage.py makemigrations --check --dry-run --settings=config.settings.test`: nenhuma alteração pendente.
+
+Comando da seleção principal: `.venv/Scripts/python.exe -u $env:TEMP/revisor_e14_correcao.py tests/tecnicos/test_recebimento.py tests/tecnicos/test_ocorrencias.py tests/tecnicos/test_endereco_de_retirada.py tests/tecnicos/test_endereco_de_retirada_telas.py tests/tecnicos/test_liberacao_da_retirada.py tests/tecnicos/test_retirada.py tests/tecnicos/test_recebimento_e_retirada_telas.py tests/tecnicos/test_retirada_comprador.py tests/tecnicos/test_retirada_ponta_a_ponta.py tests/tecnicos/test_portal_do_fornecedor.py tests/tecnicos/test_pedidos_abertura_tela.py tests/tecnicos/test_pedidos_telas_comprador.py -q -p no:cacheprovider --tb=short`.
+
+O runner usa `config.settings.test` e banco exclusivo `test_organicos_revisor_e14_eb317b4`, conforme o mecanismo documentado na revisão anterior. Segundo comando: `.venv/Scripts/python.exe -u $env:TEMP/revisor_e14_probe.py tests/tecnicos/test_retirada_revisor_e14.py tests/aceitacao/test_cenario_23_descarte.py tests/aceitacao/test_cenario_22_liberacao.py tests/aceitacao/test_cenarios_18_48_49_52_ocorrencias.py -q -p no:cacheprovider --tb=short`, com banco separado. O arquivo temporário das contraprovas foi removido após o teste; seu conteúdo reproduzível continua no parecer anterior.
+
+**Limite da execução:** a suíte global de 3268 testes informada pelo implementador não foi reexecutada nesta rodada. O revisor havia executado a suíte global de 3260 no commit anterior; nesta rodada executou a seleção pertinente a todas as fatias E14, regressões das telas afetadas, portal, cenários de aceitação e contraprovas. Os snapshots históricos Red não foram reexecutados: conferidos os registros de oito falhas e o conteúdo/ordem de `f530028 -> e69bedc -> eb317b4`; o commit Red acrescenta apenas testes e o Green não os afrouxa.
+
+### Documentação e entrega
+
+Os `review.md` de E14-05, E14-06 e E14-07 receberam crases espúrias no início das linhas no commit da implementação. Removi somente esse prefixo de formatação e verifiquei programaticamente que o histórico anterior voltou a coincidir integralmente com `e462a61` (normalizando apenas CRLF/LF); o registro novo do implementador foi preservado. A revalidação foi acrescentada nesses três pareceres e neste consolidado.
+
+Sem mudança de produção, push, PR ou merge pelo revisor. Próximo gate: abertura do PR pelo agente responsável, atualização bilíngue da Parte 1 dos READMEs antes do merge (AGENTS.md §10) e encerramento da etapa pelo fluxo do projeto.
