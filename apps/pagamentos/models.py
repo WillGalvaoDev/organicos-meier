@@ -155,3 +155,21 @@ class AvisoRecebido(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"{self.provedor}:{self.id_evento}"
+
+
+class SequenciaDeAvisosRecusados(models.Model):
+    """A contagem de avisos recusados como não autênticos desde o último aceito (E15-04).
+
+    Um registro só (`id = 1`), mutável. Guarda a contagem e dois instantes; nunca o corpo, os
+    cabeçalhos nem o IP do aviso, para quem envia avisos falsos não encher o banco.
+    """
+
+    recusas_seguidas = models.PositiveIntegerField(default=0)
+    primeira_em = models.DateTimeField(null=True, blank=True)
+    ultima_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = (models.CheckConstraint(condition=models.Q(id=1), name="sequencia_unica"),)
+
+    def __str__(self) -> str:
+        return f"{self.recusas_seguidas} avisos recusados em sequência"

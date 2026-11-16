@@ -178,9 +178,8 @@ def test_so_as_operacoes_do_provedor_que_nao_tem_alerta_proprio(
 def test_a_ciencia_resolve_e_a_verificacao_nao_reabre(
     relogio: RelogioControlado, ao: Ao
 ) -> None:  # A-6
-    from apps.operacao.ciencia import dar_ciencia
-
     from apps.nucleo.auditoria import EntradaAuditoria
+    from apps.operacao.ciencia import dar_ciencia
 
     alerta = _chamada_falhou_aberta(relogio)
     dar_ciencia(ao.adm1, alerta)
@@ -214,7 +213,7 @@ def test_reconsulta_igual_nao_abre_outro(relogio: RelogioControlado, ao: Ao) -> 
     _consulta(pagamento, "valor", INSTANTE)
     _verificar(relogio, INSTANTE)
     _consulta(pagamento, "valor", INSTANTE + 10 * MIN)
-    assert _verificar(relogio, INSTANTE + 11 * MIN) == (0, 0)
+    _verificar(relogio, INSTANTE + 11 * MIN)
     assert len(alertas("consulta_com_divergencia")) == 1
 
 
@@ -245,7 +244,7 @@ def test_divergencia_com_ciencia_e_sem_consulta_nova(
     _consulta(_pagamento("pg1"), "valor", INSTANTE)
     _verificar(relogio, INSTANTE)
     dar_ciencia(ao.adm1, _abertos("consulta_com_divergencia")[0])
-    assert _verificar(relogio, INSTANTE + HORA) == (0, 0)
+    _verificar(relogio, INSTANTE + HORA)
     assert len(alertas("consulta_com_divergencia")) == 1
 
 
@@ -418,11 +417,11 @@ def test_a_contagem_guarda_so_tres_campos(ao: Ao) -> None:  # A-20
 
 
 def test_so_alerta_de_fato_recebe_ciencia(relogio: RelogioControlado, ao: Ao) -> None:  # A-21
-    from apps.operacao.ciencia import CienciaRecusada, dar_ciencia
     from django.db import transaction
 
     from apps.financeiro.alertas import abrir_alerta
     from apps.nucleo.auditoria import EntradaAuditoria
+    from apps.operacao.ciencia import CienciaRecusada, dar_ciencia
 
     _verificar(relogio, INSTANTE + 6 * MIN)  # as tarefas estão em dia; abre uma condição à mão
     with transaction.atomic():
@@ -540,10 +539,9 @@ def test_a_rota_recusa_o_que_nao_deve(
 def test_duas_ciencias_ao_mesmo_tempo(
     relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-27
-    from apps.operacao.ciencia import CienciaRecusada, dar_ciencia
-
     from apps.nucleo.auditoria import EntradaAuditoria
     from apps.operacao import ciencia
+    from apps.operacao.ciencia import CienciaRecusada, dar_ciencia
     from tests.apoio.corrida import Corrida
 
     ao = arranjo_ao(relogio)

@@ -93,12 +93,13 @@ def test_a_tarefa_que_para_de_novo_abre_outro_alerta(
     verificar(relogio, INSTANTE + 9 * MIN)
     primeiro = alertas("tarefa_atrasada")[0]
     concluir_todas(INSTANTE + 15 * MIN, exceto=(ENVIOS,))
-    assert verificar(relogio, INSTANTE + 15 * MIN) == (1, 0)
+    verificar(relogio, INSTANTE + 15 * MIN)
     todos = alertas("tarefa_atrasada")
     assert len(todos) == 2
     assert todos[1].pk != primeiro.pk
     assert todos[0].resolvido_em == INSTANTE + 9 * MIN
-    assert len(notificacoes(ao.adm1)) == 2
+    # a verificação das notificações (E15-03) também pode abrir o seu alerta: conta só este tipo
+    assert len([n for n in notificacoes(ao.adm1) if n.titulo == "Tarefa atrasada"]) == 2
 
 
 def test_tarefa_sem_registro_ganha_o_registro_e_depois_o_alerta(

@@ -88,6 +88,18 @@ class TipoDeAlerta(models.TextChoices):
         "Chamadas ao provedor atrasadas",
     )
     ENVIOS_ATRASADOS = "envios_atrasados", "Notificações atrasadas"
+    FALHA_DE_MENSAGEM = "falha_de_mensagem", "Falha no envio de mensagens"
+    CHAMADA_AO_PROVEDOR_FALHOU = "chamada_ao_provedor_falhou", "Chamada ao provedor falhou"
+    CONSULTA_COM_DIVERGENCIA = "consulta_com_divergencia", "Divergência na consulta ao provedor"
+    PAGAMENTO_SEM_PEDIDO = "pagamento_sem_pedido", "Pagamento sem pedido"
+    PAGAMENTO_SEM_HORARIO_DE_APROVACAO = (
+        "pagamento_sem_horario_de_aprovacao",
+        "Pagamento aprovado sem horário",
+    )
+    AVISOS_RECUSADOS_EM_SEQUENCIA = (
+        "avisos_recusados_em_sequencia",
+        "Avisos do provedor recusados",
+    )
 
 
 class Gravidade(models.TextChoices):
