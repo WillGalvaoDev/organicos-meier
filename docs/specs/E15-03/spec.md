@@ -47,7 +47,7 @@ A E15-01 detecta a tarefa que parou. Mas uma tarefa pode continuar rodando e dei
 Todas têm gravidade **aviso** e natureza **condição**: são resolvidas quando a condição deixa de valer (E15-02, regra 6).
 
 4. **Sem conciliação ainda:** sem nenhuma `ConciliacaoDiaria`, `conciliacao_atrasada` não acusa nada. O atraso da tarefa `conciliar_dias_pendentes` continua coberto por `tarefa_atrasada`.
-5. **Dados congelados na abertura:** os dados de um alerta `geral` aberto não são atualizados enquanto ele continua aberto (E09-03: abrir de novo devolve o existente). A contagem atual aparece no painel (E15-05).
+5. **Dados congelados na abertura:** os dados de um alerta `geral` aberto não são atualizados enquanto ele continua aberto (E09-03: abrir de novo devolve o existente). A contagem atual aparece no painel: o corpo exibido é remontado na leitura com os dados atuais da mesma verificação, sem alterar o alerta nem a notificação já emitida (E15-05, regra 1-A; correção E15-R03).
 6. **Troca de chave:** quando a conciliação avança um dia mas o seguinte também fica atrasado, o alerta do dia anterior é resolvido e o do novo dia é aberto na mesma execução.
 
 ## Decisões técnicas

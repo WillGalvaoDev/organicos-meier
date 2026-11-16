@@ -31,7 +31,11 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-12 | Regra 5 | negativo | AH | GET e comparar a contagem de `EntradaAuditoria` | a mesma contagem |
 | A-13 | Regra 1 | negativo | AH | POST; GET como C e como a conta de um fornecedor; GET anônimo | 405; 403; 403; o fluxo de login |
 | A-14 | Regra 6 | positivo | — | GET `/administracao/` | o link "Histórico de ações" para `/administracao/historico/` |
+| A-15 | Regra 3-A (E15-R05) | negativo | AH | GET autenticado com `autor` igual a cada um destes: `²`, `١٢`, `+1`, `-1`, ` 1`, `0`, `01`, `1e3`, 19 dígitos `9` e 30 dígitos `9`; também `contexto_do_historico({"autor": "²"})` | 200 em todas; "Filtro inválido ignorado: autor."; as três linhas e1, e2 e e3; o serviço não levanta. **Red esperado:** `ValueError` com `²` |
+| A-16 | Regra 3-A (E15-R05) | positivo | AH | `?ate=9999-12-31`; `?de=0001-01-01`; `?de=0001-01-01&ate=9999-12-31`; `?de=9999-12-31`; também `contexto_do_historico({"ate": "9999-12-31"})` | 200 em todas, sem aviso de filtro inválido; as três linhas nas três primeiras; "Nenhuma ação encontrada." na última; o serviço não levanta. **Red esperado:** `OverflowError` |
+| A-17 | Regra 3-A (E15-R05) | negativo | AH | `de` ou `ate` iguais a `2026-11-18T00:00`, `20261118`, `2026-11-18 ` (espaço no fim), `２０２６-11-18` e `2026-02-30` | 200; "Filtro inválido ignorado: <de ou ate>."; as três linhas |
+| A-18 | Regra 3-A (E15-R05) | positivo | 120 entradas | `?pagina=abc`; `?pagina=-1`; `?pagina=99999999999999999999999` | 200 em todas; a primeira página no primeiro caso e a última nos outros dois, como `get_page` |
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-14 | `tests/tecnicos/test_historico_de_acoes.py` |
+| A-1 a A-18 | `tests/tecnicos/test_historico_de_acoes.py` |

@@ -47,6 +47,12 @@ A §13 pede ao administrador o "histórico de ações relevantes", e a §7 diz q
    - **`de` e `ate`:** datas `aaaa-mm-dd`, inclusivas, interpretadas como dias de Brasília (de 00:00 do `de` até o fim do `ate`).
 
    Um filtro com valor inválido (ação fora da lista, autor que não é "sistema" nem administrador, data malformada, `de` maior que `ate`) é **ignorado**. A página mostra "Filtro inválido ignorado: <nome do filtro>." e responde 200.
+
+3-A. **Limites de entrada (correção E15-R05).** Nenhum valor recebido nos filtros ou em `pagina` pode levantar exceção nem dar resposta diferente de 200. Valem as formas exatas abaixo; qualquer outra é inválida e segue a regra 3.
+   - **`autor`:** "sistema", ou só dígitos ASCII `0`–`9`, sem sinal, espaço ou separador, com o primeiro dígito diferente de zero e no máximo 18 dígitos. Isso cabe sempre no pk (`BigAutoField`). Depois disso, precisa ser o pk de uma conta de administrador. Exemplos inválidos: `²`, `١٢` (dígitos não ASCII), `+1`, `-1`, ` 1`, `0`, `01`, `1e3` e 19 ou mais dígitos.
+   - **`de` e `ate`:** exatamente `aaaa-mm-dd`, com dígitos ASCII, e uma data que existe no calendário. `date.fromisoformat` só é chamado depois de conferido o formato. Exemplos inválidos: `2026-11-18T00:00`, `20261118`, `2026-11-18 ` (com espaço), `２０２６-11-18` e `2026-02-30`.
+   - **Limites do calendário:** os limites do período são instantes de Brasília. O inferior é 00:00 do `de`, e o superior é o fim do `ate`, ambos inclusivos. Quando o instante não pode ser representado, o limite correspondente não é aplicado, sem erro e sem aviso. É o caso do fim de `9999-12-31`, que não tem dia seguinte, e de um limite que em UTC sai do intervalo de `datetime`. Assim, `ate=9999-12-31` lista tudo até o fim, e `de=0001-01-01` lista desde o começo.
+   - **`pagina`:** como hoje, `Paginator.get_page`: texto não numérico dá a primeira página, e número além do fim dá a última.
 4. **Sem resultado:** "Nenhuma ação encontrada.".
 5. **Só leitura:** a página não grava nada, nem auditoria de leitura.
 6. **Link no painel:** "Histórico de ações" na navegação do painel (E15-05, regra 11).

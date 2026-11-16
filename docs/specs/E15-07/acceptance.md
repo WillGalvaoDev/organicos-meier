@@ -26,8 +26,9 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-12 | Cenário 4 | positivo | o e-mail do comprador falhando em todas as tentativas (apoio `email_falho`) | um evento para o comprador; `processar_envios()` até o envio ficar `falhou`; verificar; GET da central de notificações do comprador | `falha_de_mensagem` aberto; a notificação no site do comprador presente e correta; nenhum registro financeiro alterado |
 | A-13 | Cenário 5 | positivo | os A-1 a A-5 | GET no histórico com `?autor=<ADM1>` | exatamente as `EntradaAuditoria` com autor ADM1 gravadas nos critérios, da mais nova para a mais antiga (a lista esperada é lida do banco); entre elas, `recebimento.registrar` e `descarte.registrar` da E14; nenhuma de outro autor |
 | A-14 | Cenário 6 | negativo | os estados dos A-5, A-6 e A-8 | o comprador A e a conta do fornecedor F: GET no painel e no histórico; POST de ciência | 403 em todos; nenhuma notificação `alerta_operacional` para eles |
+| A-16 | Cenário 2 (E15-R01) | positivo | todas as tarefas concluídas em `I` | avançar para `I + 20min` sem chamar nenhuma tarefa, nem a verificação; GET; chamar as dez tarefas e, por último, `verificar_operacao(timestamp=0)`; `processar_envios()`; GET | no primeiro GET, "Atrasada desde..." em Verificação operacional e nas demais; depois da retomada, nenhum `tarefa_atrasada` aberto, nenhum com a chave `verificar_operacao` em momento algum e nenhuma notificação `alerta_operacional`; o painel com "Em dia" nas onze linhas |
 | A-15 | Invariantes | positivo | todos os critérios acima | no fim de cada um | as verificações sem escrita de domínio (rodada, pedido, pagamento, chamada, envio, movimentos iguais antes e depois de `verificar`); o invariante financeiro sem violação; no máximo um alerta aberto por par |
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-15 | `tests/tecnicos/test_painel_ponta_a_ponta.py` |
+| A-1 a A-16 | `tests/tecnicos/test_painel_ponta_a_ponta.py` |

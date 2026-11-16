@@ -52,11 +52,16 @@ Tudo é calculado na leitura da página. O painel não cria regra de negócio: c
    - "aberto em <data>";
    - o link "Ver" (`link_do_alerta`, E15-02);
    - nos de natureza `fato`, o formulário "Dar ciência" (POST para `alertas_ciencia`, com CSRF).
+1-A. **Contagem atual dos alertas `geral` de atraso (correção E15-R03, E15-03 regra 5).** Para `chamadas_ao_provedor_atrasadas` e `envios_atrasados`, o painel monta o corpo com os dados atuais da verificação do tipo (E15-03), calculados no `instante` do carregamento e só por leitura. O texto é o mesmo do tipo, com `quantidade` e `mais_antiga` (ou `mais_antigo`) atuais.
+   - **Situação encerrada ainda não resolvida:** se a verificação não devolve mais a chave `geral` (a situação acabou, mas a próxima `verificar_operacao` ainda não resolveu o alerta), o painel mostra o corpo gravado na abertura.
+   - **Erro na leitura:** se a função da verificação levantar exceção, o painel também mostra o corpo gravado, registra no log o tipo e a classe do erro e responde 200.
+   - **O que não muda:** os `dados` do alerta, o `aberto_em`, a notificação já emitida e o link. Nenhum alerta é aberto ou resolvido pelo painel.
+   - **Outros tipos:** o corpo continua montado só de `dados`. Neles a chave identifica um único objeto, e os dados não acumulam.
 2. Sem alerta aberto: "Nenhum alerta aberto.".
 
 ### 2. "Ações necessárias"
 
-3. `acoes_necessarias(instante)` devolve uma lista de `AcaoNecessaria(rodada | None, fornecedor | None, texto, link)`. Primeiro vêm as ações das rodadas, ordenadas pelo nome do fornecedor e depois pelo pk da rodada, na ordem da tabela abaixo. Depois vêm as globais. Por rodada:
+3. `acoes_necessarias(instante)` devolve uma lista de `AcaoNecessaria(rodada | None, fornecedor | None, texto, link)`. Primeiro vêm as ações das rodadas, ordenadas pelo nome do fornecedor e depois pelo pk da rodada; dentro da rodada, na ordem da tabela abaixo. Depois vêm as globais. A etapa **não** entra na ordenação das ações. A ordem por etapa vale só para a tabela "Rodadas" (regra 5; correção E15-R04). Por rodada:
 
 | Etapa e condição | Texto | Link |
 |---|---|---|

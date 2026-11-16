@@ -77,7 +77,12 @@ As E15-03 e E15-04 só acrescentam verificações.
    - em tipo `condicao`, resolve, com o motivo "condição encerrada", os alertas abertos do tipo cuja chave não voltou;
    - se a verificação levantar exceção, a transação dela é desfeita: nenhum alerta do tipo é aberto nem resolvido naquela execução. O log registra o tipo e a classe do erro, e as demais verificações continuam.
 
-   A função devolve quantos alertas abriu e quantos resolveu.
+   A função devolve quantos alertas **esta execução** abriu e quantos resolveu (correção E15-R02):
+   - conta como aberto só o alerta que esta execução inseriu de fato. Quando outra execução concorrente gravou primeiro o alerta do par e o `UNIQUE` parcial recusou esta inserção, o par não conta. A leitura de "já aberto" feita antes da tentativa não decide a contagem;
+   - conta como resolvido só o alerta que esta execução resolveu de fato (`resolver_alerta` devolveu o alerta). O que outra execução resolveu antes não conta;
+   - em duas execuções concorrentes sobre a mesma situação, a soma dos abertos é igual ao número de alertas abertos novos no banco.
+
+   A assinatura e o comportamento de `abrir_alerta` (E09-03) não mudam para os chamadores atuais. Como a verificação fica sabendo se a inserção foi feita é detalhe interno; por exemplo, uma função auxiliar que devolva `(alerta, criado)` e que `abrir_alerta` reaproveite.
 7. **Tarefa periódica:** `verificar_operacao`, com `cron="*/5 * * * *"` e `queueing_lock`. Ela é envolvida por `execucao_monitorada` e entra no catálogo da E15-01 com a descrição "Verificação operacional", intervalo 5 min e tolerância 15 min.
 8. **Registros que faltam:** no começo de cada execução, `verificar_operacao_agora()` cria o `ExecucaoDaTarefa` de cada tarefa do catálogo que ainda não tem registro, com `monitorada_desde = instante`. Assim, uma tarefa que nunca rodou passa a atrasada depois da tolerância (E15-01, regra 4).
 
@@ -93,7 +98,10 @@ As E15-03 e E15-04 só acrescentam verificações.
      - com conclusão anterior: "A tarefa <descrição> não conclui desde <referência em Brasília, dd/mm/aaaa hh:mm>. Ela deveria rodar a cada <n> minuto(s).";
      - sem conclusão: "A tarefa <descrição> não tem execução concluída desde <referência>. Ela deveria rodar a cada <n> minuto(s).".
    - **Link:** `painel_administracao`.
-10. **A verificação não se acusa:** quando `verificar_operacao` roda, a própria tarefa está em dia. O atraso dela só aparece no painel (E15-05) e no monitor externo (herdado para a E16).
+10. **A verificação não se acusa (correção E15-R01):** a verificação de `tarefa_atrasada` ignora a própria tarefa `verificar_operacao`. Ela nunca abre, nem mantém aberto, alerta com a chave `verificar_operacao`, mesmo quando o registro da tarefa está atrasado no instante da verificação.
+    - **Motivo:** o envoltório da E15-01 só grava a conclusão no fim da execução. Na retomada, depois de mais de 15 minutos sem verificação, o registro lido durante a própria execução ainda está atrasado, e um alerta nesse momento seria falso: a verificação está rodando.
+    - **Sem mudança no estado:** `situacao_das_tarefas` continua devolvendo `verificar_operacao` com o estado real, e o atraso dela aparece no painel (E15-05, regra 9) e no monitor externo (herdado para a E16).
+    - **Resolução:** um alerta aberto com essa chave (por exemplo, gravado antes desta correção) é resolvido pela regra 6, com "condição encerrada", porque a chave não volta.
 
 ## Interface
 
