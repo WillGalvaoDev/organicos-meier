@@ -382,8 +382,9 @@ def prazos_encerrados(instante: datetime) -> list[PrazoEncerrado]:
 def _dados_atuais(alerta: AlertaFinanceiro, instante: datetime) -> dict[str, Any]:
     """Os dados que o corpo mostra. Nos alertas `geral` de atraso (E15-R03), os da verificação do
     tipo agora, só por leitura; se a situação acabou ou a leitura falha, os gravados na abertura."""
+    gravados: dict[str, Any] = alerta.dados
     if alerta.tipo not in TIPOS_COM_CONTAGEM_ATUAL:
-        return alerta.dados
+        return gravados
     try:
         atuais = VERIFICACOES[alerta.tipo](instante).get(alerta.chave)
     except Exception as erro:
@@ -392,8 +393,8 @@ def _dados_atuais(alerta: AlertaFinanceiro, instante: datetime) -> dict[str, Any
             alerta.tipo,
             type(erro).__name__,
         )
-        return alerta.dados
-    return alerta.dados if atuais is None else atuais
+        return gravados
+    return gravados if atuais is None else atuais
 
 
 def _titulo_e_corpo(alerta: AlertaFinanceiro, instante: datetime) -> tuple[str, str]:

@@ -245,3 +245,66 @@ def test_o_link_no_painel(ah: Historico) -> None:  # A-14
     html = ah.client.get("/administracao/").content.decode()
     assert 'href="/administracao/historico/"' in html
     assert "Histórico de ações" in html
+
+
+# --- correções da revisão independente (E15-R05) -------------------------------------------------
+
+AUTORES_INVALIDOS = ["²", "١٢", "+1", "-1", " 1", "0", "01", "1e3", "9" * 19, "9" * 30]
+
+
+@pytest.mark.parametrize("autor", AUTORES_INVALIDOS)
+def test_autor_de_forma_invalida(ah: Historico, autor: str) -> None:  # A-15
+    from urllib.parse import quote
+
+    from apps.operacao.historico import contexto_do_historico
+
+    resposta = ah.pagina(f"?autor={quote(autor)}")
+    assert resposta.status_code == 200
+    assert "Filtro inválido ignorado: autor." in _texto(resposta)
+    assert len(_nossas(resposta)) == 3
+    assert contexto_do_historico({"autor": autor})["invalidos"] == ["autor"]
+
+
+@pytest.mark.parametrize(
+    ("consulta", "quantas"),
+    [
+        ("?ate=9999-12-31", 3),
+        ("?de=0001-01-01", 3),
+        ("?de=0001-01-01&ate=9999-12-31", 3),
+        ("?de=9999-12-31", 0),
+    ],
+)
+def test_limites_do_calendario(ah: Historico, consulta: str, quantas: int) -> None:  # A-16
+    from apps.operacao.historico import contexto_do_historico
+
+    resposta = ah.pagina(consulta)
+    assert resposta.status_code == 200
+    assert "Filtro inválido" not in _texto(resposta)
+    assert len(_nossas(resposta)) == quantas
+    if quantas == 0:
+        assert "Nenhuma ação encontrada." in _texto(resposta)
+    for chave, valor in (("ate", "9999-12-31"), ("de", "0001-01-01")):
+        assert contexto_do_historico({chave: valor})["invalidos"] == []
+
+
+@pytest.mark.parametrize("campo", ["de", "ate"])
+@pytest.mark.parametrize(
+    "valor",
+    ["2026-11-18T00:00", "20261118", "2026-11-18 ", "２０２６-11-18", "2026-02-30"],  # noqa: RUF001
+)
+def test_data_de_forma_invalida(ah: Historico, campo: str, valor: str) -> None:  # A-17
+    from urllib.parse import quote
+
+    resposta = ah.pagina(f"?{campo}={quote(valor)}")
+    assert resposta.status_code == 200
+    assert f"Filtro inválido ignorado: {campo}." in _texto(resposta)
+    assert len(_nossas(resposta)) == 3
+
+
+@pytest.mark.parametrize("pagina", ["abc", "-1", "9" * 23])
+def test_pagina_fora_do_normal(ah: Historico, pagina: str) -> None:  # A-18
+    _muitas(ah, 120)
+    resposta = ah.pagina(f"?pagina={pagina}")
+    assert resposta.status_code == 200
+    esperada = "1" if pagina == "abc" else "3"
+    assert f"Página {esperada} de 3" in _texto(resposta)

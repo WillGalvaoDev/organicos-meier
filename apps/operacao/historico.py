@@ -7,7 +7,8 @@ leitura.
 """
 
 import json
-from datetime import date, datetime, timedelta
+import re
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -24,15 +25,31 @@ SISTEMA = "sistema"
 FILTROS = ("acao", "autor", "de", "ate")
 
 
+_FORMA_DO_AUTOR = re.compile(r"[1-9][0-9]{0,17}")  # cabe sempre no pk (BigAutoField)
+_FORMA_DA_DATA = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")  # só dígitos ASCII
+
+
 def _dia(texto: str) -> date | None:
+    """`aaaa-mm-dd` exato, dígitos ASCII e data que existe; outra forma é inválida."""
+    if _FORMA_DA_DATA.fullmatch(texto) is None:
+        return None
     try:
-        return date.fromisoformat(texto) if len(texto) == 10 else None
+        return date.fromisoformat(texto)
     except ValueError:
         return None
 
 
-def _inicio_do_dia(dia: date) -> datetime:
-    return datetime.combine(dia, datetime.min.time(), tzinfo=FUSO_DA_OPERACAO)
+def _instante(dia: date, *, fim: bool) -> datetime | None:
+    """O começo do dia em Brasília, ou o começo do dia seguinte (limite superior exclusivo).
+    Instante que não existe (depois de 9999-12-31) ou que sai do intervalo em UTC: `None`, e o
+    limite não é aplicado."""
+    try:
+        base = dia + timedelta(days=1) if fim else dia
+        instante = datetime.combine(base, datetime.min.time(), tzinfo=FUSO_DA_OPERACAO)
+        instante.astimezone(UTC)
+    except OverflowError:
+        return None
+    return instante
 
 
 def _filtrar(
@@ -55,7 +72,7 @@ def _filtrar(
             entradas = entradas.filter(autor_tipo=EntradaAuditoria.AutorTipo.SISTEMA)
             aplicados["autor"] = autor
         elif (
-            autor.isdigit()
+            _FORMA_DO_AUTOR.fullmatch(autor)
             and Conta.objects.filter(pk=int(autor), papel=Papel.ADMINISTRADOR).exists()
         ):
             entradas = entradas.filter(
@@ -75,11 +92,13 @@ def _filtrar(
         invalidos.append("de")  # o intervalo ao contrário vale como inválido: ambos são ignorados
         dia_de = dia_ate = None
     if dia_de:
-        entradas = entradas.filter(momento__gte=_inicio_do_dia(dia_de))
         aplicados["de"] = de
+        if (inicio := _instante(dia_de, fim=False)) is not None:
+            entradas = entradas.filter(momento__gte=inicio)
     if dia_ate:
-        entradas = entradas.filter(momento__lt=_inicio_do_dia(dia_ate + timedelta(days=1)))
         aplicados["ate"] = ate
+        if (limite := _instante(dia_ate, fim=True)) is not None:
+            entradas = entradas.filter(momento__lt=limite)
     return entradas, aplicados, invalidos
 
 
