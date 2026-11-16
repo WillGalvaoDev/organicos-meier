@@ -80,6 +80,14 @@ class TipoDeAlerta(models.TextChoices):
     )
     # tipos operacionais (E15): gravidade, natureza, texto e link ficam em `apps.operacao.tipos`
     TAREFA_ATRASADA = "tarefa_atrasada", "Tarefa atrasada"
+    FECHAMENTO_NAO_ENCERRADO = "fechamento_nao_encerrado", "Fechamento não encerrado"
+    PEDIDO_FORMAL_ATRASADO = "pedido_formal_atrasado", "Envio do pedido formal atrasado"
+    CONCILIACAO_ATRASADA = "conciliacao_atrasada", "Conciliação atrasada"
+    CHAMADAS_AO_PROVEDOR_ATRASADAS = (
+        "chamadas_ao_provedor_atrasadas",
+        "Chamadas ao provedor atrasadas",
+    )
+    ENVIOS_ATRASADOS = "envios_atrasados", "Notificações atrasadas"
 
 
 class Gravidade(models.TextChoices):
