@@ -143,6 +143,7 @@ def test_pedido_formal_ja_encerrado_nao_acusa(
     _a, _x, _y, pedido_formal = af_falhas(relogio, simulador_pagamentos, settings)
     envio = EnvioDoPedidoFormal.objects.get(pedido_formal=pedido_formal)
     assert envio.situacao == "concluido_com_falhas"
+    assert envio.concluido_em is not None
     _verificar(relogio, envio.concluido_em + 10 * MIN)
     EnvioDoPedidoFormal.objects.filter(pk=envio.pk).update(
         situacao="interrompido", motivo_da_interrupcao="rodada_cancelada"
