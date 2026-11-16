@@ -160,6 +160,9 @@ def test_filtro_por_acao(ah: Historico) -> None:  # A-5
 def test_filtro_por_autor(ah: Historico) -> None:  # A-6
     assert _nossas(ah.pagina("?autor=sistema")) == ["rodada.apuracao_final"]
     assert _nossas(ah.pagina(f"?autor={ah.adm1.pk}")) == ["rodada.cancelar"]
+    opcoes = re.findall(r'<option value="([^"]*)"', ah.pagina("").content.decode())
+    autores = opcoes[opcoes.index("sistema") :]
+    assert autores == ["sistema", str(ah.adm1.pk)]  # sem o comprador C nem ADM2 (comprador)
 
 
 def test_o_intervalo_de_datas_e_o_dia_de_brasilia(ah: Historico) -> None:  # A-7 e A-8
@@ -191,6 +194,12 @@ def test_filtro_invalido_e_ignorado(ah: Historico, consulta: str, nome: str) -> 
 
 def test_autor_que_nao_e_administrador_e_invalido(ah: Historico) -> None:  # A-10
     resposta = ah.pagina(f"?autor={ah.comprador.pk}")
+    assert "Filtro inválido ignorado: autor." in _texto(resposta)
+    assert len(_nossas(resposta)) == 3
+
+
+def test_autor_comprador_com_nome_de_administrador_e_invalido(ah: Historico) -> None:  # A-10
+    resposta = ah.pagina(f"?autor={ah.adm2.pk}")
     assert "Filtro inválido ignorado: autor." in _texto(resposta)
     assert len(_nossas(resposta)) == 3
 

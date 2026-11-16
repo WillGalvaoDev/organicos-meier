@@ -20,3 +20,7 @@ Agente 2.
 4. **Datas dos testes.** `T0` é 02/11/2026 10:00 em Brasília; corrigi nos meus testes as datas que eu tinha escrito um dia adiante, e a hora da última falha do A-19 (11:00 UTC é 08:00 em Brasília).
 5. **A-8 e A-15** usam o arranjo real (pagamento pelo simulador; cancelamento pelo serviço), conforme a spec.
 6. **Correção feita na E15-07.** O teste ponta a ponta A-3 mostrou que a ação do pedido formal não sumia depois de um reenvio manual aceito (a situação do ciclo automático continua `concluido_com_falhas`). `_acoes_do_pedido_formal` agora só a mostra se nenhuma tentativa do pedido formal teve sucesso; detalhes em `docs/specs/E15-07/review.md`.
+
+## Ajuste do especificador (commit e8c967a)
+
+A regra 3 e o A-9 passaram a pedir que a ação do pedido formal continue após um reenvio manual que falhou e some após o aceito, e o A-17 passou a "2 (R$ 11,29)". O código já fazia isso (correção da E15-07). Acrescentei `test_pedido_formal_acao_segue_o_resultado_do_reenvio` (guarda: passou de primeira, sem Red, porque o comportamento já existia). O A-17 já era conferido com "2 (R$ 11,29)".

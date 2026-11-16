@@ -17,3 +17,7 @@ Agente 2.
 2. **Intervalo ao contrário** (`de` maior que `ate`): a mensagem é "Filtro inválido ignorado: de." e os dois filtros de data são ignorados, para o resultado ser as três linhas que o A-10 pede.
 3. **Marcação própria.** Cada linha é `<tr class="entrada">` com a ação em `<td class="acao">`; os testes leem essa marcação. As alterações são uma linha "chave: valor" por chave, em JSON compacto, escapada pelo template.
 4. **A-4:** o arranjo não conta as entradas de autenticação (a passkey não grava auditoria neste arranjo), e o teste lê o total do banco.
+
+## Ajuste do especificador (commit e8c967a)
+
+A-6 ganhou a conferência da lista de autores (só "Sistema" e ADM1) e A-10 o autor comprador chamado ADM2. Acrescentei as duas asserções e `test_autor_comprador_com_nome_de_administrador_e_invalido` (guardas: passaram de primeira, o código já filtrava por papel de administrador).

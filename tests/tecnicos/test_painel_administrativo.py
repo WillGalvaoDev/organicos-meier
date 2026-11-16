@@ -294,6 +294,25 @@ def test_pedido_formal_nao_enviado(painel: Painel, sim: Any, settings: Any) -> N
     )
 
 
+def test_pedido_formal_acao_segue_o_resultado_do_reenvio(
+    painel: Painel, sim: Any, settings: Any
+) -> None:  # A-9 (reenvio que falha mantém a ação; o aceito a remove)
+    import uuid
+
+    from apps.pedidos.reenvio_do_pedido_formal import reenviar_pedido_formal
+    from tests.apoio.pedido_formal import FALHA, LOCMEM, af_falhas
+
+    acao = "O pedido formal não foi enviado depois das três tentativas: reenvie."
+    a, _x, _y, pf = af_falhas(painel.relogio, sim, settings)
+    assert acao in _secoes(painel.pagina())["Ações necessárias"]
+    settings.EMAIL_BACKEND = FALHA
+    assert reenviar_pedido_formal(a.admin, pf, token=uuid.uuid4()).tentativa.resultado == "falha"
+    assert acao in _secoes(painel.pagina())["Ações necessárias"]
+    settings.EMAIL_BACKEND = LOCMEM
+    assert reenviar_pedido_formal(a.admin, pf, token=uuid.uuid4()).tentativa.resultado == "sucesso"
+    assert acao not in _secoes(painel.pagina())["Ações necessárias"]
+
+
 def test_recebimento_a_resolver(painel: Painel, sim: Any) -> None:  # A-10
     a, _x, _y, _pf = _ae(painel.relogio, sim)
     receber(a.admin, a.rodada, a.p1, D("11"))

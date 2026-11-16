@@ -26,3 +26,7 @@ Agente 2.
 
 - Suíte completa antes deste ajuste: 3296 passed e 1 failed (este teste); depois, `tests/tecnicos/test_notificacoes_eventos.py` e `test_financeiro_alertas.py` passam. `mypy .` (513 arquivos) e `ruff` limpos.
 6. **Ajuste feito na E15-04.** Com a verificação de notificações atrasadas (E15-03) o `test_a_tarefa_que_para_de_novo_abre_outro_alerta` (A-4) deixou de poder contar o retorno `(1, 0)` nem todas as notificações do administrador: os e-mails dos primeiros avisos ficam pendentes e abrem `envios_atrasados`. O teste passou a conferir só o alerta `tarefa_atrasada` e as notificações com esse título. (A suíte completa acusou a falha; o arquivo isolado passava.)
+
+## Ajuste do especificador (commit e8c967a)
+
+O A-12 pede também um `Envio` de e-mail para ADM1. Acrescentei a asserção ao teste da corrida (guarda: passou de primeira). Os desvios de administrador único e das matrizes de eventos já estavam registrados aqui e agora são regra da spec.

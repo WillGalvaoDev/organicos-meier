@@ -232,6 +232,7 @@ def test_a_tarefa_periodica_da_verificacao() -> None:  # A-11
 def test_duas_verificacoes_ao_mesmo_tempo(
     relogio: RelogioControlado, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-12
+    from apps.notificacoes.models import Envio
     from apps.operacao import verificacao
     from tests.apoio.corrida import Corrida
 
@@ -251,6 +252,7 @@ def test_duas_verificacoes_ao_mesmo_tempo(
     assert corrida.b_esperou
     assert len(alertas("tarefa_atrasada", abertos=True)) == 1
     assert len(notificacoes(ao.adm1)) == 1
+    assert Envio.objects.filter(notificacao__in=notificacoes(ao.adm1)).count() == 1
 
 
 def test_o_critico_vem_primeiro(relogio: RelogioControlado, ao: Ao) -> None:  # A-13
