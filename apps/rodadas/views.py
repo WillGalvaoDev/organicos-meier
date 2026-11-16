@@ -30,6 +30,7 @@ from apps.pedidos.apuracao import ApuracaoRecusada, aprovar_resultado, iniciar_a
 from apps.pedidos.apuracao_tela import bloco_da_apuracao
 from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado, cancelar_rodada
 from apps.pedidos.cancelamento_tela import bloco_do_cancelamento
+from apps.pedidos.entrega_tela import bloco_da_entrega
 from apps.pedidos.models import AberturaDoPagamento, PedidoFormal, ResultadoDaApuracao
 from apps.pedidos.pedido_formal_tela import bloco_do_pedido_formal, pagina_do_pedido_formal
 from apps.pedidos.prazos import fim_da_margem, prazo_de_pagamento
@@ -149,6 +150,7 @@ def _pagina_do_estoque(
         "apuracao": bloco_da_apuracao(rodada, agora()),
         "cancelamento": bloco_do_cancelamento(rodada),
         "pedido_formal": bloco_do_pedido_formal(rodada),
+        "entrega": bloco_da_entrega(rodada),
         "com_saidas": rodada_tem_apuracao_no_livro(rodada),
         "mensagem_somente_leitura": None if editavel or erro else MENSAGEM,
         "erro": None if erro_da_linha else erro,

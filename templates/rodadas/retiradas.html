@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Retiradas · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Retiradas da rodada {{ rodada.pk }}</h1>
+  <p><a href="{% url 'rodadas_estoque' pk=rodada.pk %}">Voltar à rodada</a> · <a href="{% url 'rodadas_ocorrencias' pk=rodada.pk %}">Ocorrências</a></p>
+  {% for mensagem in messages %}<p role="status">{{ mensagem }}</p>{% endfor %}
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+  <p>Retirada liberada em {{ liberada_em }}. Prazo até {{ prazo_final }}.</p>
+  <p>Endereço: {{ endereco|linebreaksbr }}</p>
+
+  {% for bloco in situacao.pedidos %}
+    <section>
+      <h2>Pedido {{ bloco.pedido }} — {{ bloco.comprador }}</h2>
+      <table>
+        <thead><tr><th>Produto</th><th>Unidade</th><th>Pedida</th><th>Reembolsada na apuração</th><th>Em ocorrências</th><th>Retirada</th><th>Descartada</th><th>Saldo</th><th>Retirar</th></tr></thead>
+        <tbody>
+          {% for i in bloco.itens %}
+            <tr>
+              <td>{{ i.produto }}</td>
+              <td>{{ i.unidade }}</td>
+              <td>{{ i.pedida|quantidade_br }}</td>
+              <td>{{ i.reembolsada_na_apuracao|quantidade_br }}</td>
+              <td>{{ i.em_ocorrencias|quantidade_br }}</td>
+              <td>{{ i.retirada|quantidade_br }}</td>
+              <td>{{ i.descartada|quantidade_br }}</td>
+              <td>{{ i.saldo|quantidade_br }}</td>
+              <td>
+                {% if i.saldo > 0 %}
+                  <form method="post" action="{% url 'rodadas_retiradas_registrar' pk=rodada.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="acionamento" value="{{ acionamento }}">
+                    <input type="hidden" name="item" value="{{ i.item }}">
+                    <input type="text" name="quantidade" aria-label="Quantidade retirada de {{ i.produto }}">
+                    <button type="submit">Registrar retirada</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endfor %}
+
+  <h2>Itens vencidos</h2>
+  {% if situacao.prazo_encerrado %}
+    <h3>Prazo encerrado — pendentes de decisão</h3>
+    <ul>
+      {% for v in situacao.vencidos %}
+        <li>
+          Pedido {{ v.pedido }} — {{ v.comprador }} — {{ v.produto }}: {{ v.saldo|quantidade_br }} {{ v.unidade }}
+          <form method="post" action="{% url 'rodadas_descartes_registrar' pk=rodada.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="acionamento" value="{{ acionamento }}">
+            <input type="hidden" name="item" value="{{ v.item }}">
+            <input type="text" name="quantidade" value="{{ v.saldo|quantidade_br }}" aria-label="Quantidade descartada de {{ v.produto }}">
+            <button type="submit">Registrar descarte</button>
+          </form>
+        </li>
+      {% empty %}
+        <li>Nenhum item pendente.</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>O descarte fica disponível a partir de {{ prazo_final }}.</p>
+  {% endif %}
+
+  <h2>Histórico</h2>
+  <ul>
+    {% for h in historico %}
+      <li>{{ h.texto_quando }} · Pedido {{ h.pedido }} · {{ h.comprador }} · {{ h.produto }} · {{ h.quantidade|quantidade_br }} {{ h.unidade }} · {{ h.tipo }} · {{ h.autor }}</li>
+    {% empty %}
+      <li>Nenhuma retirada ou descarte registrado.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

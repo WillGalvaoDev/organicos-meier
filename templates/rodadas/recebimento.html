@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Recebimento · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Recebimento da rodada {{ rodada.pk }}</h1>
+  <p><a href="{% url 'rodadas_estoque' pk=rodada.pk %}">Voltar à rodada</a></p>
+  {% for mensagem in messages %}<p role="status">{{ mensagem }}</p>{% endfor %}
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+
+  <table>
+    <thead><tr><th>Produto</th><th>Unidade</th><th>Pedida</th><th>Recebida</th><th>Faltante</th><th>Não entregue</th><th>Incorreta</th><th>A resolver</th></tr></thead>
+    <tbody>
+      {% for linha in linhas %}
+        <tr>
+          <td>{{ linha.nome }}</td>
+          <td>{{ linha.unidade }}</td>
+          <td>{{ linha.pedida|quantidade_br }}</td>
+          <td>{{ linha.recebida|quantidade_br }}</td>
+          <td>{{ linha.faltante|quantidade_br }}</td>
+          <td>{{ linha.nao_entregue|quantidade_br }}</td>
+          <td>{{ linha.incorreta|quantidade_br }}</td>
+          <td>{{ linha.a_resolver|quantidade_br }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if aguardando %}
+    <form method="post" action="{% url 'rodadas_recebimento_registrar' pk=rodada.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="acionamento" value="{{ acionamento }}">
+      <label for="produto">Produto</label>
+      <select id="produto" name="produto">
+        {% for linha in linhas %}<option value="{{ linha.produto }}"{% if valores.produto == linha.produto|stringformat:"s" %} selected{% endif %}>{{ linha.nome }}</option>{% endfor %}
+      </select>
+      <label for="quantidade">Quantidade</label>
+      <input type="text" id="quantidade" name="quantidade" value="{{ valores.quantidade }}">
+      <button type="submit">Registrar recebimento</button>
+    </form>
+    <p><a href="{% url 'rodadas_ocorrencias' pk=rodada.pk %}">Registrar ocorrência</a></p>
+
+    <h2>Liberação da retirada</h2>
+    {% if pode_liberar %}
+      <form method="post" action="{% url 'rodadas_retirada_liberar' pk=rodada.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="acionamento" value="{{ acionamento }}">
+        <p>A rodada será encerrada e os compradores serão avisados. O prazo de retirada é de sete dias.</p>
+        <button type="submit">Liberar retirada</button>
+      </form>
+    {% else %}
+      <p>{{ motivo_da_liberacao }}</p>
+      {% if sem_endereco %}<p><a href="{% url 'retirada_endereco' %}">Registrar o endereço de retirada</a></p>{% endif %}
+    {% endif %}
+  {% elif liberada %}
+    <p>Retirada liberada em {{ liberada.em }}, prazo até {{ liberada.prazo }}, no endereço: {{ liberada.endereco|linebreaksbr }}</p>
+    <p><a href="{% url 'rodadas_retiradas' pk=rodada.pk %}">Retiradas</a></p>
+  {% elif cancelada %}
+    <p>Rodada cancelada.</p>
+  {% endif %}
+
+  <h2>Histórico dos recebimentos</h2>
+  <ul>
+    {% for r in historico %}
+      <li>{{ r.quando }} · {{ r.produto }} · {{ r.quantidade|quantidade_br }} {{ r.unidade }} · {{ r.autor }}</li>
+    {% empty %}
+      <li>Nenhum recebimento registrado.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

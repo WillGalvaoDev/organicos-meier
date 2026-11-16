@@ -38,6 +38,7 @@ __all__ = [
     "LiberacaoRecusada",
     "liberacao_da_rodada",
     "liberar_retirada",
+    "motivo_da_recusa",
 ]
 
 PRAZO_DE_RETIRADA = timedelta(days=7)
@@ -85,6 +86,15 @@ def _conferir_as_condicoes(rodada: Rodada) -> EnderecoDeRetirada:
     if pendentes:
         raise LiberacaoRecusada("recebimento_pendente", pendencias="; ".join(pendentes))
     return endereco
+
+
+def motivo_da_recusa(rodada: Rodada) -> LiberacaoRecusada | None:
+    """Por que a liberação seria recusada agora, sem trava, para as telas; `None` se pode."""
+    try:
+        _conferir_as_condicoes(rodada)
+    except LiberacaoRecusada as recusa:
+        return recusa
+    return None
 
 
 def _liberar_as_reservas(fornecedor_id: int) -> list[dict[str, Any]]:

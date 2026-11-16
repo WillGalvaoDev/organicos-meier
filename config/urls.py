@@ -10,7 +10,7 @@ from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
 from apps.pagamentos import views as pagamentos_views
-from apps.pedidos import retirada_views
+from apps.pedidos import entrega_views, retirada_views
 from apps.pedidos import views as pedidos_views
 from apps.rodadas import views as rodadas_views
 
@@ -69,6 +69,46 @@ urlpatterns: list[URLPattern | URLResolver] = [
     ),
     path("carrinho/", interesses_views.carrinho, name="carrinho"),
     path("regras/", retirada_views.regras, name="regras"),
+    path(
+        "administracao/rodadas/<int:pk>/recebimento/",
+        entrega_views.recebimento,
+        name="rodadas_recebimento",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/recebimento/registrar/",
+        entrega_views.recebimento_registrar,
+        name="rodadas_recebimento_registrar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/retirada/liberar/",
+        entrega_views.retirada_liberar,
+        name="rodadas_retirada_liberar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/ocorrencias/",
+        entrega_views.ocorrencias,
+        name="rodadas_ocorrencias",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/ocorrencias/registrar/",
+        entrega_views.ocorrencias_registrar,
+        name="rodadas_ocorrencias_registrar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/retiradas/",
+        entrega_views.retiradas,
+        name="rodadas_retiradas",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/retiradas/registrar/",
+        entrega_views.retiradas_registrar,
+        name="rodadas_retiradas_registrar",
+    ),
+    path(
+        "administracao/rodadas/<int:pk>/descartes/registrar/",
+        entrega_views.descartes_registrar,
+        name="rodadas_descartes_registrar",
+    ),
     path(
         "administracao/retirada/endereco/",
         retirada_views.endereco_de_retirada,

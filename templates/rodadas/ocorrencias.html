@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load catalogo %}
+{% block titulo %}Ocorrências de entrega · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Ocorrências de entrega da rodada {{ rodada.pk }}</h1>
+  <p><a href="{% url 'rodadas_estoque' pk=rodada.pk %}">Voltar à rodada</a> · <a href="{% url 'rodadas_recebimento' pk=rodada.pk %}">Recebimento</a></p>
+  {% for mensagem in messages %}<p role="status">{{ mensagem }}</p>{% endfor %}
+  {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+
+  {% for bloco in pedidos %}
+    <section>
+      <h2>Pedido {{ bloco.pedido.pk }} — {{ bloco.comprador }}</h2>
+      <table>
+        <thead><tr><th>Produto</th><th>Unidade</th><th>Pedida</th><th>Reembolsada</th><th>Retirada</th><th>Descartada</th><th>Saldo</th></tr></thead>
+        <tbody>
+          {% for linha in bloco.itens %}
+            <tr>
+              <td>{{ linha.item.nome }}</td>
+              <td>{{ linha.item.unidade }}</td>
+              <td>{{ linha.pedida|quantidade_br }}</td>
+              <td>{{ linha.reembolsada|quantidade_br }}</td>
+              <td>{{ linha.retirada|quantidade_br }}</td>
+              <td>{{ linha.descartada|quantidade_br }}</td>
+              <td>{{ linha.saldo|quantidade_br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endfor %}
+
+  {% if somente_leitura %}
+    <p>Rodada cancelada.</p>
+  {% else %}
+    <form method="post" action="{% url 'rodadas_ocorrencias_registrar' pk=rodada.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="acionamento" value="{{ acionamento }}">
+      <label for="item">Item</label>
+      <select id="item" name="item">
+        {% for opcao in opcoes %}<option value="{{ opcao.pk }}"{% if valores.item == opcao.pk|stringformat:"s" %} selected{% endif %}>{{ opcao.rotulo }}</option>{% endfor %}
+      </select>
+      <label for="tipo">Tipo</label>
+      <select id="tipo" name="tipo">
+        {% for valor, rotulo in tipos %}<option value="{{ valor }}"{% if valores.tipo == valor %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+      <label for="quantidade">Quantidade</label>
+      <input type="text" id="quantidade" name="quantidade" value="{{ valores.quantidade }}">
+      <p>A ocorrência gera o reembolso dos itens afetados, com serviço e frete proporcionais. A devolução é autorizada na página da devolução.</p>
+      <button type="submit">Registrar ocorrência</button>
+    </form>
+  {% endif %}
+
+  <h2>Ocorrências registradas</h2>
+  <ul>
+    {% for o in ocorrencias %}
+      <li>
+        {{ o.quando }} · Pedido {{ o.pedido }} · {{ o.comprador }} · {{ o.produto }} · {{ o.tipo }} · {{ o.ocorrencia.quantidade|quantidade_br }} {{ o.unidade }} · {{ o.etapa }} · {{ o.autor }}
+        · Reembolso: produtos {{ o.reembolso.produtos|reais }}, serviço {{ o.reembolso.servico|reais }}, frete {{ o.reembolso.frete|reais }}, total {{ o.reembolso.total|reais }}
+        · {% if o.obrigacao %}<a href="{% url 'financeiro_devolucao' pk=o.obrigacao.pk %}">Ver devolução</a>{% else %}Sem valor a devolver{% endif %}
+      </li>
+    {% empty %}
+      <li>Nenhuma ocorrência registrada.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}
