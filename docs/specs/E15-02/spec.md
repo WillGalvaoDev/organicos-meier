@@ -62,6 +62,8 @@ As E15-03 e E15-04 só acrescentam verificações.
    - com o título, o corpo e o link do tipo e a chave base `alerta_operacional:<pk>`;
    - pelos canais site e e-mail, só para administrador, como `ALERTA_FINANCEIRO`.
 
+   Os testes existentes que transcrevem o catálogo de eventos (a matriz de canais da E04-01 e o conjunto de eventos do administrador do A-11 da E09-03) ganham a linha `alerta_operacional` (administrador; site e e-mail). É consequência desta regra: nenhuma asserção deles é removida.
+
    Os tipos financeiros continuam exatamente como hoje: evento `alerta_financeiro` e link `financeiro_resumo`. Sem administrador ativo: o alerta é aberto e o log registra a falta de destinatário, como hoje.
 4. **Log.** Na abertura vai `logger.warning` (aviso) ou `logger.error` (crítico), com o tipo e a chave, sem `dados`.
 

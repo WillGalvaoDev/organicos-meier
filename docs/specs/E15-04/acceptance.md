@@ -6,7 +6,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 - **Instantes:** `I = 2026-11-20 12:00 UTC`.
 - **Execução:**
   - `verificar_operacao_agora()` chamada diretamente;
-  - os pagamentos, consultas e chamadas montados com os apoios das E07 e E08 e o simulador (`simulador_pagamentos`);
+  - as `ChamadaAoProvedor` em `falhou`, as `ConsultaDoPagamento`, os `PagamentoNoProvedor` e os `DestinoDoPagamento` gravados diretamente, para isolar a verificação. O caminho até esses estados pelo simulador é coberto nas E07 e E08 e, no que o simulador reproduz, na E15-07;
   - os avisos enviados a `/pagamentos/avisos/` com o assinador do simulador (aceitos) ou com assinatura errada (recusados).
 
 | ID | Origem | Tipo | Dado | Quando | Então |
@@ -14,7 +14,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-1 | Falha de mensagem | positivo | dois `Envio` em `falhou`, concluídos em `I − 2h` e `I − 1h` | verificar em `I` | `falha_de_mensagem`, chave `geral`, corpo "2 mensagem(ns) não foram entregues nas últimas 24 horas. A mais recente falhou em 20/11/2026 08:00.", link `/administracao/envios/?situacao=falhou`. **Red esperado:** o tipo não existe |
 | A-2 | Falha de mensagem | positivo | o A-1 | verificar em `I + 23h` e em `I + 23h + 1s` | aberto na primeira; resolvido na segunda (nenhuma falha nas últimas 24 horas) |
 | A-3 | Falha de mensagem | negativo | um envio em `falhou` concluído em `I − 24h − 1s` | verificar em `I` | nada |
-| A-4 | Chamada | positivo | `cancelar_cobranca` levada a `falhou` pelo simulador (recusa definitiva) | `processar_chamadas()`; verificar | `chamada_ao_provedor_falhou` com a chave `chamada:<pk>`, natureza fato, o corpo com `cancelar_cobranca`, o alvo e o código do erro |
+| A-4 | Chamada | positivo | uma `ChamadaAoProvedor` de `cancelar_cobranca` em `falhou`, com `ultimo_erro` | `processar_chamadas()`; verificar | `chamada_ao_provedor_falhou` com a chave `chamada:<pk>`, natureza fato, o corpo com `cancelar_cobranca`, o alvo e o código do erro |
 | A-5 | Regra 4 | negativo | chamadas `estornar` e `criar_cobranca` em `falhou` | verificar | nenhum `chamada_ao_provedor_falhou` |
 | A-6 | Regra 1, ciência | positivo | o A-4 | `dar_ciencia(ADM1, alerta)`; verificar de novo | o alerta resolvido com "ciência do administrador"; a auditoria `alerta.ciencia` com ADM1, o tipo e a chave; a verificação não reabre |
 | A-7 | Divergência | positivo | consulta do pagamento `pg1` com divergência `valor` em `I` | verificar | `consulta_com_divergencia` com a chave `pg1:valor` e o rótulo "Valor" no corpo |
@@ -33,7 +33,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-20 | Regra 6 | negativo | o A-14 | ler o registro da contagem | só os três campos da regra; nenhum corpo, cabeçalho ou IP |
 | A-21 | Regra 7 | negativo | `tarefa_atrasada` aberto (condição); `invariante_violado` aberto (financeiro) | `dar_ciencia` em cada um | `CienciaRecusada("nao_e_fato")` nos dois; os alertas abertos; nenhuma auditoria |
 | A-22 | Regra 7 | negativo | o A-6 (resolvido) | `dar_ciencia` de novo | `CienciaRecusada("ja_resolvido")` |
-| A-23 | Regra 7 | negativo | o A-4 | `dar_ciencia` com o comprador C e com ADM3 (suspenso) | `PermissionDenied`; o alerta aberto |
+| A-23 | Regra 7 | negativo | o A-4 | `dar_ciencia` com o comprador C, com a conta do fornecedor F e com `None` | `PermissionDenied`; o alerta aberto |
 | A-24 | Regra 8 | positivo | o A-4; ADM1 autenticado com passkey | POST `/administracao/alertas/<pk>/ciencia/` | 302 para `/administracao/` com "Ciência registrada."; o alerta resolvido |
 | A-25 | Regra 8 | negativo | o A-21 | POST da ciência no `tarefa_atrasada` | 302 com a mensagem de `nao_e_fato` como erro; nada gravado |
 | A-26 | Regra 8 | negativo | o A-4 | GET na rota; POST com pk inexistente; POST como C e como F; POST anônimo | 405; 404; 403 e 403; redirecionamento ao login; nada gravado |

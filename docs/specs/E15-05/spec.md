@@ -64,7 +64,7 @@ Tudo é calculado na leitura da página. O painel não cria regra de negócio: c
 | `fechamento_encerrado` | "Fechamento encerrado: aguarda a abertura do pagamento." | `rodadas_estoque` |
 | `pagamento`, `pode_iniciar_apuracao(abertura, instante)` e sem `ApuracaoFinal` do ciclo | "Apta para a apuração final desde <fim da margem>." | `rodadas_estoque` |
 | `pagamento` com `ApuracaoFinal` válida sem `AprovacaoDoResultado` | "Apuração feita: aguarda a aprovação do resultado." | `rodadas_estoque` |
-| `aguardando_fornecedor` com `EnvioDoPedidoFormal` em `concluido_com_falhas` | "O pedido formal não foi enviado depois das três tentativas: reenvie." | `rodadas_pedido_formal` |
+| `aguardando_fornecedor` com `EnvioDoPedidoFormal` em `concluido_com_falhas` e nenhuma `TentativaDeEnvioDoPedidoFormal` do pedido formal com resultado `sucesso` | "O pedido formal não foi enviado depois das três tentativas: reenvie." | `rodadas_pedido_formal` |
 | `aguardando_fornecedor` e `recebimento_resolvido(r)` falso | "Recebimento: <n> produto(s) a resolver." (n = linhas de `situacao_do_recebimento` com `a_resolver > 0`) | `rodadas_recebimento` |
 | `aguardando_fornecedor` e `recebimento_resolvido(r)` verdadeiro | "Recebimento resolvido: a retirada pode ser liberada." e, sem `endereco_vigente()`, mais " Registre antes o endereço de retirada." | `rodadas_recebimento` |
 | `aguardando_fornecedor` ou `disponivel_para_retirada`, com `liquidez` da obrigação com o fornecedor da rodada (E13-06) com `liberado > 0` | "Repasse ao fornecedor liberado: <valor>." | `rodadas_saidas` |
@@ -151,6 +151,7 @@ def prazos_encerrados(instante: datetime) -> list[PrazoEncerrado]: ...
 - **Cálculo na leitura.** Quando o worker parou, o painel é a única forma de ver isso (E15-01, "Limitação"). Ler as fontes na hora evita um segundo estado que poderia divergir.
 - **"Caixas pendentes" = excedentes aguardando caixa.** É o termo da §6.2 para as unidades que ainda não completam uma caixa. Depois do fechamento, os excedentes são removidos (§6.3), por isso a coluna só existe em `interesse` e `fechamento`.
 - **Repasse e frete como ações.** A §10 deixa o pagamento ao fornecedor e o registro do repasse ao administrador. O valor liberado é o que ele já pode pagar (E13-06).
+- **Pedido formal: a ação some com o primeiro envio aceito.** O reenvio manual (E13-04) grava uma `TentativaDeEnvioDoPedidoFormal` com sucesso, mas não muda a situação do ciclo automático, que continua `concluido_com_falhas`. A ação pede "reenvie". Quando uma tentativa já teve sucesso, não há mais o que reenviar. Um reenvio manual que falhou mantém a ação. Correção apontada pela E15-07 (A-3).
 - **Parcelas elegíveis à devolução excepcional ficam nos alertas.** Elas já têm o alerta `devolucao_elegivel_excepcional` da E10, e repeti-las nas ações duplicaria a informação.
 
 ## Invariantes

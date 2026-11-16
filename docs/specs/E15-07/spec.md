@@ -53,8 +53,8 @@ Como nas E13-08 e E14-08, a fatia não cria código de produção.
    - descarte.
 
    No fim, a rodada sai do painel.
-2. **Worker parado e retomado.** As tarefas deixam de concluir. A verificação abre `tarefa_atrasada`, e os administradores recebem a notificação no site e o e-mail (que sai quando os envios voltam). O painel mostra "Atrasada". Quando as tarefas voltam, os alertas são resolvidos.
-3. **Provedor com problemas.** O simulador recusa o cancelamento de uma cobrança e devolve uma consulta divergente. Chegam avisos com assinatura errada. Os alertas de fato e de condição abrem, e a ciência pelo painel encerra os de fato.
+2. **Worker parado e retomado.** As tarefas deixam de concluir. A verificação abre `tarefa_atrasada`, e o administrador recebe a notificação no site e o e-mail (que sai quando os envios voltam). O painel mostra "Atrasada". Quando as tarefas voltam, os alertas são resolvidos.
+3. **Provedor com problemas.** Uma consulta de pagamento falha de vez no simulador (pagamento desconhecido por mais de 24 horas). Uma consulta com valor divergente é gravada diretamente, porque o simulador não a produz. Chegam avisos com assinatura errada. Os alertas de fato e de condição abrem, e a ciência pelo painel encerra os de fato.
 4. **Mensagens falhando.** O e-mail falha até o envio ser encerrado sem sucesso. `falha_de_mensagem` abre, e a notificação no site continua correta (§12).
 5. **Histórico.** As ações dos cenários anteriores aparecem no histórico, com os filtros funcionando.
 6. **Isolamento.** Comprador e fornecedor não acessam o painel, o histórico nem a ciência, e não recebem nenhum alerta operacional.
