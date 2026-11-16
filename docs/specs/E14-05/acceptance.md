@@ -27,9 +27,11 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-18 | Só inserção | negativo | o A-1 e o A-6 | `update` e `delete` pela aplicação e por SQL direto | recusados |
 | A-19 | Concorrência | concorrência | AE-liberada; a retirada de 4 em X-P1 pausada com as travas retidas | a ocorrência `incorreto` de 4 em X-P1 numa segunda conexão, confirmada esperando com `esperar_outra_conexao_na_trava()`; depois a retirada retomada | a retirada grava; a ocorrência `passa_do_saldo_do_item`; nenhum reembolso novo |
 | A-20 | Concorrência | concorrência | AE-liberada; a retirada de 4 em X-P1 pausada | uma segunda retirada de 4 em X-P1 (outro acionamento), confirmada esperando; depois a primeira retomada | a primeira grava; a segunda `passa_do_saldo_do_item`; retirada 4 |
+| A-21 | E14-R01, regra 2 corrigida | concorrência | AE-liberada; a retirada de 4 em X-P1 com o acionamento a1, pausada depois da auditoria e com as travas retidas | a mesma chamada (a1, X-P1, 4) numa segunda conexão, confirmada esperando com `esperar_outra_conexao_na_trava()`; depois a primeira retomada | as duas sem exceção; um `RetiradaDeItem` e uma auditoria `retirada.registrar`; o mesmo registro nas duas respostas; `novo = True` na primeira e `novo = False` na segunda; retirada 4. **Red esperado:** a segunda devolve `novo = True` |
+| A-22 | E14-R01, regra 2 corrigida | concorrência | AE-liberada; relógio em `prazo_final + 1 dia`; o descarte de 4 em X-P1 com o acionamento d1, pausado como no A-21 | a mesma chamada (d1, X-P1, 4) numa segunda conexão, confirmada esperando; depois a primeira retomada | como o A-21, com `DescarteDeItem` e `descarte.registrar`; descartado 4. **Red esperado:** a segunda devolve `novo = True` |
 
 | Critério | Arquivo de teste |
 |---|---|
 | A-1 a A-18 | `tests/tecnicos/test_retirada.py` |
-| A-19 e A-20 | `tests/tecnicos/test_retirada.py`, com transações PostgreSQL reais |
+| A-19 a A-22 | `tests/tecnicos/test_retirada.py`, com transações PostgreSQL reais |
 | A-5 a A-7 | também `tests/aceitacao/test_cenario_23_descarte.py` |

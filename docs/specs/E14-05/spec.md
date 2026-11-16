@@ -102,3 +102,29 @@ O histórico preserva as quantidades recebidas, estornadas, retiradas e descarta
 
 - Depende das E14-02 e E14-04.
 - Nenhuma decisão em aberto.
+
+## Correção da revisão: E14-R01, a repetição concorrente do acionamento (2026-11-16)
+
+Origem: revisão independente sobre `5b00c56` (`docs/specs/E14-05/review.md`, "E14-R01 — Importante").
+
+**Defeito.** A regra 2 manda devolver `novo = False` quando o acionamento já gerou o registro. Na repetição sequencial, isso acontece. Na concorrente, não:
+- duas conexões enviam o mesmo acionamento, com o mesmo item e a mesma quantidade;
+- a segunda espera nas travas da regra 3;
+- depois do commit da primeira, a segunda encontra o registro na nova conferência sob as travas e o devolve, mas o resultado sai com `novo = True`.
+
+Não há registro duplicado, nem quantidade ou dinheiro a mais. O erro está no resultado do serviço e na mensagem da tela (E14-06, convenção 3), que diz "registrada" em vez de "Este registro já tinha sido feito.". Vale para a retirada e para o descarte.
+
+**Regra corrigida.** A regra 2 passa a dizer:
+
+2. **Acionamento:** como na E14-01, regra 2. Um registro já gravado com o mesmo acionamento, o mesmo item e a mesma quantidade é devolvido com `novo = False`, sem escrita e sem auditoria nova, **qualquer que seja o ponto em que é encontrado**:
+   - antes da transação;
+   - na conferência sob as travas da regra 3, depois de esperar outra conexão;
+   - depois de um `IntegrityError` no acionamento.
+
+   `novo = True` só quando esta chamada gravou o registro. Outro conteúdo ou valor inválido: `RetiradaRecusada("acionamento_invalido")`, também nos três pontos.
+
+**Invariante acrescentado.** Para cada acionamento, no máximo um resultado com `novo = True`, e exatamente um quando o registro existe.
+
+**Caso-limite acrescentado.** A mesma retirada (ou o mesmo descarte) enviada duas vezes ao mesmo tempo, com o mesmo acionamento: um registro e uma auditoria; a chamada que gravou recebe `novo = True` e a outra `novo = False`, com o mesmo registro.
+
+Os critérios novos são A-21 e A-22.

@@ -82,3 +82,28 @@ Sem rota nova. A página `pedidos/<pk>/` ganha as seções, montadas a partir de
 
 - Depende das E14-02, E14-04 e E14-05, da E13-05 (página do pedido) e da E13-07 (portal).
 - Nenhuma decisão em aberto.
+
+## Correção da revisão: E14-R02, a página do pedido depois do cancelamento (2026-11-16)
+
+Origem: revisão independente sobre `5b00c56` (`docs/specs/E14-07/review.md`, "E14-R02 — Importante").
+
+**Defeito.** A regra 5 manda tirar as seções desta fatia do pedido não válido. A ocorrência só existe em pedido do pedido formal, mas a rodada ainda pode ser cancelada em `aguardando_fornecedor` (E12, cenário 52). Depois disso, a página continua mostrando "Ocorrências de entrega". A seção é montada sem olhar a validade atual do pedido.
+
+**Regra corrigida.** A regra 5 passa a dizer:
+
+5. **Pedido não válido:** sem as seções "Ocorrências de entrega" e "Retirada". A validade é conferida a cada carregamento, com o estado atual, e não com o estado do momento da ocorrência. O pedido é válido quando as duas condições valem:
+   - está no pedido formal do ciclo (`PedidoApurado` da apuração do ciclo da rodada);
+   - a rodada não tem `CancelamentoDaRodada`.
+
+   Pedido cancelado por inadimplência, ou de rodada que voltou ao interesse, não está no pedido formal. A rodada cancelada (com ou sem reembolso) torna não válidos todos os pedidos dela, inclusive os que tinham ocorrência.
+
+**O que não muda com a regra 5:**
+- a `OcorrenciaDeEntrega`, o `Reembolso` e a obrigação com o comprador continuam gravados, sem nenhuma alteração;
+- a devolução da ocorrência continua no fluxo da E10;
+- a seção "Estornos" da página (E10) continua listando a obrigação da ocorrência, com o valor e o estado real. É por ela que o comprador acompanha esse dinheiro depois do cancelamento, ao lado das frases do cancelamento (E12).
+
+Esconder a seção não autoriza apagar, anular nem recalcular nada.
+
+**Decisão técnica.** O registro de cancelamento basta como critério, porque o cancelamento é a única saída de `aguardando_fornecedor` além da liberação, e a liberação não pode ser cancelada (decisão (a)). Não há caso de ocorrência em pedido que depois saia do pedido formal por outro caminho.
+
+Os critérios novos são A-15 e A-16.

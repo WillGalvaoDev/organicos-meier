@@ -32,8 +32,13 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-23 | Regra 2 | negativo | AE | GET nas cinco rotas `POST` | 405 |
 | A-24 | Regra 19 | positivo | — | rodar `tests/tecnicos/test_pedidos_abertura_tela.py` | verde, sem mudar a lista de rotas permitidas |
 | A-25 | Regra 3 | positivo | AE | POST de recebimento com campos extras (`linha=1`, `pedido_formal=2`) | aceito, com os campos extras ignorados |
+| A-26 | E14-R01, convenção 3 | concorrência | AE-liberada; com transações reais; a retirada de 4 em X-P1 com o acionamento a1 pausada depois da auditoria, com as travas retidas | um segundo POST de `rodadas_retiradas_registrar` com a1, X-P1 e 4, confirmado esperando; depois a primeira retomada | os dois 302; uma resposta seguida com "Retirada registrada: 4 unidade de P1." e a outra com "Este registro já tinha sido feito."; um `RetiradaDeItem`; X-P1 com saldo 2. **Red esperado:** as duas com "Retirada registrada" |
+| A-27 | E14-R03, regra 15-A | negativo | AE-liberada; relógio em `L + 1 dia`; X-P1 com saldo 6 | POST de retirada com X-P1 e quantidade `7` | 409 com a mensagem de `passa_do_saldo_do_item`; no formulário de retirada de X-P1, `quantidade` igual a `7`; nos formulários de retirada de X-P2, Y-P1 e Y-P2, `quantidade` vazia; o `acionamento` de cada formulário um UUID diferente do enviado; nenhum `RetiradaDeItem`. **Red esperado:** a quantidade de X-P1 vazia |
+| A-28 | E14-R03, regra 15-A | negativo | AE-liberada; relógio no prazo final; X-P1 com saldo 6 | POST de descarte com X-P1 e quantidade `7` | 409 com a mensagem de `passa_do_saldo_do_item`; no formulário de descarte de X-P1, `quantidade` igual a `7` (e não `6`); nos formulários de descarte de X-P2, Y-P1 e Y-P2, a quantidade sugerida igual ao saldo de cada um (4, 5 e 8); nos formulários de retirada, `quantidade` vazia; nenhum `DescarteDeItem`. **Red esperado:** a quantidade de X-P1 igual a `6` |
+| A-29 | E14-R03, regra 15-A | negativo | AE-liberada; relógio em `L + 1 dia` | POST de retirada com X-P1 e quantidade `6,5` (P1 vendido por unidade) | 409 com a mensagem de `quantidade_invalida`; no formulário de retirada de X-P1, `quantidade` igual a `6,5`, sem conversão; nenhum `RetiradaDeItem` |
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-23 e A-25 | `tests/tecnicos/test_recebimento_e_retirada_telas.py` |
+| A-1 a A-23, A-25 e A-27 a A-29 | `tests/tecnicos/test_recebimento_e_retirada_telas.py` |
+| A-26 | `tests/tecnicos/test_recebimento_e_retirada_telas.py`, com transações PostgreSQL reais |
 | A-24 | `tests/tecnicos/test_pedidos_abertura_tela.py` (existente, sem alteração) |

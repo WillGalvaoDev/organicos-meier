@@ -131,3 +131,32 @@ Esta fatia entrega as páginas e as rotas que chamam os serviços das E14-01, E1
 
 - Depende das E14-01 a E14-05, da E13-04 (convenções) e da E10 (página da devolução).
 - Nenhuma decisão em aberto.
+
+## Correção da revisão: E14-R01 e E14-R03 (2026-11-16)
+
+Origem: revisão independente sobre `5b00c56` (`docs/specs/E14-06/review.md` e `docs/specs/E14-08/review.md`).
+
+### E14-R01, reflexo na tela
+
+A rota escolhe a mensagem pelo `novo` do serviço (convenção 3). Com a correção da E14-05 (regra 2 corrigida), a repetição concorrente do mesmo acionamento passa a responder 302 com "Este registro já tinha sido feito.". A rota não muda de comportamento por conta própria. O critério A-26 verifica, pela rota, que a mensagem segue o serviço corrigido.
+
+### E14-R03, o formulário preenchido na recusa
+
+**Defeito.** A convenção 3 manda devolver a recusa do serviço com 409, a mensagem e o formulário preenchido. Nas rotas de retirada e de descarte, a página da recusa volta assim:
+- na retirada, com a quantidade vazia;
+- no descarte, com a quantidade sugerida (o saldo) no lugar da digitada.
+
+No descarte, um novo envio sem conferir usaria outro valor sem o administrador perceber.
+
+**Regra acrescentada** (vale para `rodadas_retiradas_registrar` e `rodadas_descartes_registrar`; complementa as regras 15 e 16):
+
+15-A. **Página da recusa (409):** a página de retiradas é montada de novo com a situação atual (saldos relidos), a mensagem da recusa e:
+- **o formulário que originou a recusa**, identificado pela operação (retirada ou descarte) e pelo item enviado, com a quantidade **exatamente como foi digitada** (o texto enviado, sem conversão nem formatação: "7" continua "7"; "6,5" continua "6,5");
+- **os demais formulários** com os valores de um carregamento normal: retirada com a quantidade vazia; descarte com a quantidade sugerida igual ao saldo;
+- **o `acionamento`:** um UUID novo, como em qualquer carregamento (convenção 2). Nada foi gravado com o anterior, então nenhum registro fica associado a ele.
+
+  Se o item enviado não tiver mais formulário na página atual (por exemplo, saldo zero, ou fora dos vencidos), nenhum formulário recebe o valor digitado. A mensagem da recusa aparece do mesmo jeito.
+
+**Fora desta correção:** as respostas 400 ("Preencha todos os campos." e "Recarregue a página e tente de novo.") continuam como estão. As páginas de recebimento e de ocorrências foram aprovadas e não mudam.
+
+Os critérios novos são A-26 a A-29.
