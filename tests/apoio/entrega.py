@@ -69,6 +69,7 @@ def arranjo_unico(
     abrir(a, frete)
     relogio.congelar(T0 + H)
     Fornecedor.objects.filter(pk=a.fornecedor.pk).update(email_pedido=EMAIL_DO_PEDIDO)
+    assert a.c is not None
     pedido = pedido_de(a.c)
     pagar(relogio, sim, pedido)
     relogio.congelar(PRAZO)
