@@ -3,8 +3,79 @@
 {% block conteudo %}
   <h1>Administração</h1>
   <p>Olá, {{ conta.nome }}.</p>
+
+  <h2>Alertas abertos</h2>
+  {% for alerta in alertas %}
+    <div class="alerta">
+      <p><strong>{{ alerta.gravidade }}</strong> · {{ alerta.titulo }}</p>
+      <p>{{ alerta.corpo }}</p>
+      <p>aberto em {{ alerta.aberto_em }} · <a href="{{ alerta.link }}">Ver</a></p>
+      {% if alerta.ciencia %}
+        <form method="post" action="{% url 'alertas_ciencia' pk=alerta.pk %}">
+          {% csrf_token %}
+          <button type="submit">Dar ciência</button>
+        </form>
+      {% endif %}
+    </div>
+  {% empty %}
+    <p>Nenhum alerta aberto.</p>
+  {% endfor %}
+
+  <h2>Ações necessárias</h2>
+  {% if acoes %}
+    <ul>
+      {% for acao in acoes %}
+        <li>{% if acao.fornecedor %}{{ acao.fornecedor }}: {% endif %}<a href="{{ acao.link }}">{{ acao.texto }}</a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nenhuma ação pendente.</p>
+  {% endif %}
+
+  <h2>Rodadas</h2>
+  {% if rodadas %}
+    <table>
+      <thead><tr><th>Fornecedor</th><th>Etapa</th><th>Mínimo</th><th>Caixas pendentes</th><th>Prazo</th><th></th></tr></thead>
+      <tbody>
+        {% for linha in rodadas %}
+          <tr>
+            <td>{{ linha.fornecedor }}</td>
+            <td>{{ linha.etapa }}</td>
+            <td>{{ linha.minimo }}</td>
+            <td>{% for caixa in linha.caixas %}{{ caixa }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+            <td>{{ linha.prazo }}</td>
+            <td><a href="{{ linha.link }}">Abrir</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Nenhuma rodada em andamento.</p>
+  {% endif %}
+
+  <h2>Prazos encerrados</h2>
+  {% if prazos_encerrados %}
+    <ul>
+      {% for prazo in prazos_encerrados %}
+        <li><a href="{{ prazo.link }}">{{ prazo.texto }}</a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nenhum prazo encerrado aguardando.</p>
+  {% endif %}
+
+  <h2>Tarefas periódicas</h2>
+  <ul>
+    {% for tarefa in tarefas %}
+      <li>{{ tarefa.descricao }} · última conclusão: {{ tarefa.ultima_conclusao }} · {{ tarefa.situacao }}{% if tarefa.falha %} · {{ tarefa.falha }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p>{{ ultima_conciliacao }}</p>
+
+  <h2>Navegação</h2>
   <p><a href="{% url 'envios_lista' %}">Envios</a></p>
   <p><a href="{% url 'financeiro_resumo' %}">Financeiro</a></p>
+  <p><a href="{% url 'fornecedores_lista' %}">Fornecedores</a> · <a href="{% url 'usuarios_administracao' %}">Usuários</a> · <a href="{% url 'convites_administracao' %}">Convites</a> · <a href="{% url 'comunicados_administracao' %}">Comunicados</a> · <a href="{% url 'retirada_endereco' %}">Endereço de retirada</a></p>
   {% if envios_com_falha %}<p>Envios com falha: {{ envios_com_falha }} · <a href="{% url 'envios_lista' %}?situacao=falhou">ver falhas</a></p>{% endif %}
   <form method="post" action="{% url 'account_logout' %}">
     {% csrf_token %}

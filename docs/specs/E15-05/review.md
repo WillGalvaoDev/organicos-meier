@@ -1,0 +1,21 @@
+# E15-05 — Registro do implementador
+
+Agente 2.
+
+## Red
+
+- Commit do Red: `uv run pytest tests/tecnicos/test_painel_administrativo.py` → **22 falhas e 3 passando** (`KeyError` de seção ausente, na maioria). Os três que já passavam são guardas por ausência: A-22 (acesso), A-23 (sem nome de comprador) e A-24 (sem escrita).
+
+## Green
+
+- `apps/operacao/painel.py`: `acoes_necessarias`, `rodadas_do_painel`, `prazos_encerrados`, os alertas, as tarefas e a última conciliação, tudo lido na hora; `contexto_do_painel(instante)` com o `instante` lido uma vez. A view `painel_administracao` (`apps/contas/views.py`) usa o contexto; o template `templates/administracao/painel.html` ganhou as cinco seções, a navegação e o formulário "Dar ciência".
+- Só leitura: as contas do livro (repasse e frete) são buscadas sem criar (`livro.conta` faz `get_or_create`, e o painel não escreve).
+- Resultado: `25 passed`; `test_notificacoes_administracao.py`, `test_financeiro_telas.py` e `test_admin_area_restrita.py` passam sem alteração (A-21 e A-22).
+
+## Desvios e pontos para o revisor
+
+1. **A-17, o valor.** A spec espera "Itens sem cobertura: 1 (R$ 10,00)." No AE, além da obrigação de R$ 10,00 há uma despesa de tarifa de R$ 1,29 sem cobertura (`itens_sem_cobertura()` devolve os dois itens), e a regra manda somar todos os itens. O teste confere a soma real: "2 (R$ 11,29)." Possível ajuste da spec.
+2. **A-12 e A-14, repasse e frete pelos serviços.** Os testes registram o repasse e o frete com `registrar_repasse` e `registrar_pagamento_do_frete` (as mesmas funções das telas da E13-06), e não pelas rotas. No A-14 as saídas são pagas antes porque, com o relógio em `L + 8 dias`, o repasse e o frete já estariam liberados e a regra os mostra como ações; sem isso "nenhuma ação dela" não valeria.
+3. **A-25.** A quinta rodada é a liberada do AE (rodada com saldo, como a regra 5 pede); as outras quatro são de fábrica. O painel tolera rodada sem abertura, sem prazo ou sem liberação (mostra "—").
+4. **Datas dos testes.** `T0` é 02/11/2026 10:00 em Brasília; corrigi nos meus testes as datas que eu tinha escrito um dia adiante, e a hora da última falha do A-19 (11:00 UTC é 08:00 em Brasília).
+5. **A-8 e A-15** usam o arranjo real (pagamento pelo simulador; cancelamento pelo serviço), conforme a spec.

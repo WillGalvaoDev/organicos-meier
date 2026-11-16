@@ -174,7 +174,7 @@ def test_os_alertas_abertos_e_a_ciencia(painel: Painel) -> None:  # A-2
     assert "Crítico" in texto
     assert texto.count("Aviso") >= 2
     assert "Ver" in texto
-    assert "aberto em 03/11/2026" in texto
+    assert "aberto em 02/11/2026" in texto
     assert f'action="/administracao/alertas/{falhou.pk}/ciencia/"' in html
     assert f'action="/administracao/alertas/{atrasada.pk}/ciencia/"' not in html
     assert f'action="/administracao/alertas/{invariante.pk}/ciencia/"' not in html
@@ -218,12 +218,12 @@ def test_fechamento_e_prazo_vencido(painel: Painel) -> None:  # A-5
     prazo = prazo_do_fechamento(rodada)
     assert prazo is not None
     antes = painel.pagina(prazo - timedelta(minutes=1))
-    assert "Fecha em 04/11/2026 10:00" in _secoes(antes)["Rodadas"]
+    assert "Fecha em 03/11/2026 10:00" in _secoes(antes)["Rodadas"]
     assert "Q: 6 unidade aguardando" in _secoes(antes)["Rodadas"]
     assert "Nenhum prazo encerrado aguardando." in _secoes(antes)["Prazos encerrados"]
     depois = painel.pagina(prazo + timedelta(minutes=1))
     assert (
-        "G: fechamento vencido em 04/11/2026 10:00, aguardando o encerramento automático."
+        "G: fechamento vencido em 03/11/2026 10:00, aguardando o encerramento automático."
         in _secoes(depois)["Prazos encerrados"]
     )
 
@@ -241,10 +241,10 @@ def test_fechamento_encerrado(painel: Painel) -> None:  # A-6
     resposta = painel.pagina()
     secoes = _secoes(resposta)
     assert "Fechamento com prazo encerrado" in secoes["Rodadas"]
-    assert "Encerrado em 04/11/2026 10:00" in secoes["Rodadas"]
+    assert "Encerrado em 03/11/2026 10:00" in secoes["Rodadas"]
     assert "Q:" not in secoes["Rodadas"]
     assert "Fechamento encerrado: aguarda a abertura do pagamento." in secoes["Ações necessárias"]
-    assert "G: fechamento encerrado em 04/11/2026 10:00." in secoes["Prazos encerrados"]
+    assert "G: fechamento encerrado em 03/11/2026 10:00." in secoes["Prazos encerrados"]
 
 
 def test_pagamento_e_a_margem(painel: Painel) -> None:  # A-7
@@ -253,13 +253,13 @@ def test_pagamento_e_a_margem(painel: Painel) -> None:  # A-7
     a, _x, _y = arranjo_ap(painel.relogio)
     cedo = painel.pagina(T0 + H)
     rodadas = _secoes(cedo)["Rodadas"]
-    assert "Pagamento até 04/11/2026 10:00; margem até 05/11/2026 10:00" in rodadas
+    assert "Pagamento até 03/11/2026 10:00; margem até 04/11/2026 10:00" in rodadas
     assert "Apta para a apuração final" not in _secoes(cedo)["Ações necessárias"]
     tarde = painel.pagina(T0 + 48 * H)
     assert (
-        "Apta para a apuração final desde 05/11/2026 10:00." in _secoes(tarde)["Ações necessárias"]
+        "Apta para a apuração final desde 04/11/2026 10:00." in _secoes(tarde)["Ações necessárias"]
     )
-    assert "margem encerrada em 05/11/2026 10:00" in _secoes(tarde)["Prazos encerrados"]
+    assert "margem encerrada em 04/11/2026 10:00" in _secoes(tarde)["Prazos encerrados"]
     assert a.fornecedor.nome in _secoes(tarde)["Prazos encerrados"]
 
 
@@ -410,9 +410,14 @@ def test_itens_sem_cobertura(painel: Painel, sim: Any) -> None:  # A-17
     liberar(painel.relogio, a)
     painel.relogio.congelar(L + timedelta(days=1))
     ocorrer(a.admin, item_de(y, a.p2), D("2"), "incorreto")
+    from apps.financeiro.reserva import itens_sem_cobertura
+
     resposta = painel.pagina()
     acoes = _secoes(resposta)["Ações necessárias"]
-    assert "Itens sem cobertura: 1 (R$ 10,00)." in acoes
+    # o AE também tem uma despesa de tarifa (R$ 1,29) sem cobertura: a regra soma todos os itens
+    itens = itens_sem_cobertura()
+    assert sorted(i.valor for i in itens) == [D("1.29"), D("10.00")]
+    assert "Itens sem cobertura: 2 (R$ 11,29)." in acoes
     assert reverse("financeiro_reserva") in _html_da_secao(resposta, "Ações necessárias")
 
 
@@ -456,7 +461,7 @@ def test_as_tarefas_e_a_conciliacao(painel: Painel) -> None:  # A-19
     secao = _secoes(resposta)["Tarefas periódicas"]
     assert "Envio de notificações" in secao
     assert "Atrasada desde 20/11/2026 06:05" in secao
-    assert "Última falha em 20/11/2026 09:00: RuntimeError" in secao
+    assert "Última falha em 20/11/2026 08:00: RuntimeError" in secao
     assert "Sem registro de execução" in secao
     assert "Verificação operacional" in secao
     assert "Última conciliação: 19/11/2026 (Sem divergência)" in secao
