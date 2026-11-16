@@ -606,3 +606,159 @@ def test_cinco_rodadas_em_etapas_diferentes(painel: Painel, sim: Any) -> None:  
     rodadas = _secoes(resposta)["Rodadas"]
     posicoes = [rodadas.index(n) for n in ("F1", "F2", "F3", "F4", "F5")]
     assert posicoes == sorted(posicoes)
+
+
+# --- correções da revisão independente (E15-R03 e E15-R04) ---------------------------------------
+
+
+def test_a_ordem_das_acoes_nao_usa_a_etapa(painel: Painel) -> None:  # A-18-A
+    from apps.fornecedores.models import Fornecedor
+    from apps.operacao.painel import acoes_necessarias
+    from apps.rodadas.fechamento import encerrar_fechamentos_vencidos, prazo_do_fechamento
+    from tests.apoio.ciclos import simular_inicio_do_fechamento
+
+    zeta = _ap_i("100.00")
+    Fornecedor.objects.filter(pk=zeta.fornecedor_id).update(nome="Zeta")
+    alfa = _ap_i("100.00")
+    Fornecedor.objects.filter(pk=alfa.fornecedor_id).update(nome="Alfa")
+    simular_inicio_do_fechamento(alfa)
+    prazo = prazo_do_fechamento(alfa)
+    assert prazo is not None
+    painel.relogio.congelar(prazo + timedelta(minutes=1))
+    assert encerrar_fechamentos_vencidos() == 1
+    assert alfa.pk > zeta.pk
+    from apps.nucleo.tempo import agora
+
+    instante = agora()
+    nomes = [a.fornecedor for a in acoes_necessarias(instante) if a.fornecedor]
+    assert nomes == ["Alfa", "Zeta"]
+    resposta = painel.pagina()
+    acoes = _secoes(resposta)["Ações necessárias"]
+    assert acoes.index("Alfa") < acoes.index("Zeta")
+    rodadas = _secoes(resposta)["Rodadas"]
+    assert rodadas.index("Zeta") < rodadas.index("Alfa")  # a tabela segue a ordem das etapas
+
+
+def _chamada_pendente(alvo: str, criada_em: Any, proxima_em: Any) -> Any:
+    from apps.pagamentos.models import ChamadaAoProvedor
+
+    return ChamadaAoProvedor.objects.create(
+        operacao="cancelar_cobranca",
+        alvo=alvo,
+        chave_idempotencia=f"k-{alvo}",
+        provedor="simulador",
+        ambiente="teste",
+        situacao="pendente",
+        proxima_em=proxima_em,
+        criada_em=criada_em,
+    )
+
+
+@pytest.fixture
+def com_alerta_de_chamadas(painel: Painel) -> Any:
+    """O A-26: um alerta aberto com `quantidade = 1` e uma segunda chamada atrasada depois."""
+    from tests.apoio.operacao import INSTANTE, MIN, arranjo_ao, verificar
+
+    arranjo_ao(painel.relogio)
+    primeira = _chamada_pendente("a1", INSTANTE, INSTANTE)
+    verificar(painel.relogio, INSTANTE + 6 * MIN)
+    segunda = _chamada_pendente("a2", INSTANTE - 60 * MIN, INSTANTE)
+    verificar(painel.relogio, INSTANTE + 6 * MIN)
+    return primeira, segunda
+
+
+def _alerta_de_chamadas() -> Any:
+    from apps.financeiro.models import AlertaFinanceiro
+
+    return AlertaFinanceiro.objects.get(tipo="chamadas_ao_provedor_atrasadas")
+
+
+def test_o_painel_mostra_a_contagem_atual_das_chamadas(
+    painel: Painel, com_alerta_de_chamadas: Any
+) -> None:  # A-26
+    from apps.notificacoes.models import Notificacao
+    from tests.apoio.operacao import INSTANTE, MIN
+
+    alerta = _alerta_de_chamadas()
+    assert alerta.dados["quantidade"] == 1
+    texto = _secoes(painel.pagina(INSTANTE + 6 * MIN))["Alertas abertos"]
+    assert "2 chamada(s) ao provedor de pagamentos estão pendentes além do previsto." in texto
+    assert "A mais antiga é de 20/11/2026 08:00." in texto
+    assert _alerta_de_chamadas().pk == alerta.pk
+    assert _alerta_de_chamadas().dados["quantidade"] == 1
+    assert Notificacao.objects.filter(titulo="Chamadas ao provedor atrasadas").count() == 1
+
+
+def test_a_contagem_atual_cai_com_a_chamada_concluida(
+    painel: Painel, com_alerta_de_chamadas: Any
+) -> None:  # A-27
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.operacao import INSTANTE, MIN
+
+    _primeira, segunda = com_alerta_de_chamadas
+    ChamadaAoProvedor.objects.filter(pk=segunda.pk).update(situacao="concluida")
+    texto = _secoes(painel.pagina(INSTANTE + 6 * MIN))["Alertas abertos"]
+    assert "1 chamada(s) ao provedor de pagamentos estão pendentes além do previsto." in texto
+    assert "A mais antiga é de 20/11/2026 09:00." in texto
+    dados = _alerta_de_chamadas().dados
+    assert dados["quantidade"] == 1
+    assert dados["mais_antiga"] == INSTANTE.isoformat()
+
+
+def test_a_contagem_atual_dos_envios(painel: Painel) -> None:  # A-28
+    from tests.apoio.operacao import INSTANTE, MIN, arranjo_ao, verificar
+    from tests.fabricas import EnvioFactory
+
+    segundo = timedelta(seconds=1)
+    arranjo_ao(painel.relogio)
+    EnvioFactory.create(proxima_tentativa_em=INSTANTE)
+    verificar(painel.relogio, INSTANTE + 6 * MIN + segundo)
+    EnvioFactory.create(proxima_tentativa_em=INSTANTE - 10 * MIN)
+    EnvioFactory.create(proxima_tentativa_em=INSTANTE - 5 * MIN)
+    texto = _secoes(painel.pagina(INSTANTE + 6 * MIN + segundo))["Alertas abertos"]
+    assert "3 notificação(ões) aguardam envio além do previsto, desde 20/11/2026 08:50." in texto
+    from apps.financeiro.models import AlertaFinanceiro
+
+    assert AlertaFinanceiro.objects.get(tipo="envios_atrasados").dados["quantidade"] == 1
+
+
+def test_a_leitura_nao_abre_nem_resolve_alerta(
+    painel: Painel, com_alerta_de_chamadas: Any
+) -> None:  # A-29
+    from apps.financeiro.models import AlertaFinanceiro
+    from apps.notificacoes.models import Notificacao
+    from apps.pagamentos.models import ChamadaAoProvedor
+    from tests.apoio.operacao import INSTANTE, MIN
+
+    ChamadaAoProvedor.objects.update(situacao="concluida")
+    antes = (AlertaFinanceiro.objects.count(), Notificacao.objects.count())
+    texto = _secoes(painel.pagina(INSTANTE + 6 * MIN))["Alertas abertos"]
+    assert "1 chamada(s) ao provedor de pagamentos estão pendentes além do previsto." in texto
+    assert _alerta_de_chamadas().resolvido_em is None
+    assert (AlertaFinanceiro.objects.count(), Notificacao.objects.count()) == antes
+
+
+def test_erro_na_leitura_mostra_o_corpo_gravado(
+    painel: Painel,
+    com_alerta_de_chamadas: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # A-30
+    from apps.operacao import verificacao
+    from tests.apoio.operacao import INSTANTE, MIN
+
+    def quebra(instante: Any) -> dict[str, Any]:
+        raise RuntimeError("falha de teste")
+
+    monkeypatch.setitem(verificacao.VERIFICACOES, "chamadas_ao_provedor_atrasadas", quebra)
+    with caplog.at_level("ERROR"):
+        resposta = painel.pagina(INSTANTE + 6 * MIN)
+    assert resposta.status_code == 200
+    assert (
+        "1 chamada(s) ao provedor de pagamentos estão pendentes"
+        in _secoes(resposta)["Alertas abertos"]
+    )
+    assert any(
+        "chamadas_ao_provedor_atrasadas" in r.getMessage() and "RuntimeError" in r.getMessage()
+        for r in caplog.records
+    )

@@ -6,6 +6,7 @@ executa ou detalha o assunto. Quando o worker para, ele é a única forma de ver
 fornecedor, e os valores são agregados.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -31,6 +32,7 @@ from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.operacao.execucao import ATRASADA, SEM_REGISTRO, situacao_das_tarefas
 from apps.operacao.tipos import CLASSIFICACAO, Natureza, link_do_alerta
+from apps.operacao.verificacao import VERIFICACOES
 from apps.pedidos.endereco_de_retirada import endereco_vigente
 from apps.pedidos.liberacao_da_retirada import liberacao_da_rodada
 from apps.pedidos.models import (
@@ -49,7 +51,10 @@ from apps.pedidos.retirada import situacao_da_retirada
 from apps.rodadas.fechamento import prazo_do_fechamento
 from apps.rodadas.models import Etapa, Rodada
 
+logger = logging.getLogger(__name__)
+
 TRACO = "—"
+TIPOS_COM_CONTAGEM_ATUAL = ("chamadas_ao_provedor_atrasadas", "envios_atrasados")
 ZERO = Decimal("0")
 ORDEM_DAS_ETAPAS = {valor: indice for indice, valor in enumerate(Etapa.values)}
 ETAPAS_DO_PAINEL = (
@@ -243,7 +248,8 @@ def acoes_necessarias(instante: datetime) -> list[AcaoNecessaria]:
     """As ações que esperam o administrador: primeiro as das rodadas (por fornecedor e rodada),
     depois as globais."""
     acoes: list[AcaoNecessaria] = []
-    for rodada in _rodadas_do_painel():
+    # a etapa não entra na ordem das ações (E15-R04): só o fornecedor e o pk da rodada
+    for rodada in sorted(_rodadas_do_painel(), key=lambda r: (r.fornecedor.nome, r.pk)):
         for texto, rota in _acoes_da_rodada(rodada, instante):
             acoes.append(
                 AcaoNecessaria(
@@ -373,18 +379,35 @@ def prazos_encerrados(instante: datetime) -> list[PrazoEncerrado]:
 # --- alertas e tarefas --------------------------------------------------------------------------
 
 
-def _titulo_e_corpo(alerta: AlertaFinanceiro) -> tuple[str, str]:
+def _dados_atuais(alerta: AlertaFinanceiro, instante: datetime) -> dict[str, Any]:
+    """Os dados que o corpo mostra. Nos alertas `geral` de atraso (E15-R03), os da verificação do
+    tipo agora, só por leitura; se a situação acabou ou a leitura falha, os gravados na abertura."""
+    if alerta.tipo not in TIPOS_COM_CONTAGEM_ATUAL:
+        return alerta.dados
+    try:
+        atuais = VERIFICACOES[alerta.tipo](instante).get(alerta.chave)
+    except Exception as erro:
+        logger.error(
+            "painel: leitura atual do alerta falhou: tipo=%s erro=%s",
+            alerta.tipo,
+            type(erro).__name__,
+        )
+        return alerta.dados
+    return alerta.dados if atuais is None else atuais
+
+
+def _titulo_e_corpo(alerta: AlertaFinanceiro, instante: datetime) -> tuple[str, str]:
     classificacao = CLASSIFICACAO.get(alerta.tipo)
     if classificacao is not None:
-        return classificacao.titulo, classificacao.corpo(alerta.dados)
+        return classificacao.titulo, classificacao.corpo(_dados_atuais(alerta, instante))
     titulo, montar_corpo = TEXTO_POR_TIPO[alerta.tipo]
     return titulo, montar_corpo(alerta.dados)
 
 
-def _alertas() -> list[dict[str, Any]]:
+def _alertas(instante: datetime) -> list[dict[str, Any]]:
     linhas = []
     for alerta in alertas_abertos():
-        titulo, corpo = _titulo_e_corpo(alerta)
+        titulo, corpo = _titulo_e_corpo(alerta, instante)
         classificacao = CLASSIFICACAO.get(alerta.tipo)
         linhas.append(
             {
@@ -436,7 +459,7 @@ def _ultima_conciliacao() -> str:
 def contexto_do_painel(instante: datetime) -> dict[str, Any]:
     """Tudo o que a página mostra, lido uma vez com o `instante` dado."""
     return {
-        "alertas": _alertas(),
+        "alertas": _alertas(instante),
         "acoes": acoes_necessarias(instante),
         "rodadas": rodadas_do_painel(instante),
         "prazos_encerrados": prazos_encerrados(instante),
