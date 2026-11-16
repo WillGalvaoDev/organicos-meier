@@ -10,6 +10,7 @@ from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
 from apps.pagamentos import views as pagamentos_views
+from apps.pedidos import retirada_views
 from apps.pedidos import views as pedidos_views
 from apps.rodadas import views as rodadas_views
 
@@ -67,6 +68,12 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="catalogo_fornecedor",
     ),
     path("carrinho/", interesses_views.carrinho, name="carrinho"),
+    path("regras/", retirada_views.regras, name="regras"),
+    path(
+        "administracao/retirada/endereco/",
+        retirada_views.endereco_de_retirada,
+        name="retirada_endereco",
+    ),
     path("interesses/", interesses_views.definir, name="interesses_definir"),
     path(
         "interesses/pendentes/remover/",

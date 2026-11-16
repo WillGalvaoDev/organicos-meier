@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Endereço de retirada · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Endereço de retirada</h1>
+  {% if messages %}{% for mensagem in messages %}<p role="status">{{ mensagem }}</p>{% endfor %}{% endif %}
+  {% if vigente %}
+    <p>Endereço atual:</p>
+    <p>{{ vigente.texto|linebreaksbr }}</p>
+  {% else %}
+    <p>Nenhum endereço registrado.</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <label for="texto">Novo endereço</label>
+    <textarea id="texto" name="texto" maxlength="500" rows="3">{{ texto }}</textarea>
+    {% if erro %}<p role="alert">{{ erro }}</p>{% endif %}
+    <button type="submit">Salvar endereço</button>
+  </form>
+  <h2>Histórico</h2>
+  <ul>
+    {% for item in historico %}
+      <li>{{ item.quando }} · {{ item.autor }} · {{ item.texto|linebreaksbr }}</li>
+    {% empty %}
+      <li>Sem registros.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

@@ -10,6 +10,7 @@
     {% with grupo=entrada.grupo %}
       <section>
         <h2>{{ grupo.fornecedor.nome }}</h2>
+        <p>Retirada: {% if endereco_de_retirada %}{{ endereco_de_retirada.texto|linebreaksbr }}{% else %}endereço ainda não informado.{% endif %}</p>
         {% if grupo.rodada %}
           <p>Etapa: {{ grupo.rodada.get_etapa_display }}</p>
           {% if entrada.prazo %}<p>{{ entrada.prazo }}</p>{% endif %}

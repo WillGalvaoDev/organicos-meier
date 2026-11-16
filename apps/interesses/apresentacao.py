@@ -15,6 +15,7 @@ from apps.contas.models import Conta
 from apps.interesses.consultas import carrinho_do_comprador
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import agora, no_fuso_da_operacao, prazo_encerrado
+from apps.pedidos.endereco_de_retirada import endereco_vigente
 from apps.rodadas.condicoes import aceita_interesses
 from apps.rodadas.fechamento import prazo_do_ciclo
 from apps.rodadas.models import Etapa, Rodada
@@ -134,6 +135,7 @@ def contexto_do_carrinho(conta: Conta, retorno: Retorno | None = None) -> dict[s
         "grupos": grupos,
         "retorno": retorno,
         "retorno_sem_destino": _mensagem_sem_destino(retorno, desenhados),
+        "endereco_de_retirada": endereco_vigente(),
     }
 
 

@@ -723,3 +723,15 @@ class OcorrenciaDeEntrega(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"ocorrência {self.pk}"
+
+
+class EnderecoDeRetirada(RegistroSoInsercao):
+    """O endereço onde os compradores retiram os produtos (E14-03). Só inserção: o vigente é o
+    de maior `pk`, e cada liberação (E14-04) guarda o que valia no momento dela."""
+
+    texto = models.CharField(max_length=500)
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrado_em = models.DateTimeField(default=agora)
+
+    def __str__(self) -> str:
+        return f"endereço de retirada {self.pk}"
