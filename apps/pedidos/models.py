@@ -735,3 +735,27 @@ class EnderecoDeRetirada(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"endereço de retirada {self.pk}"
+
+
+class LiberacaoDaRetirada(RegistroSoInsercao):
+    """A liberação da retirada de uma rodada (E14-04): uma por rodada, só inserção. Guarda o
+    endereço que valia no momento e o prazo de sete dias."""
+
+    rodada = models.OneToOneField(Rodada, on_delete=models.PROTECT, related_name="liberacao")
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, related_name="+")
+    pedido_formal = models.ForeignKey(PedidoFormal, on_delete=models.PROTECT, related_name="+")
+    liberada_em = models.DateTimeField()
+    prazo_final = models.DateTimeField()
+    endereco = models.ForeignKey(EnderecoDeRetirada, on_delete=models.PROTECT, related_name="+")
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(prazo_final__gt=F("liberada_em")),
+                name="liberacao_da_retirada_prazo_depois_da_liberacao",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"liberação da retirada {self.pk}"

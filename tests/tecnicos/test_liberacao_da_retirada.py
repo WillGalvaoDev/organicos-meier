@@ -355,9 +355,8 @@ def test_o_endereco_de_duas_linhas_no_aviso(relogio: RelogioControlado, sim: Any
 def test_duas_liberacoes_em_paralelo(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-20
-    from apps.pedidos.liberacao_da_retirada import LiberacaoRecusada, liberar_retirada
-
     from apps.pedidos import liberacao_da_retirada as modulo
+    from apps.pedidos.liberacao_da_retirada import LiberacaoRecusada, liberar_retirada
     from tests.apoio.corrida import Corrida
 
     a, _x, _y, _pf = ae_recebido(relogio, simulador_pagamentos)
@@ -382,10 +381,9 @@ def test_duas_liberacoes_em_paralelo(
 def test_liberacao_e_cancelamento_em_paralelo(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-21
-    from apps.pedidos.liberacao_da_retirada import liberar_retirada
-
     from apps.pedidos import liberacao_da_retirada as modulo
     from apps.pedidos.cancelamento_da_rodada import CancelamentoRecusado, cancelar_rodada
+    from apps.pedidos.liberacao_da_retirada import liberar_retirada
     from tests.apoio.corrida import Corrida
 
     a, _x, _y, _pf = ae_recebido(relogio, simulador_pagamentos)
@@ -410,9 +408,8 @@ def test_liberacao_e_cancelamento_em_paralelo(
 def test_liberacao_espera_a_ocorrencia_que_completa_o_recebimento(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-22
-    from apps.pedidos.liberacao_da_retirada import liberar_retirada
-
     from apps.pedidos import ocorrencias as ocorrencias_modulo
+    from apps.pedidos.liberacao_da_retirada import liberar_retirada
     from tests.apoio.corrida import Corrida
 
     a, x, _y, _pf = arranjo_ae(relogio, simulador_pagamentos)

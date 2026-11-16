@@ -132,7 +132,6 @@ def ae_recebido(
 def liberar(relogio: Any, a: Any, quando: datetime | None = None) -> Any:
     """Libera a retirada em `L = T0 + 72h` (ou em `quando`)."""
     from apps.pedidos.liberacao_da_retirada import liberar_retirada
-
     from tests.apoio.apuracao import H
     from tests.apoio.pedidos import T0
 
