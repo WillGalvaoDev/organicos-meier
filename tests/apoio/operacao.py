@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from apps.contas.models import Conta, Papel
 from tests.conftest import RelogioControlado
 from tests.fabricas import ContaFactory
 
@@ -47,7 +48,9 @@ def arranjo_ao(relogio: RelogioControlado) -> Ao:
     """O administrador, um comprador e um fornecedor, o relógio em `INSTANTE` e todas as tarefas
     do catálogo concluídas nele."""
     relogio.congelar(INSTANTE)
-    adm1 = ContaFactory.create(nome="ADM1", administrador=True)
+    adm1 = Conta.objects.filter(papel=Papel.ADMINISTRADOR).first() or ContaFactory.create(
+        nome="ADM1", administrador=True
+    )
     c = ContaFactory.create(nome="C")
     f = ContaFactory.create(nome="F", fornecedor=True)
     concluir_todas(INSTANTE)
