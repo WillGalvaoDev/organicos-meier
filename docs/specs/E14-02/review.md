@@ -18,3 +18,25 @@ Comando: `uv run pytest tests/tecnicos/test_ocorrencias.py tests/tecnicos/test_r
 - **Item sem linha no pedido formal em `aguardando_fornecedor`:** recusado com `passa_do_pedido_formal` e "(0 ...)" (caso que a spec não descreve; um item de pedido válido sempre tem linha).
 - **A-20:** o repasse total usa `liberacao_horas=0` no simulador (como a E14-08 prevê).
 - **Auditoria:** quantidade e componentes como `Decimal` (JSON em texto); os testes comparam por valor.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-16
+
+**Objeto:** `5b00c56`, branch `e14-especificacoes`, comparação com `bc35037` (main após E13). Fontes: especificação funcional v1.7, infraestrutura v1.8, AGENTS.md e as oito especificações e matrizes da E14. Histórico do implementador acima preservado.
+
+A execução independente e o parecer consolidado estão em [E14-08/review.md](../E14-08/review.md), incluindo o código das contraprovas. A revisão não alterou código de produção nem os testes do implementador.
+
+**Parecer da fatia: APROVADO.**
+
+| Critérios | Verificação |
+|---|---|
+| A-1 a A-4 | Reembolso proporcional pelos valores congelados, atomicidade e obrigação com cobertura por destinação. |
+| A-5 a A-12 | Saldo já reembolsado, limites formal/recebido, depois da liberação, etapas, item, tipo e quantidade. |
+| A-13 a A-19 | Permissão, repetição/mismatch, centavos/zero, auditoria, só inserção e autorização financeira separada. |
+| A-20 a A-24 | Pós-repasse sem cobertura, concorrência do saldo e token, cancelamento concorrente e complemento de 70,76. |
+
+Código confrontado: `ocorrencias.py`, modelo/migração 0017 e os serviços existentes de reembolso e reserva. Testes: `test_ocorrencias.py` e cenários 18/48/49/52; incluídos na suíte independente. Sem duplicação financeira ou alteração de pedido constatada.
+
+TDD: `6182e5e` precede `e91142e`; as asserções técnicas existiam antes da produção. Os cenários de aceitação adicionados em `ac0c38e` são reforço posterior, não evidência de Red adicional. Registros de falha e Green conferidos, sem reexecução dos snapshots históricos.

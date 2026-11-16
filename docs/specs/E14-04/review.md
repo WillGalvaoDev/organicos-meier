@@ -20,3 +20,27 @@ Comando: `uv run pytest tests/tecnicos/test_liberacao_da_retirada.py tests/aceit
 ## Outras notas
 - A auditoria grava `liberada_em` e `prazo_final` como `datetime` (o serializador JSON os grava em UTC com `Z`).
 - `tests/aceitacao/test_cenario_22_liberacao.py` foi escrito junto do Red (falhava pelo mesmo motivo).
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-16
+
+**Objeto:** `5b00c56`, branch `e14-especificacoes`, comparação com `bc35037` (main após E13). Fontes: especificação funcional v1.7, infraestrutura v1.8, AGENTS.md e as oito especificações e matrizes da E14. Histórico do implementador acima preservado.
+
+A execução independente e o parecer consolidado estão em [E14-08/review.md](../E14-08/review.md), incluindo o código das contraprovas. A revisão não alterou código de produção nem os testes do implementador.
+
+**Parecer da fatia: APROVADO.**
+
+| Critérios | Verificação |
+|---|---|
+| A-1 a A-4 | Liberação única, instante após travas, prazo de 168 horas, endereço fixado, avisos e liberação das reservas para nova rodada. |
+| A-5 a A-10 | Pendências, faltas/não entregues, compradores com saldo, suspenso/removido e endereço obrigatório. |
+| A-11 a A-19 | Repetição/etapas/permissão, cancelamento encerrado, imutabilidade financeira/comercial, previsão, repasse e auditoria. |
+| A-20 a A-22 | Liberações concorrentes, cancelamento e espera pela ocorrência que resolve o recebimento. |
+
+Código confrontado: `liberacao_da_retirada.py`, `_travar`/compradores envolvidos, migração 0019, emissão de avisos e parcelas. `test_liberacao_da_retirada.py` e cenário 22 incluídos na execução independente.
+
+A regra 2 menciona conferência prévia das condições; a implementação confere previamente apenas a etapa, e confere todas as condições sob as travas. Aceito como resolução técnica da tensão com A-22, documentada pelo implementador: recusar previamente o saldo ainda não confirmado impediria aguardar a ocorrência concorrente exigida pelo próprio critério. Nenhuma condição de negócio foi dispensada; não é necessária decisão comercial (AGENTS.md §9).
+
+TDD: Red `4b9b482`, Green `de622e1`; testes concorrentes com confirmação de espera no PostgreSQL. Sem achado impeditivo nesta fatia.

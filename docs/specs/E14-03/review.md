@@ -16,3 +16,24 @@ Comando: `uv run pytest tests/tecnicos/test_endereco_de_retirada.py tests/tecnic
 - **Política de `regras/`:** `exige_login` (autenticada) com a recusa do fornecedor dentro da view (403), em vez de uma política nova, para não alterar o enum de políticas nem o teste que varre as rotas. Anônimo vai ao login pelo decorador.
 - **Tela do administrador sem formulário de `acionamento`:** a E14-03 não o pede; a duplicidade do envio é tratada por `sem_alteracao` (mesmo texto).
 - **Quebras de linha:** `linebreaksbr` (escapa o HTML antes de trocar `\n` por `<br>`).
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-16
+
+**Objeto:** `5b00c56`, branch `e14-especificacoes`, comparação com `bc35037` (main após E13). Fontes: especificação funcional v1.7, infraestrutura v1.8, AGENTS.md e as oito especificações e matrizes da E14. Histórico do implementador acima preservado.
+
+A execução independente e o parecer consolidado estão em [E14-08/review.md](../E14-08/review.md), incluindo o código das contraprovas. A revisão não alterou código de produção nem os testes do implementador.
+
+**Parecer da fatia: APROVADO.**
+
+| Critérios | Verificação |
+|---|---|
+| A-1 a A-4 | Endereço vigente por maior pk, histórico/auditoria, normalização, limites de texto e permissão. |
+| A-5 a A-9 | Carrinho e regras autenticados, ausência de endereço, fornecedor/anônimo recusados, link por perfil. |
+| A-10 a A-13 | Administração, recusas, escape HTML/quebras de linha e proteção de atualização/exclusão no banco. |
+
+Código confrontado: `endereco_de_retirada.py`, `retirada_views.py`, migração 0018 e templates/carrinho. Os dois arquivos `test_endereco_de_retirada*` foram incluídos na suíte independente. Sem achado nesta fatia.
+
+TDD: `8bac5e3` contém somente testes, antes da implementação `d1b1a49`; evidências registradas de Red/Green compatíveis com o histórico.

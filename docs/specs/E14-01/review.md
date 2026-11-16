@@ -21,3 +21,25 @@ Comando: `uv run pytest tests/tecnicos/test_recebimento.py` (arquivo inteiro, se
 - **`tests/conftest.py`:** prefixos `test_recebimento`, `test_ocorrencias`, `test_liberacao_da_retirada`, `test_retirada`, `test_cenario_22_` e `test_cenario_23_` ligam o banco do simulador (as fatias seguintes os usam).
 - **Auditoria:** a quantidade vai como `Decimal` (o JSON grava "7"); o teste compara por valor.
 - Dois ajustes nos meus próprios testes durante o Green (não afrouxam critério): o auxiliar `receber(..., acionamento=None)` gerava um UUID novo em vez de testar o `None` (agora há um sentinela `NOVO`), e a comparação da auditoria passou a ser por valor decimal.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-16
+
+**Objeto:** `5b00c56`, branch `e14-especificacoes`, comparação com `bc35037` (main após E13). Fontes: especificação funcional v1.7, infraestrutura v1.8, AGENTS.md e as oito especificações e matrizes da E14. Histórico do implementador acima preservado.
+
+A execução independente e o parecer consolidado estão em [E14-08/review.md](../E14-08/review.md), incluindo o código das contraprovas. A revisão não alterou código de produção nem os testes do implementador.
+
+**Parecer da fatia: APROVADO.**
+
+| Critérios | Verificação |
+|---|---|
+| A-1 a A-4 | Recebimentos parciais, soma, resolução e limite da linha formal; conferência sob trava da rodada. |
+| A-5 a A-10 | Decimal finito, incremento congelado, produto/etapa/permissão e idempotência com conteúdo. |
+| A-11 a A-14 | Auditoria sem dados pessoais, preservação financeira/comercial, proteção ORM/SQL e peso. |
+| A-15 a A-17 | PostgreSQL: excesso concorrente, mesmo acionamento e corrida com cancelamento. |
+
+Código confrontado: `recebimento.py`, modelo/migração 0016 e integração das somas da E14-02. Testes: `test_recebimento.py`; todos incluídos na suíte independente. Sem achado nesta fatia.
+
+TDD: testes e apoios em `1aab88b`, produção em `65e1143`, refatorações de tipos em `a766820`/`ac84a38`. O Red de 25 falhas de importação e o Green de 25 testes estão registrados acima e são compatíveis com o conteúdo e a ordem dos commits. O scaffolding inicial das somas foi substituído na E14-02.
