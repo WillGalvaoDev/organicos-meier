@@ -129,7 +129,10 @@ def _recebido(linha: LinhaDoPedidoFormal) -> Decimal:
 
 def _a_resolver(linha: LinhaDoPedidoFormal, pedido_formal: PedidoFormal) -> Decimal:
     somas = somas_das_ocorrencias(pedido_formal, linha.produto)
-    return linha.quantidade - _recebido(linha) - somas["faltante"] - somas["nao_entregue"]
+    pendente: Decimal = (
+        linha.quantidade - _recebido(linha) - somas["faltante"] - somas["nao_entregue"]
+    )
+    return pendente
 
 
 def registrar_recebimento(
