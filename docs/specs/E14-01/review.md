@@ -4,9 +4,9 @@ Comando: `uv run pytest tests/tecnicos/test_recebimento.py` (arquivo inteiro, se
 
 | Etapa | Commit | Resultado |
 |---|---|---|
-| Red | `b3cb3af`* | **25 failed**: `apps.pedidos.recebimento` e `RecebimentoDoFornecedor` inexistentes (`ModuleNotFoundError`/`ImportError`). Os três testes de concorrência também falham pela importação. |
-| Green | ver `git log` | **25 passed** (A-1 a A-17, com A-5 em seis casos e A-7 em quatro) |
-| Refactor | ver `git log` | tipos do `mypy` (retornos `Any`); 25 passed; `ruff` e `mypy apps/pedidos` limpos |
+| Red | `1aab88b` | **25 failed**: `apps.pedidos.recebimento` e `RecebimentoDoFornecedor` inexistentes (`ModuleNotFoundError`/`ImportError`). Os três testes de concorrência também falham pela importação. |
+| Green | `65e1143` | **25 passed** (A-1 a A-17, com A-5 em seis casos e A-7 em quatro) |
+| Refactor | `a766820`, `ac84a38` | tipos do `mypy` (retornos `Any`); 25 passed; `ruff` e `mypy apps/pedidos` limpos |
 
 \* hash conferido no `git log` da branch (`E14-01: Red do recebimento do fornecedor ...`).
 
