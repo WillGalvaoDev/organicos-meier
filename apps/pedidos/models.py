@@ -759,3 +759,45 @@ class LiberacaoDaRetirada(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"liberação da retirada {self.pk}"
+
+
+class _RegistroDeItemDaRetirada(RegistroSoInsercao):
+    """Base da retirada e do descarte (E14-05): uma quantidade de um item do pedido, só inserção.
+    Estado operacional registrado à parte: o pedido congelado não muda."""
+
+    item = models.ForeignKey(ItemDoPedido, on_delete=models.PROTECT, related_name="+")
+    quantidade = CampoQuantidade()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrada_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        abstract = True
+
+
+class RetiradaDeItem(_RegistroDeItemDaRetirada):
+    """Uma retirada de parte de um item, feita pelo comprador na casa do administrador."""
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="retirada_de_item_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"retirada {self.pk}"
+
+
+class DescarteDeItem(_RegistroDeItemDaRetirada):
+    """O descarte manual de parte de um item não retirado, depois do prazo de sete dias."""
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="descarte_de_item_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"descarte {self.pk}"

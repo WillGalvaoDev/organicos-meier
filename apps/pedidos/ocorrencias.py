@@ -28,11 +28,13 @@ from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora
 from apps.nucleo.valores import ValorInvalido, cabe_em_quantidade, eh_multiplo, quantidade
 from apps.pedidos.models import (
+    DescarteDeItem,
     ItemDoPedido,
     LinhaDoPedidoFormal,
     OcorrenciaDeEntrega,
     PedidoFormal,
     RecebimentoDoFornecedor,
+    RetiradaDeItem,
     SituacaoDoPedido,
     TipoDeOcorrencia,
 )
@@ -118,9 +120,14 @@ def somas_das_ocorrencias(pedido_formal: PedidoFormal, produto: Produto) -> dict
 
 def saldo_do_item(item: ItemDoPedido) -> Decimal:
     """O que o comprador ainda tem para receber ou retirar: a quantidade do item menos tudo o que
-    foi reembolsado (qualquer motivo). Sem trava, para as telas."""
+    foi reembolsado (qualquer motivo), retirado e descartado (E14-05). Sem trava, para as
+    telas."""
     reembolsada, _valor = acumulado_do_item(item)
-    saldo: Decimal = item.quantidade - reembolsada
+    retirada = RetiradaDeItem.objects.filter(item=item).aggregate(total=Sum("quantidade"))
+    descartada = DescarteDeItem.objects.filter(item=item).aggregate(total=Sum("quantidade"))
+    saldo: Decimal = (
+        item.quantidade - reembolsada - (retirada["total"] or ZERO) - (descartada["total"] or ZERO)
+    )
     return saldo
 
 

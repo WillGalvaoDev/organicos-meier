@@ -405,9 +405,8 @@ def test_retirada_e_ocorrencia_no_mesmo_item(
 def test_duas_retiradas_no_mesmo_item(
     relogio: RelogioControlado, simulador_pagamentos: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-20
-    from apps.pedidos.retirada import RetiradaRecusada
-
     from apps.pedidos import retirada as modulo
+    from apps.pedidos.retirada import RetiradaRecusada
     from tests.apoio.corrida import Corrida
 
     a, x, _y, _pf = ae_liberada(relogio, simulador_pagamentos)

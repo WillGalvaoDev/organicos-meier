@@ -41,9 +41,8 @@ def test_o_descarte_exatamente_no_prazo_final(relogio: RelogioControlado, sim: A
 
 
 def test_a_passagem_do_tempo_nunca_descarta(relogio: RelogioControlado, sim: Any) -> None:
-    from apps.pedidos.retirada import situacao_da_retirada
-
     from apps.pedidos.models import DescarteDeItem
+    from apps.pedidos.retirada import situacao_da_retirada
 
     a, x, _y, _pf = ae_liberada(relogio, sim)
     retirar(a.admin, item_de(x, a.p1), D("4"))
