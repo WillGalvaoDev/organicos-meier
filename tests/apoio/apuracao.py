@@ -42,6 +42,8 @@ def arranjo_ap(
     parcelas_de_p1: Sequence[tuple[str, int]] = PARCELAS_DE_P1,
     parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
     limites: tuple[int, int] | None = None,
+    unidade_de_p1: str = "unidade",
+    incremento_de_p1: str = "1.000",
 ) -> tuple[Arranjo, Pedido, Pedido]:
     """AP com o pagamento aberto em `T0`; o relógio fica em `T0 + 1h`. Devolve o arranjo, o
     pedido X (de A) e o pedido Y (de B)."""
@@ -51,6 +53,8 @@ def arranjo_ap(
         pendente_a_p1=pendente_a_p1,
         parcelas_de_p1=parcelas_de_p1,
         parcelas_de_p2=parcelas_de_p2,
+        unidade_de_p1=unidade_de_p1,
+        incremento_de_p1=incremento_de_p1,
     )
     if limites is not None:  # o limite de P1 e o de P2 no estoque da rodada
         for produto, limite in zip((arranjo.p1, arranjo.p2), limites, strict=True):
