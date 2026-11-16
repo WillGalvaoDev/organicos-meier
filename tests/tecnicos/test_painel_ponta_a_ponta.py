@@ -589,3 +589,46 @@ def test_as_verificacoes_so_leem(painel: Painel, sim: Any) -> None:  # A-15
     _invariante_ok()
     _um_aberto_por_par()
     assert a.rodada.pk
+
+
+def test_a_retomada_longa_nao_acusa_a_verificacao(painel: Painel) -> None:  # A-16 (E15-R01)
+    from apps.financeiro import tarefas as financeiro
+    from apps.notificacoes.processamento import processar_envios
+    from apps.notificacoes.tarefas import processar_envios_pendentes
+    from apps.operacao.catalogo import TAREFAS_MONITORADAS
+    from apps.pagamentos.tarefas import processar_chamadas_ao_provedor
+    from apps.pedidos import tarefas as pedidos
+    from apps.rodadas.tarefas import encerrar_fechamentos_vencidos_agora
+
+    painel.relogio.congelar(INSTANTE)
+    admin = painel.admin
+    concluir_todas(INSTANTE)
+    retomada = INSTANTE + 20 * MIN
+    antes = _secoes(painel.pagina(retomada))["Tarefas periódicas"]
+    # aos 20 min: as cinco de 1 minuto e a verificação (tolerância de 15 min); as demais em dia
+    assert antes.count("Atrasada desde") == 6
+    assert "Verificação operacional" in antes
+    painel.relogio.congelar(retomada)
+    for tarefa in (
+        financeiro.registrar_tarifas_pendentes,
+        financeiro.verificar_invariante,
+        financeiro.conciliar_dias_pendentes,
+        processar_envios_pendentes,
+        processar_chamadas_ao_provedor,
+        pedidos.bloquear_tentativas_vencidas,
+        pedidos.reconsultar_pagamentos_da_margem,
+        pedidos.autorizar_devolucoes_do_cancelamento,
+        pedidos.enviar_pedidos_formais,
+        encerrar_fechamentos_vencidos_agora,
+    ):
+        tarefa(timestamp=0)
+    _verificar()
+    processar_envios()
+    assert not AlertaFinanceiro.objects.filter(tipo="tarefa_atrasada", chave="verificar_operacao")
+    assert not AlertaFinanceiro.objects.filter(
+        tipo="tarefa_atrasada", resolvido_em__isnull=True
+    ).exists()
+    assert notificacoes(admin) == []
+    depois = _secoes(painel.pagina(retomada))["Tarefas periódicas"]
+    assert depois.count("Em dia") == len(TAREFAS_MONITORADAS)
+    assert "Atrasada desde" not in depois

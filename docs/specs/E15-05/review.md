@@ -40,3 +40,9 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 - O teste A-18 usa Alfa na etapa anterior e Zeta na posterior; assim, as duas ordenações coincidem e não detectam o defeito. Inverter esses fornecedores dá uma regressão discriminante.
 
 TDD: Red `146fbef` antes de `e5640ec`; registro 22 falhas e três guardas passando. Correção do reenvio manual foi precedida do teste `39ceae5` e implementada em `21eb36e`; alinhamento aprovado de requisitos em `e8c967a` e guardas em `2f5958c`. Não reexecutado Red histórico.
+
+## Correções R03 e R04 (implementador, 2026-11-16)
+
+- **Red observado** (`tests/tecnicos/test_painel_administrativo.py`): 4 falhas: A-18-A (`['Zeta', 'Alfa']`), A-26 (corpo gravado), A-28 (idem) e A-30 (sem log). A-27 e A-29 passaram de primeira (guardas: o corpo gravado coincidia com o esperado).
+- **Green (R03):** `painel._dados_atuais` chama a verificação do tipo no instante do carregamento (só leitura). Se a chave não volta, usa os dados gravados; se levanta exceção, registra no log o tipo e a classe do erro e usa os gravados.
+- **Green (R04):** `acoes_necessarias` ordena por `(fornecedor, pk)`; a tabela "Rodadas" mantém a ordem por etapa.

@@ -53,3 +53,10 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 - Não houve duplicação do alerta ou da notificação: o defeito é o resultado público da verificação. A-12 não verifica esse retorno.
 
 TDD: testes em `e207368`, produção em `088335c`; registro Red 14 falhas e um caso preexistente passando. Cronologia e alterações conferidos; não reexecutado Red histórico.
+
+## Correções R01 e R02 (implementador, 2026-11-16)
+
+- **Red observado** (`uv run pytest tests/tecnicos/test_alertas_operacionais.py`): 5 falhas nos testes A-16 a A-20 (A-16: alerta com a chave `verificar_operacao`; A-17: idem; A-18: o alerta antigo não era resolvido; A-19: as duas execuções devolviam `(1, 0)`; A-20: as duas devolviam 1 resolvido). Os testes e o Green ficaram no mesmo commit.
+- **Green (R01):** `atraso_de_tarefa._verificar` ignora `verificar_operacao`; `situacao_das_tarefas` não mudou. O alerta antigo sai pela regra 6 (a chave não volta).
+- **Green (R02):** `abrir_alerta_informando_criacao` (E09, `apps/financeiro/alertas.py`) devolve `(alerta, criado)`, e `abrir_alerta` o reaproveita sem mudar a assinatura nem o retorno. `verificacao.abrir_alerta` (função fina, ponto de pausa dos testes) conta só o `criado`. `resolver_alerta` passou a resolver com `UPDATE ... WHERE resolvido_em IS NULL` e devolve `None` se outra execução resolveu antes.
+- A-18: o retorno não é conferido (o e-mail pendente do alerta gravado abre `envios_atrasados`); confere-se o alerta, como a spec pede.

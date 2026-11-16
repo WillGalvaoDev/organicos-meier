@@ -37,3 +37,8 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 - No primeiro caso o autor deve ser ignorado e avisado; no segundo o limite superior válido deve ser tratado sem transbordamento. Cobrir as entradas na rota autenticada, inclusive outras representações numéricas fora da faixa aceita.
 
 TDD: `e189ad7` antes de `32f2a33`; registro 17 falhas e uma guarda passando. O ajuste de autor que é comprador e a lista somente de administradores são coerentes com o documento-base e `e8c967a`. Não reexecutado Red histórico.
+
+## Correção R05 (implementador, 2026-11-16)
+
+- **Red observado** (`tests/tecnicos/test_historico_de_acoes.py`): 5 falhas: `ValueError` com `²` e `OverflowError` nos três limites do calendário e em `de=9999-12-31`. As demais entradas de A-15 a A-18 passaram de primeira (guardas).
+- **Green:** `autor` só por `[1-9][0-9]{0,17}` ASCII; datas só por `[0-9]{4}-[0-9]{2}-[0-9]{2}` e data existente; limite de calendário que não pode ser representado (inclusive em UTC) não é aplicado, sem erro e sem aviso; `pagina` segue `get_page`.

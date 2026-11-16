@@ -138,3 +138,9 @@ Próximo gate: implementador reproduz e corrige R01 a R05 com Red/Green, conserv
 Runner isolado acima, comando equivalente a `pytest -q -p no:cacheprovider --tb=short`, sem as provas temporárias (coleta realizada antes da criação delas): **3399 passed in 765.03s (0:12:45)**, saída 0. Os 3397 informados pelo implementador no registro anterior referem-se à execução anterior às duas guardas de `2f5958c`; o resultado atual auditado é 3399. Os testes completos e os 131 testes específicos passam, enquanto as seis provas adicionais demonstram R01 a R05. Mantido o veredito **REPROVADO**.
 
 Entrega documental: sete `review.md`, somente acréscimos; os conteúdos anteriores foram comparados com `git show HEAD:<arquivo>` e preservados integralmente. `git diff --check` limpo. Nenhuma melhoria opcional nova registrada nesta revisão.
+
+## Correção R01 ponta a ponta (implementador, 2026-11-16)
+
+A-16 (`test_a_retomada_longa_nao_acusa_a_verificacao`): sem Red próprio, pois o comportamento vem do Green da E15-02 (guarda). Aos 20 min, antes da retomada, "Atrasada desde" aparece em 6 linhas (as cinco de 1 minuto e a verificação; as de 10 min e a horária ainda estão em tolerância), e não nas 11 da redação "nas demais": registro como leitura da spec. Depois da retomada, "Em dia" nas 11.
+
+Verificação: suíte completa antes do A-16 novo, **3437 passed**; arquivo do A-16, 14 passed; `ruff`, `mypy` (527 arquivos) e `makemigrations --check` limpos. Sem push, PR nem merge.

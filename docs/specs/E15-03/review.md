@@ -39,3 +39,7 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 - Impacto: o painel subestima ou superestima o acúmulo enquanto a condição continua aberta. Corrigir a leitura do painel preservando os dados e a notificação originais, sem abrir alerta duplicado. Cobrir aumento e redução da contagem ainda positiva; o mesmo caminho atende os envios.
 
 TDD: Red `9d5ebe1`, Green `4ba1d7a` e ajuste de tipos `821c83e`; registro de 12 falhas e quatro guardas passando. Não reexecutado Red histórico.
+
+## Correção R03 (implementador, 2026-11-16)
+
+Ver E15-05: o painel remonta o corpo dos alertas `chamadas_ao_provedor_atrasadas` e `envios_atrasados` com a contagem atual (A-26 a A-30). Nenhum dado, notificação ou alerta é alterado.
