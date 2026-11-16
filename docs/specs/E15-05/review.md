@@ -19,3 +19,4 @@ Agente 2.
 3. **A-25.** A quinta rodada é a liberada do AE (rodada com saldo, como a regra 5 pede); as outras quatro são de fábrica. O painel tolera rodada sem abertura, sem prazo ou sem liberação (mostra "—").
 4. **Datas dos testes.** `T0` é 02/11/2026 10:00 em Brasília; corrigi nos meus testes as datas que eu tinha escrito um dia adiante, e a hora da última falha do A-19 (11:00 UTC é 08:00 em Brasília).
 5. **A-8 e A-15** usam o arranjo real (pagamento pelo simulador; cancelamento pelo serviço), conforme a spec.
+6. **Correção feita na E15-07.** O teste ponta a ponta A-3 mostrou que a ação do pedido formal não sumia depois de um reenvio manual aceito (a situação do ciclo automático continua `concluido_com_falhas`). `_acoes_do_pedido_formal` agora só a mostra se nenhuma tentativa do pedido formal teve sucesso; detalhes em `docs/specs/E15-07/review.md`.

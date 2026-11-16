@@ -39,7 +39,9 @@ from apps.pedidos.models import (
     EnvioDoPedidoFormal,
     PedidoFormal,
     ResultadoDaApuracao,
+    ResultadoDoEnvio,
     SituacaoDoEnvio,
+    TentativaDeEnvioDoPedidoFormal,
 )
 from apps.pedidos.prazos import fim_da_margem, pode_iniciar_apuracao, prazo_de_pagamento
 from apps.pedidos.recebimento import recebimento_resolvido, situacao_do_recebimento
@@ -160,7 +162,16 @@ def _acoes_do_pedido_formal(rodada: Rodada) -> list[tuple[str, str]]:
     if pedido_formal is None:
         return acoes
     envio = EnvioDoPedidoFormal.objects.filter(pedido_formal=pedido_formal).first()
-    if envio is not None and envio.situacao == SituacaoDoEnvio.CONCLUIDO_COM_FALHAS:
+    # o reenvio manual aceito não muda a situação do ciclo automático (E13-04): a ação some quando
+    # alguma tentativa do pedido formal já teve sucesso
+    ja_enviado = TentativaDeEnvioDoPedidoFormal.objects.filter(
+        pedido_formal=pedido_formal, resultado=ResultadoDoEnvio.SUCESSO
+    ).exists()
+    if (
+        envio is not None
+        and envio.situacao == SituacaoDoEnvio.CONCLUIDO_COM_FALHAS
+        and not ja_enviado
+    ):
         acoes.append(
             (
                 "O pedido formal não foi enviado depois das três tentativas: reenvie.",
