@@ -424,3 +424,44 @@ def test_duas_retiradas_no_mesmo_item(
     assert rb.excecao.codigo == "passa_do_saldo_do_item"
     assert corrida.b_esperou
     assert [r.quantidade for r in _retiradas()] == [D("4.000")]
+
+
+# --- E14-R01: a repetição concorrente do mesmo acionamento (A-21 e A-22) ------------------------
+
+
+@pytest.mark.concorrencia
+@COM_DOIS_BANCOS
+@pytest.mark.parametrize("descarte", [False, True], ids=["retirada", "descarte"])
+def test_replay_concorrente_do_mesmo_acionamento(
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    descarte: bool,
+) -> None:  # A-21 (retirada) e A-22 (descarte)
+    from apps.pedidos import retirada as modulo
+    from tests.apoio.corrida import Corrida
+
+    a, x, _y, _pf = ae_liberada(relogio, simulador_pagamentos)
+    if descarte:
+        relogio.congelar(PRAZO_FINAL + timedelta(days=1))
+    item = item_de(x, a.p1)
+    operacao = descartar if descarte else retirar
+    acao = "descarte.registrar" if descarte else "retirada.registrar"
+    registros = _descartes if descarte else _retiradas
+    chave = uuid.uuid4()
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, modulo, "registrar_auditoria")
+    ra, rb = corrida.rodar(
+        lambda: operacao(a.admin, item, D("4"), chave),
+        lambda: operacao(a.admin, item, D("4"), chave),
+        a_atomica=False,
+        b_atomica=False,
+    )
+    assert ra.excecao is None, repr(ra.excecao)
+    assert rb.excecao is None, repr(rb.excecao)
+    assert corrida.b_esperou
+    assert len(registros()) == 1
+    assert EntradaAuditoria.objects.filter(acao=acao).count() == 1
+    assert ra.valor.registro.pk == rb.valor.registro.pk
+    assert (ra.valor.novo, rb.valor.novo) == (True, False)
+    assert _saldo(item) == D("2")

@@ -536,3 +536,145 @@ def test_campos_extras_sao_ignorados(
     }
     assert client.post(_rota(a, "recebimento/registrar"), campos).status_code == 302
     assert _estado_dos_registros()[0] == 1
+
+
+# --- E14-R01 e E14-R03: a repetição concorrente e o formulário preenchido na recusa ---------------
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True, databases=["default", "simulador_pagamentos"])
+def test_replay_concorrente_pela_rota(
+    client: Client,
+    relogio: RelogioControlado,
+    simulador_pagamentos: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # A-26
+    from apps.pedidos import retirada as modulo
+    from apps.pedidos.models import RetiradaDeItem
+    from tests.apoio.admin_fluxos import entrar_com_passkey_direta
+    from tests.apoio.corrida import Corrida
+
+    a, x, _y, cred = _ae(client, relogio, simulador_pagamentos, estado="liberada")
+    outro = Client()
+    entrar_com_passkey_direta(outro, cred, a.admin)
+    item = item_de(x, a.p1)
+    campos = {"item": item.pk, "quantidade": "4", "acionamento": str(uuid.uuid4())}
+    url = _rota(a, "retiradas/registrar")
+
+    def enviar(cliente: Client) -> Any:
+        def trabalho() -> Any:
+            resposta = cliente.post(url, campos)
+            assert resposta.status_code == 302, resposta.status_code
+            return _texto(cliente.get(_rota(a, "retiradas")))
+
+        return trabalho
+
+    corrida = Corrida()
+    corrida.depois_de(monkeypatch, modulo, "registrar_auditoria")
+    ra, rb = corrida.rodar(enviar(client), enviar(outro), a_atomica=False, b_atomica=False)
+    assert ra.excecao is None, repr(ra.excecao)
+    assert rb.excecao is None, repr(rb.excecao)
+    assert corrida.b_esperou
+    assert "Retirada registrada: 4 unidade de P1." in ra.valor
+    assert "Este registro já tinha sido feito." in rb.valor
+    assert "Retirada registrada" not in rb.valor
+    assert RetiradaDeItem.objects.count() == 1
+
+
+def _formularios(resposta: Any) -> dict[tuple[str, str], tuple[str, str]]:
+    """(operação, item) -> (quantidade, acionamento) de cada formulário da página."""
+    html = resposta.content.decode()
+    achados = {}
+    for operacao in ("retiradas", "descartes"):
+        for bloco in re.findall(
+            rf'<form[^>]*action="[^"]*{operacao}/registrar/"[^>]*>(.*?)</form>', html, re.DOTALL
+        ):
+            item = re.search(r'name="item" value="([^"]*)"', bloco)
+            campo = re.search(r'<input[^>]*name="quantidade"[^>]*>', bloco)
+            quantidade = re.search(r'value="([^"]*)"', campo.group(0)) if campo else None
+            assert campo
+            chave = re.search(r'name="acionamento" value="([^"]*)"', bloco)
+            assert item
+            assert chave
+            achados[(operacao, item.group(1))] = (
+                quantidade.group(1) if quantidade else "",
+                chave.group(1),
+            )
+    return achados
+
+
+def _recusa_de_quantidade(
+    client: Client,
+    relogio: RelogioControlado,
+    sim: Any,
+    *,
+    operacao: str,
+    quando: Any,
+    digitado: str,
+    codigo_status: int = 409,
+) -> tuple[Any, Any, dict[tuple[str, str], tuple[str, str]], str]:
+    a, x, _y, cred = _ae(client, relogio, sim, estado="liberada")
+    relogio.congelar(quando)
+    entrar_de_novo(client, cred, a.admin)
+    enviado = str(uuid.uuid4())
+    campos = {"item": item_de(x, a.p1).pk, "quantidade": digitado, "acionamento": enviado}
+    resposta = client.post(_rota(a, f"{operacao}/registrar"), campos)
+    assert resposta.status_code == codigo_status
+    return a, resposta, _formularios(resposta), enviado
+
+
+def test_retirada_recusada_preserva_a_quantidade(
+    client: Client, relogio: RelogioControlado, sim: Any
+) -> None:  # A-27
+    a, resposta, formularios, enviado = _recusa_de_quantidade(
+        client, relogio, sim, operacao="retiradas", quando=L + timedelta(days=1), digitado="7"
+    )
+    assert "A quantidade passa do saldo deste item (6 unidade)." in _texto(resposta)
+    retiradas = {k: v for k, v in formularios.items() if k[0] == "retiradas"}
+    assert len(retiradas) == 4
+    item_enviado = str(item_de_p1_de_x(a).pk)
+    for (_op, item), (quantidade, acionamento) in retiradas.items():
+        assert quantidade == ("7" if item == item_enviado else "")
+        assert acionamento != enviado
+    assert _estado_dos_registros()[2] == 0
+
+
+def item_de_p1_de_x(a: Any) -> Any:
+    from apps.pedidos.models import ItemDoPedido
+
+    return (
+        ItemDoPedido.objects.filter(pedido__abertura__rodada=a.rodada, produto_id=a.p1.pk)
+        .order_by("pk")
+        .first()
+    )
+
+
+def test_descarte_recusado_preserva_a_quantidade(
+    client: Client, relogio: RelogioControlado, sim: Any
+) -> None:  # A-28
+    a, resposta, formularios, enviado = _recusa_de_quantidade(
+        client, relogio, sim, operacao="descartes", quando=L + timedelta(days=7), digitado="7"
+    )
+    assert "A quantidade passa do saldo deste item (6 unidade)." in _texto(resposta)
+    item_enviado = str(item_de_p1_de_x(a).pk)
+    descartes = {k: v for k, v in formularios.items() if k[0] == "descartes"}
+    assert len(descartes) == 4
+    for (_op, item), (quantidade, acionamento) in descartes.items():
+        if item == item_enviado:
+            assert quantidade == "7"
+        else:
+            assert quantidade not in ("", "7")
+        assert acionamento != enviado
+    assert all(q == "" for (op, _i), (q, _a) in formularios.items() if op == "retiradas")
+    assert _estado_dos_registros()[3] == 0
+
+
+def test_quantidade_invalida_preserva_o_texto_digitado(
+    client: Client, relogio: RelogioControlado, sim: Any
+) -> None:  # A-29
+    a, resposta, formularios, _enviado = _recusa_de_quantidade(
+        client, relogio, sim, operacao="retiradas", quando=L + timedelta(days=1), digitado="6,5"
+    )
+    assert "Informe uma quantidade maior que zero, no incremento do produto." in _texto(resposta)
+    assert formularios[("retiradas", str(item_de_p1_de_x(a).pk))][0] == "6,5"
+    assert _estado_dos_registros()[2] == 0

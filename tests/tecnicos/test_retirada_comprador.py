@@ -234,3 +234,68 @@ def test_as_rotas_do_comprador_nao_criam_ocorrencia(
     assert pagar.status_code in (302, 409)
     assert _total_de_registros() == registros
     assert (list(Pedido.objects.values()), list(ItemDoPedido.objects.values())) == antes
+
+
+# --- E14-R02: a página do pedido depois do cancelamento da rodada (A-15 e A-16) -----------------
+
+
+def _cancelar(a: Any, *, com_reembolso: bool) -> None:
+    from apps.pedidos.cancelamento_da_rodada import cancelar_rodada
+
+    cancelar_rodada(a.admin, a.rodada, com_reembolso=com_reembolso)
+
+
+def _intacto() -> tuple[int, int]:
+    from apps.financeiro.models import ObrigacaoComComprador, Reembolso
+    from apps.pedidos.models import OcorrenciaDeEntrega
+
+    return (
+        OcorrenciaDeEntrega.objects.count() + Reembolso.objects.count(),
+        ObrigacaoComComprador.objects.count(),
+    )
+
+
+def test_cancelada_sem_reembolso_sem_secao_de_ocorrencias(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-15
+    a, x, _y, _pf = arranjo_ae(relogio, sim)
+    ocorrer(a.admin, item_de(x, a.p1), D("2"), "faltante")
+    antes = _intacto()
+    _cancelar(a, com_reembolso=False)
+    resposta = _pagina(a.a, x)
+    html = resposta.content.decode()
+    texto = _texto(resposta)
+    assert resposta.status_code == 200
+    assert "<h2>Ocorrências de entrega</h2>" not in html
+    assert "<h2>Retirada</h2>" not in html
+    assert "A rodada foi cancelada pelo administrador." in texto
+    assert "<h2>Estornos</h2>" in html
+    assert "R$ 23,59" in texto
+    assert _intacto() == antes
+
+
+def test_cancelada_com_reembolso_sem_secao_de_ocorrencias(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-16
+    from apps.pagamentos.chamadas import processar_chamadas
+
+    a, x, y, _pf = arranjo_ae(relogio, sim)
+    ocorrer(a.admin, item_de(x, a.p1), D("2"), "faltante")
+    from apps.pedidos.models import OcorrenciaDeEntrega
+
+    antes = list(OcorrenciaDeEntrega.objects.values_list("pk", "reembolso_id", "quantidade"))
+    _cancelar(a, com_reembolso=True)
+    processar_chamadas()
+    assert (
+        list(OcorrenciaDeEntrega.objects.values_list("pk", "reembolso_id", "quantidade")) == antes
+    )
+    resposta = _pagina(a.a, x)
+    html = resposta.content.decode()
+    texto = _texto(resposta)
+    assert "<h2>Ocorrências de entrega</h2>" not in html
+    assert "<h2>Estornos</h2>" in html
+    assert "R$ 23,59" in texto
+    assert "R$ 70,76" in texto
+    resposta_y = _pagina(a.b, y)
+    assert "<h2>Ocorrências de entrega</h2>" not in resposta_y.content.decode()
+    assert "<h2>Retirada</h2>" not in resposta_y.content.decode()
