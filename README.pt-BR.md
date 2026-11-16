@@ -12,12 +12,12 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 
 | | |
 |---|---|
-| **Última atualização** | 2026-11-13, com o PR #86 (E13) |
+| **Última atualização** | 2026-11-16, com o PR #87 (E14) |
 | **Fase** | Fase 1: plataforma completa rodando contra um **simulador** de pagamentos. Ainda sem dinheiro real e sem implantação em produção. |
-| **Progresso** | 13 de 16 etapas entregues (E01–E13), 95 fatias, cada uma aprovada por revisão independente |
-| **Última etapa entregue** | E13 — Pedido formal, repasse e portal do fornecedor (PR #86) |
-| **Próxima etapa** | E14 — Recebimento, ocorrências, retirada e descarte (não iniciada) |
-| **Suíte de testes** | 3.073 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
+| **Progresso** | 14 de 16 etapas entregues (E01–E14), 103 fatias, cada uma aprovada por revisão independente |
+| **Última etapa entregue** | E14 — Recebimento, ocorrências, retirada e descarte (PR #87) |
+| **Próxima etapa** | E15 — Painel administrativo e alertas operacionais (não iniciada) |
+| **Suíte de testes** | 3.268 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
 | **Bloqueadores abertos** | Nenhum |
 | **Melhorias não impeditivas** | 9 abertas (2 encerradas) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
 
@@ -35,8 +35,9 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 - Apuração final a partir de `T0 + 48h`, em dois atos do administrador (apurar e aprovar o resultado): reconsulta ao provedor e cancelamento das cobranças abertas antes de decidir, cancelamento dos pedidos não pagos, caixas invalidadas com estorno proporcional e as unidades de volta à fila de pendentes, o mínimo do fornecedor, o retorno ao interesse com devolução integral quando o mínimo não é atingido, a apuração no livro-razão na aprovação, as telas do administrador e do comprador e a fila de pendentes testada de ponta a ponta.
 - Cancelamento da rodada pelo administrador, para a rodada inteira e com indicação obrigatória de reembolso: reservas removidas com a fila de pendentes mantida, pedidos não pagos cancelados, novas tentativas de pagamento bloqueadas e cobranças abertas canceladas no provedor; com reembolso, devolução integral a todos os que pagaram (descontado o já devolvido ou pendente), já autorizada e com nova tentativa periódica; pagamentos informados depois do cancelamento sempre vão para devolução, com alerta crítico; o aviso do cancelamento, as telas do administrador e do comprador e os cenários de ponta a ponta com o simulador.
 - Pedido formal ao fornecedor, gerado uma vez na aprovação do resultado e com conteúdo congelado: até três tentativas automáticas por e-mail (com 5 e 30 minutos de intervalo) depois da consulta ao provedor, aviso ao administrador depois da terceira falha e reenvio manual com token por acionamento (clique repetido envia uma vez; nunca durante o ciclo automático nem em rodada cancelada); previsão de entrega ajustável com aviso aos compradores; repasse ao fornecedor e pagamento do frete limitados ao liberado, com passkey recente; o portal do fornecedor, só de consulta, com lista fechada de campos e exportação CSV; e o cenário de ponta a ponta do cancelamento depois do repasse.
+- Recebimento e retirada: recebimento por produto do pedido formal, com entregas parciais; ocorrências de entrega por item do comprador (faltante, incorreto, não entregue), antes ou depois da liberação, cada uma com reembolso pontual financiado pela obrigação com o fornecedor antes do repasse e coberto pelo administrador depois dele; o endereço de retirada mantido pelo administrador e exibido no carrinho e na página de regras; liberação da retirada só com todas as unidades recebidas ou resolvidas, com aviso aos compradores, nova rodada do fornecedor na hora e cancelamento recusado a partir daí; retirada por item em várias vezes, prazo de sete dias e descarte manual depois dele; as telas do administrador e do comprador, o portal do fornecedor inalterado e os cenários de ponta a ponta com o simulador.
 
-**Ainda não construído:** a retirada e as ocorrências de entrega (E14), o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
+**Ainda não construído:** o painel administrativo e os alertas (E15) e a homologação (E16). Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
 
 | Etapa | Escopo | Estado |
 |---|---|---|
@@ -53,8 +54,8 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 | E11 | Apuração final e fila de pendentes | ✅ Entregue |
 | E12 | Cancelamento da rodada | ✅ Entregue |
 | E13 | Pedido formal, repasse e portal do fornecedor | ✅ Entregue |
-| E14 | Recebimento, ocorrências, retirada e descarte | ⏳ Próxima |
-| E15 | Painel administrativo e alertas operacionais | — |
+| E14 | Recebimento, ocorrências, retirada e descarte | ✅ Entregue |
+| E15 | Painel administrativo e alertas operacionais | ⏳ Próxima |
 | E16 | Homologação e encerramento da fase 1 | — |
 
 <!-- ESTADO:FIM -->
