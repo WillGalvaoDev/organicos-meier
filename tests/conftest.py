@@ -134,6 +134,12 @@ PREFIXOS_COM_SIMULADOR = (
     "test_previsao_de_entrega",
     "test_repasse",
     "test_portal_do_fornecedor",
+    "test_recebimento",
+    "test_ocorrencias",
+    "test_liberacao_da_retirada",
+    "test_retirada",
+    "test_cenario_22_",
+    "test_cenario_23_",
 )
 
 

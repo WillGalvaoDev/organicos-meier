@@ -68,12 +68,19 @@ def montar_arranjo(
     pendente_a_p1: int = 0,
     parcelas_de_p1: Sequence[tuple[str, int]] = PARCELAS_DE_P1,
     parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
+    unidade_de_p1: str = Unidade.UNIDADE,
+    incremento_de_p1: str = "1.000",
+    preco_de_p1: str = "10.00",
 ) -> Arranjo:
     fornecedor = FornecedorFactory.create(nome="F", minimo=D(minimo))
     rodada = RodadaFactory.create(fornecedor=fornecedor, etapa=Etapa.FECHAMENTO_ENCERRADO)
     ciclo = dar_prazo_de_teste(rodada).ciclo
     p1 = ProdutoFactory.create(
-        fornecedor=fornecedor, nome="P1", unidade=Unidade.UNIDADE, preco=D("10.00")
+        fornecedor=fornecedor,
+        nome="P1",
+        unidade=unidade_de_p1,
+        preco=D(preco_de_p1),
+        incremento=D(incremento_de_p1),
     )
     p2 = ProdutoFactory.create(
         fornecedor=fornecedor,

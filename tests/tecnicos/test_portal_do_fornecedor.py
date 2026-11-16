@@ -3,7 +3,7 @@
 import csv
 import io
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -351,3 +351,93 @@ def test_o_fornecedor_nao_escreve(
         f"/fornecedor/rodadas/{a.rodada.pk}/pedido-formal.csv",
     ]
     assert [client.post(rota).status_code for rota in rotas] == [405] * 3
+
+
+# --- E14-07: o fornecedor não alcança nem vê a entrega e a retirada (A-13 e A-14) ------------
+
+
+def _ae_liberada_com_registros(relogio: RelogioControlado, sim: Any) -> tuple[Any, Any, Any]:
+    """AE-liberada com uma ocorrência, uma retirada e um descarte. Devolve o arranjo, X e a conta
+    de fornecedor de F."""
+    from decimal import Decimal
+
+    from tests.apoio.entrega import ae_liberada, descartar, item_de, ocorrer, retirar
+
+    a, x, _y, _pf = ae_liberada(relogio, sim)
+    ocorrer(a.admin, item_de(x, a.p1), Decimal("1"), "incorreto")
+    retirar(a.admin, item_de(x, a.p1), Decimal("2"))
+    relogio.congelar(T0 + (72 + 24 * 7) * timedelta(hours=1))
+    descartar(a.admin, item_de(x, a.p1), Decimal("3"))
+    return a, x, _conta_do_fornecedor(a)
+
+
+def test_o_fornecedor_e_recusado_nas_rotas_da_e14(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # A-13
+    import uuid
+
+    from apps.pedidos.models import (
+        DescarteDeItem,
+        EnderecoDeRetirada,
+        OcorrenciaDeEntrega,
+        RecebimentoDoFornecedor,
+        RetiradaDeItem,
+    )
+
+    a, _x, conta = _ae_liberada_com_registros(relogio, sim)
+    cliente = Client()
+    cliente.force_login(conta)
+    base = f"/administracao/rodadas/{a.rodada.pk}"
+    leituras = [f"{base}/recebimento/", f"{base}/ocorrencias/", f"{base}/retiradas/"]
+    escritas = [
+        f"{base}/recebimento/registrar/",
+        f"{base}/retirada/liberar/",
+        f"{base}/ocorrencias/registrar/",
+        f"{base}/retiradas/registrar/",
+        f"{base}/descartes/registrar/",
+        "/administracao/retirada/endereco/",
+    ]
+    campos = {"quantidade": "1", "tipo": "faltante", "acionamento": str(uuid.uuid4()), "texto": "x"}
+    modelos = (
+        OcorrenciaDeEntrega,
+        RecebimentoDoFornecedor,
+        RetiradaDeItem,
+        DescarteDeItem,
+        EnderecoDeRetirada,
+    )
+    antes = [m.objects.count() for m in modelos]
+    for rota in (*leituras, "/administracao/retirada/endereco/", "/regras/"):
+        assert cliente.get(rota).status_code == 403
+    for rota in escritas:
+        assert cliente.post(rota, campos).status_code == 403
+    assert [m.objects.count() for m in modelos] == antes
+
+
+def test_o_portal_nao_expoe_dado_da_e14(relogio: RelogioControlado, sim: Any) -> None:  # A-14
+    from apps.fornecedores.portal import dados_da_rodada
+    from apps.rodadas.models import Rodada
+
+    a, _x, conta = _ae_liberada_com_registros(relogio, sim)
+    cliente = Client()
+    cliente.force_login(conta)
+    pagina = cliente.get(f"/fornecedor/rodadas/{a.rodada.pk}/")
+    csv_resposta = cliente.get(f"/fornecedor/rodadas/{a.rodada.pk}/pedido-formal.csv")
+    assert pagina.status_code == csv_resposta.status_code == 200
+    texto = _texto(pagina)
+    assert "Disponível para retirada" in texto
+    assert "Pedido formal" in texto
+    assert "Previsão de entrega" not in texto
+    dados = dados_da_rodada(Rodada.objects.get(pk=a.rodada.pk))
+    assert set(dados["rodada"]) == {"etapa"}
+    assert dados["previsao_de_entrega"] is None
+    assert set(dados) == {
+        "rodada",
+        "produtos",
+        "pedido_formal",
+        "linhas",
+        "previsao_de_entrega",
+        "frase_do_pagamento",
+    }
+    for proibido in (a.a.nome, a.b.nome, "Rua das Hortas", "Incorreto", "Descarte", "Retirada"):
+        assert proibido not in texto
+        assert proibido not in csv_resposta.content.decode()

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block titulo %}Regras e retirada · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Regras e retirada</h1>
+  <section>
+    <h2>Retirada</h2>
+    {% if endereco %}
+      <p>Endereço: {{ endereco.texto|linebreaksbr }}</p>
+    {% else %}
+      <p>Endereço ainda não informado.</p>
+    {% endif %}
+    <p>A retirada fica normalmente disponível. Restrições de dia ou horário são publicadas nos <a href="{% url 'comunicados' %}">comunicados</a>.</p>
+    <p>Você é avisado quando a retirada de um pedido é liberada. A partir da liberação, o prazo para retirar é de sete dias. Depois desse prazo, o administrador pode registrar o descarte dos itens não retirados.</p>
+    <p>Itens faltantes, incorretos ou não entregues são registrados pelo administrador como ocorrências de entrega, com o reembolso dos itens afetados. Não há substituição de produtos.</p>
+  </section>
+{% endblock %}

@@ -655,3 +655,149 @@ class TentativaDeEnvioDoPedidoFormal(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"tentativa de envio {self.pk}"
+
+
+class RecebimentoDoFornecedor(RegistroSoInsercao):
+    """Uma entrega do fornecedor, por linha do pedido formal (E14-01). Só inserção. A quantidade
+    é o que chegou fisicamente, inclusive o que depois se revela incorreto. O pedido formal e as
+    linhas não mudam com o recebimento."""
+
+    pedido_formal = models.ForeignKey(
+        PedidoFormal, on_delete=models.PROTECT, related_name="recebimentos"
+    )
+    linha = models.ForeignKey(
+        LinhaDoPedidoFormal, on_delete=models.PROTECT, related_name="recebimentos"
+    )
+    quantidade = CampoQuantidade()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrado_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="recebimento_do_fornecedor_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"recebimento {self.pk}"
+
+
+class TipoDeOcorrencia(models.TextChoices):
+    FALTANTE = "faltante", "Faltante"
+    INCORRETO = "incorreto", "Incorreto"
+    NAO_ENTREGUE = "nao_entregue", "Não entregue"
+
+
+class OcorrenciaDeEntrega(RegistroSoInsercao):
+    """Uma ocorrência de entrega de um item do pedido (E14-02): faltante, incorreto ou não
+    entregue. Só inserção, registrada à parte e sem alterar o pedido. Cada uma gera exatamente um
+    `Reembolso` (E10); `etapa` é a da rodada no registro."""
+
+    item = models.ForeignKey(ItemDoPedido, on_delete=models.PROTECT, related_name="ocorrencias")
+    tipo = models.CharField(max_length=15, choices=TipoDeOcorrencia.choices)
+    quantidade = CampoQuantidade()
+    etapa = models.CharField(max_length=30)
+    reembolso = models.OneToOneField(
+        "financeiro.Reembolso", on_delete=models.PROTECT, related_name="ocorrencia"
+    )
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrada_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="ocorrencia_de_entrega_quantidade_positiva"
+            ),
+            models.CheckConstraint(
+                condition=Q(tipo__in=TipoDeOcorrencia.values),
+                name="ocorrencia_de_entrega_tipo_valido",
+            ),
+            models.CheckConstraint(
+                condition=Q(etapa__in=["aguardando_fornecedor", "disponivel_para_retirada"]),
+                name="ocorrencia_de_entrega_etapa_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"ocorrência {self.pk}"
+
+
+class EnderecoDeRetirada(RegistroSoInsercao):
+    """O endereço onde os compradores retiram os produtos (E14-03). Só inserção: o vigente é o
+    de maior `pk`, e cada liberação (E14-04) guarda o que valia no momento dela."""
+
+    texto = models.CharField(max_length=500)
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrado_em = models.DateTimeField(default=agora)
+
+    def __str__(self) -> str:
+        return f"endereço de retirada {self.pk}"
+
+
+class LiberacaoDaRetirada(RegistroSoInsercao):
+    """A liberação da retirada de uma rodada (E14-04): uma por rodada, só inserção. Guarda o
+    endereço que valia no momento e o prazo de sete dias."""
+
+    rodada = models.OneToOneField(Rodada, on_delete=models.PROTECT, related_name="liberacao")
+    ciclo = models.ForeignKey(Ciclo, on_delete=models.PROTECT, related_name="+")
+    pedido_formal = models.ForeignKey(PedidoFormal, on_delete=models.PROTECT, related_name="+")
+    liberada_em = models.DateTimeField()
+    prazo_final = models.DateTimeField()
+    endereco = models.ForeignKey(EnderecoDeRetirada, on_delete=models.PROTECT, related_name="+")
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(prazo_final__gt=F("liberada_em")),
+                name="liberacao_da_retirada_prazo_depois_da_liberacao",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"liberação da retirada {self.pk}"
+
+
+class _RegistroDeItemDaRetirada(RegistroSoInsercao):
+    """Base da retirada e do descarte (E14-05): uma quantidade de um item do pedido, só inserção.
+    Estado operacional registrado à parte: o pedido congelado não muda."""
+
+    item = models.ForeignKey(ItemDoPedido, on_delete=models.PROTECT, related_name="+")
+    quantidade = CampoQuantidade()
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrada_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        abstract = True
+
+
+class RetiradaDeItem(_RegistroDeItemDaRetirada):
+    """Uma retirada de parte de um item, feita pelo comprador na casa do administrador."""
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="retirada_de_item_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"retirada {self.pk}"
+
+
+class DescarteDeItem(_RegistroDeItemDaRetirada):
+    """O descarte manual de parte de um item não retirado, depois do prazo de sete dias."""
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="descarte_de_item_quantidade_positiva"
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"descarte {self.pk}"
