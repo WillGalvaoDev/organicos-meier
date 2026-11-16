@@ -90,7 +90,7 @@ def _repeticao(
     chave: uuid.UUID, rodada: Rodada, produto: Produto, quantidade_pedida: object
 ) -> RecebimentoDoFornecedor | None:
     """O registro que o acionamento já gerou; com outro conteúdo, `acionamento_invalido`."""
-    existente = (
+    existente: RecebimentoDoFornecedor | None = (
         RecebimentoDoFornecedor.objects.select_related("linha", "pedido_formal")
         .filter(acionamento=chave)
         .first()
@@ -123,7 +123,8 @@ def _quantidade_valida(valor: object, incremento: Decimal) -> bool:
 
 def _recebido(linha: LinhaDoPedidoFormal) -> Decimal:
     soma = RecebimentoDoFornecedor.objects.filter(linha=linha).aggregate(total=Sum("quantidade"))
-    return soma["total"] or ZERO
+    total: Decimal | None = soma["total"]
+    return total or ZERO
 
 
 def _a_resolver(linha: LinhaDoPedidoFormal, pedido_formal: PedidoFormal) -> Decimal:
