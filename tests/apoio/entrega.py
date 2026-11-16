@@ -1,13 +1,26 @@
 """Apoio dos testes da E14: o AE (o AF da E13) e as operações de recebimento e ocorrência."""
 
 import uuid
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from apps.pedidos.models import ItemDoPedido, PedidoFormal
 from apps.rodadas.models import CondicaoDoProdutoNoCiclo
 from tests.apoio.pedido_formal import arranjo_af
 
-__all__ = ["NOVO", "arranjo_ae", "arranjo_unico", "item_de", "ocorrer", "receber"]
+__all__ = [
+    "ENDERECO",
+    "NOVO",
+    "ae_recebido",
+    "arranjo_ae",
+    "arranjo_unico",
+    "item_de",
+    "liberar",
+    "ocorrer",
+    "receber",
+    "registrar_endereco",
+]
 
 NOVO: Any = object()  # "gere um acionamento novo"
 
@@ -93,3 +106,35 @@ def ocorrer(autor: Any, item: Any, quantidade: Any, tipo: Any, acionamento: Any 
         tipo,
         acionamento=uuid.uuid4() if acionamento is NOVO else acionamento,
     )
+
+
+ENDERECO = "Rua das Hortas, 100 — Méier, Rio de Janeiro/RJ"
+
+
+def registrar_endereco(admin: Any, texto: str = ENDERECO) -> Any:
+    from apps.pedidos.endereco_de_retirada import definir_endereco_de_retirada
+
+    return definir_endereco_de_retirada(admin, texto)
+
+
+def ae_recebido(
+    relogio: Any, sim: Any, *, endereco: bool = True, **opcoes: Any
+) -> tuple[Any, Any, Any, PedidoFormal]:
+    """O AE-recebido: o AE com P1 11 e P2 12 recebidos e o endereço de retirada registrado."""
+    a, x, y, pedido_formal = arranjo_ae(relogio, sim, **opcoes)
+    receber(a.admin, a.rodada, a.p1, Decimal("11"))
+    receber(a.admin, a.rodada, a.p2, Decimal("12"))
+    if endereco:
+        registrar_endereco(a.admin)
+    return a, x, y, pedido_formal
+
+
+def liberar(relogio: Any, a: Any, quando: datetime | None = None) -> Any:
+    """Libera a retirada em `L = T0 + 72h` (ou em `quando`)."""
+    from apps.pedidos.liberacao_da_retirada import liberar_retirada
+
+    from tests.apoio.apuracao import H
+    from tests.apoio.pedidos import T0
+
+    relogio.congelar(quando or T0 + 72 * H)
+    return liberar_retirada(a.admin, a.rodada)
