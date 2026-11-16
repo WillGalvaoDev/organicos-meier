@@ -75,7 +75,7 @@
   <h2>Navegação</h2>
   <p><a href="{% url 'envios_lista' %}">Envios</a></p>
   <p><a href="{% url 'financeiro_resumo' %}">Financeiro</a></p>
-  <p><a href="{% url 'fornecedores_lista' %}">Fornecedores</a> · <a href="{% url 'usuarios_administracao' %}">Usuários</a> · <a href="{% url 'convites_administracao' %}">Convites</a> · <a href="{% url 'comunicados_administracao' %}">Comunicados</a> · <a href="{% url 'retirada_endereco' %}">Endereço de retirada</a></p>
+  <p><a href="{% url 'fornecedores_lista' %}">Fornecedores</a> · <a href="{% url 'usuarios_administracao' %}">Usuários</a> · <a href="{% url 'convites_administracao' %}">Convites</a> · <a href="{% url 'comunicados_administracao' %}">Comunicados</a> · <a href="{% url 'retirada_endereco' %}">Endereço de retirada</a> · <a href="{% url 'historico_acoes' %}">Histórico de ações</a></p>
   {% if envios_com_falha %}<p>Envios com falha: {{ envios_com_falha }} · <a href="{% url 'envios_lista' %}?situacao=falhou">ver falhas</a></p>{% endif %}
   <form method="post" action="{% url 'account_logout' %}">
     {% csrf_token %}

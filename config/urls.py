@@ -141,6 +141,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="envio_detalhe",
     ),
     path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
+    path("administracao/historico/", operacao_views.historico, name="historico_acoes"),
     path(
         "administracao/alertas/<int:pk>/ciencia/",
         operacao_views.ciencia,

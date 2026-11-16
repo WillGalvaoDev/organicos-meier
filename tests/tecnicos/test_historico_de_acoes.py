@@ -93,7 +93,7 @@ def test_a_lista_do_mais_novo_ao_mais_antigo(ah: Historico) -> None:  # A-1
     assert "17/11/2026 23:59:59" in texto
     assert "teste" in texto
     html = resposta.content.decode()
-    linha_e3 = html[html.index("alerta.ciencia") :]
+    linha_e3 = html[html.index('<td class="acao">alerta.ciencia') :]
     assert "—" in linha_e3[: linha_e3.index("</tr>")]
 
 
