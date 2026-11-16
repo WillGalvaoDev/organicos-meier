@@ -150,7 +150,7 @@ def test_nome_fora_do_catalogo() -> None:  # A-4
     from apps.operacao.models import ExecucaoDaTarefa
 
     executou: list[int] = []
-    with pytest.raises(ValueError):  # noqa: PT012
+    with pytest.raises(ValueError, match="fora do catálogo"):
         with execucao_monitorada("tarefa_inexistente"):
             executou.append(1)
     assert not executou
@@ -191,7 +191,7 @@ def test_cada_tarefa_do_catalogo_e_registrada(monkeypatch: pytest.MonkeyPatch) -
 
 def test_a_excecao_da_tarefa_sai_e_fica_registrada(monkeypatch: pytest.MonkeyPatch) -> None:  # A-6
     _dubla(monkeypatch, "verificar_invariante", ValueError("x"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="x"):
         _chamar("verificar_invariante")
     registro = _execucao("verificar_invariante")
     assert registro.falhas_seguidas == 1
@@ -215,13 +215,13 @@ def test_o_registro_sobrevive_ao_desfazer_do_corpo() -> None:  # A-7
 def test_falha_ao_gravar_vai_para_o_log(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:  # A-8
-    from apps.operacao import execucao
+    from apps.operacao.models import ExecucaoDaTarefa
 
     class Quebrado:
         def __getattr__(self, nome: str) -> Any:
             raise RuntimeError("banco indisponível")
 
-    monkeypatch.setattr(execucao.ExecucaoDaTarefa, "objects", Quebrado())
+    monkeypatch.setattr(ExecucaoDaTarefa, "objects", Quebrado())
     corpo_rodou: list[int] = []
     with caplog.at_level(logging.ERROR):
         _monitorar("processar_envios_pendentes", lambda: corpo_rodou.append(1))

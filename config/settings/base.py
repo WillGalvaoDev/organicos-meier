@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "apps.pagamentos",
     "apps.simulador_pagamentos",
     "apps.financeiro",
+    "apps.operacao",
 ]
 
 AUTH_USER_MODEL = "contas.Conta"
