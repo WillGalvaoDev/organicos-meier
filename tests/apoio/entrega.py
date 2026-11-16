@@ -12,14 +12,18 @@ from tests.apoio.pedido_formal import arranjo_af
 __all__ = [
     "ENDERECO",
     "NOVO",
+    "ae_liberada",
     "ae_recebido",
     "arranjo_ae",
     "arranjo_unico",
+    "descartar",
     "item_de",
     "liberar",
     "ocorrer",
     "receber",
+    "receber_tudo",
     "registrar_endereco",
+    "retirar",
 ]
 
 NOVO: Any = object()  # "gere um acionamento novo"
@@ -137,3 +141,38 @@ def liberar(relogio: Any, a: Any, quando: datetime | None = None) -> Any:
 
     relogio.congelar(quando or T0 + 72 * H)
     return liberar_retirada(a.admin, a.rodada)
+
+
+def receber_tudo(a: Any, pedido_formal: PedidoFormal) -> None:
+    """Recebe a quantidade inteira de cada linha do pedido formal."""
+    for linha in pedido_formal.linhas.order_by("pk"):
+        receber(a.admin, a.rodada, linha.produto, linha.quantidade)
+
+
+def ae_liberada(relogio: Any, sim: Any, **opcoes: Any) -> tuple[Any, Any, Any, PedidoFormal]:
+    """O AE-liberada: o AE-recebido liberado em `L = T0 + 72h`. O relógio fica em `L`."""
+    a, x, y, pedido_formal = ae_recebido(relogio, sim, **opcoes)
+    liberar(relogio, a)
+    return a, x, y, pedido_formal
+
+
+def retirar(autor: Any, item: Any, quantidade: Any, acionamento: Any = NOVO) -> Any:
+    from apps.pedidos.retirada import registrar_retirada
+
+    return registrar_retirada(
+        autor,
+        item,
+        quantidade,
+        acionamento=uuid.uuid4() if acionamento is NOVO else acionamento,
+    )
+
+
+def descartar(autor: Any, item: Any, quantidade: Any, acionamento: Any = NOVO) -> Any:
+    from apps.pedidos.retirada import registrar_descarte
+
+    return registrar_descarte(
+        autor,
+        item,
+        quantidade,
+        acionamento=uuid.uuid4() if acionamento is NOVO else acionamento,
+    )
