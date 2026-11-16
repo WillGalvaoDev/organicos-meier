@@ -23,6 +23,7 @@ from apps.notificacoes.emissao import emitir_evento_para_varios
 from apps.notificacoes.eventos import Evento
 from apps.nucleo.auditoria import _validar_sem_segredos
 from apps.nucleo.tempo import agora
+from apps.operacao.tipos import CLASSIFICACAO
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def _exigir_transacao(operacao: str) -> None:
 
 
 def _validar(tipo: str, chave: str, dados: dict[str, Any]) -> None:
-    if tipo not in GRAVIDADE_POR_TIPO:
+    if tipo not in GRAVIDADE_POR_TIPO and tipo not in CLASSIFICACAO:
         raise ValueError(f"tipo de alerta desconhecido: {tipo!r}")
     if not isinstance(chave, str) or not 1 <= len(chave) <= MAIOR_CHAVE:
         raise ValueError(f"a chave do alerta deve ter de 1 a {MAIOR_CHAVE} caracteres")
@@ -206,7 +207,7 @@ def abrir_alerta(tipo: str, chave: str, dados: dict[str, Any]) -> AlertaFinancei
     existente = _aberto(tipo, chave)
     if existente is not None:
         return existente
-    gravidade = GRAVIDADE_POR_TIPO[tipo]
+    gravidade = CLASSIFICACAO[tipo].gravidade if tipo in CLASSIFICACAO else GRAVIDADE_POR_TIPO[tipo]
     try:
         with transaction.atomic():
             alerta = AlertaFinanceiro.objects.create(
@@ -233,6 +234,17 @@ def _avisar(alerta: AlertaFinanceiro) -> None:
             "Alerta financeiro %s sem aviso: nenhum administrador ativo (tipo=%s)",
             alerta.pk,
             alerta.tipo,
+        )
+        return
+    if alerta.tipo in CLASSIFICACAO:
+        classificacao = CLASSIFICACAO[alerta.tipo]
+        emitir_evento_para_varios(
+            Evento.ALERTA_OPERACIONAL,
+            administradores,
+            titulo=classificacao.titulo,
+            corpo=classificacao.corpo(alerta.dados),
+            link=classificacao.link(alerta.dados),
+            chave_base=f"alerta_operacional:{alerta.pk}",
         )
         return
     titulo, montar_corpo = TEXTO_POR_TIPO[alerta.tipo]

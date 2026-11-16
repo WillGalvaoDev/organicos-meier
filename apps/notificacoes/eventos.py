@@ -23,6 +23,7 @@ class Evento(models.TextChoices):
     COMUNICADO = "comunicado", "Comunicado"
     FALHA_NO_PEDIDO_FORMAL = "falha_no_pedido_formal", "Falha no pedido formal"
     ALERTA_FINANCEIRO = "alerta_financeiro", "Alerta financeiro"
+    ALERTA_OPERACIONAL = "alerta_operacional", "Alerta operacional"
 
 
 class Canal(models.TextChoices):
@@ -54,9 +55,12 @@ CANAIS_POR_EVENTO: dict[Evento, frozenset[Canal]] = {
     Evento.COMUNICADO: _TODOS,
     Evento.FALHA_NO_PEDIDO_FORMAL: _SITE_E_EMAIL,
     Evento.ALERTA_FINANCEIRO: _SITE_E_EMAIL,
+    Evento.ALERTA_OPERACIONAL: _SITE_E_EMAIL,
 }
 
-_PARA_O_ADMINISTRADOR = frozenset({Evento.FALHA_NO_PEDIDO_FORMAL, Evento.ALERTA_FINANCEIRO})
+_PARA_O_ADMINISTRADOR = frozenset(
+    {Evento.FALHA_NO_PEDIDO_FORMAL, Evento.ALERTA_FINANCEIRO, Evento.ALERTA_OPERACIONAL}
+)
 
 DESTINATARIO_POR_EVENTO: dict[Evento, Papel] = {
     evento: Papel.ADMINISTRADOR if evento in _PARA_O_ADMINISTRADOR else Papel.COMPRADOR

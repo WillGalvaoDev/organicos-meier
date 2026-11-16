@@ -21,6 +21,7 @@ MATRIZ = [
     ("comunicado", Papel.COMPRADOR, {S, E, W}),
     ("falha_no_pedido_formal", Papel.ADMINISTRADOR, {S, E}),
     ("alerta_financeiro", Papel.ADMINISTRADOR, {S, E}),  # E09-03
+    ("alerta_operacional", Papel.ADMINISTRADOR, {S, E}),  # E15-02
 ]
 
 

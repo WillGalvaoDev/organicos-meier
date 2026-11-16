@@ -176,15 +176,16 @@ def test_o_alerta_financeiro_segue_como_antes(ao: Ao) -> None:  # A-8
 
 
 def test_sem_administrador_ativo_o_alerta_abre_sem_aviso(
-    relogio: RelogioControlado, ao: Ao, caplog: pytest.LogCaptureFixture
+    relogio: RelogioControlado, caplog: pytest.LogCaptureFixture
 ) -> None:  # A-9
-    from apps.contas.models import Conta, Papel
+    from apps.notificacoes.models import Notificacao
 
-    Conta.objects.filter(papel=Papel.ADMINISTRADOR).update(papel=Papel.COMPRADOR)
+    relogio.congelar(INSTANTE)
+    concluir_todas(INSTANTE)  # nenhum administrador existe neste cenário
     with caplog.at_level(logging.WARNING):
         assert _atrasar_envios(relogio, INSTANTE + 6 * MIN) == (1, 0)
     assert len(alertas("tarefa_atrasada")) == 1
-    assert notificacoes(ao.adm1) == []
+    assert not Notificacao.objects.exists()
     assert any("nenhum administrador ativo" in r.getMessage() for r in caplog.records)
 
 
@@ -261,9 +262,8 @@ def test_o_critico_vem_primeiro(relogio: RelogioControlado, ao: Ao) -> None:  # 
 
 
 def test_link_e_natureza_do_alerta(relogio: RelogioControlado, ao: Ao) -> None:  # A-14
-    from apps.operacao.verificacao import link_do_alerta, natureza_do_alerta
-
     from apps.financeiro.alertas import abrir_alerta
+    from apps.operacao.verificacao import link_do_alerta, natureza_do_alerta
 
     _atrasar_envios(relogio, INSTANTE + 6 * MIN)
     with transaction.atomic():

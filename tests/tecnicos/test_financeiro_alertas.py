@@ -240,6 +240,7 @@ def test_o_catalogo_do_evento_novo() -> None:  # A-11
     assert {e for e, p in DESTINATARIO_POR_EVENTO.items() if p == Papel.ADMINISTRADOR} == {
         Evento.FALHA_NO_PEDIDO_FORMAL,
         evento,
+        Evento.ALERTA_OPERACIONAL,  # E15-02, regra 3: o evento novo também é só do administrador
     }
 
 

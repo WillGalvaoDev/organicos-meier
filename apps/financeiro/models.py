@@ -78,6 +78,8 @@ class TipoDeAlerta(models.TextChoices):
         "pagamento_depois_do_cancelamento",
         "Pagamento depois do cancelamento da rodada",
     )
+    # tipos operacionais (E15): gravidade, natureza, texto e link ficam em `apps.operacao.tipos`
+    TAREFA_ATRASADA = "tarefa_atrasada", "Tarefa atrasada"
 
 
 class Gravidade(models.TextChoices):

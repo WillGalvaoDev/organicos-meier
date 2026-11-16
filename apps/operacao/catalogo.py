@@ -32,6 +32,7 @@ _CATALOGO = (
     ("reconsultar_pagamentos_da_margem", "Reconsulta dos pagamentos na margem", 10, 30),
     ("autorizar_devolucoes_do_cancelamento", "Devoluções dos cancelamentos", 10, 30),
     ("conciliar_dias_pendentes", "Conciliação diária", 60, 180),
+    ("verificar_operacao", "Verificação operacional", 5, 15),
 )
 
 TAREFAS_MONITORADAS: list[TarefaMonitorada] = [
