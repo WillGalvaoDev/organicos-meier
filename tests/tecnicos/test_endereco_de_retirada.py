@@ -39,7 +39,9 @@ def test_o_primeiro_endereco_e_o_vigente(admin: Any) -> None:  # A-1
     registro = _definir(admin, f"  {ENDERECO}  ")
     assert (registro.texto, registro.autor_id) == (ENDERECO, admin.pk)
     assert registro.registrado_em is not None
-    assert endereco_vigente().pk == registro.pk
+    vigente = endereco_vigente()
+    assert vigente is not None
+    assert vigente.pk == registro.pk
     (auditoria,) = EntradaAuditoria.objects.filter(acao="retirada.definir_endereco")
     assert auditoria.autor_id == str(admin.pk)
     assert auditoria.alteracoes == {"anterior": "", "novo": ENDERECO}
@@ -51,11 +53,15 @@ def test_um_endereco_novo_preserva_o_historico(admin: Any) -> None:  # A-2
     primeiro = _definir(admin, ENDERECO)
     segundo = _definir(admin, "Rua Nova, 5")
     assert [e.texto for e in _enderecos()] == [ENDERECO, "Rua Nova, 5"]
-    assert endereco_vigente().pk == segundo.pk
+    vigente = endereco_vigente()
+    assert vigente is not None
+    assert vigente.pk == segundo.pk
     primeiro.refresh_from_db()
     assert primeiro.texto == ENDERECO
     auditoria = EntradaAuditoria.objects.filter(acao="retirada.definir_endereco").order_by("pk")
-    assert auditoria.last().alteracoes == {"anterior": ENDERECO, "novo": "Rua Nova, 5"}
+    ultima = auditoria.last()
+    assert ultima is not None
+    assert ultima.alteracoes == {"anterior": ENDERECO, "novo": "Rua Nova, 5"}
 
 
 def test_textos_recusados_e_o_limite_de_500(admin: Any) -> None:  # A-3

@@ -14,3 +14,10 @@ Comando: `uv run pytest tests/tecnicos/test_retirada_ponta_a_ponta.py` (arquivo 
 
 ## Limitações
 - A cobertura pela reserva (A-4) usa os serviços `registrar_aporte` e `designar_reserva` (E09-06), como a E13-08, e não a tela; a autorização da devolução e o repasse passam pelas telas.
+
+## Verificação da etapa inteira
+
+- `uv run pytest -q` (suíte completa): **3260 passed**, 0 failed (513 s). A falha preexistente M-10 foi corrigida na E13 (PR #86).
+- `uv run ruff check --no-cache .` e `ruff format --check .`: limpos; `uv run mypy .`: sem erros (497 arquivos; dois ajustes de tipo nos testes da E14-03 depois da primeira passada); `makemigrations --check`: sem mudanças.
+- Migrações novas da E14: `0016` (recebimento), `0017` (ocorrência), `0018` (endereço), `0019` (liberação), `0020` (retirada e descarte), todas com `instalar_protecao_so_insercao`.
+- Sem push, PR ou merge: aguarda o parecer do agente 3. O PR à `main` atualizará o README (Parte 1, nas duas línguas) e a milestone 14.

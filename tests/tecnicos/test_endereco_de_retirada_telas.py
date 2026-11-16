@@ -101,7 +101,7 @@ def test_regras_recusadas_ao_fornecedor_e_ao_anonimo(
     assert "Rua das Hortas" not in resposta.content.decode()
     anonimo = Client().get("/regras/")
     assert anonimo.status_code == 302
-    assert anonimo.url.startswith(settings.LOGIN_URL)
+    assert anonimo["Location"].startswith(settings.LOGIN_URL)
     assert "Rua das Hortas" not in anonimo.content.decode()
 
 
