@@ -682,3 +682,44 @@ class RecebimentoDoFornecedor(RegistroSoInsercao):
 
     def __str__(self) -> str:
         return f"recebimento {self.pk}"
+
+
+class TipoDeOcorrencia(models.TextChoices):
+    FALTANTE = "faltante", "Faltante"
+    INCORRETO = "incorreto", "Incorreto"
+    NAO_ENTREGUE = "nao_entregue", "Não entregue"
+
+
+class OcorrenciaDeEntrega(RegistroSoInsercao):
+    """Uma ocorrência de entrega de um item do pedido (E14-02): faltante, incorreto ou não
+    entregue. Só inserção, registrada à parte e sem alterar o pedido. Cada uma gera exatamente um
+    `Reembolso` (E10); `etapa` é a da rodada no registro."""
+
+    item = models.ForeignKey(ItemDoPedido, on_delete=models.PROTECT, related_name="ocorrencias")
+    tipo = models.CharField(max_length=15, choices=TipoDeOcorrencia.choices)
+    quantidade = CampoQuantidade()
+    etapa = models.CharField(max_length=30)
+    reembolso = models.OneToOneField(
+        "financeiro.Reembolso", on_delete=models.PROTECT, related_name="ocorrencia"
+    )
+    autor = models.ForeignKey(Conta, on_delete=models.PROTECT, related_name="+")
+    registrada_em = models.DateTimeField()
+    acionamento = models.UUIDField(unique=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(quantidade__gt=0), name="ocorrencia_de_entrega_quantidade_positiva"
+            ),
+            models.CheckConstraint(
+                condition=Q(tipo__in=TipoDeOcorrencia.values),
+                name="ocorrencia_de_entrega_tipo_valido",
+            ),
+            models.CheckConstraint(
+                condition=Q(etapa__in=["aguardando_fornecedor", "disponivel_para_retirada"]),
+                name="ocorrencia_de_entrega_etapa_valida",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"ocorrência {self.pk}"

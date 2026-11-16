@@ -12,7 +12,6 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
 
 from apps.catalogo.models import Produto
 from apps.catalogo.quantidades import formatar_quantidade
@@ -21,7 +20,7 @@ from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora
 from apps.nucleo.valores import ValorInvalido, cabe_em_quantidade, eh_multiplo, quantidade
 from apps.pedidos.models import LinhaDoPedidoFormal, PedidoFormal, RecebimentoDoFornecedor
-from apps.pedidos.ocorrencias import somas_das_ocorrencias
+from apps.pedidos.ocorrencias import recebido_da_linha, somas_das_ocorrencias
 from apps.rodadas.models import CondicaoDoProdutoNoCiclo, Etapa, Rodada
 
 ZERO = Decimal("0")
@@ -121,16 +120,10 @@ def _quantidade_valida(valor: object, incremento: Decimal) -> bool:
         return False
 
 
-def _recebido(linha: LinhaDoPedidoFormal) -> Decimal:
-    soma = RecebimentoDoFornecedor.objects.filter(linha=linha).aggregate(total=Sum("quantidade"))
-    total: Decimal | None = soma["total"]
-    return total or ZERO
-
-
 def _a_resolver(linha: LinhaDoPedidoFormal, pedido_formal: PedidoFormal) -> Decimal:
     somas = somas_das_ocorrencias(pedido_formal, linha.produto)
     pendente: Decimal = (
-        linha.quantidade - _recebido(linha) - somas["faltante"] - somas["nao_entregue"]
+        linha.quantidade - recebido_da_linha(linha) - somas["faltante"] - somas["nao_entregue"]
     )
     return pendente
 
@@ -211,7 +204,7 @@ def _registrar(
             "rodada": travada.pk,
             "produto": produto.pk,
             "quantidade": quantidade_recebida,
-            "recebido": _recebido(linha),
+            "recebido": recebido_da_linha(linha),
             "acionamento": str(chave),
         },
     )
@@ -226,7 +219,7 @@ def situacao_do_recebimento(rodada: Rodada) -> list[LinhaDoRecebimento]:
     resultado = []
     for linha in pedido_formal.linhas.select_related("produto").order_by("pk"):
         somas = somas_das_ocorrencias(pedido_formal, linha.produto)
-        recebida = _recebido(linha)
+        recebida = recebido_da_linha(linha)
         resultado.append(
             LinhaDoRecebimento(
                 produto=linha.produto_id,

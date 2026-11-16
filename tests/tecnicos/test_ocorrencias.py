@@ -330,7 +330,7 @@ def test_a_auditoria_da_ocorrencia(relogio: RelogioControlado, sim: Any) -> None
         "acionamento": str(a1),
     }
     texto = str(auditoria.alteracoes)
-    assert a.a.email not in texto
+    assert a.a.email_normalizado not in texto
     assert a.a.nome not in texto
 
 
