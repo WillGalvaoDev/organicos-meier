@@ -12,14 +12,14 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-16, with PR #87 (E14) |
+| **Last updated** | 2026-11-17, with PR #88 (E15) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 14 of 16 stages delivered (E01–E14), 103 slices, each approved by an independent review |
-| **Last stage delivered** | E14 — Receiving, delivery issues, pickup and disposal (PR #87) |
-| **Next stage** | E15 — Admin dashboard and operational alerts (not started) |
-| **Test suite** | 3,268 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
+| **Progress** | 15 of 16 stages delivered (E01–E15), 110 slices, each approved by an independent review |
+| **Last stage delivered** | E15 — Admin dashboard and operational alerts (PR #88) |
+| **Next stage** | E16 — Homologation and Phase 1 closing (not started) |
+| **Test suite** | 3,449 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
 | **Open blockers** | None |
-| **Non-blocking improvements** | 9 open (2 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
+| **Non-blocking improvements** | 10 open (2 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
 
 **Works today (with the simulator):**
 
@@ -36,8 +36,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Round cancellation by the administrator, for the whole round and with a mandatory refund indication: reservations removed while the pending queue is kept, unpaid orders cancelled, new payment attempts blocked and open charges cancelled at the provider; with refund, a full refund for every buyer who paid (minus what was already refunded or pending), already authorized and retried periodically; payments reported after the cancellation always go to refund with a critical alert; the cancellation notice, the admin and buyer screens and the end-to-end scenarios with the simulator.
 - Formal order to the supplier, generated once on result approval with frozen content: up to three automatic email attempts (5 and 30 minutes apart) after a provider check, an admin alert after the third failure, and manual resend with a per-click token (duplicate clicks send once, never during the automatic cycle or in a cancelled round); adjustable delivery forecast with buyer notices; supplier payout and freight payment limited to released funds, with recent passkey; the read-only supplier portal with a closed list of fields and CSV export; and the end-to-end scenario of cancellation after payout.
 - Receiving and pickup: receiving per product of the formal order, with partial deliveries; delivery issues per buyer item (missing, incorrect, not delivered), before or after pickup is released, each with a one-off refund funded by the supplier obligation before payout and covered by the administrator after it; the pickup address kept by the administrator and shown in the cart and on the rules page; pickup release only when every unit is received or resolved, with a notice to buyers, a new round for the supplier right away and cancellation refused from then on; pickup per item in several visits, a seven-day deadline and manual disposal after it; admin and buyer screens, the supplier portal unchanged, and the end-to-end scenarios with the simulator.
+- Admin dashboard and operational alerts: a record of when each periodic task last finished or failed, with tolerances; operational alerts for late tasks, unclosed closings, late formal orders, late reconciliation, provider calls and notifications, failed messages, failed provider calls, divergent payment checks, payments without an order or approval time and repeated rejected webhooks, notified to the administrator on the site and by email; alerts that end by themselves when the situation ends, and one-off facts closed by the administrator's acknowledgement; the dashboard at `administracao/` with open alerts, required actions, rounds (minimum, pending boxes and deadlines), expired deadlines and task status; the history of relevant actions with filters; and the end-to-end scenarios, including the worker stopped and resumed.
 
-**Not built yet:** the admin dashboard and alerts (E15), and homologation (E16). Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+**Not built yet:** homologation (E16), including an external monitor independent of the worker. Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -55,8 +56,8 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E12 | Round cancellation | ✅ Delivered |
 | E13 | Formal order, payout and supplier portal | ✅ Delivered |
 | E14 | Receiving, delivery issues, pickup and disposal | ✅ Delivered |
-| E15 | Admin dashboard and operational alerts | ⏳ Next |
-| E16 | Homologation and Phase 1 closing | — |
+| E15 | Admin dashboard and operational alerts | ✅ Delivered |
+| E16 | Homologation and Phase 1 closing | ⏳ Next |
 
 <!-- STATUS:END -->
 
