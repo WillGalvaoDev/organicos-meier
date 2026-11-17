@@ -18,6 +18,10 @@ _AMBIENTE_MINIMO = {
     "ORIGEM_PUBLICA": "https://homolog.exemplo.fly.dev",
     "GOOGLE_CLIENT_ID": "id-de-cliente-de-teste",
     "GOOGLE_CLIENT_SECRET": "segredo-de-teste",
+    "R2_ENDPOINT": "https://conta-de-teste.r2.cloudflarestorage.com",
+    "R2_BUCKET_ARQUIVOS": "arquivos-teste",
+    "R2_ACCESS_KEY_ID": "chave-de-acesso-do-r2-de-teste",
+    "R2_SECRET_ACCESS_KEY": "segredo-do-r2-so-para-testes",
     "AMBIENTE": "homologacao",
     "SEGREDO_AVISOS_SIMULADOR": "segredo-de-teste",
 }

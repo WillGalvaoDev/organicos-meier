@@ -159,3 +159,39 @@ def test_check_deploy_passa_sem_aviso() -> None:  # A-11
         if '"' in linha and "#" not in linha:
             anterior = linhas[indice - 1] if indice else ""
             assert anterior.strip().startswith("#"), f"verificação silenciada sem motivo: {linha}"
+
+
+# --- E16-02: arquivos enviados no R2 (A-1 a A-3) ------------------------------------------------
+
+VARIAVEIS_DO_R2 = ("R2_ENDPOINT", "R2_BUCKET_ARQUIVOS", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
+
+
+def test_o_armazenamento_padrao_e_o_r2() -> None:  # A-1
+    dados = lido(carregar(atributos=("STORAGES",)))
+    padrao = dados["STORAGES"]["default"]
+    assert padrao["BACKEND"] == "storages.backends.s3.S3Storage"
+    opcoes = padrao["OPTIONS"]
+    assert opcoes["bucket_name"] == AF["R2_BUCKET_ARQUIVOS"]
+    assert opcoes["endpoint_url"] == AF["R2_ENDPOINT"]
+    assert opcoes["region_name"] == "auto"
+    assert opcoes["default_acl"] is None
+    assert opcoes["querystring_auth"] is True
+    assert opcoes["querystring_expire"] == 300
+    assert opcoes["file_overwrite"] is False
+
+
+@pytest.mark.parametrize("variavel", VARIAVEIS_DO_R2)
+def test_cada_variavel_do_r2_e_obrigatoria(variavel: str) -> None:  # A-2
+    resultado = carregar(sem=(variavel,))
+    assert resultado.returncode != 0
+    assert variavel in resultado.stderr
+    for nome in VARIAVEIS_DO_R2:
+        assert AF[nome] not in resultado.stderr
+
+
+def test_o_armazenamento_de_teste_e_o_local() -> None:  # A-3
+    from django.conf import settings
+
+    # `config.settings.test` roda esta suíte: o armazenamento padrão é o do Django, em disco
+    assert settings.SETTINGS_MODULE == "config.settings.test"
+    assert settings.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"

@@ -7,6 +7,8 @@
 
 from django.core.exceptions import ImproperlyConfigured
 
+from config.armazenamento import storage_do_r2
+
 from .base import *  # noqa: F403
 
 DEBUG = False
@@ -75,8 +77,14 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     *MIDDLEWARE[1:],  # noqa: F405
 ]
+# Arquivos enviados no bucket privado do R2 (E16-02). As quatro variáveis são obrigatórias.
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": storage_do_r2(
+        env("R2_ENDPOINT"),  # noqa: F405
+        env("R2_BUCKET_ARQUIVOS"),  # noqa: F405
+        env("R2_ACCESS_KEY_ID"),  # noqa: F405
+        env("R2_SECRET_ACCESS_KEY"),  # noqa: F405
+    ),
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 

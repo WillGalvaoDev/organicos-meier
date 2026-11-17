@@ -33,6 +33,7 @@ from apps.financeiro.models import (
     SituacaoDaParcela,
 )
 from apps.financeiro.reserva import sem_cobertura_da_obrigacao
+from apps.nucleo.armazenamento import MENSAGEM_DE_FALHA, ArmazenamentoIndisponivel
 from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 
@@ -250,6 +251,8 @@ def excepcional(request: HttpRequest, pk: int) -> HttpResponse:
         )
     except ConsultaAoProvedorFalhou:
         return _detalhe(request, obrigacao, MENSAGEM_DO_PROVEDOR, 503)
+    except ArmazenamentoIndisponivel:
+        return _detalhe(request, obrigacao, MENSAGEM_DE_FALHA, 503)
     except DevolucaoRecusada as recusa:
         return _detalhe(request, obrigacao, str(recusa), 409)
     except ValueError as invalido:
@@ -269,8 +272,12 @@ def comprovante(request: HttpRequest, pk: int) -> HttpResponse:
     confirmacao = ConfirmacaoDeDevolucaoExcepcional.objects.filter(obrigacao_id=pk).first()
     if confirmacao is None:
         raise Http404("sem comprovante")
+    try:
+        arquivo = confirmacao.comprovante.open("rb")
+    except FileNotFoundError:
+        raise Http404("comprovante ausente do armazenamento") from None
     return FileResponse(  # type: ignore[return-value]
-        confirmacao.comprovante.open("rb"),
+        arquivo,
         as_attachment=True,
         filename=confirmacao.comprovante_nome,
         content_type=confirmacao.comprovante_tipo,

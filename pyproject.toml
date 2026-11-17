@@ -8,6 +8,7 @@ dependencies = [
     "django>=5.2,<6",
     "django-allauth[mfa,socialaccount]>=65",
     "django-environ>=0.12",
+    "django-storages[s3]>=1.14.6",
     "gunicorn>=27.0.1",
     "pillow>=12.3.0",
     "procrastinate[django]>=3",
@@ -20,6 +21,7 @@ dev = [
     "django-stubs[compatible-mypy]>=5.2,<6",
     "factory-boy>=3.3",
     "hypothesis>=6",
+    "moto[s3]>=5.2.5",
     "mypy>=1.13",
     "pytest>=8",
     "pytest-cov>=6",
@@ -62,7 +64,7 @@ plugins = ["mypy_django_plugin.main"]
 exclude = ["\\.venv/"]
 
 [[tool.mypy.overrides]]
-module = ["environ.*", "procrastinate.*", "allauth.*", "factory.*"]
+module = ["environ.*", "procrastinate.*", "allauth.*", "factory.*", "boto3.*", "botocore.*", "moto.*", "storages.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

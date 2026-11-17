@@ -40,6 +40,7 @@ from apps.financeiro.obrigacoes import (
     liquidar_obrigacao_fora_do_provedor,
 )
 from apps.financeiro.reserva import sem_cobertura_da_obrigacao
+from apps.nucleo.armazenamento import falha_do_armazenamento
 from apps.nucleo.auditoria import SISTEMA, _Sistema, registrar_auditoria
 from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import (
@@ -696,9 +697,10 @@ def confirmar_devolucao_excepcional(
                 comprovante_tamanho=len(conteudo),
                 autor=autor_conta,
             )
-            gravado = armazenamento.save(
-                f"comprovantes/{uuid.uuid4().hex}{extensao}", ContentFile(conteudo)
-            )
+            with falha_do_armazenamento("comprovante"):
+                gravado = armazenamento.save(
+                    f"comprovantes/{uuid.uuid4().hex}{extensao}", ContentFile(conteudo)
+                )
             confirmacao.comprovante.name = gravado
             confirmacao.save()
             liquidar_obrigacao_fora_do_provedor(

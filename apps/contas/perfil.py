@@ -11,6 +11,7 @@ from django.db import transaction
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from apps.contas.models import Conta, Situacao
+from apps.nucleo.armazenamento import falha_do_armazenamento
 from apps.nucleo.auditoria import registrar_auditoria
 from apps.nucleo.tempo import agora
 
@@ -130,7 +131,8 @@ def atualizar_perfil(
                 atual.whatsapp_consentido_em = None
                 registrar_auditoria(atual, "perfil.whatsapp_revogar", atual, {"conta": atual.pk})
             if avatar_novo is not None:
-                atual.avatar.save(avatar_novo.name or "avatar", avatar_novo, save=False)
+                with falha_do_armazenamento("avatar"):
+                    atual.avatar.save(avatar_novo.name or "avatar", avatar_novo, save=False)
                 avatar_gravado = atual.avatar.name
             elif remover_avatar and avatar_antigo:
                 atual.avatar = None
