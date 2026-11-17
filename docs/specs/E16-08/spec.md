@@ -53,7 +53,7 @@ Sem eles, a fatia fica **bloqueada por dependência**, sem decisão comercial: o
    5. **"Credenciais e menor privilégio":**
       - a credencial do bucket de arquivos não lê o de backups, e a de backups não lê o de arquivos;
       - a chave privada do `age` não fica no Fly.io (E16-05).
-   6. **"Custos observados":** o custo mensal de cada serviço no período da homologação, comparado com a infraestrutura 10.
+   6. **"Custos observados":** o custo mensal de cada serviço no período da homologação, comparado com a infraestrutura 10, linha a linha: Fly.io de US$ 8–15; Neon de US$ 5–20; SES, R2, Sentry, Better Stack e Cloudflare de US$ 0–2; e total fixo de US$ 15–35 por mês. A faixa de US$ 8–15 é só a do Fly.io, nunca a do total (correção da revisão de 2026-11-17).
 2. **Implantação:** o app de homologação é implantado a partir do commit da `main` que contém as E16-01 a E16-07, com `AMBIENTE=homologacao` e o simulador.
 3. **Verificações da implantação**, cada uma com a evidência (comando e saída, ou captura) no `review.md`:
    1. `/saude/` responde 200 por HTTPS, e o monitor do Better Stack está verde;
@@ -112,7 +112,7 @@ Sem eles, a fatia fica **bloqueada por dependência**, sem decisão comercial: o
        - cenários 1–119: a matriz da E16-07 e o CI;
        - T-1–T-55: a matriz e as evidências Red/Green nos `review.md`;
        - teste de restauração: `restauracao.md`.
-    3. **"Etapas entregues":** E01 a E16, com o PR e o número de reprovações de cada uma.
+    3. **"Etapas entregues":** E01 a E16, com o PR e o número de reprovações de cada uma. As fontes são a nota de entrega de cada milestone e os pareceres nos `review.md`. Uma etapa sem número registrado nessas fontes é marcada como "não registrado", sem estimativa.
     4. **"Homologação":** as verificações da regra 3, o roteiro da regra 4, o isolamento da regra 5 e o endereço de `homologacao.md`.
     5. **"Recuperação":** RPO, RTO medido e a próxima data do teste trimestral.
     6. **"Melhorias":** o resultado da regra 10.
@@ -130,9 +130,20 @@ Sem eles, a fatia fica **bloqueada por dependência**, sem decisão comercial: o
        - a avaliação de LGPD dos fluxos para fora do país (infraestrutura 5): SES, Sentry e Cloudflare/R2, com o que é enviado a cada um;
        - a orientação do contador;
        - o aporte inicial.
-    9. **"Custos":** os custos observados e a comparação com a infraestrutura 10.
+    9. **"Custos":** os custos observados e a comparação com a infraestrutura 10, com as mesmas faixas da regra 1.6.
 12. **Bloqueador aberto:** o relatório só afirma que o critério de saída foi atingido sem bloqueador aberto nem achado importante pendente (AGENTS.md §8). Senão, ele diz o que falta.
 13. **README:** o PR desta fatia atualiza a Parte 1 nas duas línguas (AGENTS.md §10). A fase passa a "Fase 1 encerrada", se a regra 12 permitir, e o próximo passo é "Fase 2a (preparação)".
+
+### Correções da revisão de 2026-11-17 (E16-R07)
+
+14. **Testes de pendência:**
+    - enquanto a fatia estiver bloqueada por dependência, os testes dos A-3 e A-4 podem ficar como `xfail(strict=True)`, com o motivo citando o pré-requisito que falta;
+    - esses testes não contam como critério atendido e não podem estar na matriz da E16-07;
+    - antes de a fatia ir para revisão de aprovação, os dois `xfail` são retirados, e os testes passam sem marca.
+15. **Ordem do encerramento:**
+    - a execução das regras 2 a 7 só começa depois de as correções E16-R01 a E16-R06 estarem aprovadas pelo revisor;
+    - a implantação usa o commit que contém essas correções;
+    - o relatório e os documentos de operação já escritos são corrigidos nos custos (regras 1.6 e 11.9), mesmo antes da execução.
 
 ## Decisões técnicas
 

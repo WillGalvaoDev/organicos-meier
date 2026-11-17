@@ -116,6 +116,36 @@ A fase 1 termina com a homologação (infraestrutura 7). O repositório ainda n�
 
 12. O workflow de CI ganha um job que constrói a imagem (`docker build`) sem publicá-la. A construção quebrada falha o PR. O job `verificacoes` não muda nesta fatia. A E16-04 acrescenta a ele a instalação do `pg_dump` 17 e do `age`.
 
+### Correção E16-R01 — construção autossuficiente (revisão de 2026-11-17)
+
+O `docker build` do commit `52f8745` falha no `collectstatic` com `Set the R2_ENDPOINT environment variable`. O passo de construção só recebeu as variáveis anteriores às E16-02, E16-03 e E16-04. As regras 13 a 15 completam a regra 2, sem mudar o que ela pede.
+
+13. **Ambiente de construção completo:** o `RUN` do `collectstatic` recebe um valor fictício para **cada** variável que `config/settings/base.py` e `config/settings/prod.py` leem sem padrão. Isso inclui as da E16-02 (`R2_ENDPOINT`, `R2_BUCKET_ARQUIVOS`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`), da E16-03 (`SENTRY_DSN`) e da E16-04 (`R2_BUCKET_BACKUPS`, `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `BACKUP_CHAVE_PUBLICA_AGE`).
+    - **Nomes não resolvíveis:** todo host e toda URL fictícios usam o domínio reservado `construcao.invalid` (RFC 2606) ou `localhost`. Isso vale também para os valores que já existem (`construcao.invalido` passa a `construcao.invalid`).
+    - **Valores que passam nas validações de `prod.py`:**
+      - `SENTRY_DSN=https://ficticio@construcao.invalid/0`;
+      - `BACKUP_CHAVE_PUBLICA_AGE` começando com `age1`, sem ser uma chave real (por exemplo, `age1ficticiasoparaconstrucao`).
+    - **Escopo:** os valores ficam só naquele `RUN`, na própria linha do comando. Nunca entram em `ENV` nem em `ARG` e não aparecem na configuração da imagem final (`docker image inspect`, campo `Config.Env`).
+    - **Sem acesso externo:** a construção não conecta ao banco, ao R2 nem ao Sentry. O `collectstatic` não abre conexão com o banco, e o Sentry inicializado com o DSN fictício não envia nada sem evento.
+14. **Lista das variáveis obrigatórias:** uma função de teste lê a árvore de sintaxe de `base.py` e `prod.py` e devolve os nomes literais das chamadas `env("NOME")` e `env.<método>("NOME")` que não têm `default`.
+    - Ela entra as condicionais, como `SEGREDO_AVISOS_SIMULADOR`, porque a homologação usa o simulador.
+    - A mesma função serve à E16-08 A-1 ("conferido contra a lista extraída do código") e fica num módulo de apoio de `tests/ambiente/`.
+15. **Guarda local:** um teste extrai do `Dockerfile` as variáveis definidas no `RUN` do `collectstatic`. Ele confere que:
+    - nenhuma variável da lista da regra 14 falta;
+    - os hosts e as URLs seguem a regra 13;
+    - nenhuma delas aparece em `ENV` ou `ARG`.
+
+    Depois, carrega `config.settings.prod` em subprocesso só com esse ambiente (mais `PATH`) e executa `python manage.py collectstatic --noinput --dry-run`, que precisa sair com código 0. É a prova sem Docker de que o passo de construção carrega as configurações atuais.
+16. **CI e evidência no commit corrigido:**
+    - o job `imagem` (regra 12) ganha um passo: `docker image inspect` da imagem construída, cujo `Config.Env` não contém `SECRET_KEY`, `DATABASE_URL`, `SENTRY_DSN` nem nenhuma variável que comece com `R2_` ou `BACKUP_`;
+    - o `review.md` registra, para o hash do commit corrigido:
+      - o `docker build` com saída 0;
+      - as três verificações do A-15;
+      - o `docker image inspect`;
+      - a execução do E16-04 A-15 dentro dessa imagem.
+
+      A imagem de um commit anterior não vale como evidência.
+
 ## Decisões técnicas
 
 - **Gunicorn e WhiteNoise.** O Django não serve estáticos nem é servidor de produção. O Gunicorn é o servidor WSGI padrão, e o WhiteNoise serve os estáticos sem um proxy ou CDN a mais, o que cabe num único deploy (infraestrutura 2). Duas dependências novas, com necessidade demonstrada.
@@ -123,7 +153,7 @@ A fase 1 termina com a homologação (infraestrutura 7). O repositório ainda n�
   - o worker fica com uma máquina sempre ligada;
   - a web pode desligar sem uso (`auto_stop_machines`), mas o monitor de disponibilidade da E16-03 a mantém acordada.
 
-  Duas máquinas pequenas ficam dentro da faixa de custo estimada (US$ 8–15 por mês). Depois do relatório final, o responsável pode desligar a homologação até a fase 2a.
+  Duas máquinas pequenas ficam dentro da faixa estimada para o Fly.io (US$ 8–15 por mês). O total fixo estimado, com Neon, SES, R2, Sentry e Better Stack, é de US$ 15–35 por mês (infraestrutura 10). Depois do relatório final, o responsável pode desligar a homologação até a fase 2a.
 - **Conexão direta do Neon.** O pool do Neon (PgBouncer em modo transação) quebra `LISTEN/NOTIFY` e as travas de sessão do Procrastinate. Com 2 workers do Gunicorn e um worker, o número de conexões diretas é pequeno.
 - **Sem Cloudflare na homologação.** A homologação usa o domínio `*.fly.dev`, com HTTPS do próprio Fly.io. O DNS próprio, a proteção e o limite de requisições nas rotas de login e convite (infraestrutura 2) ficam para a preparação da fase 2a. Isso é registrado no relatório final (E16-08).
 - **WhatsApp `desligado`.** É o herdado da E07: o `prod.py` recusa `simulado` em qualquer ambiente (E04-04), e a fase 3 é que liga o canal.

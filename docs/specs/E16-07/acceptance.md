@@ -17,8 +17,19 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-9 | Regra 4 | negativo | uma matriz de teste com o cenário 999 | gerar | erro citando 999 sem texto nos documentos-base |
 | A-10 | Regra 5 | positivo | o `review.md` da fatia | ler | a lista das lacunas encontradas e dos testes novos, com o resultado da primeira execução de cada um. Sem lacuna, a frase "Nenhuma lacuna: todos os cenários e testes técnicos já tinham teste." |
 | A-11 | Regra 2 | positivo | a matriz entregue | o revisor confere uma amostra de pelo menos 20 cenários e 10 testes técnicos, incluindo 113, 116, 117, T-12 e T-17 | cada teste citado exercita e confere o comportamento descrito. Critério de revisão, com o resultado registrado no parecer |
+| A-12 | Regra 3-A (E16-R06) | negativo | num diretório temporário, `tests/test_exemplo.py` com `class ForaDaColeta: def test_exemplo(self)`; outro com `class TestComInit` que define `__init__`; outro com `__test__ = False` no módulo; um arquivo `tests/exemplo.py` (nome fora da coleta) | conferir cada referência | as quatro recusadas, cada uma com o motivo. **Red esperado:** a primeira aceita (reprodução do revisor) |
+| A-13 | Regra 3-B (E16-R06) | negativo | testes de exemplo com `@pytest.mark.skipif(condition=True, reason="sempre")`; com `@pytest.mark.skipif(os.environ.get("CI") == "true", reason="no CI")`; com `@pytest.mark.skipif("sys.platform == 'linux'")`; com `@pytest.mark.xfail`; com `pytestmark: list = [pytest.mark.skip]`; com `import pytest as pt` e `@pt.mark.skip`; com `from pytest import mark` e `@mark.skipif(True, reason="x")`; com `pytest.skip("x")` no corpo; com `pytest.importorskip("modulo")` no nível do módulo | conferir cada referência | todas recusadas, com o motivo. **Red esperado:** as duas primeiras aceitas (reprodução do revisor) |
+| A-14 | Regras 3-A e 3-B (E16-R06) | positivo | um teste de exemplo com `@pytest.mark.skipif(False, reason="nunca")`; uma função `test_exemplo` definida duas vezes, a última válida; um método de `TestValida` | conferir | as três aceitas |
+| A-15 | Regra 2-A (E16-R05) | negativo | matrizes de teste com uma entrada sem afirmações; com uma afirmação de texto vazio; com uma afirmação de lista vazia; com a mesma referência duas vezes na mesma afirmação | conferir | as quatro acusadas; a mesma referência em afirmações diferentes da mesma entrada é aceita |
+| A-16 | Regra 2-C (E16-R05) | positivo | a matriz entregue | ler a entrada do cenário 2 | seis afirmações (Google e link × sem conta, suspensa, banida ou removida), cada uma com teste; nas duas de suspensão, um teste que abre sessão pelo canal e depois tem a adição de interesse recusada |
+| A-17 | Regra 2-C (E16-R05) | positivo | a matriz entregue | ler a entrada de `T-40` | duas afirmações; na primeira, um teste que muda o preço depois do pagamento, reembolsa o item inteiro e confere o subtotal registrado. Critério conferido pelo revisor na leitura do corpo |
+| A-18 | Regra 2-B (E16-R05) | positivo | o `review.md` da fatia | ler | o resultado das 174 entradas ("mantida", "completada" ou "caracterização nova"); a lista dos pulados e falhas esperadas da execução completa do CI, sem nenhum na matriz (regra 3-B) |
+| A-19 | Regras 2 e 2-B (E16-R05) | positivo | a matriz corrigida | o revisor confere uma nova amostra de pelo menos 20 cenários e 10 testes técnicos, diferente da primeira, mais os cenários 2 e `T-40` | cada afirmação provada pelos asserts dos testes citados. Critério de revisão |
 
 | Critério | Arquivo de teste |
 |---|---|
 | A-1 a A-9 | `tests/rastreabilidade/test_matriz.py` |
 | A-10 e A-11 | `docs/specs/E16-07/review.md` (registro do implementador e parecer do revisor) |
+| A-12 a A-15 | `tests/rastreabilidade/test_matriz.py` |
+| A-16 e A-17 | `tests/rastreabilidade/test_matriz.py` (estrutura) e parecer do revisor (conteúdo) |
+| A-18 e A-19 | `docs/specs/E16-07/review.md` |

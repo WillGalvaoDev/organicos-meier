@@ -59,7 +59,8 @@ A execução do teste é da E16-08.
       - `OK` com diferença maior ou igual a zero;
       - `FALHA` com diferença negativa;
       - `ATENÇÃO` com "Provedor indisponível: conferir depois." quando a consulta falha.
-   3. **"Estoque":** os produtos de rodadas não canceladas cujo total reservado passa do estoque, com o fornecedor, o produto, o reservado e o estoque. `FALHA` se houver algum; `OK` senão.
+   3. **"Estoque":** para cada `EstoqueDaRodada` com limite de uma rodada **ativa** (etapas de `ETAPAS_ATIVAS`), compara o total reservado do produto (`total_reservado`) com o limite. A rodada ativa é a única de cada fornecedor, e o estoque dela é o que cobre as reservas atuais (o mesmo critério do catálogo e da apuração). Mostra os que passam do limite, com o fornecedor, o produto, o reservado e o estoque. `FALHA` se houver algum; `OK` senão.
+      - **Correção E16-R04 (revisão de 2026-11-17):** as rodadas em `disponivel_para_retirada` e `cancelada` não entram. A liberação da retirada e o cancelamento já zeraram as reservas delas, e o limite que guardam é histórico. Compará-lo com as reservas de uma rodada nova do mesmo produto acusaria uma falha que não existe e bloquearia uma restauração válida.
    4. **"Prazos encerrados":** as linhas da regra 8 da E15-05, no instante do comando. `ATENÇÃO` se houver alguma, com a frase "Prazos vencidos durante a indisponibilidade continuam valendo (infraestrutura 6)."; `OK` senão.
    5. **"Pendências com o provedor":**
       - a quantidade de `ChamadaAoProvedor` pendentes;

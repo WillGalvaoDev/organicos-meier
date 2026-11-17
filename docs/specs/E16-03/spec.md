@@ -60,7 +60,21 @@ Esta fatia:
 4. **Breadcrumbs (`antes_do_breadcrumb`, ligado a `before_breadcrumb`):**
    - os de consulta SQL são descartados (os parâmetros podem ter dados pessoais);
    - nos de requisição HTTP de saída, a URL perde a query string;
-   - os demais passam pelo mesmo filtro de texto da regra 3.
+   - os demais passam pelo mesmo filtro de texto da regra 3, pela troca de tokens da regra 3-A e, no campo `data`, pelo filtro de chaves das regras 3 e 3-B (correção E16-R02).
+3-A. **Credenciais no caminho** (correção E16-R02, revisão de 2026-11-17).
+   - **Quais rotas:** as rotas com credencial de uso único no caminho são `entrar/link/<token>/`, `convite/<token>/` e `convite/<token>/google/`.
+   - **A troca:** em qualquer texto do evento, o segmento do token é trocado por `[removido]` antes do envio. O resto do caminho é mantido: `/convite/[removido]/google/`.
+   - **Onde vale:** `request.url`, `transaction`, mensagens, `logentry` (mensagem e parâmetros), valores e textos das exceções, breadcrumbs (mensagem e `data`), `extra`, `tags` e `contexts`. A troca vale para qualquer evento, venha ele da integração com o Django, do `logging` ou de `capture_event`.
+   - **Uma constante só:** os padrões ficam em `ROTAS_COM_SEGREDO`, ao lado do filtro. O segmento é qualquer sequência sem `/`, `?`, `#` ou espaço.
+   - **Nome da transação:** a integração com o Django usa `transaction_style="url"`, para que o nome da transação seja o padrão da rota (`/convite/{token}/`) e não o caminho concreto.
+   - **Rota nova coberta:** um teste percorre o resolvedor de URLs do projeto. Toda rota com parâmetro cujo nome contém `token` precisa estar coberta por `ROTAS_COM_SEGREDO`, para que uma rota nova com token não fique esquecida.
+3-B. **Nomes e identificação pessoal por chave** (correção E16-R02).
+   - **Chaves cobertas:** além das chaves da regra 3, são trocados por `[removido]` os valores cuja chave tenha um segmento exatamente igual a `nome`, `name`, `username`, `usuario`, `telefone`, `phone`, `celular`, `cpf`, `endereco`, `address` ou `ip`. A chave vai para minúsculas e é dividida por `_`, `-` e `.`; assim, `first_name`, `nome_completo` e `telefone_do_comprador` são cobertas, e `pedido` e `id_externo` não são.
+   - **Onde vale:** em `extra`, `tags`, `contexts` e no `data` dos breadcrumbs.
+   - **Exceção:** os contextos técnicos do SDK `runtime`, `os` e `trace` ficam de fora, porque o nome do interpretador e do sistema não identificam ninguém.
+   - **O que não muda:** `user` continua só com `id` (regra 3), e só o cabeçalho `User-Agent` é mantido. `Referer`, `X-Forwarded-For`, `Authorization` e `Cookie` saem.
+3-C. **Prova no envelope:** os critérios desta correção conferem o texto serializado do envelope inteiro, com todos os itens, e não só o dicionário do evento.
+
 5. **Ambiente de teste:** nenhum teste da suíte envia eventos para fora. Os testes usam um transporte em memória.
 
 ### Monitor de cron (herdado da E15)
@@ -95,11 +109,11 @@ Esta fatia:
 
 ## Invariantes
 
-- Nenhum e-mail, telefone, nome, cookie, token, corpo de requisição ou parâmetro SQL sai para o Sentry.
+- Nenhum e-mail, telefone, nome, cookie, token (inclusive o de convite ou de link no caminho da URL), corpo de requisição ou parâmetro SQL sai para o Sentry.
 - O resultado das tarefas e o registro da E15-01 não dependem do Sentry.
 
 ## Dependências e decisões em aberto
 
 - Depende da E16-01 (`prod.py`), da E15-01 (`execucao_monitorada`) e, para `backup_diario`, da E16-04. A linha do backup entra em `MONITORES_EXTERNOS` junto com a tarefa.
 - Nova dependência: `sentry-sdk`.
-- Nenhuma decisão em aberto.
+- Nenhuma decisão em aberto. A M-13 deixa de ser melhoria e passa a ser o achado E16-R02, corrigido pelas regras 3-A a 3-C. Na correção, o implementador registra o encerramento na seção "Reclassificação pelo revisor" de `docs/melhorias.md`, com o commit.

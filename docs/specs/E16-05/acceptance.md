@@ -26,8 +26,12 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-11 | Regra 5 | negativo | AR | `--antes-de ontem` | "Instante inválido: use AAAA-MM-DDTHH:MM."; código de saída 2 |
 | A-12 | Regra 4 | negativo | AR com os compradores A e B com nome, e-mail e WhatsApp conhecidos | o comando | nenhum desses valores na saída; nenhuma parte de `DATABASE_URL` na saída |
 | A-13 | Regras 6 e 7 | positivo | `docs/operacao/restauracao.md` | ler o arquivo | os dez títulos da regra 6, na ordem; a tabela "Registro dos testes" com as colunas da regra 6.9; os comandos `fly scale count worker=0`, `pg_restore --no-owner --no-privileges` e `python manage.py conferir_restauracao` |
+| A-14 | Regra 2.3 (E16-R04) | positivo | mesmo fornecedor e produto: uma rodada em `disponivel_para_retirada` com estoque de limite 1; uma rodada nova em `interesse` com limite 10; uma parcela ativa com 5 reservadas | o comando | "Estoque" `OK`; código de saída 0. **Red esperado:** `FALHA` com o estoque 1 (reprodução do revisor) |
+| A-15 | Regra 2.3 (E16-R04) | negativo | o arranjo do A-14 com o limite da rodada nova igual a 3 | o comando | "Estoque" `FALHA` com uma única linha: o fornecedor, o produto, reservado 5 e estoque 3; nenhuma linha com o estoque 1 da rodada antiga; código de saída 1 |
+| A-16 | Regra 2.3 (E16-R04) | positivo | uma rodada `cancelada` com limite 1 e uma rodada nova em `pagamento` com limite 10, do mesmo produto; 5 reservadas | o comando | "Estoque" `OK` |
 
 | Critério | Arquivo de teste |
 |---|---|
 | A-1 a A-12 | `tests/tecnicos/test_conferir_restauracao.py` |
 | A-13 | `tests/ambiente/test_artefatos_de_implantacao.py` |
+| A-14 a A-16 | `tests/tecnicos/test_conferir_restauracao.py` |

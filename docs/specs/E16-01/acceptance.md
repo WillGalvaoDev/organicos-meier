@@ -23,6 +23,11 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-13 | Regras 3 a 5 | positivo | o `fly.toml` | ler com um leitor TOML | `primary_region = "gru"`; processos `web` (com `gunicorn config.wsgi`) e `worker` (com `procrastinate worker`); `release_command` com `migrate --noinput`; a verificação em `/saude/`; o `[env]` com as cinco variáveis da regra 5 e nenhuma das variáveis secretas da regra 9 |
 | A-14 | Regra 12 | positivo | o workflow de CI | ler o YAML | um job que executa `docker build` sem `push`; o job `verificacoes` com os mesmos passos de antes (a E16-04 acrescenta os dela) |
 | A-15 | Regras 1 a 3 | positivo | o job de CI do A-14 | executar no PR | a imagem é construída; dentro dela, `pg_dump --version` mostra a versão 17, `age --version` responde e `id -u` é diferente de 0 (passos de verificação no mesmo job) |
+| A-16 | Regras 13 a 15 (E16-R01) | negativo | o `Dockerfile` atual | extrair as variáveis do `RUN` do `collectstatic` e comparar com a lista da regra 14 | nenhuma faltando; hosts e URLs só em `construcao.invalid` ou `localhost`; nenhuma delas em `ENV` ou `ARG`. **Red esperado:** faltam `R2_ENDPOINT`, `R2_BUCKET_ARQUIVOS`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `SENTRY_DSN`, `R2_BUCKET_BACKUPS`, `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY` e `BACKUP_CHAVE_PUBLICA_AGE`, e o host `construcao.invalido` é recusado |
+| A-17 | Regra 15 (E16-R01) | positivo | o ambiente extraído no A-16, mais `PATH` | `python manage.py collectstatic --noinput --dry-run` com `config.settings.prod`, em subprocesso | código de saída 0. **Red esperado:** `ImproperlyConfigured` citando `R2_ENDPOINT` |
+| A-18 | Regra 14 (E16-R01) | negativo | um `Dockerfile` de teste igual ao entregue, mas sem `SENTRY_DSN` no `RUN`; um `prod.py` de teste com uma chamada nova `env("VARIAVEL_NOVA")` sem padrão | conferir | a falta de `SENTRY_DSN` acusada no primeiro; `VARIAVEL_NOVA` na lista da regra 14 e acusada como faltando no segundo; `env("X", default="")` fora da lista |
+| A-19 | Regra 16 (E16-R01) | positivo | o job `imagem` do CI | ler o YAML | o passo de `docker image inspect` com a recusa de `SECRET_KEY`, `DATABASE_URL`, `SENTRY_DSN`, `R2_*` e `BACKUP_*` em `Config.Env` |
+| A-20 | Regra 16 (E16-R01) | positivo | o commit corrigido | `docker build`; verificações do A-15; `docker image inspect`; o E16-04 A-15 dentro da imagem | tudo com saída 0, registrado no `review.md` com o hash do commit. Critério de revisão: o revisor reexecuta o `docker build` |
 
 | Critério | Arquivo de teste |
 |---|---|
@@ -30,3 +35,6 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-5 a A-11 | `tests/ambiente/test_homologacao.py` |
 | A-12 a A-14 | `tests/ambiente/test_artefatos_de_implantacao.py` |
 | A-15 | o job de CI (evidência: o resultado do job no PR, registrado no `review.md`) |
+| A-16 a A-18 | `tests/ambiente/test_artefatos_de_implantacao.py` (extração de apoio em `tests/ambiente/`) |
+| A-19 | `tests/ambiente/test_artefatos_de_implantacao.py` |
+| A-20 | evidência no `review.md`, reexecutada pelo revisor |

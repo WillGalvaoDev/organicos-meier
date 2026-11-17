@@ -19,8 +19,12 @@ Agente 1 (especificador). Esta fatia é de operação e documentação. Os crit�
 | A-13 | Regra 6 | positivo | os dois testes de restauração | ler o registro e as saídas de `conferir_restauracao` | código de saída 0 nas duas; o dado criado depois de `R` ausente; o estado conhecido presente; a duração medida |
 | A-14 | Regra 7 | positivo | o commit final da `main`; o branch de testes do Neon | ler o resultado do CI e da execução no Neon | a suíte verde nos dois, com o número de testes e a duração |
 | A-15 | Regras 12 e 13 | positivo | o PR da fatia | ler o README e o relatório | a Parte 1 atualizada nas duas línguas com os mesmos fatos; a fase marcada como encerrada só se não houver bloqueador nem achado importante aberto |
+| A-16 | Regras 1.6 e 11.9 (E16-R07) | negativo | `docs/operacao/homologacao.md` e `docs/relatorio-fase1.md` | ler | as faixas da infraestrutura 10 citadas linha a linha, com "US$ 15–35" como total fixo; nenhuma frase que apresente "US$ 8–15" como total ou como a estimativa inteira. **Red esperado:** `homologacao.md` atribui US$ 8–15 ao conjunto dos serviços |
+| A-17 | Regra 14 (E16-R07) | negativo | `tests/ambiente/test_artefatos_de_implantacao.py` e a matriz da E16-07 | ler, no momento da revisão de aprovação | nenhum `xfail` nos testes dos A-3 e A-4; nenhum teste da E16-08 com `xfail` na matriz |
 
 | Critério | Arquivo de teste |
 |---|---|
 | A-1 a A-4 | `tests/ambiente/test_artefatos_de_implantacao.py` |
 | A-5 a A-15 | evidências no `docs/specs/E16-08/review.md`, conferidas pelo revisor |
+| A-16 | `tests/ambiente/test_artefatos_de_implantacao.py` |
+| A-17 | parecer do revisor |

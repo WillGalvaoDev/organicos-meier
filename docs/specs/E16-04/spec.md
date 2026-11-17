@@ -52,8 +52,20 @@ A segunda camada protege contra a perda do próprio Neon (conta, projeto ou regi
    4. **Conferência:** um `head_object` confirma que o tamanho no bucket é igual ao do arquivo local.
 
    Depois das quatro etapas, a rotina grava o `BackupExterno` (regra 4). Cada ferramenta tem tempo-limite de 30 minutos.
+1-A. **Reserva antes do despejo** (correção E16-R03, revisão de 2026-11-17). Um backup confirmado nunca é substituído. Antes da etapa de despejo, a rotina faz a reserva:
+   1. **Trava:** obtém uma trava consultiva de sessão do Postgres, exclusiva do backup, com `pg_try_advisory_lock` e uma constante própria documentada no módulo. A trava fica na conexão `default`, sem transação aberta, para não violar a regra 1.
+      - Se outra execução tiver a trava (a tarefa periódica ou o comando manual), a rotina levanta `BackupFalhou("reserva", "EmAndamento")` sem rodar nenhuma ferramenta.
+      - O `queueing_lock` da tarefa continua, mas não cobre o comando manual. A trava cobre os dois.
+   2. **Chave livre:** a rotina confere que a chave da regra 1.3 ainda não existe, nem em `BackupExterno` nem no bucket (`head_object` com resposta 404 = livre).
+      - Se existir em um dos dois, levanta `BackupFalhou("reserva", "ChaveExistente")` sem rodar ferramenta, sem enviar e sem apagar nada. Um objeto sem registro é o de um envio anterior interrompido. Ele fica para análise do responsável e nunca é sobrescrito.
+      - Um erro do R2 diferente de 404 nessa consulta levanta `BackupFalhou("reserva", <classe do erro>)`.
+   3. **Liberação:** a trava é liberada no fim (`pg_advisory_unlock`), com sucesso ou com falha em qualquer etapa. Se a conexão cair, o Postgres libera a trava sozinho.
+   4. **Nova conferência antes do envio:** logo antes da etapa 1.3, a rotina repete o `head_object`. Se o objeto tiver aparecido, levanta `BackupFalhou("reserva", "ChaveExistente")` e não envia. Isso protege mesmo se a trava se perder por queda da conexão durante o despejo.
+
+   O formato da chave não muda. A rotina só apaga o objeto que ela mesma enviou nesta execução, como manda a regra 2 na conferência com tamanho divergente.
+
 2. **Falhas:**
-   - se qualquer etapa falhar (código de saída diferente de zero, tempo esgotado, erro do R2 ou tamanho divergente), a rotina levanta `BackupFalhou(etapa, causa)`, em que `etapa` é `despejo`, `cifragem`, `envio` ou `conferencia` e `causa` é a classe do erro ou o código de saída;
+   - se qualquer etapa falhar (código de saída diferente de zero, tempo esgotado, erro do R2 ou tamanho divergente), a rotina levanta `BackupFalhou(etapa, causa)`, em que `etapa` é `reserva` (regra 1-A), `despejo`, `cifragem`, `envio` ou `conferencia` e `causa` é a classe do erro ou o código de saída;
    - nenhum `BackupExterno` é gravado;
    - na conferência com tamanho divergente, o objeto enviado é apagado;
    - num envio interrompido em partes (multipart), o envio é abortado.
@@ -75,7 +87,7 @@ A segunda camada protege contra a perda do próprio Neon (conta, projeto ou regi
    - Ela é envolvida por `execucao_monitorada` e entra no catálogo da E15-01 com a descrição "Backup externo diário", intervalo de 1.440 minutos e tolerância de 1.560 minutos (26 horas).
    - Ela entra também em `MONITORES_EXTERNOS` (E16-03).
    - A falha é repassada: a E15-01 registra a falha, e o Sentry recebe o erro e o check-in `error`.
-7. **Comando:** `python manage.py backup_externo` roda a mesma rotina na hora. Ele imprime a chave e o tamanho no sucesso. Na falha, imprime "Backup falhou na etapa <etapa>." e sai com código 1.
+7. **Comando:** `python manage.py backup_externo` roda a mesma rotina na hora. Ele imprime a chave e o tamanho no sucesso. Na falha, imprime "Backup falhou na etapa <etapa>." e sai com código 1. Na etapa `reserva`, imprime também uma segunda linha: "Outro backup está em andamento." para `EmAndamento` ou "Já existe um backup com esta chave; nada foi substituído." para `ChaveExistente` (correção E16-R03). Na tarefa periódica, a falha de reserva é uma falha como as outras: a E15-01 a registra e o Sentry recebe o check-in `error`.
 
 ### Configuração
 
@@ -96,11 +108,13 @@ A segunda camada protege contra a perda do próprio Neon (conta, projeto ou regi
 - **Despejo no worker, como tarefa do Procrastinate.** Reaproveita o monitoramento da E15 e o monitor externo da E16-03, sem outra máquina nem agendador. O banco é pequeno (infraestrutura 1), então o despejo diário leva pouco tempo.
 - **Retenção pelo próprio R2.** A regra de ciclo de vida do bucket apaga os objetos com mais de 35 dias (configurada na E16-08). A aplicação não lista nem apaga backups antigos. Sobre o bucket de backups, a credencial dela grava, confere o tamanho e apaga só o objeto que ela acabou de enviar com defeito.
 - **Despejo completo, incluindo o esquema do simulador.** Na fase 1 o simulador grava no mesmo banco (E07-R03) e faz parte do estado a recuperar.
+- **Reserva pelo banco, sem escrita condicional no R2** (correção E16-R03). A escrita condicional (`If-None-Match`) depende de um comportamento do provedor que o projeto ainda não validou (AGENTS.md §6). A trava consultiva do Postgres coordena a tarefa e o comando, que são os únicos que gravam no bucket de backups. As conferências antes do despejo e antes do envio cobrem o objeto que sobrou de uma execução interrompida. Capturar o `IntegrityError` depois do envio não basta, porque nesse ponto o objeto anterior já teria sido substituído.
 
 ## Invariantes
 
 - Nenhum backup sem cifra sai da máquina.
 - Um `BackupExterno` só existe para um objeto conferido no bucket.
+- Um objeto do bucket de backups nunca é substituído, e a aplicação só apaga o objeto que acabou de enviar com defeito (E16-R03).
 - Nenhum segredo ou dado do banco nos logs.
 
 ## Dependências e decisões em aberto
