@@ -53,6 +53,8 @@ def test_campos_aceitam_decimal_valido() -> None:
 def test_app_de_testes_fora_da_producao(monkeypatch: pytest.MonkeyPatch) -> None:  # A-20
     monkeypatch.setenv("AMBIENTE", "homologacao")  # obrigatórios em prod.py (E07-02)
     monkeypatch.setenv("SEGREDO_AVISOS_SIMULADOR", "segredo-de-teste")
+    monkeypatch.setenv("ALLOWED_HOSTS", "homolog.exemplo.fly.dev")  # obrigatórios (E16-01)
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@localhost:5433/d?sslmode=require")
     for modulo in ("config.settings.base", "config.settings.prod"):
         ja_importado = modulo in sys.modules
         configuracao = importlib.import_module(modulo)

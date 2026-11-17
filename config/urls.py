@@ -9,6 +9,7 @@ from apps.fornecedores import portal_views
 from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
+from apps.nucleo.saude import saude
 from apps.operacao import views as operacao_views
 from apps.pagamentos import views as pagamentos_views
 from apps.pedidos import entrega_views, retirada_views
@@ -61,6 +62,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="socialaccount_login_cancelled",
     ),
     path("entrar/", include(default_urlpatterns(GoogleProvider))),
+    path("saude/", saude, name="saude"),
     path("inicio/", contas_views.inicio, name="inicio"),
     path("catalogo/", catalogo_views.catalogo, name="catalogo_lista"),
     path(

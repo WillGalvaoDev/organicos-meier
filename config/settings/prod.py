@@ -10,13 +10,21 @@ from django.core.exceptions import ImproperlyConfigured
 from .base import *  # noqa: F403
 
 DEBUG = False
+# A verificação de saúde interna do Fly.io é feita por HTTP, sem `X-Forwarded-Proto` (E16-01).
+SECURE_REDIRECT_EXEMPT = [r"^saude/$"]
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+
+# Hosts e origens (E16-01): obrigatórios e explícitos. Lista vazia ou com `*` é recusada.
+ALLOWED_HOSTS = [h.strip() for h in env.list("ALLOWED_HOSTS") if h.strip()]  # noqa: F405
+if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
+    raise ImproperlyConfigured("ALLOWED_HOSTS deve listar os domínios do ambiente.")
 
 # Obrigatórios, sem valor padrão: se faltarem, o carregamento falha.
 # O envio real (SES) é configurado na E04 e na homologação.
@@ -31,6 +39,7 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")  # noqa: F405
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")  # noqa: F405
 # Origem pública dos links enviados por e-mail (convites); sem padrão em produção.
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA")  # noqa: F405
+CSRF_TRUSTED_ORIGINS = [ORIGEM_PUBLICA]
 # Credenciais do login com Google, obrigatórias em produção.
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")  # noqa: F405
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")  # noqa: F405
@@ -48,3 +57,32 @@ if PROVEDOR_PAGAMENTOS == "simulador":  # noqa: F405
 # Mensagens simuladas em produção dariam a falsa impressão de que o aviso saiu (A3, cenário 38).
 if CANAL_WHATSAPP == "simulado":  # noqa: F405
     raise ImproperlyConfigured("CANAL_WHATSAPP=simulado não é permitido em produção.")
+
+# Banco (E16-01): TLS obrigatório e conexão direta do Neon. O pool (`-pooler`, PgBouncer em modo
+# transação) quebra `LISTEN/NOTIFY` e as travas de sessão do Procrastinate. As mensagens não trazem
+# a URL nem a senha. A conexão do simulador (E07-R03) mantém os padrões da base.
+_banco = DATABASES["default"]  # noqa: F405
+if _banco.get("OPTIONS", {}).get("sslmode") not in ("require", "verify-full"):
+    raise ImproperlyConfigured("DATABASE_URL deve exigir TLS (sslmode=require).")
+if "-pooler" in str(_banco.get("HOST", "")):
+    raise ImproperlyConfigured("DATABASE_URL deve usar a conexão direta do Neon, sem -pooler.")
+_banco["CONN_MAX_AGE"] = 60
+_banco["CONN_HEALTH_CHECKS"] = True
+
+# Estáticos pela própria aplicação (E16-01): o WhiteNoise logo depois do `SecurityMiddleware`.
+MIDDLEWARE = [
+    MIDDLEWARE[0],  # noqa: F405
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    *MIDDLEWARE[1:],  # noqa: F405
+]
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# Verificações de implantação silenciadas, cada uma com o motivo (E16-01, regra 11).
+SILENCED_SYSTEM_CHECKS = [
+    # HSTS preload é um compromisso permanente com a lista dos navegadores; o domínio `*.fly.dev`
+    # da homologação não pode entrar nela. A decisão volta com o domínio próprio (fase 2a).
+    "security.W021",
+]

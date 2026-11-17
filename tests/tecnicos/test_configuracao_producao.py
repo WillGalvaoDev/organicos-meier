@@ -11,10 +11,11 @@ RAIZ = Path(__file__).resolve().parents[2]
 
 _AMBIENTE_MINIMO = {
     "SECRET_KEY": "chave-de-teste-nao-secreta",
-    "DATABASE_URL": "postgres://u:p@localhost:5433/d",
+    "DATABASE_URL": "postgres://u:p@localhost:5433/d?sslmode=require",
+    "ALLOWED_HOSTS": "homolog.exemplo.fly.dev",
     "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
     "DEFAULT_FROM_EMAIL": "contato@exemplo.com.br",
-    "ORIGEM_PUBLICA": "https://organicosmeier.exemplo.com.br",
+    "ORIGEM_PUBLICA": "https://homolog.exemplo.fly.dev",
     "GOOGLE_CLIENT_ID": "id-de-cliente-de-teste",
     "GOOGLE_CLIENT_SECRET": "segredo-de-teste",
     "AMBIENTE": "homologacao",

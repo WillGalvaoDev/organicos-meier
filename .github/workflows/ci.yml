@@ -42,3 +42,16 @@ jobs:
         run: uv run mypy .
       - name: pytest
         run: uv run pytest
+
+  imagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir a imagem (sem publicar)
+        run: docker build --tag organicos-meier:ci .
+      - name: Cliente PostgreSQL 17 na imagem
+        run: docker run --rm --entrypoint pg_dump organicos-meier:ci --version | grep -E " 17\."
+      - name: age na imagem
+        run: docker run --rm --entrypoint age organicos-meier:ci --version
+      - name: Usuário sem privilégios
+        run: test "$(docker run --rm --entrypoint id organicos-meier:ci -u)" != "0"

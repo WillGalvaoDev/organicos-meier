@@ -1,0 +1,17 @@
+.env
+.venv
+media
+.git
+.github
+staticfiles
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+.coverage
+htmlcov
+tests
+docs
+compose.yaml
