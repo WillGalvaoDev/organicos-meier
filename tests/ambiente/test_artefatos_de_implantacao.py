@@ -7,6 +7,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -137,3 +138,130 @@ def test_o_procedimento_de_restauracao() -> None:  # A-13
         "python manage.py conferir_restauracao",
     ):
         assert comando in texto, comando
+
+
+# --- E16-08: homologação executada e relatório final (A-1 a A-4) -------------------------------
+# A-5 a A-15 são de execução (evidências no `review.md`, conferidas pelo revisor).
+
+SECOES_DA_HOMOLOGACAO = (
+    "Componentes",
+    "Variáveis e segredos",
+    "Implantar e atualizar",
+    "Monitoramento",
+    "Credenciais e menor privilégio",
+    "Custos observados",
+)
+SECOES_DO_RELATORIO = (
+    "Resumo",
+    "Critério de saída",
+    "Etapas entregues",
+    "Homologação",
+    "Recuperação",
+    "Melhorias",
+    "Exceções e limitações",
+    "Pendências para a fase 2a",
+    "Custos",
+)
+BLOQUEADA = (
+    "E16-08 bloqueada por dependência: exige a execução do teste de restauração na homologação "
+    "(contas da fase 0) e a decisão do responsável sobre as melhorias (regra 10)"
+)
+
+
+def _titulos(texto: str) -> list[str]:
+    return re.findall(r"^##\s+(?:\d+\.\s*)?(.+?)\s*$", texto, flags=re.MULTILINE)
+
+
+def _em_ordem(texto: str, esperados: tuple[str, ...]) -> None:
+    titulos = _titulos(texto)
+    posicoes = []
+    for esperado in esperados:
+        achados = [i for i, t in enumerate(titulos) if t == esperado]
+        assert achados, f"falta a seção: {esperado}"
+        posicoes.append(achados[0])
+    assert posicoes == sorted(posicoes)
+
+
+def _variaveis_obrigatorias() -> set[str]:
+    """Os nomes lidos de `env(...)` sem `default` em `base.py` e `prod.py`."""
+    import ast
+
+    nomes: set[str] = set()
+    for arquivo in ("config/settings/base.py", "config/settings/prod.py"):
+        arvore = ast.parse(_texto(arquivo))
+        for no in ast.walk(arvore):
+            if not isinstance(no, ast.Call) or not no.args:
+                continue
+            funcao = no.func
+            e_env = (isinstance(funcao, ast.Name) and funcao.id == "env") or (
+                isinstance(funcao, ast.Attribute)
+                and isinstance(funcao.value, ast.Name)
+                and funcao.value.id == "env"
+            )
+            primeiro = no.args[0]
+            if (
+                e_env
+                and isinstance(primeiro, ast.Constant)
+                and isinstance(primeiro.value, str)
+                and not any(k.arg == "default" for k in no.keywords)
+            ):
+                nomes.add(primeiro.value)
+    return nomes
+
+
+def test_o_documento_de_homologacao() -> None:  # A-1
+    texto = _texto("docs/operacao/homologacao.md")
+    _em_ordem(texto, SECOES_DA_HOMOLOGACAO)
+    inicio = texto.index("## Variáveis e segredos")
+    fim = texto.index("\n## ", inicio + 1)
+    secao = texto[inicio:fim]
+    obrigatorias = _variaveis_obrigatorias()
+    assert {"SECRET_KEY", "DATABASE_URL", "SENTRY_DSN", "R2_BUCKET_BACKUPS"} <= obrigatorias
+    for nome in sorted(obrigatorias):
+        assert f"`{nome}`" in secao, f"variável sem documentação: {nome}"
+    assert not re.search(r"sk_[A-Za-z0-9]", texto)
+    assert not re.search(r"age1[a-z0-9]{20,}", texto)
+    assert not re.search(r"postgres(?:ql)?://[^\s:@]+:[^\s@]+@", texto)
+    assert "AKIA" not in texto
+
+
+def test_o_relatorio_final_tem_a_estrutura() -> None:  # A-2
+    texto = _texto("docs/relatorio-fase1.md")
+    _em_ordem(texto, SECOES_DO_RELATORIO)
+    inicio = texto.index("## Critério de saída")
+    fim = texto.index("\n## ", inicio + 1)
+    linhas = [linha for linha in texto[inicio:fim].splitlines() if linha.startswith("|")]
+    assert len(linhas) >= 5  # cabeçalho, separador e as três linhas da infraestrutura 7
+    corpo = " ".join(linhas).lower()
+    for item in ("cenários 1–119", "t-1–t-55", "teste de restauração"):  # noqa: RUF001
+        assert item in corpo, item
+    assert "rastreabilidade-fase1.md" in texto
+    assert "operacao/restauracao.md" in texto
+
+
+@pytest.mark.xfail(strict=True, reason=BLOQUEADA)
+def test_o_registro_da_restauracao_e_o_rto() -> None:  # A-3
+    texto = _texto("docs/operacao/restauracao.md")
+    inicio = texto.index("### Registro dos testes")
+    fim = texto.index("\n## ", inicio)
+    linhas = [
+        [c.strip() for c in linha.strip("|").split("|")]
+        for linha in texto[inicio:fim].splitlines()
+        if linha.startswith("|") and not linha.startswith("|---")
+    ][1:]  # sem o cabeçalho
+    assert len(linhas) >= 2
+    assert {linha[1][-1:] for linha in linhas} >= {"A", "B"}
+    assert all(c and c != "—" for linha in linhas for c in linha)
+    rto = re.search(r"\*\*RTO:\*\*[^\n]*?(\d+(?:[.,]\d+)?)\s*(?:horas|h)\b", texto)
+    assert rto, "RTO numérico em horas"
+
+
+@pytest.mark.xfail(strict=True, reason=BLOQUEADA)
+def test_as_melhorias_tem_decisao() -> None:  # A-4
+    texto = _texto("docs/melhorias.md")
+    inicio = texto.index("## Pendentes")
+    fim = texto.index("\n## Encerradas")
+    pendentes = [linha for linha in texto[inicio:fim].splitlines() if re.match(r"\| M-\d+ ", linha)]
+    assert pendentes
+    for linha in pendentes:
+        assert re.search(r"fase 2a|fase 2b|fase 3", linha, flags=re.IGNORECASE), linha[:60]
