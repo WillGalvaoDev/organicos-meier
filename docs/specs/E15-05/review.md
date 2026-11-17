@@ -46,3 +46,15 @@ TDD: Red `146fbef` antes de `e5640ec`; registro 22 falhas e três guardas passan
 - **Red observado** (`tests/tecnicos/test_painel_administrativo.py`): 4 falhas: A-18-A (`['Zeta', 'Alfa']`), A-26 (corpo gravado), A-28 (idem) e A-30 (sem log). A-27 e A-29 passaram de primeira (guardas: o corpo gravado coincidia com o esperado).
 - **Green (R03):** `painel._dados_atuais` chama a verificação do tipo no instante do carregamento (só leitura). Se a chave não volta, usa os dados gravados; se levanta exceção, registra no log o tipo e a classe do erro e usa os gravados.
 - **Green (R04):** `acoes_necessarias` ordena por `(fornecedor, pk)`; a tabela "Rodadas" mantém a ordem por etapa.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**APROVADO. R03 e R04 encerrados.** Matriz original A-1 a A-25 e acréscimos A-18-A e A-26 a A-30 reexecutados.
+
+- R03: chamadas e envios mostram contagem/instante atuais, por leitura no instante do carregamento; não mudam os dados, abertura ou notificações originais. A queda de contagem e os fallbacks por condição encerrada ou erro seguem a regra 1-A; o erro é registrado somente com tipo e classe. A reprodução original que mostrava uma chamada quando havia duas agora passa.
+- R04: ações ordenadas por fornecedor/pk, preservando a ordem das regras dentro da rodada e globais ao final. A tabela de rodadas continua ordenada por etapa. O caso discriminante Zeta/interesse antes de Alfa/fechamento encerrado passa no serviço e na rota.
+
+TDD: registro Red/Green no mesmo commit `812a91a`. Aplicando os testes atuais ao código anterior, reproduzi quatro falhas (ordenação, chamadas, envios, log) e as guardas já verdes A-27/A-29. Os mesmos testes passaram no código atual. Os ajustes de especificação detalham os requisitos existentes, sem nova regra comercial.

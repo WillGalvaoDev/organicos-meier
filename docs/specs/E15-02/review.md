@@ -60,3 +60,16 @@ TDD: testes em `e207368`, produção em `088335c`; registro Red 14 falhas e um c
 - **Green (R01):** `atraso_de_tarefa._verificar` ignora `verificar_operacao`; `situacao_das_tarefas` não mudou. O alerta antigo sai pela regra 6 (a chave não volta).
 - **Green (R02):** `abrir_alerta_informando_criacao` (E09, `apps/financeiro/alertas.py`) devolve `(alerta, criado)`, e `abrir_alerta` o reaproveita sem mudar a assinatura nem o retorno. `verificacao.abrir_alerta` (função fina, ponto de pausa dos testes) conta só o `criado`. `resolver_alerta` passou a resolver com `UPDATE ... WHERE resolvido_em IS NULL` e devolve `None` se outra execução resolveu antes.
 - A-18: o retorno não é conferido (o e-mail pendente do alerta gravado abre `envios_atrasados`); confere-se o alerta, como a spec pede.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**APROVADO. R01 e R02 encerrados.** A-1 a A-20 reexecutados, inclusive as provas originais do revisor.
+
+- R01: o detector ignora `verificar_operacao`; a retomada não cria alerta/notificação próprios. A chamada direta conserva o registro atrasado para a leitura do painel. Alerta legado é resolvido pela ausência da chave, com o motivo previsto. A integração de retomada longa também passou.
+- R02: a criação informa se houve inserção real; o retorno público de `financeiro.abrir_alerta` permanece o alerta, preservando seus chamadores. A resolução usa UPDATE condicionado a `resolvido_em IS NULL`: quem perde a corrida devolve `None`. As corridas comprovam uma só abertura e uma só resolução contabilizadas; os testes financeiros anteriores também passaram.
+- Escopo conferido: notificações e validações continuam na mesma transação, sem duplicação ou alteração de dados financeiros.
+
+TDD: o registro do implementador informa Red antes de Green no mesmo commit `46e178b`. Reapliquei os testes atuais ao código anterior (`2d909d6`) em worktree e bancos isolados: A-16, A-17, A-19 e A-20 falharam pelos motivos esperados; no código atual passaram. A-18 passou também no código anterior: no teste atual, `concluir_todas` deixa a própria verificação em dia antes de verificar. Portanto, esta reprodução comprova quatro falhas, e A-18 funciona como guarda; não confirma a declaração de cinco falhas do registro. Isso não invalida a correção nem a evidência Red dos comportamentos. A reprodução verifica a capacidade discriminante dos testes, não o instante histórico em que o implementador os executou.

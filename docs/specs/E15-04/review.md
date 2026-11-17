@@ -30,3 +30,10 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 **Veredito da fatia: APROVADO no escopo auditado.** A-1 a A-28 confrontados com detectores, contador de recusas, ciência e rotas. Conferidos isolamento de destinatários, ausência de conteúdo de webhook persistido, incremento SQL atômico, falha de registro sem alterar resposta, autorização no serviço e na rota, resolução auditada única sob concorrência e escape na apresentação.
 
 TDD: Red `636d534` anterior a `6f13b60`; 25 falhas e três guardas preexistentes no registro. A mudança na contagem global dos testes A-8/A-10 é coerente com os novos e-mails atrasados; não elimina a asserção do tipo em análise. O ajuste de especificação `e8c967a` resolve o arranjo de administrador único. Comparação `>=` cobre o fato ocorrido no mesmo instante da abertura. Não reexecutei o Red histórico. Dados inseridos diretamente nos testes unitários não constituem validação de um provedor externo; integração restrita ao simulador da fase 1.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**APROVADO (ratificado).** Sem alteração nos detectores de falha, contador de avisos ou ciência. A-1 a A-28 reexecutados. O delta em `financeiro.resolver_alerta` é compatível com a resolução de condição: atualiza apenas a linha ainda aberta e conserva o retorno existente para quem efetivamente resolve. Os testes de ciência concorrente, acesso, privacidade e os alertas financeiros também passaram.

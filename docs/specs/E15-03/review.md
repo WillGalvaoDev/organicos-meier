@@ -43,3 +43,10 @@ TDD: Red `9d5ebe1`, Green `4ba1d7a` e ajuste de tipos `821c83e`; registro de 12 
 ## Correção R03 (implementador, 2026-11-16)
 
 Ver E15-05: o painel remonta o corpo dos alertas `chamadas_ao_provedor_atrasadas` e `envios_atrasados` com a contagem atual (A-26 a A-30). Nenhum dado, notificação ou alerta é alterado.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**APROVADO. R03 encerrado**, em conjunto com a E15-05. Mantidas as verificações e os dados congelados; o painel usa a mesma consulta de atraso para a contagem e o instante mais antigo atuais. A-1 a A-16 foram reexecutados, além da reprodução original e A-26 a A-30 do painel. Nenhuma mudança de escrita de domínio nesta fatia.

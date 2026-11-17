@@ -144,3 +144,43 @@ Entrega documental: sete `review.md`, somente acréscimos; os conteúdos anterio
 A-16 (`test_a_retomada_longa_nao_acusa_a_verificacao`): sem Red próprio, pois o comportamento vem do Green da E15-02 (guarda). Aos 20 min, antes da retomada, "Atrasada desde" aparece em 6 linhas (as cinco de 1 minuto e a verificação; as de 10 min e a horária ainda estão em tolerância), e não nas 11 da redação "nas demais": registro como leitura da spec. Depois da retomada, "Em dia" nas 11.
 
 Verificação: suíte completa antes do A-16 novo, **3437 passed**; arquivo do A-16, 14 passed; `ruff`, `mypy` (527 arquivos) e `makemigrations --check` limpos. Sem push, PR nem merge.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**Veredito da E15: REPROVADO.** R01–R04 encerrados; R05 permanece aberto somente pelo filtro `acao` com NUL (`%00`), que produz erro de banco e HTTP 500. Detalhes, requisito e provas em [E15-06/review.md](../E15-06/review.md). Nenhum outro achado impeditivo identificado no delta.
+
+| Fatia | Cobertura revalidada | Resultado |
+|---|---|---|
+| E15-01 | A-1 a A-14 | APROVADO, ratificado |
+| E15-02 | A-1 a A-20 | APROVADO; R01/R02 encerrados |
+| E15-03 | A-1 a A-16, integração com E15-05 | APROVADO; R03 encerrado |
+| E15-04 | A-1 a A-28 | APROVADO, ratificado |
+| E15-05 | A-1 a A-30, incluindo A-18-A | APROVADO; R03/R04 encerrados |
+| E15-06 | A-1 a A-18 e filtros adversos adicionais | REPROVADO; R05 residual |
+| E15-07 | A-1 a A-16 | Testes existentes verdes; etapa não encerrada |
+
+A-16 de integração: a expectativa de seis tarefas atrasadas aos 20 minutos é derivada das tolerâncias da E15-01 (cinco tarefas de um minuto e a própria verificação). As demais não excederam suas tolerâncias; exigir onze atrasadas contrariaria o catálogo. Aceito o registro do implementador como interpretação técnica compatível, sem decisão comercial pendente. Depois da retomada, as onze ficam em dia, sem alerta próprio. É guarda de integração após o Red/Green da E15-02.
+
+### Verificações independentes
+
+Ambiente `.venv/Scripts/python.exe`, `DJANGO_SETTINGS_MODULE=config.settings.test`, PostgreSQL local e simulador. Runner temporário lê as configurações e configura somente o nome TEST de cada alias antes de `pytest.main`; nomes exclusivos `test_organicos_revisor_e15_f42e08d` e sufixos `_provas`, `_red`, `_limites`. Não usado banco de aplicação como banco de teste.
+
+- Sete módulos E15, `tests/tecnicos/test_financeiro_alertas.py` e as seis provas originais (copiadas sem alteração do bloco Python deste parecer), `pytest -q --tb=short`: **197 passed in 55.54s**.
+- Duas provas adicionais do filtro `acao`, `pytest .../test_alertas_de_revisor_e15.py -k filtro_acao -q --tb=short`: **2 failed, 6 deselected in 5.08s**. Serviço: DataError; rota autenticada: 500 em vez de 200.
+- Reprodução do Red em worktree destacado de `2d909d6`, com os três módulos de teste atuais (`test_alertas_operacionais.py`, `test_painel_administrativo.py`, `test_historico_de_acoes.py`) e sem mudanças no código antigo: **13 failed, 85 passed in 36.55s**. Quatro falhas de R01/R02, quatro de R03/R04 e cinco de R05, todas coerentes com os achados. A-18 operacional passou como guarda; ressalva da contagem registrada em E15-02. O worktree temporário foi limpo e removido após conferir que somente os três testes copiados pelo revisor estavam alterados.
+- A reconstrução Red confirma que os testes distinguem o código anterior do corrigido. Não prova por si só a ordem das execuções do implementador: a afirmação Red antes da implementação vem dos registros preservados, pois testes e produção foram commitados juntos.
+- `ruff check .`: passou; `ruff format --check .`: 435 arquivos formatados; `mypy .`: 527 arquivos sem erro.
+- `manage.py check --settings=config.settings.test`: nenhum problema; `manage.py makemigrations --check --dry-run --settings=config.settings.test`: nenhuma mudança.
+
+Limites mantidos: simulador/fase 1, tarefas invocadas diretamente; não é certificação de produção, worker externo ou provedor real. Nenhuma melhoria opcional nova. Próximo gate: corrigir o residual de R05 com Red/Green e devolver para revalidação. Não corrigi produção, testes permanentes ou especificações; preservados os pareceres anteriores e os registros do implementador.
+
+### Encerramento da revalidação — 2026-11-17
+
+A suíte completa iniciada em 2026-11-16 terminou com **3438 passed in 713.38s (0:11:53)**. Comando: runner isolado descrito acima, `pytest -q -p no:cacheprovider --tb=short`. A coleta ocorreu antes da criação das provas temporárias, portanto esse total representa os testes permanentes da branch. O resultado foi conferido na retomada em 2026-11-17; o HEAD permanece `f42e08d`, sem mudança de código durante esta revisão.
+
+Resultado consolidado: 3438 testes permanentes verdes; 197 aprovações na execução dirigida (E15, alertas financeiros e seis provas originais); duas provas adicionais falhando no residual de R05, no serviço e na rota HTTP. **E15 REPROVADA**, com R01–R04 encerrados e somente o residual de R05 pendente. Testes verdes não substituem o atendimento à regra de ignorar filtros inválidos com resposta 200.
+
+Entrega: somente acréscimos nos sete `review.md`; preservação integral dos textos de HEAD conferida por comparação com `git show`. Provas temporárias e worktree de reconstrução do Red removidos; nenhuma alteração em produção, especificações ou testes permanentes. `git diff --check` limpo. Pareceres commitados na branch de trabalho, sem push. Próximo gate: correção do filtro `acao` e revalidação independente.

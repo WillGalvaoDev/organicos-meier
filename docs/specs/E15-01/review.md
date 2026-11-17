@@ -30,3 +30,10 @@ Referência auditada: `2f5958c`, branch `e15-especificacoes`, sobre `8b1739f` (E
 **Veredito da fatia: APROVADO.** A-1 a A-14 confrontados com registro transacional, catálogo e envoltórios das dez tarefas: exceção original preservada, log só da classe, falha de gravação isolada, criação concorrente única, tolerância estrita e leitura sem escrita. Não identificado achado próprio nesta fatia. A falha de autoalerta pertence à regra 10 da E15-02, não ao registro da execução.
 
 TDD: `08c3367` contém os testes antes da produção de `582e308`; o registro informa 14 falhas por módulo ausente e depois 14 aprovações. A inspeção do histórico confirma essa separação. Não reexecutei o checkout histórico do Red.
+
+
+## Revalidação independente das correções — agente 3 — 2026-11-16
+
+Código auditado: `f42e08d`, branch `e15-especificacoes`. Delta desde o parecer `2d909d6`: especificação `63285a5`, produção/testes `46e178b`, `812a91a`, `1dfb6e0` e integração/registro `f42e08d`. Os documentos-base e o parecer anterior continuam como referência; os novos requisitos foram lidos antes do delta de código. Registro anterior preservado integralmente. Resultados compartilhados em [E15-07/review.md](../E15-07/review.md).
+
+**APROVADO (ratificado).** Sem alteração no registro de execução, catálogo ou envoltórios desta fatia. A matriz A-1 a A-14 foi reexecutada com a E15 atual. A exclusão da própria verificação ocorre somente no detector de alertas da E15-02: o painel conserva o estado real e a conclusão continua registrada depois do corpo.
