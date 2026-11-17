@@ -78,6 +78,28 @@ class TipoDeAlerta(models.TextChoices):
         "pagamento_depois_do_cancelamento",
         "Pagamento depois do cancelamento da rodada",
     )
+    # tipos operacionais (E15): gravidade, natureza, texto e link ficam em `apps.operacao.tipos`
+    TAREFA_ATRASADA = "tarefa_atrasada", "Tarefa atrasada"
+    FECHAMENTO_NAO_ENCERRADO = "fechamento_nao_encerrado", "Fechamento não encerrado"
+    PEDIDO_FORMAL_ATRASADO = "pedido_formal_atrasado", "Envio do pedido formal atrasado"
+    CONCILIACAO_ATRASADA = "conciliacao_atrasada", "Conciliação atrasada"
+    CHAMADAS_AO_PROVEDOR_ATRASADAS = (
+        "chamadas_ao_provedor_atrasadas",
+        "Chamadas ao provedor atrasadas",
+    )
+    ENVIOS_ATRASADOS = "envios_atrasados", "Notificações atrasadas"
+    FALHA_DE_MENSAGEM = "falha_de_mensagem", "Falha no envio de mensagens"
+    CHAMADA_AO_PROVEDOR_FALHOU = "chamada_ao_provedor_falhou", "Chamada ao provedor falhou"
+    CONSULTA_COM_DIVERGENCIA = "consulta_com_divergencia", "Divergência na consulta ao provedor"
+    PAGAMENTO_SEM_PEDIDO = "pagamento_sem_pedido", "Pagamento sem pedido"
+    PAGAMENTO_SEM_HORARIO_DE_APROVACAO = (
+        "pagamento_sem_horario_de_aprovacao",
+        "Pagamento aprovado sem horário",
+    )
+    AVISOS_RECUSADOS_EM_SEQUENCIA = (
+        "avisos_recusados_em_sequencia",
+        "Avisos do provedor recusados",
+    )
 
 
 class Gravidade(models.TextChoices):

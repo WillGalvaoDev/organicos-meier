@@ -54,10 +54,14 @@ def inicio(request: HttpRequest) -> HttpResponse:
 @somente_administrador
 def painel_administracao(request: HttpRequest) -> HttpResponse:
     """Início da área administrativa, sem conteúdo de negócio (E02-03)."""
+    from apps.nucleo.tempo import agora
+    from apps.operacao.painel import contexto_do_painel
+
+    contexto = contexto_do_painel(agora())
     return render(
         request,
         "administracao/painel.html",
-        {"conta": request.user, "envios_com_falha": contar_falhas()},
+        {"conta": request.user, "envios_com_falha": contar_falhas(), **contexto},
     )
 
 

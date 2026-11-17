@@ -7,14 +7,14 @@ os cabeçalhos.
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC
 
 from django.db import connection, transaction
 
 from apps.nucleo.tempo import agora
 from apps.pagamentos.chamadas import agendar_chamada
-from apps.pagamentos.models import AvisoRecebido
+from apps.pagamentos.models import AvisoRecebido, SequenciaDeAvisosRecusados
 from apps.pagamentos.provedor import AvisoInvalido, obter_provedor
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,44 @@ TAMANHO_MAXIMO_DO_AVISO = 64 * 1024
 TIPO_DE_PAGAMENTO = "pagamento"
 
 
+def registrar_recusa() -> None:
+    """Soma uma recusa à contagem, de forma atômica (uma só instrução): a primeira recusa da
+    sequência grava `primeira_em`, e toda recusa grava `ultima_em` (E15-04)."""
+    instante = agora()
+    tabela = SequenciaDeAvisosRecusados._meta.db_table
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO {tabela} AS t (id, recusas_seguidas, primeira_em, ultima_em) "  # noqa: S608
+            "VALUES (1, 1, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET "
+            "recusas_seguidas = t.recusas_seguidas + 1, "
+            "primeira_em = CASE WHEN t.recusas_seguidas = 0 THEN EXCLUDED.primeira_em "
+            "ELSE t.primeira_em END, "
+            "ultima_em = EXCLUDED.ultima_em",
+            [instante, instante],
+        )
+
+
+def zerar_recusas() -> None:
+    """Um aviso aceito zera a contagem e limpa os instantes, se ela não era zero."""
+    SequenciaDeAvisosRecusados.objects.filter(pk=1).exclude(recusas_seguidas=0).update(
+        recusas_seguidas=0, primeira_em=None, ultima_em=None
+    )
+
+
+def _sem_falhar(operacao: Callable[[], None]) -> None:
+    """A contagem não muda a resposta: uma falha ao gravá-la vai para o log (só a classe)."""
+    try:
+        operacao()
+    except Exception as erro:
+        logger.error("falha ao gravar a contagem de avisos recusados: erro=%s", type(erro).__name__)
+
+
 def receber_aviso(
     corpo: bytes, cabecalhos: Mapping[str, str], parametros: Mapping[str, str]
 ) -> int:
     """Devolve o código HTTP: 200 aceito (novo ou repetido), 400 corpo grande demais, 401 aviso
-    não autêntico. Os dois últimos não gravam nada."""
+    não autêntico. Os dois últimos não gravam o aviso; o 401 só soma à contagem de recusas."""
     if len(corpo) > TAMANHO_MAXIMO_DO_AVISO:
         return 400
     provedor = obter_provedor()
@@ -35,6 +68,7 @@ def receber_aviso(
         aviso = provedor.verificar_aviso(corpo, cabecalhos, parametros)
     except AvisoInvalido:
         logger.warning("Aviso de pagamento recusado")
+        _sem_falhar(registrar_recusa)
         return 401
     recebido_em = agora()
     with transaction.atomic():
@@ -56,6 +90,7 @@ def receber_aviso(
                     "aviso_recebido_em": recebido_em.astimezone(UTC).isoformat(),
                 },
             )
+    _sem_falhar(zerar_recusas)
     logger.info(
         "Aviso de pagamento %s: %s (%s)",
         aviso.id_evento,

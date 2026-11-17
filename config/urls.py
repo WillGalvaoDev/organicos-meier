@@ -9,6 +9,7 @@ from apps.fornecedores import portal_views
 from apps.fornecedores import views as fornecedores_views
 from apps.interesses import views as interesses_views
 from apps.notificacoes import views as notificacoes_views
+from apps.operacao import views as operacao_views
 from apps.pagamentos import views as pagamentos_views
 from apps.pedidos import entrega_views, retirada_views
 from apps.pedidos import views as pedidos_views
@@ -140,6 +141,12 @@ urlpatterns: list[URLPattern | URLResolver] = [
         name="envio_detalhe",
     ),
     path("pagamentos/avisos/", pagamentos_views.avisos, name="pagamentos_avisos"),
+    path("administracao/historico/", operacao_views.historico, name="historico_acoes"),
+    path(
+        "administracao/alertas/<int:pk>/ciencia/",
+        operacao_views.ciencia,
+        name="alertas_ciencia",
+    ),
     path("administracao/simulador-pagamentos/", include("apps.simulador_pagamentos.urls")),
     path("administracao/financeiro/", include("apps.financeiro.urls")),
     path("fornecedor/", portal_views.painel, name="fornecedor_painel"),

@@ -140,6 +140,8 @@ PREFIXOS_COM_SIMULADOR = (
     "test_retirada",
     "test_cenario_22_",
     "test_cenario_23_",
+    "test_alertas_de_",
+    "test_painel_",
 )
 
 

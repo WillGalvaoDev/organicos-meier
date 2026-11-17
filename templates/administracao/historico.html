@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block titulo %}Histórico de ações · Orgânicos Méier{% endblock %}
+{% block conteudo %}
+  <h1>Histórico de ações</h1>
+  <p><a href="{% url 'painel_administracao' %}">Voltar à administração</a></p>
+  {% for nome in invalidos %}<p role="alert">Filtro inválido ignorado: {{ nome }}.</p>{% endfor %}
+  <form method="get" action="{% url 'historico_acoes' %}">
+    <label>Ação
+      <select name="acao">
+        <option value="">Todas</option>
+        {% for acao in acoes %}<option value="{{ acao }}"{% if filtros.acao == acao %} selected{% endif %}>{{ acao }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Autor
+      <select name="autor">
+        <option value="">Todos</option>
+        <option value="sistema"{% if filtros.autor == "sistema" %} selected{% endif %}>Sistema</option>
+        {% for administrador in administradores %}<option value="{{ administrador.pk }}"{% if filtros.autor == administrador.pk|stringformat:"s" %} selected{% endif %}>{{ administrador.nome }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>De <input type="date" name="de" value="{{ filtros.de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ filtros.ate }}"></label>
+    <button type="submit">Filtrar</button>
+  </form>
+
+  {% if linhas %}
+    <table>
+      <thead><tr><th>Data e hora</th><th>Autor</th><th>Ação</th><th>Objeto</th><th>Motivo</th><th>Alterações</th></tr></thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr class="entrada">
+            <td>{{ linha.quando }}</td>
+            <td>{{ linha.autor }}</td>
+            <td class="acao">{{ linha.acao }}</td>
+            <td>{{ linha.objeto }}</td>
+            <td>{{ linha.motivo }}</td>
+            <td>{% for item in linha.alteracoes %}{{ item }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p>
+      {% if pagina.has_previous %}<a href="?{% if consulta %}{{ consulta }}&amp;{% endif %}pagina={{ pagina.previous_page_number }}">Anterior</a>{% endif %}
+      Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}
+      {% if pagina.has_next %}<a href="?{% if consulta %}{{ consulta }}&amp;{% endif %}pagina={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+    </p>
+  {% else %}
+    <p>Nenhuma ação encontrada.</p>
+  {% endif %}
+{% endblock %}

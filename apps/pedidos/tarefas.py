@@ -11,6 +11,7 @@ from django.db import transaction
 from procrastinate.contrib.django import app
 
 from apps.nucleo.tempo import agora
+from apps.operacao.execucao import execucao_monitorada
 from apps.pagamentos.chamadas import agendar_chamada
 from apps.pagamentos.consulta import (
     ConsultaAoProvedorFalhou,
@@ -149,13 +150,15 @@ def reconsultar_pagamentos_da_margem_agora() -> int:
 @app.periodic(cron="* * * * *")
 @app.task(name=TAREFA_DE_BLOQUEIO, queueing_lock=TAREFA_DE_BLOQUEIO)
 def bloquear_tentativas_vencidas(timestamp: int) -> None:
-    bloquear_tentativas_vencidas_agora()
+    with execucao_monitorada(TAREFA_DE_BLOQUEIO):
+        bloquear_tentativas_vencidas_agora()
 
 
 @app.periodic(cron="*/10 * * * *")
 @app.task(name=TAREFA_DA_MARGEM, queueing_lock=TAREFA_DA_MARGEM)
 def reconsultar_pagamentos_da_margem(timestamp: int) -> None:
-    reconsultar_pagamentos_da_margem_agora()
+    with execucao_monitorada(TAREFA_DA_MARGEM):
+        reconsultar_pagamentos_da_margem_agora()
 
 
 TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO = "autorizar_devolucoes_do_cancelamento"
@@ -169,7 +172,8 @@ TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO = "autorizar_devolucoes_do_cancelamento"
 def autorizar_devolucoes_do_cancelamento(timestamp: int) -> None:
     from apps.pedidos.cancelamento_da_rodada import autorizar_devolucoes_do_cancelamento_agora
 
-    autorizar_devolucoes_do_cancelamento_agora()
+    with execucao_monitorada(TAREFA_DAS_DEVOLUCOES_DO_CANCELAMENTO):
+        autorizar_devolucoes_do_cancelamento_agora()
 
 
 TAREFA_DOS_PEDIDOS_FORMAIS = "enviar_pedidos_formais"
@@ -180,4 +184,5 @@ TAREFA_DOS_PEDIDOS_FORMAIS = "enviar_pedidos_formais"
 def enviar_pedidos_formais(timestamp: int) -> None:
     from apps.pedidos.envio_do_pedido_formal import processar_pedidos_formais
 
-    processar_pedidos_formais()
+    with execucao_monitorada(TAREFA_DOS_PEDIDOS_FORMAIS):
+        processar_pedidos_formais()
