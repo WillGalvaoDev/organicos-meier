@@ -269,3 +269,56 @@ def test_o_relatorio_nao_traz_dados_pessoais_nem_segredos(ar: Any) -> None:  # A
                 assert str(valor) not in texto, valor
     assert "postgres://" not in texto
     assert "DATABASE_URL" not in texto
+
+
+# --- correção E16-R04: o estoque da conferência é o da rodada ativa ---------------------------
+
+
+def _estoque_do_produto(
+    sim: Any, relogio: RelogioControlado, etapa_antiga: str, limite_novo: str, etapa_nova: str
+) -> tuple[str, int]:
+    from apps.rodadas.models import Etapa  # noqa: F401
+    from tests.fabricas import (
+        EstoqueDaRodadaFactory,
+        FornecedorFactory,
+        ParcelaFactory,
+        ProdutoFactory,
+        RodadaFactory,
+    )
+
+    relogio.congelar(I)
+    fornecedor = FornecedorFactory.create()
+    produto = ProdutoFactory.create(fornecedor=fornecedor)
+    velha = RodadaFactory.create(fornecedor=fornecedor, etapa=etapa_antiga)
+    nova = RodadaFactory.create(fornecedor=fornecedor, etapa=etapa_nova)
+    EstoqueDaRodadaFactory.create(rodada=velha, produto=produto, limite=D("1"))
+    EstoqueDaRodadaFactory.create(rodada=nova, produto=produto, limite=D(limite_novo))
+    ParcelaFactory.create(produto=produto, quantidade_original=D("5"), quantidade_reservada=D("5"))
+    texto, codigo = conferir()
+    return texto, codigo
+
+
+def test_estoque_historico_nao_acusa_falha(sim: Any, relogio: RelogioControlado) -> None:  # A-14
+    texto, codigo = _estoque_do_produto(sim, relogio, "disponivel_para_retirada", "10", "interesse")
+    assert resultado(texto, "Estoque") == "OK"
+    assert codigo == 0
+
+
+def test_excesso_real_no_estoque_atual_continua_falha(
+    sim: Any, relogio: RelogioControlado
+) -> None:  # A-15
+    texto, codigo = _estoque_do_produto(sim, relogio, "disponivel_para_retirada", "3", "interesse")
+    trecho = secao(texto, "Estoque")
+    assert resultado(texto, "Estoque") == "FALHA"
+    linhas = [linha for linha in trecho.splitlines()[1:] if linha.strip()]
+    assert len(linhas) == 1
+    assert "reservado 5" in linhas[0]
+    assert "estoque 3" in linhas[0]
+    assert "estoque 1" not in trecho
+    assert codigo == 1
+
+
+def test_rodada_cancelada_nao_entra_no_estoque(sim: Any, relogio: RelogioControlado) -> None:
+    # A-16
+    texto, _codigo = _estoque_do_produto(sim, relogio, "cancelada", "10", "pagamento")
+    assert resultado(texto, "Estoque") == "OK"

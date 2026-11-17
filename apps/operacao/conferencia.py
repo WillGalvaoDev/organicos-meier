@@ -33,7 +33,7 @@ from apps.operacao.models import BackupExterno
 from apps.operacao.painel import prazos_encerrados
 from apps.pagamentos.models import ChamadaAoProvedor, SituacaoDaChamada
 from apps.pagamentos.provedor import ProvedorIndisponivel, RecusaDoProvedor, obter_provedor
-from apps.rodadas.models import EstoqueDaRodada, Etapa
+from apps.rodadas.models import ETAPAS_ATIVAS, EstoqueDaRodada
 
 OK = "OK"
 ATENCAO = "ATENÇÃO"
@@ -103,8 +103,10 @@ def _invariante(instante: datetime, antes_de: datetime | None) -> Secao:
 
 
 def _estoque(instante: datetime, antes_de: datetime | None) -> Secao:
+    # só a rodada ativa (a única de cada fornecedor): o estoque dela cobre as reservas atuais. A
+    # retirada liberada e a cancelada zeraram as reservas e guardam um limite histórico (E16-R04).
     estoques = (
-        EstoqueDaRodada.objects.exclude(rodada__etapa=Etapa.CANCELADA)
+        EstoqueDaRodada.objects.filter(rodada__etapa__in=ETAPAS_ATIVAS)
         .exclude(limite__isnull=True)
         .select_related("rodada__fornecedor", "produto")
         .order_by("rodada_id", "produto_id")
