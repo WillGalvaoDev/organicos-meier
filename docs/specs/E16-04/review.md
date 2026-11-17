@@ -32,3 +32,54 @@ Não roda na máquina do desenvolvedor. Foi executado dentro da imagem construí
 ## Verificação
 
 `uv run pytest -q` em `test_backup_externo.py`, `tests/ambiente`, `test_painel_administrativo.py`, `test_observabilidade.py`, `test_execucao_das_tarefas.py`, `test_painel_ponta_a_ponta.py`: verde (118 passed, 1 skipped = A-15, que passou no contêiner). `ruff` e `mypy` (544 arquivos) limpos; `makemigrations --check` sem mudanças. Suíte completa no fim da E16. Sem push, PR nem merge.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: REPROVADO.**
+
+### E16-R03 — Importante — repetição sobrescreve backup já confirmado
+
+Referências: E16-04 regras 1, 2, 4 e invariantes; AGENTS.md §6 (integridade,
+idempotência e recuperação); `apps/operacao/backup.py:188` e `:207`.
+A chave tem resolução de segundos e o upload substitui o objeto antes de tentar
+inserir o registro com chave única. A restrição do banco age tarde demais.
+Uma execução manual e a periódica no mesmo segundo podem colidir; o comando manual
+não participa do `queueing_lock` do worker.
+
+Reprodução independente com os fixtures `ab` e `ferramentas` de
+`tests/tecnicos/test_backup_externo.py`, no banco isolado do revisor:
+
+```python
+from tests.tecnicos import test_backup_externo as apoio
+primeiro = apoio._fazer()  # instante I fixo, objeto e registro confirmados
+monkeypatch.setattr(apoio, "CONTEUDO_CIFRADO", b"OUTRO-BACKUP-CIFRADO")
+with pytest.raises(IntegrityError), transaction.atomic():
+    apoio._fazer()  # mesmo I/chave: upload acontece, INSERT falha
+atual = ab.get_object(Bucket=apoio.BUCKET, Key=primeiro.chave)["Body"].read()
+assert hashlib.sha256(atual).hexdigest() == primeiro.sha256
+```
+
+Resultado: falha na última asserção. Hash do registro começa `2f75b302`; hash do
+objeto agora começa `c6679d53`. O registro imutável deixa de descrever o objeto que
+aponta. Variar os bytes simula duas cifragens distintas. Não se trata de exigir
+um formato novo de chave: é necessário impedir que uma colisão substitua um backup
+confirmado, inclusive concorrente, mantendo o contrato aprovado.
+
+Retorno: proteger a identidade e o objeto antes do envio, definir a resposta segura
+à repetição e testar chamadas concorrentes/manual-periódica, sem perder o objeto
+anterior. A correção não deve se limitar a capturar o IntegrityError posterior.
+
+A-1 a A-14/A-16/A-17: conferidos rotina, modelo/trigger, falhas, limpeza, tarefa,
+comando, configuração e painel. A-15: o teste local é pulado por falta de ferramentas;
+registro do implementador em contêiner preservado, mas não foi revalidado nesta
+revisão e o build atual falha em R01. Não confundir `pg_restore --list` desse critério
+com o teste de restauração operacional completo da E16-08.

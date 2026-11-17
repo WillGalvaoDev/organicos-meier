@@ -29,3 +29,57 @@ Depois do Green, três testes ainda falharam por defeito do **meu teste** (não 
 ## Verificação
 
 `uv run pytest -q tests/tecnicos/test_observabilidade.py tests/ambiente tests/tecnicos/test_nucleo_campos_decimais.py tests/tecnicos/test_execucao_das_tarefas.py tests/tecnicos/test_alertas_de_atraso.py`: **72 passed**. `ruff` e `mypy` (537 arquivos) limpos. Suíte completa no fim da E16. Sem push, PR nem merge. Evidência no Sentry real (A-7 e A-8 da E16-08) fica para a E16-08.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: REPROVADO.**
+
+### E16-R02 — Bloqueador — tokens e nomes chegam ao envelope do Sentry
+
+Referências: infraestrutura §5, AGENTS.md §6, invariante da E16-03 (nenhum nome ou
+token sai), regras 3/4 e A-4/A-5; `config/observabilidade.py:26`, `:58` e `:63`.
+`_sem_consulta` conserva o caminho integral. `limpar_evento` não limpa novamente
+`request`; a lista de chaves sensíveis tampouco inclui `nome`/`name`.
+
+Reprodução independente, usando o fixture `tm` de
+`tests/tecnicos/test_observabilidade.py` (SDK real, transporte em memória, sem rede):
+
+```python
+sentry_sdk.capture_event({"message": "erro", "request": {
+    "method": "GET",
+    "url": "https://exemplo.invalid/entrar/link/TOKEN-SINTETICO-DO-REVISOR/",
+}})
+assert "TOKEN-SINTETICO-DO-REVISOR" not in tm.texto()
+# FALHA: token está em request.url do envelope capturado.
+
+sentry_sdk.capture_event({"message": "erro", "extra": {"nome": "Pessoa Sintetica Revisora"}})
+assert "Pessoa Sintetica Revisora" not in tm.texto()
+# FALHA: nome está em extra.nome do envelope capturado.
+```
+
+São dois testes separados com fixture renovado. Não foram usados dados pessoais nem
+credenciais reais. O caminho com segredo é usado pelas rotas de convite e link de
+acesso; manter o caminho para diagnóstico não autoriza enviar sua credencial.
+O registro M-13 é reclassificado: afeta segurança e, pelas próprias regras de
+`docs/melhorias.md`, não pode ser melhoria não impeditiva. Não depende de decisão
+comercial; deve ser corrigido conforme a precedência das fontes de verdade.
+
+Retorno: sanitizar os segmentos sensíveis e dados identificáveis em todas as partes
+permitidas do evento, com regressões que inspecionem o envelope completo. Conferir
+igualmente breadcrumbs e cabeçalhos preservados. Os testes atuais de e-mail,
+telefone, cookies, SQL, falha do filtro e check-ins não exercitam estes dois casos.
+
+A-1 a A-13 têm testes locais; as opções, isolamento de falhas dos monitores e
+check-ins com o mesmo ID foram conferidos. Evidência externa continua na E16-08.
+O registro chama os três problemas pós-Green de defeitos do teste, mas o caso A-7
+inclui correção de produção após uma falha observada; a descrição deve ser lida
+assim, sem invalidar o ciclo observado. M-14 permanece melhoria, sem novo achado.

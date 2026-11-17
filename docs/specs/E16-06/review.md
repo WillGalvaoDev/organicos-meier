@@ -23,3 +23,27 @@ Agente 2.
 ## Verificação
 
 `uv run pytest -q tests/tecnicos/test_regras_de_funcionamento.py tests/tecnicos/test_endereco_de_retirada_telas.py tests/tecnicos/test_portal_do_fornecedor.py`: **36 passed**. `ruff` e `mypy` (548 arquivos) limpos. Suíte completa no fim da E16. Sem push, PR nem merge.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: APROVADO.** A E16 completa não está aprovada.
+
+A-1 a A-8 confrontados com spec, template, view e testes: oito seções e redação
+aprovada, endereço preservado, valores derivados das constantes de taxa/prazos,
+retirada por extenso, link atualizado e acesso de comprador/administrador com recusa
+do fornecedor. Conferida a diferença `48 - 24` para a margem contada depois do prazo.
+
+A mudança das três strings no teste antigo do link é consequência direta da regra 5,
+foi registrada e não removeu a negativa de autorização. A leitura literal de
+“sem alteração” do A-3 não deve impedir a mudança de texto expressamente exigida.
+Não há decisão comercial nova nem afrouxamento de comportamento. Registros Red/Green
+conferidos, com guardas existentes identificadas. Sem achado novo nesta fatia.

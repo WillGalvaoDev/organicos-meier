@@ -44,3 +44,41 @@ O resultado do job no PR fica para o registro do revisor.
 A suíte completa acusou 19 falhas depois das E16-01 e E16-04: (a) a rota `/saude/` não declarava a política de acesso (`@publica`), e os testes que varrem as rotas (E02-10 e outras) a acusaram; (b) `test_nenhuma_tarefa_periodica_faz_aporte` (E09-05) executa todas as tarefas periódicas, e o `backup_diario`, sem as variáveis do R2 nos testes, levanta `BackupFalhou("configuracao")` como a regra 8 da E16-04 manda. Correção: `@publica` em `apps/nucleo/saude.py`; no teste da E09-05, a tarefa `backup_diario` passa a ser conferida com `pytest.raises(BackupFalhou, match="configuracao")` (as demais seguem como antes; a asserção de que nenhuma tarefa faz aporte não mudou).
 
 **Suíte completa da E16 (E16-01 a E16-08):** `uv run pytest -q`: **3554 passed, 1 skipped (A-15 do backup, sem as ferramentas no Windows; passou no contêiner), 2 xfailed (A-3 e A-4 da E16-08, bloqueados por dependência)**, em 11 min 50 s. `ruff` e `mypy` (554 arquivos) limpos.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: REPROVADO.**
+
+### E16-R01 — Bloqueador — imagem atual não constrói
+
+Referências: E16-01 regras de construção/estáticos, A-12 e A-15;
+`Dockerfile:34`, `config/settings/prod.py:82` e `.github/workflows/ci.yml` (job `imagem`).
+
+Execução independente: `docker build -t organicos-meier:revisor-e16-52f8745 .`.
+Resultado: código 1 no `RUN ... python manage.py collectstatic --noinput`, com
+`django.core.exceptions.ImproperlyConfigured: Set the R2_ENDPOINT environment variable`.
+O passo fornece apenas as variáveis anteriores às E16-02/03/04; as novas variáveis
+obrigatórias de R2, Sentry e backup não estão no ambiente fictício de construção.
+A imagem anterior registrada pelo implementador não demonstra o build de `52f8745`.
+O mesmo Dockerfile impede o job do PR e a implantação da E16-08.
+
+Retorno ao implementador: tornar a construção autossuficiente com configurações
+fictícias limitadas ao passo necessário, sem segredos, serviços reais ou persistência
+na imagem; provar o build do commit corrigido e as verificações de binários/usuário.
+Não foi feita correção de produção pelo revisor.
+
+Demais verificações: revisão de `/saude/`, tratamento do erro de banco, política
+pública, HTTP interno, hosts/CSRF, TLS/conexão direta, WhiteNoise, processos e CI.
+A-1 a A-14 têm cobertura local; isso não substitui o A-15 nem sana R01.
+Os registros Red/Green descrevem comandos, falhas e guardas já existentes. Testes e
+produção estão nos mesmos commits: o histórico sozinho não prova a ordem interna;
+não encontrei contradição que autorize afirmar uma violação de TDD.

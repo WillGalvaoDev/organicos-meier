@@ -28,3 +28,29 @@ O A-3 inicial lia `STORAGES` de `config.settings.test` por subprocesso e recebia
 ## Verificação
 
 `uv run pytest -q` nos arquivos da fatia e nos relacionados (avatar, perfil, devolução excepcional, T-09, ambiente): **121 passed**. `ruff` e `mypy` (534 arquivos) limpos. Suíte completa no fim da E16. Sem push, PR nem merge.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: APROVADO no escopo local especificado.** A E16 completa não está aprovada.
+
+Conferidos A-1 a A-14 contra configuração compartilhada do backend S3, código,
+testes de ambiente e `test_arquivos_no_r2.py`: bucket privado, assinatura/validade,
+chaves independentes do nome pessoal, acesso autenticado e passkey do administrador,
+recusa de outro comprador, comprovante restrito, 404 para objeto ausente, rollback
+do perfil e da confirmação financeira em falha de upload, mensagem 503 e logs da
+aplicação sem credenciais. A procura por `.avatar.url`/`.comprovante.url` está coberta.
+A implementação preserva a autorização anterior e usa o backend real com `moto`.
+
+Registros TDD conferidos: configuração ausente, três falhas de comportamento antes
+do tratamento, guardas existentes e correção explicitada do teste de STORAGES.
+Nenhum achado novo específico desta fatia. A prova contra R2 real é o A-9 da E16-08,
+ainda pendente; o build integrado tem R01 e a observabilidade tem R02.

@@ -39,3 +39,88 @@ Nenhum teste novo falhou: não há defeito a devolver ao especificador.
 ## Verificação
 
 `uv run pytest -q tests/rastreabilidade tests/aceitacao/test_cenario_116_servico_e_frete_do_parcial.py`: verde. Todas as 558 referências existem e nenhuma está pulada (conferido pelo teste A-1). `ruff` e `mypy` (554 arquivos) limpos. Suíte completa no fim da E16. Sem push, PR nem merge.
+
+
+---
+
+## Revisão independente — agente 3 — 2026-11-17
+
+Base avaliada: `52f8745870ebfa007ad6a94edf7f968ae472d04e`, branch
+`e16-especificacoes`, diff contra `02f8e91`. Requisitos lidos antes do código:
+AGENTS.md, especificação funcional v1.7, infraestrutura v1.8 e as oito specs e
+acceptances da E16. Registros do implementador acima preservados integralmente.
+A evidência global de execução está no parecer da E16-08 abaixo.
+
+**Veredito da fatia: REPROVADO.**
+
+### E16-R05 — Importante — matriz não comprova todas as afirmações
+
+Referências: E16-07 regra 2 e A-11; `tests/rastreabilidade/matriz.py:18` (cenário 2)
+e entrada `T-40`; funcional §16 cenário 2, infraestrutura §8 T-40.
+
+Amostra independente: leitura do corpo de todas as referências dos **20 cenários**
+1, 2, 3, 4, 6, 14, 24, 35, 45, 55, 65, 75, 85, 95, 105, 110, 113, 116, 117 e 119;
+e dos **10 técnicos** T-1, T-4, T-8, T-12, T-17, T-24, T-30, T-40, T-50 e T-55.
+Incluídos os cinco obrigatórios, com leitura de seus asserts; 113 comprova
+2,00/2,00/2,00/1,99, 116 os números 2,00/0,10/0,40 e o acumulado, 117 os registros
+separados e item preservado, T-12 a recusa de inicialização e T-17 a trigger e rotas.
+
+Contraexemplos reproduzíveis por leitura das listas e dos corpos:
+
+- Cenário 2 tem só `test_banido_ou_removido_nao_entra_pelo_google` e
+  `test_banimento_ou_remocao_depois_do_pedido_bloqueia_o_uso`. Ambos cobrem banimento/
+  remoção, não convite nem a preservação das restrições de suspensão. Existem testes
+  de acesso sem conta e de conta suspensa em outros pontos, mas não estão na lista.
+  A suspensão permite entrar para acompanhar pedidos: a prova necessária é que o
+  login não contorne suas restrições, não que todo login seja proibido.
+- T-40 pede **reembolso integral após mudar o preço**. A lista aponta para
+  `test_integral_devolve_o_restante_de_cada_item_e_componente` (não muda preço) e
+  `test_o_valor_vem_do_registrado_e_nao_do_catalogo` (muda preço, mas só reembolsa
+  0,25 de 1,00). Nenhum exerce o integral após a mudança. Isso identifica uma lacuna
+  de evidência da matriz, não afirma um defeito no cálculo financeiro.
+
+Portanto A-11 não é atendido. Nomes de funções e comentários A-n não substituem as
+asserções. Retorno: conferir semanticamente as 174 entradas e todas as afirmações,
+completar referências existentes ou testes de caracterização onde necessário e
+regenerar o documento. O novo teste 116 é uma caracterização justificada, permitida
+pela regra 5; não exige a exceção de TDD concedida apenas ao commit da E15.
+
+### E16-R06 — Importante — conferência aceita referências não executáveis no CI
+
+Referências: E16-07 regra 3, A-1/A-3/A-4/A-6;
+`tests/rastreabilidade/conferencia.py:26` e `:49`.
+
+Prova independente em diretório temporário com `tests/test_exemplo.py`, passando a
+referência para `_conferir_referencia(raiz, referencia)`. Nos três casos abaixo o
+resultado foi `None` (aceito):
+
+```python
+class ForaDaColeta:
+    def test_exemplo(self): pass
+# referência: tests/test_exemplo.py::ForaDaColeta::test_exemplo
+```
+
+```python
+import pytest
+@pytest.mark.skipif(condition=True, reason="sempre")
+def test_exemplo(): pass
+# referência: tests/test_exemplo.py::test_exemplo
+```
+
+```python
+import os, pytest
+@pytest.mark.skipif(os.environ.get("CI") == "true", reason="no CI")
+def test_exemplo(): pass
+# mesma referência; condição verdadeira no GitHub Actions
+```
+
+O contrato exige classe `Test*` e recusa de `skipif` sempre verdadeiro no CI.
+O parser não valida prefixo da classe e só examina argumento posicional constante
+do skipif. Retorno: cobrir esses negativos no validador AST, sem importar/executar
+código arbitrário dos arquivos. Não se afirma que esses três exemplos estejam na
+matriz atual; é a guarda requerida pela fatia que os aceita indevidamente.
+
+A-2/A-5/A-7/A-8/A-9 têm cobertura coerente de chaves, duplicatas e documento gerado.
+A-10 registra a caracterização 116, mas o levantamento de lacunas precisa ser
+complementado por R05. O relato admite seleção heurística e leitura de apenas quatro
+corpos: não sustenta cobertura integral. Registros TDD preservados.
