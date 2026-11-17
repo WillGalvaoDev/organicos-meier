@@ -16,7 +16,8 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -130,6 +131,62 @@ def _cliente_s3(configuracao: dict[str, str]) -> Any:
     )
 
 
+# Trava consultiva de sessão do Postgres, exclusiva do backup (E16-R03). Outras travas do projeto
+# usam outras constantes (por exemplo, 7_151_013 no reenvio do pedido formal).
+CHAVE_DA_TRAVA_DO_BACKUP = 7_160_416
+
+
+class EmAndamento(Exception):
+    """Outra execução do backup (tarefa ou comando) está com a trava."""
+
+
+class ChaveExistente(Exception):
+    """A chave do objeto já existe no banco ou no bucket; nada é substituído."""
+
+
+@contextmanager
+def _trava_do_backup() -> Iterator[None]:
+    """A trava consultiva, sem transação aberta. Se a conexão cair, o Postgres a libera sozinho."""
+    with connections["default"].cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [CHAVE_DA_TRAVA_DO_BACKUP])
+        obtida = cursor.fetchone()[0]
+    if not obtida:
+        raise EmAndamento
+    try:
+        yield
+    finally:
+        try:
+            with connections["default"].cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s)", [CHAVE_DA_TRAVA_DO_BACKUP])
+        except Exception as erro:  # a conexão caída já liberou a trava
+            logger.error("backup externo: trava não liberada: erro=%s", type(erro).__name__)
+
+
+def _objeto_existe(cliente: Any, bucket: str, chave: str) -> bool:
+    """`head_object`: 404 é chave livre; outro erro do R2 é propagado."""
+    try:
+        cliente.head_object(Bucket=bucket, Key=chave)
+    except ClientError as erro:
+        codigo = str(erro.response.get("Error", {}).get("Code", ""))
+        status = erro.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if codigo in ("404", "NoSuchKey", "NotFound") or status == 404:
+            return False
+        raise
+    return True
+
+
+def _reservar(cliente: Any, bucket: str, chave: str, *, so_o_bucket: bool = False) -> None:
+    """Confere que a chave está livre (no banco e no bucket); senão, `BackupFalhou("reserva")`."""
+    if not so_o_bucket and BackupExterno.objects.filter(chave=chave).exists():
+        raise _falhar("reserva", ChaveExistente())
+    try:
+        existe = _objeto_existe(cliente, bucket, chave)
+    except (ClientError, BotoCoreError) as erro:
+        raise _falhar("reserva", erro) from erro
+    if existe:
+        raise _falhar("reserva", ChaveExistente())
+
+
 def _falhar(etapa: str, erro: BaseException) -> BackupFalhou:
     falha = BackupFalhou(etapa, _causa(erro))
     logger.error("backup externo falhou: etapa=%s causa=%s", etapa, falha.causa)
@@ -137,13 +194,33 @@ def _falhar(etapa: str, erro: BaseException) -> BackupFalhou:
 
 
 def fazer_backup_externo(instante: datetime) -> BackupExterno:
-    """Faz o backup e devolve o registro. Qualquer falha levanta `BackupFalhou` sem gravar nada."""
+    """Faz o backup e devolve o registro. Qualquer falha levanta `BackupFalhou` sem gravar nada.
+
+    Antes do despejo, a rotina reserva a chave (E16-R03): trava consultiva do Postgres (a tarefa e o
+    comando manual não rodam juntos) e conferência de que a chave não existe no banco nem no bucket.
+    Um objeto do bucket de backups nunca é substituído."""
     inicio = time.monotonic()
     try:
         configuracao = _configuracao()
     except ImproperlyConfigured as erro:
         raise _falhar("configuracao", erro) from erro
     chave = _chave_do_objeto(instante)
+    cliente = _cliente_s3(configuracao)
+    try:
+        with _trava_do_backup():
+            _reservar(cliente, configuracao["bucket"], chave)
+            return _fazer_o_backup(instante, configuracao, chave, cliente, inicio)
+    except EmAndamento as erro:
+        raise _falhar("reserva", erro) from erro
+
+
+def _fazer_o_backup(
+    instante: datetime,
+    configuracao: dict[str, str],
+    chave: str,
+    cliente: Any,
+    inicio: float,
+) -> BackupExterno:
     diretorio = Path(tempfile.mkdtemp(prefix="bkp-"))
     diretorio.chmod(0o700)
     try:
@@ -183,7 +260,8 @@ def fazer_backup_externo(instante: datetime) -> BackupExterno:
         despejo.unlink(missing_ok=True)  # o despejo em claro não precisa mais existir
         tamanho = cifrado.stat().st_size
         sha256 = _sha256(cifrado)
-        cliente = _cliente_s3(configuracao)
+        # a trava pode ter se perdido (queda da conexão) durante o despejo: confere de novo
+        _reservar(cliente, configuracao["bucket"], chave, so_o_bucket=True)
         try:
             cliente.upload_file(
                 str(cifrado),

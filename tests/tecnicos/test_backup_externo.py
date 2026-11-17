@@ -9,7 +9,7 @@ import hashlib
 import logging
 import subprocess
 from collections.abc import Iterator, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -94,8 +94,6 @@ def ferramentas(monkeypatch: pytest.MonkeyPatch) -> Ferramentas:
 @pytest.fixture
 def ab(settings: Any, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado) -> Iterator[Any]:
     """O arranjo AB: o relógio em `I`, o ambiente de homologação e o bucket `backups-teste`."""
-    # uma senha que não coincide com nenhum outro texto (a do banco de teste é curta e comum)
-    monkeypatch.setitem(connection.settings_dict, "PASSWORD", SENHA_DO_BANCO)
     monkeypatch.setenv("MOTO_S3_CUSTOM_ENDPOINTS", ENDPOINT)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", CHAVE_DE_ACESSO)
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", SEGREDO_DE_ACESSO)
@@ -118,14 +116,21 @@ def ab(settings: Any, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlad
         yield s3
 
 
+@pytest.fixture
+def senha_unica(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Uma senha que não coincide com nenhum outro texto (a do banco de teste é curta e comum).
+    Só para os testes de vazamento: com ela, nenhuma conexão nova com o banco funciona."""
+    monkeypatch.setitem(connection.settings_dict, "PASSWORD", SENHA_DO_BANCO)
+
+
 def _chaves(s3: Any) -> list[str]:
     return [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
 
 
-def _fazer() -> Any:
+def _fazer(instante: datetime = I) -> Any:
     from apps.operacao.backup import fazer_backup_externo
 
-    return fazer_backup_externo(I)
+    return fazer_backup_externo(instante)
 
 
 def test_backup_completo(ab: Any, ferramentas: Ferramentas) -> None:  # A-1
@@ -144,7 +149,7 @@ def test_backup_completo(ab: Any, ferramentas: Ferramentas) -> None:  # A-1
 
 
 def test_o_despejo_recebe_a_conexao_pelo_ambiente(
-    ab: Any, ferramentas: Ferramentas, settings: Any
+    ab: Any, ferramentas: Ferramentas, senha_unica: None
 ) -> None:  # A-2
     _fazer()
     args = ferramentas.argumentos("pg_dump")
@@ -180,11 +185,11 @@ def envio_falha(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(botocore.client.BaseClient, "_make_api_call", falha)
 
 
-def _falha_do_backup() -> Any:
+def _falha_do_backup(instante: datetime = I) -> Any:
     from apps.operacao.backup import BackupFalhou
 
     with pytest.raises(BackupFalhou) as erro:
-        _fazer()
+        _fazer(instante)
     return erro.value
 
 
@@ -303,15 +308,15 @@ def test_o_registro_so_aceita_insercao(ab: Any, ferramentas: Ferramentas) -> Non
 
 
 def test_os_logs_nao_vazam_segredos(
-    ab: Any, ferramentas: Ferramentas, caplog: pytest.LogCaptureFixture, settings: Any
+    ab: Any, ferramentas: Ferramentas, caplog: pytest.LogCaptureFixture, senha_unica: None
 ) -> None:  # A-8
     with caplog.at_level(logging.INFO):
         _fazer()
         ferramentas.codigo_do_despejo = 1
-        _falha_do_backup()
+        _falha_do_backup(I + timedelta(hours=1))
         ferramentas.codigo_do_despejo = 0
         ferramentas.cifragem_esgota = True
-        _falha_do_backup()
+        _falha_do_backup(I + timedelta(hours=2))
     mensagens = [r.getMessage() for r in caplog.records if r.name.startswith("apps.operacao")]
     assert any(CHAVE_DO_OBJETO in m and "tamanho=" in m and "duracao=" in m for m in mensagens)
     assert any("etapa=despejo" in m and "causa=1" in m for m in mensagens)
@@ -368,11 +373,14 @@ def test_a_tarefa_repassa_a_falha(
     assert BackupExterno.objects.count() == 0
 
 
-def test_o_comando_backup_externo(ab: Any, ferramentas: Ferramentas) -> None:  # A-12
+def test_o_comando_backup_externo(
+    ab: Any, ferramentas: Ferramentas, relogio: RelogioControlado
+) -> None:  # A-12
     saida = StringIO()
     call_command("backup_externo", stdout=saida)
     assert CHAVE_DO_OBJETO.rsplit("T", 1)[0] in saida.getvalue()
     assert str(len(CONTEUDO_CIFRADO)) in saida.getvalue()
+    relogio.congelar(I + timedelta(hours=1))  # outra chave: a mesma seria recusada na reserva
     ferramentas.codigo_do_despejo = 1
     saida, erro = StringIO(), StringIO()
     with pytest.raises(SystemExit) as saiu:
@@ -410,3 +418,234 @@ def test_o_backup_manda_checkins_ao_sentry(ab: Any, ferramentas: Ferramentas) ->
     configuracao = checkins[0]["monitor_config"]
     assert configuracao["schedule"] == {"type": "crontab", "value": "0 6 * * *"}
     assert (configuracao["checkin_margin"], configuracao["max_runtime"]) == (120, 60)
+
+
+# --- correção E16-R03: um backup confirmado nunca é substituído (A-18 a A-25) ---------------------
+
+
+def _trocar_o_conteudo_cifrado(monkeypatch: pytest.MonkeyPatch, novo: bytes) -> None:
+    import sys
+
+    monkeypatch.setattr(sys.modules[__name__], "CONTEUDO_CIFRADO", novo)
+
+
+def _sha_do_objeto(s3: Any) -> str:
+    corpo = s3.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)["Body"].read()
+    return hashlib.sha256(corpo).hexdigest()
+
+
+def test_repetir_com_a_mesma_chave_nao_substitui(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-18
+    primeiro = _fazer()
+    chamadas = len(ferramentas.chamadas)
+    _trocar_o_conteudo_cifrado(monkeypatch, b"OUTRO-BACKUP-CIFRADO")
+    falha = _falha_do_backup()
+    assert (falha.etapa, falha.causa) == ("reserva", "ChaveExistente")
+    assert len(ferramentas.chamadas) == chamadas  # despejo e cifragem não foram chamados
+    assert _sha_do_objeto(ab) == primeiro.sha256
+    assert BackupExterno.objects.count() == 1
+
+
+def test_objeto_sem_registro_tambem_e_protegido(ab: Any, ferramentas: Ferramentas) -> None:
+    # A-19
+    ab.put_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO, Body=b"SOBRA-DE-ENVIO-INTERROMPIDO")
+    falha = _falha_do_backup()
+    assert (falha.etapa, falha.causa) == ("reserva", "ChaveExistente")
+    assert ab.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)["Body"].read() == (
+        b"SOBRA-DE-ENVIO-INTERROMPIDO"
+    )
+    assert BackupExterno.objects.count() == 0
+    assert ferramentas.chamadas == []
+
+
+@pytest.fixture
+def trava_ocupada() -> Iterator[None]:
+    """Outra conexão do banco segura a trava do backup."""
+    import psycopg
+
+    from apps.operacao.backup import CHAVE_DA_TRAVA_DO_BACKUP
+
+    banco = connection.settings_dict
+    outra = psycopg.connect(
+        host=banco["HOST"] or "localhost",
+        port=banco["PORT"] or 5432,
+        user=banco["USER"],
+        password=banco["PASSWORD"],
+        dbname=banco["NAME"],
+        autocommit=True,
+    )
+    outra.execute("SELECT pg_advisory_lock(%s)", [CHAVE_DA_TRAVA_DO_BACKUP])
+    try:
+        yield
+    finally:
+        outra.close()
+
+
+def test_trava_ocupada_recusa_sem_rodar_nada(
+    ab: Any, ferramentas: Ferramentas, trava_ocupada: None
+) -> None:  # A-20
+    falha = _falha_do_backup()
+    assert (falha.etapa, falha.causa) == ("reserva", "EmAndamento")
+    assert ferramentas.chamadas == []
+    assert _chaves(ab) == []
+    assert BackupExterno.objects.count() == 0
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_duas_execucoes_ao_mesmo_tempo(
+    ab: Any, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # A-21
+    import threading
+
+    from django.db import connections
+
+    from apps.operacao import backup
+    from apps.operacao.backup import BackupFalhou, fazer_backup_externo
+
+    a_no_despejo = threading.Event()
+    b_tentou = threading.Event()
+    falsas = Ferramentas()
+
+    def ferramenta(args: Any, env: Any, timeout: int) -> None:
+        if args[0] == "pg_dump" and threading.current_thread().name == "A":
+            a_no_despejo.set()
+            assert b_tentou.wait(15), "a segunda execução não chegou a tentar"
+        falsas(args, env, timeout)
+
+    monkeypatch.setattr(backup, "executar_ferramenta", ferramenta)
+    resultados: dict[str, Any] = {}
+
+    def correr(nome: str) -> None:
+        try:
+            if nome == "B":
+                assert a_no_despejo.wait(15)
+            resultados[nome] = fazer_backup_externo(I)
+        except BackupFalhou as falha:
+            resultados[nome] = falha
+        finally:
+            if nome == "B":
+                b_tentou.set()
+            connections.close_all()
+
+    threads = [threading.Thread(target=correr, args=(n,), name=n) for n in ("A", "B")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(40)
+    concluidas = [r for r in resultados.values() if isinstance(r, BackupExterno)]
+    falhas = [r for r in resultados.values() if isinstance(r, BackupFalhou)]
+    assert len(concluidas) == 1
+    assert len(falhas) == 1
+    assert (falhas[0].etapa, falhas[0].causa) in {
+        ("reserva", "EmAndamento"),
+        ("reserva", "ChaveExistente"),
+    }
+    assert BackupExterno.objects.count() == 1
+    assert _sha_do_objeto(ab) == concluidas[0].sha256
+
+
+def _trancas_do_backup() -> int:
+    from apps.operacao.backup import CHAVE_DA_TRAVA_DO_BACKUP
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = %s",
+            [CHAVE_DA_TRAVA_DO_BACKUP],
+        )
+        return int(cursor.fetchone()[0])
+
+
+def test_falha_no_envio_nao_deixa_objeto_nem_trava(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-22
+    import botocore.client
+
+    original = botocore.client.BaseClient._make_api_call
+    estado = {"falhar": True}
+
+    def intermitente(self: Any, operacao: str, parametros: Any) -> Any:
+        if estado["falhar"] and operacao in ("PutObject", "CreateMultipartUpload", "UploadPart"):
+            raise ClientError({"Error": {"Code": "AccessDenied", "Message": "negado"}}, operacao)
+        return original(self, operacao, parametros)
+
+    monkeypatch.setattr(botocore.client.BaseClient, "_make_api_call", intermitente)
+    falha = _falha_do_backup()
+    assert falha.etapa == "envio"
+    assert _trancas_do_backup() == 0
+    assert _chaves(ab) == []
+    estado["falhar"] = False
+    from apps.operacao.backup import fazer_backup_externo
+
+    assert fazer_backup_externo(I).chave == CHAVE_DO_OBJETO
+    assert _trancas_do_backup() == 0
+    assert fazer_backup_externo(I + timedelta(hours=1)).chave.endswith("20261120T070000Z.dump.age")
+    assert _trancas_do_backup() == 0
+
+
+def test_erro_do_r2_na_reserva(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch, caplog: Any
+) -> None:  # A-23
+    import botocore.client
+
+    original = botocore.client.BaseClient._make_api_call
+
+    def nega(self: Any, operacao: str, parametros: Any) -> Any:
+        if operacao == "HeadObject":
+            raise ClientError({"Error": {"Code": "403", "Message": "negado"}}, operacao)
+        return original(self, operacao, parametros)
+
+    monkeypatch.setattr(botocore.client.BaseClient, "_make_api_call", nega)
+    with caplog.at_level(logging.ERROR):
+        falha = _falha_do_backup()
+    assert (falha.etapa, falha.causa) == ("reserva", "ClientError")
+    assert ferramentas.chamadas == []
+    assert any("etapa=reserva" in r.getMessage() for r in caplog.records)
+
+
+def test_objeto_que_aparece_durante_o_despejo_nao_e_substituido(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-24
+    from apps.operacao import backup
+
+    def despeja_e_outra_escrita(args: Any, env: Any, timeout: int) -> None:
+        ferramentas(args, env, timeout)
+        if args[0] == "pg_dump":
+            ab.put_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO, Body=b"ESCRITA-DE-OUTRO")
+
+    monkeypatch.setattr(backup, "executar_ferramenta", despeja_e_outra_escrita)
+    falha = _falha_do_backup()
+    assert (falha.etapa, falha.causa) == ("reserva", "ChaveExistente")
+    assert ab.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)["Body"].read() == b"ESCRITA-DE-OUTRO"
+    assert BackupExterno.objects.count() == 0
+
+
+def test_comando_e_tarefa_na_reserva(
+    ab: Any, ferramentas: Ferramentas, trava_ocupada: None
+) -> None:  # A-25
+    saida, erro = StringIO(), StringIO()
+    with pytest.raises(SystemExit) as saiu:
+        call_command("backup_externo", stdout=saida, stderr=erro)
+    texto = saida.getvalue() + erro.getvalue()
+    assert saiu.value.code == 1
+    assert "Backup falhou na etapa reserva." in texto
+    assert "Outro backup está em andamento." in texto
+
+
+def test_comando_e_tarefa_com_a_chave_existente(ab: Any, ferramentas: Ferramentas) -> None:
+    # A-25
+    from apps.operacao import tarefas
+    from apps.operacao.backup import BackupFalhou
+    from apps.operacao.models import ExecucaoDaTarefa
+
+    ab.put_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO, Body=b"JA-EXISTE")
+    saida, erro = StringIO(), StringIO()
+    with pytest.raises(SystemExit) as saiu:
+        call_command("backup_externo", stdout=saida, stderr=erro)
+    texto = saida.getvalue() + erro.getvalue()
+    assert saiu.value.code == 1
+    assert "Já existe um backup com esta chave; nada foi substituído." in texto
+    with pytest.raises(BackupFalhou):
+        tarefas.backup_diario(timestamp=0)
+    assert ExecucaoDaTarefa.objects.get(nome="backup_diario").ultimo_erro == "BackupFalhou"
