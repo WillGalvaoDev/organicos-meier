@@ -86,3 +86,54 @@ def test_ci_constroi_a_imagem() -> None:  # A-14
     passos = [p.get("run", "") for p in jobs["verificacoes"]["steps"]]
     for comando in ("uv sync --locked", "ruff check", "ruff format --check", "mypy", "pytest"):
         assert any(comando in p for p in passos), comando
+
+
+# --- E16-05: o procedimento de restauração (A-13) -----------------------------------------------
+
+TITULOS_DA_RESTAURACAO = (
+    "Quando restaurar e quem decide",
+    "Congelar",
+    "Caminho A, Neon",
+    "Caminho B, backup externo",
+    "Conferir",
+    "Reativar",
+    "Avisar os afetados",
+    "Guarda da chave privada",
+    "Teste cronometrado",
+    "RTO e RPO",
+)
+COLUNAS_DO_REGISTRO = (
+    "Data",
+    "Caminho",
+    "Ponto recuperado",
+    "Início",
+    "Fim",
+    "Duração",
+    "Resultado da conferência",
+    "Observações",
+)
+
+
+def test_o_procedimento_de_restauracao() -> None:  # A-13
+    texto = _texto("docs/operacao/restauracao.md")
+    titulos = re.findall(r"^#{2,3}\s+(?:\d+\.\s*)?(.+?)\s*$", texto, flags=re.MULTILINE)
+    posicoes = []
+    for esperado in TITULOS_DA_RESTAURACAO:
+        achados = [i for i, t in enumerate(titulos) if t.startswith(esperado)]
+        assert achados, f"falta a seção: {esperado}"
+        posicoes.append(achados[0])
+    assert posicoes == sorted(posicoes)
+    assert "Registro dos testes" in texto
+    cabecalho = next(
+        linha
+        for linha in texto.splitlines()
+        if linha.startswith("| Data") and "Ponto recuperado" in linha
+    )
+    colunas = [c.strip() for c in cabecalho.strip("|").split("|")]
+    assert colunas == list(COLUNAS_DO_REGISTRO)
+    for comando in (
+        "fly scale count worker=0",
+        "pg_restore --no-owner --no-privileges",
+        "python manage.py conferir_restauracao",
+    ):
+        assert comando in texto, comando

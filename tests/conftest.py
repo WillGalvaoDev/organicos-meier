@@ -115,6 +115,7 @@ PREFIXOS_COM_SIMULADOR = (
     "test_arquivos_no_",
     "test_observabilidade",
     "test_backup_externo",
+    "test_conferir_",
     "test_pedidos_",
     "test_simulador_pagamentos_",
     "test_financeiro_",
