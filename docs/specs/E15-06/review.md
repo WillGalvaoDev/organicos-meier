@@ -93,3 +93,20 @@ def test_filtro_acao_malformado_na_rota(client, relogio, webauthn):
 - **Ordem do trabalho:** escrevi o Green antes de rodar o Red; desfiz a mudança (só `apps/operacao/historico.py`), observei o Red acima e reapliquei. O Red foi observado antes do Green no código final.
 - **Ambiente:** o Docker Desktop estava parado ao retomar a sessão; subi o Docker e o container `om-db-1`, sem alterar dados.
 - **Verificação:** suíte completa **3449 passed**; `ruff`, `mypy` (527 arquivos) limpos. Sem push, PR nem merge.
+
+
+## Revalidação do residual de R05 — agente 3 — 2026-11-17
+
+Referência auditada: `7181c67`, branch `e15-especificacoes`, delta desde `2536eb4`; especificação do residual em `2e7718b`. Papel mantido: revisor independente. Registros anteriores preservados integralmente.
+
+**R05 encerrado funcionalmente.** A-1 a A-20 e as duas provas adicionais do parecer anterior passaram. `contexto_do_historico` carrega uma vez a lista de ações distintas e `_filtrar` compara a entrada em memória antes de construir a consulta. O seletor reutiliza a mesma lista. NUL, controle, texto longo, espaços e caixa diferente não causam erro; filtros válidos continuam aplicados quando outro parâmetro é inválido. A rota autenticada que respondia 500 agora responde 200 com o aviso previsto. Não identificado novo defeito funcional no delta.
+
+### R06 — importante — sequência TDD declaradamente descumprida; decisão necessária
+
+- **Requisito:** AGENTS.md §3 (implementador): “Não escreve código de produção para um novo comportamento antes de observar o respectivo teste falhar.” O §8 exige evidência do ciclo Red → Green → Refactor, ou justificativa explícita de exceção técnica. O §2 impede presumir uma decisão não aprovada.
+- **Evidência:** registro do implementador nesta mesma página, incluído em `7181c67`: “escrevi o Green antes de rodar o Red; desfiz a mudança [...] observei o Red acima e reapliquei”.
+- **Avaliação:** a execução posterior do Red confirma que o teste detecta o defeito, mas desfazer/reaplicar o código não altera a ordem histórica declarada. Este comportamento tem testes reproduzíveis; não se trata da exceção de scaffolding sem comportamento testável. Não há autorização registrada para dispensar essa sequência.
+- **Impacto:** nenhum defeito funcional remanescente identificado; a pendência é o cumprimento do contrato de trabalho e do critério de pronto. As oito provas do revisor, incluindo as duas do residual, passam. Não se solicita reescrever código correto para simular uma cronologia diferente.
+- **Decisão necessária:** o responsável pelo projeto pode autorizar uma exceção pontual e explícita para a sequência TDD desta correção (`7181c67`), preservando a declaração e as evidências. O revisor não concede essa dispensa por conta própria. Até essa decisão, o veredito da etapa é **BLOQUEADO POR DECISÃO**, e não aprovação definitiva.
+
+Validação independente: **210 passed in 38.42s**, incluindo os sete módulos E15, alertas financeiros e as oito provas do revisor. Detalhamento em E15-07/review.md.

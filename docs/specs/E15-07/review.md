@@ -184,3 +184,24 @@ A suíte completa iniciada em 2026-11-16 terminou com **3438 passed in 713.38s (
 Resultado consolidado: 3438 testes permanentes verdes; 197 aprovações na execução dirigida (E15, alertas financeiros e seis provas originais); duas provas adicionais falhando no residual de R05, no serviço e na rota HTTP. **E15 REPROVADA**, com R01–R04 encerrados e somente o residual de R05 pendente. Testes verdes não substituem o atendimento à regra de ignorar filtros inválidos com resposta 200.
 
 Entrega: somente acréscimos nos sete `review.md`; preservação integral dos textos de HEAD conferida por comparação com `git show`. Provas temporárias e worktree de reconstrução do Red removidos; nenhuma alteração em produção, especificações ou testes permanentes. `git diff --check` limpo. Pareceres commitados na branch de trabalho, sem push. Próximo gate: correção do filtro `acao` e revalidação independente.
+
+
+## Revalidação do residual de R05 — agente 3 — 2026-11-17
+
+Referência auditada: `7181c67`, branch `e15-especificacoes`, delta desde `2536eb4`; especificação do residual em `2e7718b`. Papel mantido: revisor independente. Registros anteriores preservados integralmente.
+
+**Veredito: BLOQUEADO POR DECISÃO.** R01–R05 estão encerrados funcionalmente; não foi identificado defeito funcional remanescente no escopo revisado. R06 (importante, processo) aguarda decisão do responsável sobre a exceção pontual à sequência TDD, conforme [E15-06/review.md](../E15-06/review.md). Não é necessária decisão de regra de negócio nem mudança de produção para o defeito anterior.
+
+### Escopo e resultados
+
+- Lidos os novos spec/acceptance e o registro do implementador antes de avaliar o delta. A mudança está restrita à validação do filtro `acao` em `apps/operacao/historico.py`, com testes A-19/A-20. As demais correções e aprovações funcionais anteriores permanecem válidas.
+- Extraídos sem mudança dos pareceres os seis casos originais e os dois casos do residual, em arquivo temporário `tests/tecnicos/test_alertas_de_revisor_e15.py`.
+- Runner isolado com `.venv/Scripts/python.exe`, `DJANGO_SETTINGS_MODULE=config.settings.test`, `PYTHONPATH` na raiz e `TEST.NAME = test_organicos_revisor_e15_7181c67` nos aliases. Comando pytest `-q --tb=short`, sete módulos E15 (`test_execucao_das_tarefas`, `test_alertas_operacionais`, `test_alertas_de_atraso`, `test_alertas_de_falha`, `test_painel_administrativo`, `test_historico_de_acoes`, `test_painel_ponta_a_ponta`), `test_financeiro_alertas` e provas temporárias: **210 passed in 38.42s**, saída 0.
+- `.venv/Scripts/ruff.exe check .`: passou; `ruff format --check .`: 435 arquivos formatados; `mypy .`: 527 arquivos sem erro.
+- `manage.py check --settings=config.settings.test`: nenhum problema; `manage.py makemigrations --check --dry-run --settings=config.settings.test`: nenhuma mudança.
+- Não reexecutei nesta rodada a suíte global. A regressão independente foi dimensionada ao delta de uma função de leitura e abrangeu toda a E15, seus alertas financeiros e as reproduções. O implementador registra **3449 passed** para a suíte global; esse número é evidência dele, não execução independente desta rodada. A suíte global independente anterior está registrada acima (3438 em `f42e08d`).
+- O registro Red do implementador informa três falhas por NUL e guardas já verdes. A declaração explícita de Green escrito antes de observar Red origina R06; os resultados verdes não eliminam essa pendência de processo.
+
+As fatias E15-01 a E15-05 continuam aprovadas funcionalmente; E15-06 atende os requisitos funcionais e aguarda somente a decisão de processo, refletida no encerramento da E15-07. Não foram acrescentadas melhorias opcionais. Mantidos os limites de fase 1/simulador e de tarefas chamadas diretamente, sem validação de produção ou monitor externo.
+
+Entrega: acréscimos em E15-06/review.md e E15-07/review.md, preservando integralmente os registros anteriores. Provas temporárias removidas após conferência de autoria; nenhuma mudança de produção, especificações ou testes permanentes. Parecer commitado, sem push. Próximo gate: decisão explícita do responsável sobre a exceção TDD pontual; se autorizada, registrar a decisão e encerrar a revisão sem inventar uma nova sequência histórica.
