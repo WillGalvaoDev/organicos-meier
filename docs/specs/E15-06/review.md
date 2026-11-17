@@ -110,3 +110,14 @@ Referência auditada: `7181c67`, branch `e15-especificacoes`, delta desde `2536e
 - **Decisão necessária:** o responsável pelo projeto pode autorizar uma exceção pontual e explícita para a sequência TDD desta correção (`7181c67`), preservando a declaração e as evidências. O revisor não concede essa dispensa por conta própria. Até essa decisão, o veredito da etapa é **BLOQUEADO POR DECISÃO**, e não aprovação definitiva.
 
 Validação independente: **210 passed in 38.42s**, incluindo os sete módulos E15, alertas financeiros e as oito provas do revisor. Detalhamento em E15-07/review.md.
+
+
+## Decisão do responsável e encerramento — 2026-11-17
+
+O responsável pelo projeto autorizou explicitamente nesta sessão: “autorizo uma exceção pontual à ordem do TDD só para o commit 7181c67”.
+
+A exceção cobre exclusivamente a ordem do TDD na correção de `7181c67`. Não altera o AGENTS.md, não dispensa testes ou revisão e não se estende a outros commits ou entregas. Preservados a declaração do implementador e o achado histórico; a autorização não reescreve a sequência efetivamente realizada.
+
+**R06 encerrado pela decisão explícita do responsável. R01–R05 permanecem encerrados pelas validações funcionais.**
+
+**Veredito final da E15-06: APROVADO.** Sem pendência remanescente nesta fatia. Valem as evidências independentes da revalidação de `7181c67` registradas acima.

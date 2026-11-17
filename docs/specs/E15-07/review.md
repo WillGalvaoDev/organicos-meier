@@ -205,3 +205,18 @@ Referência auditada: `7181c67`, branch `e15-especificacoes`, delta desde `2536e
 As fatias E15-01 a E15-05 continuam aprovadas funcionalmente; E15-06 atende os requisitos funcionais e aguarda somente a decisão de processo, refletida no encerramento da E15-07. Não foram acrescentadas melhorias opcionais. Mantidos os limites de fase 1/simulador e de tarefas chamadas diretamente, sem validação de produção ou monitor externo.
 
 Entrega: acréscimos em E15-06/review.md e E15-07/review.md, preservando integralmente os registros anteriores. Provas temporárias removidas após conferência de autoria; nenhuma mudança de produção, especificações ou testes permanentes. Parecer commitado, sem push. Próximo gate: decisão explícita do responsável sobre a exceção TDD pontual; se autorizada, registrar a decisão e encerrar a revisão sem inventar uma nova sequência histórica.
+
+
+## Decisão do responsável e encerramento — 2026-11-17
+
+O responsável pelo projeto autorizou explicitamente nesta sessão: “autorizo uma exceção pontual à ordem do TDD só para o commit 7181c67”.
+
+A exceção cobre exclusivamente a ordem do TDD na correção de `7181c67`. Não altera o AGENTS.md, não dispensa testes ou revisão e não se estende a outros commits ou entregas. Preservados a declaração do implementador e o achado histórico; a autorização não reescreve a sequência efetivamente realizada.
+
+**R06 encerrado pela decisão explícita do responsável. R01–R05 permanecem encerrados pelas validações funcionais.**
+
+**Veredito final da E15: APROVADO**, para o código de `7181c67`, com a exceção pontual de processo autorizada acima. As sete fatias estão aprovadas; nenhum achado impeditivo permanece aberto nesta revisão.
+
+Base da decisão: 210 testes independentes aprovados (toda a E15, alertas financeiros e oito provas do revisor), ruff, formatação, mypy, check do Django e verificação de migrações limpos. Os resultados da suíte global e sua autoria permanecem discriminados no registro anterior. Não houve mudança de código desde a revalidação; esta atualização é apenas documental e não exigiu repetir os testes.
+
+Próximo gate: preparação do PR à main, com atualização bilíngue do estado nos README pelo responsável por abrir o PR, conforme AGENTS.md §10. Esta aprovação não autoriza produção, dinheiro real ou fases posteriores. Registros preservados, documentos commitados na branch de trabalho, sem push.
