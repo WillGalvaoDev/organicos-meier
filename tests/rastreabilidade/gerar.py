@@ -7,7 +7,7 @@ correspondente faz a geração falhar.
 
 import argparse
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from tests.rastreabilidade.conferencia import RAIZ
@@ -48,11 +48,19 @@ def _resumo(texto: str) -> str:
     return texto[: MAXIMO_DO_RESUMO - 3].rstrip() + "..."
 
 
-def _testes(referencias: list[str]) -> str:
-    return "<br>".join(f"`{r}`" for r in referencias)
+def _afirmacoes(afirmacoes: Mapping[str, Sequence[str]]) -> str:
+    """Cada afirmação seguida dos testes que a provam."""
+    blocos = []
+    for texto, referencias in afirmacoes.items():
+        testes = "<br>".join(f"`{r}`" for r in referencias)
+        blocos.append(f"**{texto.replace('|', '/')}**<br>{testes}")
+    return "<br><br>".join(blocos)
 
 
-def gerar_documento(cenarios: Mapping[int, list[str]], tecnicos: Mapping[str, list[str]]) -> str:
+def gerar_documento(
+    cenarios: Mapping[int, Mapping[str, Sequence[str]]],
+    tecnicos: Mapping[str, Mapping[str, Sequence[str]]],
+) -> str:
     textos = _cenarios_do_documento()
     regras = _tecnicos_do_documento()
     linhas = [
@@ -70,7 +78,7 @@ def gerar_documento(cenarios: Mapping[int, list[str]], tecnicos: Mapping[str, li
     for numero in sorted(cenarios):
         if numero not in textos:
             raise ValueError(f"cenário {numero} sem texto nos documentos-base")
-        linhas.append(f"| {numero} | {_resumo(textos[numero])} | {_testes(cenarios[numero])} |")
+        linhas.append(f"| {numero} | {_resumo(textos[numero])} | {_afirmacoes(cenarios[numero])} |")
     linhas += [
         "",
         "## Testes técnicos (infraestrutura 8)",
@@ -81,7 +89,7 @@ def gerar_documento(cenarios: Mapping[int, list[str]], tecnicos: Mapping[str, li
     for chave in sorted(tecnicos, key=lambda k: int(k[2:])):
         if chave not in regras:
             raise ValueError(f"teste técnico {chave} sem texto nos documentos-base")
-        linhas.append(f"| {chave} | {regras[chave]} | {_testes(tecnicos[chave])} |")
+        linhas.append(f"| {chave} | {regras[chave]} | {_afirmacoes(tecnicos[chave])} |")
     return "\n".join(linhas) + "\n"
 
 

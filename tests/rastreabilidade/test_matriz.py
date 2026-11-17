@@ -1,7 +1,7 @@
-"""E16-07: a matriz de rastreabilidade cenário -> testes (acceptance A-1 a A-9).
+"""E16-07: a matriz de rastreabilidade cenário -> afirmações -> testes (acceptance A-1 a A-17).
 
-Os casos negativos montam matrizes de teste aqui mesmo e as passam à função de conferência, que
-lê as árvores de sintaxe dos arquivos de `tests/` sem importar nem rodar nada.
+Os casos negativos montam matrizes e arquivos de teste de exemplo aqui mesmo e os passam à função
+de conferência, que lê as árvores de sintaxe dos arquivos de `tests/` sem importar nem rodar nada.
 """
 
 import subprocess
@@ -16,34 +16,46 @@ from tests.rastreabilidade.gerar import gerar_documento
 
 REAL = "tests/tecnicos/test_nucleo_tempo.py::test_fronteira_prazo_encerrado_exclusivo"
 DOCUMENTO = RAIZ / "docs" / "rastreabilidade-fase1.md"
+Afirmacoes = dict[str, list[str]]
 
 
-def _completa(**mudancas: list[str] | None) -> tuple[dict[int, list[str]], dict[str, list[str]]]:
-    """Uma matriz válida (todas as chaves apontam para um teste real), com mudanças pontuais."""
-    cenarios = {n: [REAL] for n in range(1, 120)}
-    tecnicos = {f"T-{n}": [REAL] for n in range(1, 56)}
-    for chave, valor in mudancas.items():
-        alvo = tecnicos if chave.startswith("T_") else cenarios
-        nome: int | str = chave.replace("T_", "T-") if chave.startswith("T_") else int(chave[1:])
-        if valor is None:
-            del alvo[nome]  # type: ignore[arg-type]
-        else:
-            alvo[nome] = valor  # type: ignore[index]
+def _completa() -> tuple[dict[int, Afirmacoes], dict[str, Afirmacoes]]:
+    """Uma matriz válida: todas as entradas com uma afirmação que aponta para um teste real."""
+    cenarios = {n: {f"afirmação do cenário {n}": [REAL]} for n in range(1, 120)}
+    tecnicos = {f"T-{n}": {f"afirmação de T-{n}": [REAL]} for n in range(1, 56)}
     return cenarios, tecnicos
+
+
+def _arquivo(raiz: Path, nome: str, conteudo: str) -> str:
+    """Grava `tests/<nome>` em `raiz` e devolve o início da referência (`tests/<nome>::`)."""
+    arquivo = raiz / "tests" / nome
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    arquivo.write_text(conteudo, encoding="utf-8")
+    return f"tests/{nome}::"
+
+
+def _problemas_de(raiz: Path, referencia: str) -> list[str]:
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {"afirmação": [referencia]}
+    return [p for p in conferir(cenarios, tecnicos, raiz=raiz) if p.startswith("cenário 1:")]
 
 
 def test_a_matriz_entregue_e_valida() -> None:  # A-1
     assert sorted(matriz.CENARIOS) == list(range(1, 120))
     assert sorted(matriz.TECNICOS, key=lambda k: int(k[2:])) == [f"T-{n}" for n in range(1, 56)]
-    assert all(matriz.CENARIOS.values())
-    assert all(matriz.TECNICOS.values())
+    for entrada in (*matriz.CENARIOS.values(), *matriz.TECNICOS.values()):
+        assert entrada
+        for texto, testes in entrada.items():
+            assert texto.strip()
+            assert testes
     assert conferir(matriz.CENARIOS, matriz.TECNICOS) == []
 
 
 def test_chaves_faltando_ou_sobrando() -> None:  # A-2
-    cenarios, tecnicos = _completa(c42=None)
-    cenarios[120] = [REAL]
-    tecnicos["T-56"] = [REAL]
+    cenarios, tecnicos = _completa()
+    del cenarios[42]
+    cenarios[120] = {"x": [REAL]}
+    tecnicos["T-56"] = {"x": [REAL]}
     problemas = " | ".join(conferir(cenarios, tecnicos))
     assert "42" in problemas
     assert "faltando" in problemas
@@ -53,56 +65,41 @@ def test_chaves_faltando_ou_sobrando() -> None:  # A-2
 
 
 def test_referencias_invalidas() -> None:  # A-3
-    cenarios, tecnicos = _completa(
-        c1=["tests/tecnicos/nao_existe.py::test_x"],
-        c2=["tests/tecnicos/test_nucleo_tempo.py::test_que_nao_existe"],
-        c3=["tests/tecnicos/test_nucleo_tempo.py::_auxiliar_que_nao_comeca_com_test"],
-    )
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {"a": ["tests/tecnicos/nao_existe.py::test_x"]}
+    cenarios[2] = {"a": ["tests/tecnicos/test_nucleo_tempo.py::test_que_nao_existe"]}
+    cenarios[3] = {"a": ["tests/tecnicos/test_nucleo_tempo.py::_auxiliar_sem_prefixo_test"]}
     problemas = conferir(cenarios, tecnicos)
     texto = " | ".join(problemas)
     assert "nao_existe.py" in texto
     assert "test_que_nao_existe" in texto
-    assert "_auxiliar_que_nao_comeca_com_test" in texto
+    assert "_auxiliar_sem_prefixo_test" in texto
     assert len(problemas) == 3
 
 
-def test_teste_pulado_e_recusado(tmp_path: Path) -> None:  # A-4
-    arquivo = tmp_path / "tests" / "tecnicos" / "test_pulado.py"
-    arquivo.parent.mkdir(parents=True)
-    arquivo.write_text(
+def test_teste_pulado_simples_e_recusado(tmp_path: Path) -> None:  # A-4
+    ref = _arquivo(
+        tmp_path,
+        "test_pulado.py",
         "import pytest\n\n"
         "@pytest.mark.skip(reason='x')\n"
         "def test_pulado(): ...\n\n"
         "@pytest.mark.skipif(True, reason='x')\n"
-        "def test_pulado_sempre(): ...\n\n"
-        "@pytest.mark.skipif(False, reason='x')\n"
-        "def test_nao_pulado(): ...\n",
-        encoding="utf-8",
+        "def test_pulado_sempre(): ...\n",
     )
-    ref = "tests/tecnicos/test_pulado.py::"
-    cenarios, tecnicos = _completa(c1=[ref + "test_pulado"], c2=[ref + "test_pulado_sempre"])
-    texto = " | ".join(conferir(cenarios, tecnicos, raiz=tmp_path))
-    assert "test_pulado" in texto
-    assert "pulado" in texto
-    assert "test_pulado_sempre" in texto
-    assert "test_nao_pulado" not in texto
+    assert any("skip" in p for p in _problemas_de(tmp_path, ref + "test_pulado"))
+    assert any("skipif" in p for p in _problemas_de(tmp_path, ref + "test_pulado_sempre"))
 
 
-def test_referencia_repetida() -> None:  # A-5
-    cenarios, tecnicos = _completa(c7=[REAL, REAL])
-    problemas = conferir(cenarios, tecnicos)
-    assert any("repetida" in p and REAL in p for p in problemas)
+def test_referencia_repetida_na_mesma_afirmacao() -> None:  # A-5
+    cenarios, tecnicos = _completa()
+    cenarios[7] = {"a": [REAL, REAL]}
+    assert any("repetida" in p and REAL in p for p in conferir(cenarios, tecnicos))
 
 
 def test_metodo_de_classe_de_teste_e_aceito(tmp_path: Path) -> None:  # A-6
-    arquivo = tmp_path / "tests" / "tecnicos" / "test_classe.py"
-    arquivo.parent.mkdir(parents=True)
-    arquivo.write_text("class TestAlgo:\n    def test_metodo(self): ...\n", encoding="utf-8")
-    cenarios, tecnicos = _completa(c1=["tests/tecnicos/test_classe.py::TestAlgo::test_metodo"])
-    assert conferir(cenarios, tecnicos, raiz=tmp_path) == [
-        p for p in conferir(cenarios, tecnicos, raiz=tmp_path) if "test_classe.py" not in p
-    ]
-    assert not [p for p in conferir(cenarios, tecnicos, raiz=tmp_path) if "TestAlgo" in p]
+    ref = _arquivo(tmp_path, "test_classe.py", "class TestAlgo:\n    def test_metodo(self): ...\n")
+    assert _problemas_de(tmp_path, ref + "TestAlgo::test_metodo") == []
 
 
 def test_o_gerador_escreve_as_duas_tabelas(tmp_path: Path) -> None:  # A-7
@@ -136,6 +133,131 @@ def test_o_documento_versionado_esta_em_dia(tmp_path: Path) -> None:  # A-8
 
 def test_cenario_sem_texto_nos_documentos_base_falha_a_geracao() -> None:  # A-9
     cenarios, tecnicos = _completa()
-    cenarios[999] = [REAL]
+    cenarios[999] = {"x": [REAL]}
     with pytest.raises(ValueError, match="999"):
         gerar_documento(cenarios, tecnicos)
+
+
+# --- correção E16-R06: a referência precisa ser coletável e executável pelo pytest ---------------
+
+
+def test_referencias_fora_da_coleta(tmp_path: Path) -> None:  # A-12
+    fora = _arquivo(
+        tmp_path, "test_exemplo.py", "class ForaDaColeta:\n    def test_exemplo(self): ...\n"
+    )
+    com_init = _arquivo(
+        tmp_path,
+        "test_com_init.py",
+        "class TestComInit:\n    def __init__(self): ...\n    def test_exemplo(self): ...\n",
+    )
+    modulo = _arquivo(
+        tmp_path, "test_modulo_desligado.py", "__test__ = False\n\ndef test_exemplo(): ...\n"
+    )
+    nome = _arquivo(tmp_path, "exemplo.py", "def test_exemplo(): ...\n")
+    casos = {
+        fora + "ForaDaColeta::test_exemplo": "Test",
+        com_init + "TestComInit::test_exemplo": "__init__",
+        modulo + "test_exemplo": "__test__",
+        nome + "test_exemplo": "nome do arquivo",
+    }
+    for referencia, motivo in casos.items():
+        problemas = _problemas_de(tmp_path, referencia)
+        assert problemas, referencia
+        assert motivo in problemas[0], (referencia, problemas)
+
+
+@pytest.mark.parametrize(
+    ("marca", "esperado"),
+    [
+        ('@pytest.mark.skipif(condition=True, reason="sempre")', "skipif"),
+        ('@pytest.mark.skipif(os.environ.get("CI") == "true", reason="no CI")', "skipif"),
+        ("@pytest.mark.skipif(\"sys.platform == 'linux'\")", "skipif"),
+        ("@pytest.mark.xfail", "xfail"),
+        ('@pytest.mark.xfail(strict=True, reason="x")', "xfail"),
+    ],
+)
+def test_marcas_de_pulo_e_falha_esperada_no_decorador(
+    tmp_path: Path, marca: str, esperado: str
+) -> None:  # A-13
+    ref = _arquivo(
+        tmp_path,
+        "test_marca.py",
+        f"import os\nimport pytest\n\n{marca}\ndef test_exemplo(): ...\n",
+    )
+    problemas = _problemas_de(tmp_path, ref + "test_exemplo")
+    assert problemas
+    assert esperado in problemas[0]
+
+
+@pytest.mark.parametrize(
+    "conteudo",
+    [
+        "import pytest\n\npytestmark: list = [pytest.mark.skip]\n\ndef test_exemplo(): ...\n",
+        "import pytest\n\npytestmark = pytest.mark.skip\n\ndef test_exemplo(): ...\n",
+        "import pytest as pt\n\n@pt.mark.skip\ndef test_exemplo(): ...\n",
+        'from pytest import mark\n\n@mark.skipif(True, reason="x")\ndef test_exemplo(): ...\n',
+        'import pytest\n\ndef test_exemplo():\n    pytest.skip("x")\n',
+        'import pytest\n\ndef test_exemplo():\n    pytest.xfail("x")\n',
+        'from pytest import skip\n\ndef test_exemplo():\n    skip("x")\n',
+        'import pytest\n\npytest.importorskip("modulo_ausente")\n\ndef test_exemplo(): ...\n',
+        "import pytest\n\n@pytest.mark.skip\nclass TestPulada:\n    def test_exemplo(self): ...\n",
+    ],
+)
+def test_outras_formas_de_pulo(tmp_path: Path, conteudo: str) -> None:  # A-13
+    ref = _arquivo(tmp_path, "test_forma.py", conteudo)
+    nome = "TestPulada::test_exemplo" if "TestPulada" in conteudo else "test_exemplo"
+    assert _problemas_de(tmp_path, ref + nome), conteudo
+
+
+def test_formas_aceitas(tmp_path: Path) -> None:  # A-14
+    ref = _arquivo(
+        tmp_path,
+        "test_aceitas.py",
+        "import pytest\n\n"
+        '@pytest.mark.skipif(False, reason="nunca")\n'
+        "def test_sem_pulo(): ...\n\n"
+        "@pytest.mark.skip\n"
+        "def test_repetida(): ...\n\n"
+        "def test_repetida(): ...  # a última definição vale\n\n"
+        "class TestValida:\n    def test_metodo(self): ...\n",
+    )
+    for nome in ("test_sem_pulo", "test_repetida", "TestValida::test_metodo"):
+        assert _problemas_de(tmp_path, ref + nome) == [], nome
+
+
+def test_a_ultima_definicao_pulada_e_recusada(tmp_path: Path) -> None:  # A-14 (inverso)
+    ref = _arquivo(
+        tmp_path,
+        "test_ultima.py",
+        "import pytest\n\ndef test_repetida(): ...\n\n"
+        "@pytest.mark.skip\ndef test_repetida(): ...\n",
+    )
+    assert _problemas_de(tmp_path, ref + "test_repetida")
+
+
+# --- correção E16-R05: a matriz tem uma lista de afirmações por entrada --------------------------
+
+
+def test_afirmacoes_mal_formadas() -> None:  # A-15
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {}
+    cenarios[2] = {"": [REAL]}
+    cenarios[3] = {"afirmação": []}
+    cenarios[4] = {"afirmação": [REAL, REAL]}
+    cenarios[5] = {"a": [REAL], "b": [REAL]}  # o mesmo teste em afirmações diferentes: aceito
+    problemas = conferir(cenarios, tecnicos)
+    for numero in (1, 2, 3, 4):
+        assert any(p.startswith(f"cenário {numero}:") for p in problemas), numero
+    assert not any(p.startswith("cenário 5:") for p in problemas)
+
+
+def test_o_cenario_2_tem_as_seis_afirmacoes() -> None:  # A-16
+    afirmacoes = matriz.CENARIOS[2]
+    assert len(afirmacoes) == 6
+    assert all(testes for testes in afirmacoes.values())
+    suspensas = [t for texto, t in afirmacoes.items() if "suspens" in texto.lower()]
+    assert len(suspensas) == 2
+
+
+def test_t40_tem_duas_afirmacoes() -> None:  # A-17 (estrutura)
+    assert len(matriz.TECNICOS["T-40"]) == 2
