@@ -35,7 +35,9 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-16 | Regra 3-A (E15-R05) | positivo | AH | `?ate=9999-12-31`; `?de=0001-01-01`; `?de=0001-01-01&ate=9999-12-31`; `?de=9999-12-31`; também `contexto_do_historico({"ate": "9999-12-31"})` | 200 em todas, sem aviso de filtro inválido; as três linhas nas três primeiras; "Nenhuma ação encontrada." na última; o serviço não levanta. **Red esperado:** `OverflowError` |
 | A-17 | Regra 3-A (E15-R05) | negativo | AH | `de` ou `ate` iguais a `2026-11-18T00:00`, `20261118`, `2026-11-18 ` (espaço no fim), `２０２６-11-18` e `2026-02-30` | 200; "Filtro inválido ignorado: <de ou ate>."; as três linhas |
 | A-18 | Regra 3-A (E15-R05) | positivo | 120 entradas | `?pagina=abc`; `?pagina=-1`; `?pagina=99999999999999999999999` | 200 em todas; a primeira página no primeiro caso e a última nos outros dois, como `get_page` |
+| A-19 | Regra 3-A (residual de E15-R05) | negativo | AH | GET autenticado com `acao` igual a cada um destes: `acao%00invalida`, `rodada.cancelar%00`, `%00`, `rodada.cancelar%01`, 10.000 caracteres `a`, `rodada.cancelar` com um espaço no fim, `RODADA.CANCELAR`; também `contexto_do_historico({"acao": "acao\x00invalida"})` | 200 em todas; "Filtro inválido ignorado: acao."; as três linhas e1, e2 e e3; o serviço devolve `acao` entre os inválidos e não levanta. **Red esperado:** `DataError` (NUL) no serviço e 500 na rota |
+| A-20 | Regra 3-A (residual de E15-R05) | negativo | AH | `?acao=rodada.cancelar&autor=1%00`; `?acao=rodada.cancelar&de=2026-11-18%00`; `?acao=rodada.cancelar&ate=2026-11-18%00`; `?acao=rodada.cancelar&pagina=1%00` | 200 em todas; o aviso do filtro com NUL (autor, de ou ate) e só e2 listada (`acao` aplicada); no último, sem aviso, só e2, na primeira página |
 
 | Critério | Arquivo de teste |
 |---|---|
-| A-1 a A-18 | `tests/tecnicos/test_historico_de_acoes.py` |
+| A-1 a A-20 | `tests/tecnicos/test_historico_de_acoes.py` |
