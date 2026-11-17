@@ -1,7 +1,46 @@
 {% extends "base.html" %}
-{% block titulo %}Regras e retirada · Orgânicos Méier{% endblock %}
+{% block titulo %}Regras de funcionamento · Orgânicos Méier{% endblock %}
 {% block conteudo %}
-  <h1>Regras e retirada</h1>
+  <h1>Regras de funcionamento</h1>
+  <section>
+    <h2>Participação</h2>
+    <p>O acesso é feito por convite, de uso único e válido por 24 horas. Cada e-mail corresponde a uma única conta.</p>
+    <p>Contas de comprador e de fornecedor são separadas. Uma conta de fornecedor não faz compras.</p>
+  </section>
+  <section>
+    <h2>Interesse e reservas</h2>
+    <p>Os itens do carrinho representam interesse, não compra paga. Ao adicionar uma quantidade, ela reserva o estoque disponível da rodada; uma quantidade acima do estoque é recusada.</p>
+    <p>Cada acréscimo entra na fila na ordem em que foi feito. Ao reduzir, as quantidades mais recentes saem primeiro.</p>
+    <p>Cada fornecedor tem um mínimo de compra calculado só sobre os produtos, sem frete nem taxa. Em produtos vendidos por caixa, só contam as caixas completas.</p>
+    <p>Quando uma caixa é invalidada por falta de pagamento de outro comprador e a rodada continua, as suas unidades pagas nela são reembolsadas e voltam para uma fila de pendentes do mesmo fornecedor, com a prioridade original. Quantidade pendente não é reserva: ela é atendida em uma próxima rodada, se houver estoque. Você pode remover quantidades pendentes a qualquer momento.</p>
+  </section>
+  <section>
+    <h2>Fechamento</h2>
+    <p>Quando o mínimo é atingido, o administrador pode iniciar o fechamento, que dura {{ horas_do_fechamento }} horas. Durante o fechamento ainda é possível alterar o carrinho.</p>
+    <p>Ao fim do fechamento, as unidades que não completam uma caixa são removidas, pela ordem de adição, e você é avisado. Se o mínimo deixar de ser atingido, a rodada volta para a fase de interesse.</p>
+  </section>
+  <section>
+    <h2>Pagamento</h2>
+    <p>Quando o administrador abre o pagamento, o seu pedido é congelado: produtos e quantidades não mudam mais, nem por você nem pelo administrador.</p>
+    <p>O valor a pagar é a soma dos produtos, da taxa de serviço de {{ taxa_de_servico }}% sobre os produtos e da sua parte do frete, proporcional ao valor dos seus produtos.</p>
+    <p>Você tem {{ horas_do_pagamento }} horas para pagar, a partir da abertura, sem prorrogação. O pagamento é feito somente pela plataforma de pagamentos integrada; nunca por Pix direto, transferência ou outro meio.</p>
+    <p>Um pagamento iniciado no prazo e aprovado até {{ horas_depois_do_prazo }} horas depois do fim dele é aceito. Aprovado depois disso, ele é devolvido.</p>
+  </section>
+  <section>
+    <h2>Apuração e falta de pagamento</h2>
+    <p>A apuração dos pagamentos é feita pelo administrador depois do fim desse período, e nunca antes.</p>
+    <p>Quem não pagou perde os itens daquele fornecedor no carrinho, inclusive as reservas. Se os produtos pagos não alcançarem o mínimo, a rodada volta para a fase de interesse e todos os valores recebidos são devolvidos.</p>
+  </section>
+  <section>
+    <h2>Devoluções</h2>
+    <p>Há devolução quando o mínimo não é alcançado, quando uma caixa é invalidada, em ocorrências de entrega, no cancelamento da rodada com reembolso, em pagamento aprovado fora do prazo e em pagamento em duplicidade.</p>
+    <p>As devoluções são feitas pela plataforma de pagamentos. Quando isso não for possível, o administrador devolve diretamente e registra a devolução.</p>
+    <p>Depois de pagar, não há cancelamento voluntário do pedido.</p>
+  </section>
+  <section>
+    <h2>Cancelamento da rodada</h2>
+    <p>Só o administrador pode cancelar uma rodada, sempre por inteiro. Ao cancelar, ele indica se há reembolso; com reembolso, todos os que pagaram recebem de volta o valor pago.</p>
+  </section>
   <section>
     <h2>Retirada</h2>
     {% if endereco %}
@@ -10,7 +49,7 @@
       <p>Endereço ainda não informado.</p>
     {% endif %}
     <p>A retirada fica normalmente disponível. Restrições de dia ou horário são publicadas nos <a href="{% url 'comunicados' %}">comunicados</a>.</p>
-    <p>Você é avisado quando a retirada de um pedido é liberada. A partir da liberação, o prazo para retirar é de sete dias. Depois desse prazo, o administrador pode registrar o descarte dos itens não retirados.</p>
+    <p>Você é avisado quando a retirada de um pedido é liberada. A partir da liberação, o prazo para retirar é de {{ dias_de_retirada }} dias. Depois desse prazo, o administrador pode registrar o descarte dos itens não retirados.</p>
     <p>Itens faltantes, incorretos ou não entregues são registrados pelo administrador como ocorrências de entrega, com o reembolso dos itens afetados. Não há substituição de produtos.</p>
   </section>
 {% endblock %}

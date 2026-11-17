@@ -1,4 +1,6 @@
-"""As páginas do endereço de retirada e das regras (E14-03)."""
+"""As páginas do endereço de retirada e das regras (E14-03 e E16-06)."""
+
+from typing import Any
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -10,12 +12,26 @@ from apps.contas.administracao import somente_administrador
 from apps.contas.models import Conta, Papel
 from apps.contas.permissoes import exige_login
 from apps.nucleo.tempo import no_fuso_da_operacao
+from apps.pedidos import calculo, liberacao_da_retirada, prazos
 from apps.pedidos.endereco_de_retirada import (
     EnderecoRecusado,
     definir_endereco_de_retirada,
     endereco_vigente,
 )
 from apps.pedidos.models import EnderecoDeRetirada
+from apps.rodadas import fechamento
+
+POR_EXTENSO = {
+    1: "um",
+    2: "dois",
+    3: "três",
+    4: "quatro",
+    5: "cinco",
+    6: "seis",
+    7: "sete",
+    8: "oito",
+    9: "nove",
+}
 
 
 def _pagina_do_endereco(
@@ -61,4 +77,26 @@ def regras(request: HttpRequest) -> HttpResponse:
     endereço e as regras de retirada não estão na lista da §2."""
     if getattr(request.user, "papel", None) not in (Papel.COMPRADOR, Papel.ADMINISTRADOR):
         raise PermissionDenied
-    return render(request, "pedidos/regras.html", {"endereco": endereco_vigente()})
+    return render(
+        request,
+        "pedidos/regras.html",
+        {"endereco": endereco_vigente(), **_valores_das_regras()},
+    )
+
+
+def _numero(valor: Any) -> str:
+    """O número sem zeros à direita e com vírgula decimal (`5`, `7`, `5,5`)."""
+    return f"{valor.normalize():f}".replace(".", ",")
+
+
+def _valores_das_regras() -> dict[str, Any]:
+    """Os números da página, lidos das constantes que o servidor aplica (E16-06, regra 3): a
+    página não diverge do cálculo do pedido, dos prazos nem da retirada."""
+    dias = liberacao_da_retirada.PRAZO_DE_RETIRADA.days
+    return {
+        "taxa_de_servico": _numero(calculo.TAXA_DE_SERVICO * 100),
+        "horas_do_fechamento": fechamento.HORAS_DO_FECHAMENTO,
+        "horas_do_pagamento": prazos.HORAS_DO_PRAZO_DE_PAGAMENTO,
+        "horas_depois_do_prazo": prazos.HORAS_DA_MARGEM - prazos.HORAS_DO_PRAZO_DE_PAGAMENTO,
+        "dias_de_retirada": POR_EXTENSO.get(dias, str(dias)),
+    }
