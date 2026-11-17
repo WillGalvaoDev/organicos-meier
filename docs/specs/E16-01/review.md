@@ -38,3 +38,9 @@ O resultado do job no PR fica para o registro do revisor.
 ## Verificação
 
 `uv run pytest -q tests/ambiente tests/tecnicos/test_saude.py tests/tecnicos/test_configuracao_producao.py tests/tecnicos/test_configuracao_pagamentos.py tests/tecnicos/test_nucleo_campos_decimais.py tests/tecnicos/test_pagamentos_fronteiras.py`: verde. Suíte completa, `ruff` e `mypy`: no fim da E16 inteira (registro na última fatia). Os testes e o código de cada passo foram commitados juntos; o Red foi observado como descrito acima. Sem push, PR nem merge.
+
+## Correção encontrada na suíte completa da etapa (implementador, 2026-11-17)
+
+A suíte completa acusou 19 falhas depois das E16-01 e E16-04: (a) a rota `/saude/` não declarava a política de acesso (`@publica`), e os testes que varrem as rotas (E02-10 e outras) a acusaram; (b) `test_nenhuma_tarefa_periodica_faz_aporte` (E09-05) executa todas as tarefas periódicas, e o `backup_diario`, sem as variáveis do R2 nos testes, levanta `BackupFalhou("configuracao")` como a regra 8 da E16-04 manda. Correção: `@publica` em `apps/nucleo/saude.py`; no teste da E09-05, a tarefa `backup_diario` passa a ser conferida com `pytest.raises(BackupFalhou, match="configuracao")` (as demais seguem como antes; a asserção de que nenhuma tarefa faz aporte não mudou).
+
+**Suíte completa da E16 (E16-01 a E16-08):** `uv run pytest -q`: **3554 passed, 1 skipped (A-15 do backup, sem as ferramentas no Windows; passou no contêiner), 2 xfailed (A-3 e A-4 da E16-08, bloqueados por dependência)**, em 11 min 50 s. `ruff` e `mypy` (554 arquivos) limpos.

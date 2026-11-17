@@ -10,9 +10,12 @@ from django.db import connections
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
 
+from apps.contas.permissoes import publica
+
 logger = logging.getLogger(__name__)
 
 
+@publica
 @require_GET
 def saude(request: HttpRequest) -> HttpResponse:
     try:
