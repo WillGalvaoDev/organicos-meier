@@ -83,3 +83,12 @@ comando, configuração e painel. A-15: o teste local é pulado por falta de fer
 registro do implementador em contêiner preservado, mas não foi revalidado nesta
 revisão e o build atual falha em R01. Não confundir `pg_restore --list` desse critério
 com o teste de restauração operacional completo da E16-08.
+
+## Correção E16-R03 — a reserva da chave (implementador, 2026-11-17)
+
+- **Red observado** (`tests/tecnicos/test_backup_externo.py`): 7 falhas e 2 erros — A-18 reproduziu o `IntegrityError` do revisor com o objeto já substituído; A-19, A-23, A-24 e A-25 não levantavam `BackupFalhou("reserva", ...)`; A-20, A-21 e A-25 (comando) dependiam da trava inexistente (`CHAVE_DA_TRAVA_DO_BACKUP`).
+- **Green** (`apps/operacao/backup.py`): antes do despejo, `pg_try_advisory_lock` (constante `CHAVE_DA_TRAVA_DO_BACKUP`, sem transação aberta; liberada no fim com sucesso ou falha) e conferência de que a chave não existe em `BackupExterno` nem no bucket (`head_object`, 404 = livre; outro erro do R2 = `BackupFalhou("reserva", classe)`); nova conferência no bucket logo antes do envio. Respostas: `EmAndamento` e `ChaveExistente`, sem rodar ferramenta, sem enviar e sem apagar nada; só se apaga o objeto que a própria execução enviou com tamanho divergente. O comando imprime a segunda linha da regra 7. Sem escrita condicional no R2 (decisão da spec).
+- O A-21 usa duas threads com conexões próprias e transações reais: exatamente uma conclui, a outra recebe `EmAndamento` ou `ChaveExistente`, e o SHA-256 do objeto é o do registro. O A-22 confere em `pg_locks` que nenhuma trava sobra.
+- **Ajustes de arranjo (nenhuma asserção removida):** os testes A-8 (logs) e A-12 (comando) repetiam o backup com o mesmo instante; com a reserva isso passou a ser recusado por desenho, então a segunda tentativa usa outro instante. O fixture `ab` deixou de trocar a senha do banco (o que quebrava conexões novas): a senha única vive em `senha_unica`, só nos testes A-2 e A-8.
+- A-15 (ferramentas reais) reexecutado dentro da imagem do commit `281d191`: 1 passed (ver E16-01).
+- Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).

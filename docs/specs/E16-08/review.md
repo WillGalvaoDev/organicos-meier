@@ -163,3 +163,14 @@ as evidências necessárias para reproduzir os achados estão neste commit docum
 **Próximo gate:** implementador corrige R01 a R06 com evidência Red/Green e devolve
 para revisão; R07 requer completar a homologação e as decisões previstas. Não declarar
 E16 aprovada nem fase 1 encerrada enquanto esses critérios não forem satisfeitos.
+
+## Correção E16-R07 — o que se pôde corrigir sem a fase 0 (implementador, 2026-11-17)
+
+- **Custos (A-16):** Red observado (`tests/ambiente/test_artefatos_de_implantacao.py::test_os_custos_seguem_a_infraestrutura_10` falhou: `homologacao.md` não trazia "US$ 15–35"). `docs/operacao/homologacao.md` e `docs/relatorio-fase1.md` passaram a citar as faixas da infraestrutura 10 linha a linha (Fly.io US$ 8–15, Neon US$ 5–20, SES/R2/Sentry/Better Stack/Cloudflare US$ 0–2, total fixo US$ 15–35); US$ 8–15 só aparece como a faixa do Fly.io.
+- **Etapas entregues:** no relatório, "a consolidar" virou "não registrado" (sem estimativa), como a spec manda.
+- **Ordem do encerramento (regra 15):** as regras 2 a 7 só começam depois de R01 a R06 aprovadas pelo revisor, com a implantação no commit corrigido. Os dois `xfail(strict=True)` (A-3 e A-4) continuam, com o motivo declarado: não são critérios atendidos e não estão na matriz (A-17); serão retirados antes da revisão de aprovação.
+- **R07 permanece aberto:** homologação, restauração dos caminhos A e B com RTO medido, suíte no Neon e decisões sobre melhorias dependem da fase 0 e do responsável. Não executei nada disso.
+
+## Verificação final da correção
+
+`uv run pytest -q -p no:cacheprovider -ra` no commit `281d191`: **3604 passed, 1 skipped, 2 xfailed** em 10 min 34 s. `ruff` (check e format) e `mypy` (558 arquivos) limpos; `makemigrations --check` sem mudanças. Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).

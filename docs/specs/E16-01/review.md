@@ -82,3 +82,11 @@ A-1 a A-14 têm cobertura local; isso não substitui o A-15 nem sana R01.
 Os registros Red/Green descrevem comandos, falhas e guardas já existentes. Testes e
 produção estão nos mesmos commits: o histórico sozinho não prova a ordem interna;
 não encontrei contradição que autorize afirmar uma violação de TDD.
+
+## Correção E16-R01 — construção autossuficiente (implementador, 2026-11-17)
+
+- **Red observado** (`uv run pytest -q tests/ambiente/test_artefatos_de_implantacao.py`): A-16 falhou com 13 variáveis faltando no `RUN` do `collectstatic`; A-17 falhou com `ImproperlyConfigured: Set the R2_ENDPOINT environment variable` (o `.env` local foi neutralizado no subprocesso); A-19 falhou (sem `docker image inspect` no CI). A-18 passou na primeira (guarda: a conferência já foi escrita junto do apoio).
+- **Green:** o `RUN` do `Dockerfile` ganhou `R2_*`, `R2_BACKUP_*`, `R2_BUCKET_BACKUPS`, `BACKUP_CHAVE_PUBLICA_AGE` e `SENTRY_DSN`, todos fictícios, na linha do comando (nunca em `ENV` ou `ARG`); todo host é `construcao.invalid` ou `localhost` (`construcao.invalido` passou a `.invalid`). `tests/ambiente/apoio.py` extrai as variáveis obrigatórias por `ast` (a mesma função serve ao A-1 da E16-08) e confere o `Dockerfile`. O CI ganhou o passo que recusa `SECRET_KEY`, `DATABASE_URL`, `SENTRY_DSN`, `R2_*` e `BACKUP_*` em `Config.Env`.
+- **A-20, evidência no commit corrigido `281d191` (imagem `organicos-meier:e16-281d191`):** `docker build` saída 0; `pg_dump (PostgreSQL) 17.12`; `age 1.1.1`; `id -u` = 10001; `docker image inspect` saída 0, com 0 variáveis `SECRET_KEY|DATABASE_URL|SENTRY_DSN|R2_*|BACKUP_*` em `Config.Env`; `test_backup_externo_ferramentas.py` dentro dessa imagem (`EXIGIR_FERRAMENTAS_DE_BACKUP=1`): **1 passed**. Um build anterior (`7b96491`) também passou, mas não é a evidência.
+- Ajuste: o A-13 da E16-03 conferia que `SENTRY_DSN` não aparece no texto do CI; o passo novo cita o nome para recusá-lo. O teste passou a conferir o `env` dos jobs e passos no YAML.
+- Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).

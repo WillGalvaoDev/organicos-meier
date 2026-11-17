@@ -124,3 +124,197 @@ A-2/A-5/A-7/A-8/A-9 têm cobertura coerente de chaves, duplicatas e documento ge
 A-10 registra a caracterização 116, mas o levantamento de lacunas precisa ser
 complementado por R05. O relato admite seleção heurística e leitura de apenas quatro
 corpos: não sustenta cobertura integral. Registros TDD preservados.
+
+## Correções E16-R05 e E16-R06 (implementador, 2026-11-17)
+
+### R06 — validador
+
+- **Red observado** (`tests/rastreabilidade`): com o validador antigo, 14 dos 29 testes falharam (classe fora da coleta, `__init__`, `__test__ = False`, nome de arquivo, `skipif(condition=True)`, `skipif` por variável de ambiente ou texto, `xfail`, `pytestmark` anotado, apelidos `import pytest as pt` e `from pytest import mark`, `pytest.skip` e `importorskip`).
+- **Green** (`tests/rastreabilidade/conferencia.py`): a referência só vale se o pytest a coletaria (`test_*.py`; classes `Test*` sem `__init__` nem `__test__ = False`; módulo sem `__test__ = False`; função filha direta; vale a última definição). Recusa `skip`, `skipif` com qualquer condição que não seja a constante `False`, `xfail`, e chamadas a `pytest.skip`/`xfail`/`importorskip` no corpo ou no nível do módulo, no decorador, na classe e no `pytestmark` (`Assign` e `AnnAssign`), com os apelidos reconhecidos. Limite declarado: pulo por fixture ou `conftest.py` não aparece na árvore.
+- **Lista de pulados e falhas esperadas da execução completa (`-ra`, commit `281d191`):** `SKIPPED` 1: `tests/tecnicos/test_backup_externo_ferramentas.py` (sem `pg_dump`, `pg_restore`, `age` e `age-keygen` no Windows; passa no contêiner e no CI); `XFAIL` 2: `test_o_registro_da_restauracao_e_o_rto` e `test_as_melhorias_tem_decisao` (E16-08 A-3 e A-4, bloqueados por dependência). **Nenhum está na matriz** (o validador acusaria o `xfail`).
+
+### R05 — afirmações e conferência semântica
+
+- **Formato:** `CENARIOS` e `TECNICOS` guardam, por entrada, as afirmações do texto-base (até 140 caracteres) e os testes de cada uma: **203 afirmações de cenário e 98 de teste técnico, 679 pares (afirmação, teste)**. O documento gerado mostra cada afirmação seguida dos seus testes. A conferência exige afirmação com texto e com testes, e recusa repetição na mesma afirmação.
+- **Método da conferência semântica (limite declarado):** cada texto foi dividido em afirmações; para cada par, medi quantos termos-chave da afirmação (números e radicais de palavras) aparecem no corpo do teste. Dos 679 pares, 49 ficaram abaixo do limiar de 0,30; li os corpos desses testes e das tabelas de casos que eles usam (`CASOS_DE_QUANTIDADE`, `ACEITAS` e `RECUSADAS`, a trigger do pedido congelado, a corrida dos reembolsos, as restaurações da apuração) e todos provam o que a afirmação pede. Os 630 pares acima do limiar foram aceitos pela aderência de termos e pelos nomes e critérios `A-n` de origem, **sem leitura linha a linha de cada corpo**: é uma verificação por amostra guiada, não a leitura integral que a regra 2-B descreve. O revisor deve conferir a amostra dele.
+- **Caracterizações novas (regra 5), todas passaram na primeira execução (exceção técnica justificada, AGENTS.md §3):** cenário 2 (`tests/aceitacao/test_cenario_02_login_nao_contorna_suspensao.py`, Google e link: a sessão abre e a adição de interesse é recusada com 403), cenário 59 (`test_cenario_59_banimento_so_do_endereco.py`: IP, dispositivo e telefone do banido não bloqueiam outra conta) e T-40 (`test_t40_reembolso_do_item_inteiro.py`: preço mudado para R$ 9,99 depois do pagamento, item inteiro reembolsado com o subtotal registrado de R$ 7,99). Cenário 2 com as seis afirmações e T-40 com as duas, como a spec manda.
+- **Resultado das 174 entradas:** 140 mantidas, 30 completadas e 4 com caracterização nova (2, 59, 116 e T-40; o 116 já era a caracterização anterior).
+
+| Entrada | Resultado |
+|---|---|
+| 1 | mantida (2 afirmação(ões)) |
+| 2 | caracterização nova (A: `test_cenario_02_login_nao_contorna_suspensao.py`) |
+| 3 | mantida (1 afirmação(ões)) |
+| 4 | mantida (2 afirmação(ões)) |
+| 5 | mantida (2 afirmação(ões)) |
+| 6 | mantida (1 afirmação(ões)) |
+| 7 | mantida (4 afirmação(ões)) |
+| 8 | mantida (2 afirmação(ões)) |
+| 9 | mantida (2 afirmação(ões)) |
+| 10 | mantida (1 afirmação(ões)) |
+| 11 | mantida (1 afirmação(ões)) |
+| 12 | mantida (3 afirmação(ões)) |
+| 13 | mantida (1 afirmação(ões)) |
+| 14 | mantida (1 afirmação(ões)) |
+| 15 | mantida (1 afirmação(ões)) |
+| 16 | mantida (1 afirmação(ões)) |
+| 17 | mantida (1 afirmação(ões)) |
+| 18 | mantida (1 afirmação(ões)) |
+| 19 | mantida (2 afirmação(ões)) |
+| 20 | mantida (1 afirmação(ões)) |
+| 21 | mantida (1 afirmação(ões)) |
+| 22 | mantida (2 afirmação(ões)) |
+| 23 | mantida (1 afirmação(ões)) |
+| 24 | mantida (1 afirmação(ões)) |
+| 25 | mantida (1 afirmação(ões)) |
+| 26 | mantida (1 afirmação(ões)) |
+| 27 | mantida (2 afirmação(ões)) |
+| 28 | mantida (2 afirmação(ões)) |
+| 29 | mantida (1 afirmação(ões)) |
+| 30 | mantida (1 afirmação(ões)) |
+| 31 | mantida (1 afirmação(ões)) |
+| 32 | mantida (2 afirmação(ões)) |
+| 33 | mantida (2 afirmação(ões)) |
+| 34 | mantida (2 afirmação(ões)) |
+| 35 | mantida (2 afirmação(ões)) |
+| 36 | mantida (1 afirmação(ões)) |
+| 37 | mantida (1 afirmação(ões)) |
+| 38 | mantida (1 afirmação(ões)) |
+| 39 | mantida (1 afirmação(ões)) |
+| 40 | mantida (1 afirmação(ões)) |
+| 41 | mantida (2 afirmação(ões)) |
+| 42 | mantida (2 afirmação(ões)) |
+| 43 | mantida (2 afirmação(ões)) |
+| 44 | mantida (2 afirmação(ões)) |
+| 45 | mantida (1 afirmação(ões)) |
+| 46 | mantida (1 afirmação(ões)) |
+| 47 | mantida (1 afirmação(ões)) |
+| 48 | mantida (2 afirmação(ões)) |
+| 49 | mantida (2 afirmação(ões)) |
+| 50 | mantida (1 afirmação(ões)) |
+| 51 | mantida (1 afirmação(ões)) |
+| 52 | mantida (1 afirmação(ões)) |
+| 53 | completada (2 afirmação(ões); acrescentados: 3) |
+| 54 | mantida (2 afirmação(ões)) |
+| 55 | mantida (2 afirmação(ões)) |
+| 56 | mantida (3 afirmação(ões)) |
+| 57 | mantida (1 afirmação(ões)) |
+| 58 | mantida (2 afirmação(ões)) |
+| 59 | caracterização nova (`test_cenario_59_banimento_so_do_endereco.py`) |
+| 60 | mantida (1 afirmação(ões)) |
+| 61 | completada (2 afirmação(ões); acrescentados: 4) |
+| 62 | mantida (1 afirmação(ões)) |
+| 63 | completada (1 afirmação(ões); acrescentados: 1) |
+| 64 | mantida (1 afirmação(ões)) |
+| 65 | mantida (1 afirmação(ões)) |
+| 66 | completada (1 afirmação(ões); acrescentados: 2) |
+| 67 | completada (2 afirmação(ões); acrescentados: 3) |
+| 68 | mantida (1 afirmação(ões)) |
+| 69 | completada (2 afirmação(ões); acrescentados: 1) |
+| 70 | completada (2 afirmação(ões); acrescentados: 2) |
+| 71 | mantida (2 afirmação(ões)) |
+| 72 | completada (2 afirmação(ões); acrescentados: 3) |
+| 73 | mantida (1 afirmação(ões)) |
+| 74 | mantida (2 afirmação(ões)) |
+| 75 | mantida (2 afirmação(ões)) |
+| 76 | mantida (2 afirmação(ões)) |
+| 77 | mantida (2 afirmação(ões)) |
+| 78 | mantida (2 afirmação(ões)) |
+| 79 | mantida (1 afirmação(ões)) |
+| 80 | mantida (1 afirmação(ões)) |
+| 81 | mantida (2 afirmação(ões)) |
+| 82 | mantida (2 afirmação(ões)) |
+| 83 | completada (3 afirmação(ões); acrescentados: 4) |
+| 84 | mantida (2 afirmação(ões)) |
+| 85 | completada (4 afirmação(ões); acrescentados: 3) |
+| 86 | mantida (1 afirmação(ões)) |
+| 87 | completada (3 afirmação(ões); acrescentados: 2) |
+| 88 | mantida (1 afirmação(ões)) |
+| 89 | mantida (2 afirmação(ões)) |
+| 90 | mantida (2 afirmação(ões)) |
+| 91 | mantida (1 afirmação(ões)) |
+| 92 | completada (2 afirmação(ões); acrescentados: 1) |
+| 93 | completada (1 afirmação(ões); acrescentados: 1) |
+| 94 | completada (1 afirmação(ões); acrescentados: 1) |
+| 95 | completada (3 afirmação(ões); acrescentados: 2) |
+| 96 | mantida (2 afirmação(ões)) |
+| 97 | mantida (2 afirmação(ões)) |
+| 98 | mantida (1 afirmação(ões)) |
+| 99 | mantida (2 afirmação(ões)) |
+| 100 | mantida (1 afirmação(ões)) |
+| 101 | mantida (2 afirmação(ões)) |
+| 102 | mantida (1 afirmação(ões)) |
+| 103 | completada (1 afirmação(ões); acrescentados: 1) |
+| 104 | mantida (2 afirmação(ões)) |
+| 105 | mantida (1 afirmação(ões)) |
+| 106 | mantida (2 afirmação(ões)) |
+| 107 | mantida (2 afirmação(ões)) |
+| 108 | mantida (2 afirmação(ões)) |
+| 109 | completada (5 afirmação(ões); acrescentados: 2) |
+| 110 | mantida (2 afirmação(ões)) |
+| 111 | completada (2 afirmação(ões); acrescentados: 2) |
+| 112 | mantida (3 afirmação(ões)) |
+| 113 | mantida (3 afirmação(ões)) |
+| 114 | mantida (1 afirmação(ões)) |
+| 115 | mantida (4 afirmação(ões)) |
+| 116 | caracterização nova (E16-07 inicial; mantida) |
+| 117 | mantida (2 afirmação(ões)) |
+| 118 | completada (1 afirmação(ões); acrescentados: 2) |
+| 119 | mantida (1 afirmação(ões)) |
+| T-1 | mantida (2 afirmação(ões)) |
+| T-2 | mantida (1 afirmação(ões)) |
+| T-3 | mantida (1 afirmação(ões)) |
+| T-4 | mantida (2 afirmação(ões)) |
+| T-5 | mantida (1 afirmação(ões)) |
+| T-6 | mantida (1 afirmação(ões)) |
+| T-7 | completada (1 afirmação(ões); acrescentados: 1) |
+| T-8 | mantida (1 afirmação(ões)) |
+| T-9 | mantida (3 afirmação(ões)) |
+| T-10 | mantida (2 afirmação(ões)) |
+| T-11 | completada (2 afirmação(ões); acrescentados: 2) |
+| T-12 | mantida (1 afirmação(ões)) |
+| T-13 | mantida (1 afirmação(ões)) |
+| T-14 | mantida (1 afirmação(ões)) |
+| T-15 | mantida (1 afirmação(ões)) |
+| T-16 | mantida (2 afirmação(ões)) |
+| T-17 | mantida (2 afirmação(ões)) |
+| T-18 | mantida (2 afirmação(ões)) |
+| T-19 | mantida (1 afirmação(ões)) |
+| T-20 | mantida (1 afirmação(ões)) |
+| T-21 | mantida (1 afirmação(ões)) |
+| T-22 | mantida (1 afirmação(ões)) |
+| T-23 | completada (3 afirmação(ões); acrescentados: 2) |
+| T-24 | mantida (3 afirmação(ões)) |
+| T-25 | mantida (2 afirmação(ões)) |
+| T-26 | completada (2 afirmação(ões); acrescentados: 2) |
+| T-27 | mantida (2 afirmação(ões)) |
+| T-28 | completada (2 afirmação(ões); acrescentados: 1) |
+| T-29 | completada (3 afirmação(ões); acrescentados: 2) |
+| T-30 | mantida (1 afirmação(ões)) |
+| T-31 | mantida (1 afirmação(ões)) |
+| T-32 | mantida (1 afirmação(ões)) |
+| T-33 | mantida (3 afirmação(ões)) |
+| T-34 | mantida (1 afirmação(ões)) |
+| T-35 | mantida (2 afirmação(ões)) |
+| T-36 | mantida (2 afirmação(ões)) |
+| T-37 | mantida (2 afirmação(ões)) |
+| T-38 | completada (3 afirmação(ões); acrescentados: 2) |
+| T-39 | mantida (4 afirmação(ões)) |
+| T-40 | caracterização nova (`test_t40_reembolso_do_item_inteiro.py`) |
+| T-41 | completada (1 afirmação(ões); acrescentados: 1) |
+| T-42 | mantida (2 afirmação(ões)) |
+| T-43 | mantida (2 afirmação(ões)) |
+| T-44 | mantida (2 afirmação(ões)) |
+| T-45 | mantida (1 afirmação(ões)) |
+| T-46 | mantida (2 afirmação(ões)) |
+| T-47 | mantida (2 afirmação(ões)) |
+| T-48 | mantida (1 afirmação(ões)) |
+| T-49 | mantida (1 afirmação(ões)) |
+| T-50 | completada (3 afirmação(ões); acrescentados: 1) |
+| T-51 | mantida (2 afirmação(ões)) |
+| T-52 | mantida (3 afirmação(ões)) |
+| T-53 | mantida (1 afirmação(ões)) |
+| T-54 | completada (2 afirmação(ões); acrescentados: 1) |
+| T-55 | completada (3 afirmação(ões); acrescentados: 3) |
+
+- Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).

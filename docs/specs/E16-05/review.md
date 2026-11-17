@@ -80,3 +80,9 @@ A-1 a A-13 conferidos: transação somente leitura, sete seções, códigos de s
 privacidade, limites temporais e procedimento. O roteiro documentado ainda não foi
 executado nos provedores; RTO e teste dos dois caminhos pertencem à E16-08.
 Registros Red/Green lidos; nenhum código de produção corrigido pelo revisor.
+
+## Correção E16-R04 — estoque da rodada ativa (implementador, 2026-11-17)
+
+- **Red observado** (`tests/tecnicos/test_conferir_restauracao.py`): A-14 falhou com `FALHA` em vez de `OK` (estoque 1 da retirada antiga contra 5 reservadas); A-15 trouxe duas linhas (estoque 1 e estoque 3). A-16 (rodada cancelada) passou (guarda).
+- **Green:** `_estoque` considera só `EstoqueDaRodada` com limite de rodadas em `ETAPAS_ATIVAS`; a retirada liberada e a cancelada guardam limite histórico. O excesso real no estoque atual continua `FALHA`.
+- Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).

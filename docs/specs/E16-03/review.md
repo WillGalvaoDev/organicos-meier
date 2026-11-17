@@ -83,3 +83,11 @@ check-ins com o mesmo ID foram conferidos. Evidência externa continua na E16-08
 O registro chama os três problemas pós-Green de defeitos do teste, mas o caso A-7
 inclui correção de produção após uma falha observada; a descrição deve ser lida
 assim, sem invalidar o ciclo observado. M-14 permanece melhoria, sem novo achado.
+
+## Correção E16-R02 — tokens e nomes fora do envelope (implementador, 2026-11-17)
+
+- **Red observado** (`tests/tecnicos/test_observabilidade.py`): 7 falhas — A-14 (`TOKEN-SINTETICO-1` em `request.url`, reprodução do revisor), A-15 (3 rotas), A-16 (`rotas_com_token_nao_cobertas` inexistente), A-17 (`Pessoa Sintetica Revisora` em `extra.nome`, reprodução do revisor), A-18. Guardas que passaram: A-19 (só o `User-Agent` já ficava) e A-20 (o padrão do SDK já é `url`; agora explícito).
+- **Green** (`config/observabilidade.py`): `ROTAS_COM_SEGREDO` (`/entrar/link/`, `/convite/`, com o padrão `{token}` da rota preservado) aplicada a todo texto do evento, ao `request.url`, ao `transaction`, às mensagens, exceções, `logentry` e breadcrumbs; chaves de identificação pessoal por segmento (`nome`, `name`, `username`, `usuario`, `telefone`, `phone`, `celular`, `cpf`, `endereco`, `address`, `ip`) em `extra`, `tags`, `contexts` (menos `runtime`, `os` e `trace`) e no `data` dos breadcrumbs; `DjangoIntegration(transaction_style="url")`; `rotas_com_token_nao_cobertas` percorre o resolvedor e acusa rota nova com `token` sem cobertura (A-16).
+- A prova é no texto serializado do envelope inteiro (regra 3-C). Os valores sintéticos dos testes ficam em constantes fora da linha que levanta o erro, porque o SDK anexa ao evento as linhas de código ao redor da pilha.
+- M-13 encerrada em `docs/melhorias.md` ("Reclassificação pelo revisor"), com o commit `d254321`.
+- Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
