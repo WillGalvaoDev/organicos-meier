@@ -85,3 +85,11 @@ def test_filtro_acao_malformado_na_rota(client, relogio, webauthn):
     assert resposta.status_code == 200
     assert 'Filtro inválido ignorado: acao.' in resposta.content.decode()
 ```
+
+## Residual de R05: filtro `acao` com NUL (implementador, 2026-11-17)
+
+- **Red observado** (`uv run pytest tests/tecnicos/test_historico_de_acoes.py`): 3 falhas, `DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`, nos casos A-19 com NUL (`acao\x00invalida`, `rodada.cancelar\x00`, `\x00`). Os demais valores do A-19 (controle `\x01`, 10.000 caracteres, espaço no fim, caixa diferente) e o A-20 inteiro passaram de primeira (guardas: o banco os aceitava como texto sem correspondência).
+- **Green:** `_filtrar` recebe a lista de ações distintas já carregada para o seletor e valida `acao` por igualdade em memória (`acao in acoes`); o valor recebido não entra em consulta antes de validado. A lista é lida uma vez por requisição e serve também ao seletor.
+- **Ordem do trabalho:** escrevi o Green antes de rodar o Red; desfiz a mudança (só `apps/operacao/historico.py`), observei o Red acima e reapliquei. O Red foi observado antes do Green no código final.
+- **Ambiente:** o Docker Desktop estava parado ao retomar a sessão; subi o Docker e o container `om-db-1`, sem alterar dados.
+- **Verificação:** suíte completa **3449 passed**; `ruff`, `mypy` (527 arquivos) limpos. Sem push, PR nem merge.

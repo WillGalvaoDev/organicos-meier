@@ -308,3 +308,49 @@ def test_pagina_fora_do_normal(ah: Historico, pagina: str) -> None:  # A-18
     assert resposta.status_code == 200
     esperada = "1" if pagina == "abc" else "3"
     assert f"Página {esperada} de 3" in _texto(resposta)
+
+
+# --- residual de E15-R05: o filtro `acao` não vai ao banco antes de validado ----------------------
+
+ACOES_INVALIDAS = [
+    "acao\x00invalida",
+    "rodada.cancelar\x00",
+    "\x00",
+    "rodada.cancelar\x01",
+    "a" * 10_000,
+    "rodada.cancelar ",
+    "RODADA.CANCELAR",
+]
+
+
+@pytest.mark.parametrize("acao", ACOES_INVALIDAS)
+def test_acao_de_forma_invalida(ah: Historico, acao: str) -> None:  # A-19
+    from urllib.parse import quote
+
+    from apps.operacao.historico import contexto_do_historico
+
+    resposta = ah.pagina(f"?acao={quote(acao)}")
+    assert resposta.status_code == 200
+    assert "Filtro inválido ignorado: acao." in _texto(resposta)
+    assert len(_nossas(resposta)) == 3
+    assert contexto_do_historico({"acao": acao})["invalidos"] == ["acao"]
+
+
+@pytest.mark.parametrize(
+    ("consulta", "aviso"),
+    [
+        ("?acao=rodada.cancelar&autor=1%00", "autor"),
+        ("?acao=rodada.cancelar&de=2026-11-18%00", "de"),
+        ("?acao=rodada.cancelar&ate=2026-11-18%00", "ate"),
+        ("?acao=rodada.cancelar&pagina=1%00", None),
+    ],
+)
+def test_nul_nos_outros_parametros(ah: Historico, consulta: str, aviso: str | None) -> None:  # A-20
+    resposta = ah.pagina(consulta)
+    assert resposta.status_code == 200
+    assert _nossas(resposta) == ["rodada.cancelar"]
+    if aviso is None:
+        assert "Filtro inválido" not in _texto(resposta)
+        assert "Página 1 de 1" in _texto(resposta)
+    else:
+        assert f"Filtro inválido ignorado: {aviso}." in _texto(resposta)

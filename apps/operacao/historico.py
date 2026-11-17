@@ -53,7 +53,7 @@ def _instante(dia: date, *, fim: bool) -> datetime | None:
 
 
 def _filtrar(
-    entradas: QuerySet[EntradaAuditoria], parametros: Any
+    entradas: QuerySet[EntradaAuditoria], parametros: Any, acoes: list[str]
 ) -> tuple[QuerySet[EntradaAuditoria], dict[str, str], list[str]]:
     """Aplica os filtros válidos. Devolve a consulta, os filtros aplicados e os nomes dos inválidos
     (ignorados)."""
@@ -61,7 +61,7 @@ def _filtrar(
     invalidos: list[str] = []
     acao = parametros.get("acao", "")
     if acao:
-        if EntradaAuditoria.objects.filter(acao=acao).exists():
+        if acao in acoes:  # igualdade em memória: nada recebido vai ao banco antes de validado
             entradas = entradas.filter(acao=acao)
             aplicados["acao"] = acao
         else:
@@ -131,8 +131,11 @@ def _alteracoes(entrada: EntradaAuditoria) -> list[str]:
 
 
 def contexto_do_historico(parametros: Any) -> dict[str, Any]:
+    acoes = list(
+        EntradaAuditoria.objects.order_by("acao").values_list("acao", flat=True).distinct()
+    )
     entradas, aplicados, invalidos = _filtrar(
-        EntradaAuditoria.objects.order_by("-momento", "-pk"), parametros
+        EntradaAuditoria.objects.order_by("-momento", "-pk"), parametros, acoes
     )
     pagina = Paginator(entradas, POR_PAGINA).get_page(parametros.get("pagina"))
     nomes = _autores(list(pagina.object_list))
@@ -153,8 +156,6 @@ def contexto_do_historico(parametros: Any) -> dict[str, Any]:
         "invalidos": invalidos,
         "filtros": aplicados,
         "consulta": urlencode(aplicados),
-        "acoes": list(
-            EntradaAuditoria.objects.order_by("acao").values_list("acao", flat=True).distinct()
-        ),
+        "acoes": acoes,
         "administradores": list(Conta.objects.filter(papel=Papel.ADMINISTRADOR).order_by("nome")),
     }
