@@ -8,7 +8,7 @@ Agente 2.
 - `test_saude.py` (A-1 a A-4): 404 em `/saude/` e `KeyError`/atributo ausente em `SECURE_REDIRECT_EXEMPT`.
 - `test_homologacao.py` (A-5 a A-8, A-10 e A-11): `ALLOWED_HOSTS` aceito sem validação, sem `CSRF_TRUSTED_ORIGINS`, URL sem TLS ou com `-pooler` aceita, sem WhiteNoise.
 - `test_artefatos_de_implantacao.py` (A-12 a A-14): `FileNotFoundError` (sem `Dockerfile`, `.dockerignore` nem `fly.toml`) e nenhum job `docker build`.
-- Guardas que passaram de primeira: A-9 (a recusa do simulador em produção já existia, E07-02) e dois casos de A-5 que a leitura do ambiente já cobria.
+- Passaram de primeira 3 testes (guardas, sem Red), entre eles o A-9 (a recusa do simulador em produção já existia, E07-02).
 
 Antes do Red foi adicionada só a dependência de desenvolvimento `pyyaml` (+ `types-pyyaml`), para ler o YAML do CI (A-14); sem ela o arquivo nem era coletado.
 
