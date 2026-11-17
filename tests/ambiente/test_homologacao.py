@@ -243,8 +243,13 @@ def test_a_suite_nao_envia_nada_ao_sentry() -> None:  # A-13
     assert settings.SETTINGS_MODULE == "config.settings.test"
     assert settings.SENTRY_DSN == ""
     assert not os.environ.get("SENTRY_DSN")
-    fluxo = (RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "SENTRY_DSN" not in fluxo
+    import yaml
+
+    fluxo = yaml.safe_load((RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    for trabalho in fluxo["jobs"].values():
+        assert "SENTRY_DSN" not in trabalho.get("env", {})
+        for passo in trabalho["steps"]:
+            assert "SENTRY_DSN" not in passo.get("env", {})
 
 
 # --- E16-04: backup externo (A-13) --------------------------------------------------------------

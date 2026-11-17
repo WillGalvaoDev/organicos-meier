@@ -64,3 +64,8 @@ jobs:
         run: docker run --rm --entrypoint age organicos-meier:ci --version
       - name: Usuário sem privilégios
         run: test "$(docker run --rm --entrypoint id organicos-meier:ci -u)" != "0"
+      - name: Nenhum segredo na configuração da imagem
+        run: |
+          if docker image inspect organicos-meier:ci --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(SECRET_KEY|DATABASE_URL|SENTRY_DSN|R2_|BACKUP_)'; then
+            echo "variável de ambiente fictícia vazou para a imagem final"; exit 1
+          fi

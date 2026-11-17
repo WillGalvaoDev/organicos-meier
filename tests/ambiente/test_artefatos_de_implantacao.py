@@ -183,30 +183,9 @@ def _em_ordem(texto: str, esperados: tuple[str, ...]) -> None:
 
 
 def _variaveis_obrigatorias() -> set[str]:
-    """Os nomes lidos de `env(...)` sem `default` em `base.py` e `prod.py`."""
-    import ast
+    from tests.ambiente.apoio import variaveis_obrigatorias
 
-    nomes: set[str] = set()
-    for arquivo in ("config/settings/base.py", "config/settings/prod.py"):
-        arvore = ast.parse(_texto(arquivo))
-        for no in ast.walk(arvore):
-            if not isinstance(no, ast.Call) or not no.args:
-                continue
-            funcao = no.func
-            e_env = (isinstance(funcao, ast.Name) and funcao.id == "env") or (
-                isinstance(funcao, ast.Attribute)
-                and isinstance(funcao.value, ast.Name)
-                and funcao.value.id == "env"
-            )
-            primeiro = no.args[0]
-            if (
-                e_env
-                and isinstance(primeiro, ast.Constant)
-                and isinstance(primeiro.value, str)
-                and not any(k.arg == "default" for k in no.keywords)
-            ):
-                nomes.add(primeiro.value)
-    return nomes
+    return variaveis_obrigatorias()
 
 
 def test_o_documento_de_homologacao() -> None:  # A-1
@@ -265,3 +244,76 @@ def test_as_melhorias_tem_decisao() -> None:  # A-4
     assert pendentes
     for linha in pendentes:
         assert re.search(r"fase 2a|fase 2b|fase 3", linha, flags=re.IGNORECASE), linha[:60]
+
+
+# --- correção E16-R01: a construção da imagem é autossuficiente (A-16 a A-19) --------------------
+
+
+def test_o_run_do_collectstatic_tem_todas_as_variaveis() -> None:  # A-16
+    from tests.ambiente.apoio import conferir_dockerfile, variaveis_obrigatorias
+
+    obrigatorias = variaveis_obrigatorias()
+    assert conferir_dockerfile(_texto("Dockerfile"), obrigatorias) == []
+
+
+def test_a_coleta_de_estaticos_carrega_as_configuracoes_de_producao() -> None:  # A-17
+    import os
+    import subprocess
+    import sys
+
+    from tests.ambiente.apoio import ambiente_da_coleta
+
+    ambiente = ambiente_da_coleta(_texto("Dockerfile"))
+    assert ambiente
+    # o `.env` local (ignorado pelo git) não pode esconder uma variável que falta
+    codigo = (
+        "import environ;"
+        "environ.Env.read_env = classmethod(lambda cls, *a, **k: None);"
+        "from django.core.management import execute_from_command_line;"
+        "execute_from_command_line(['manage.py', 'collectstatic', '--noinput', '--dry-run'])"
+    )
+    resultado = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", codigo],
+        cwd=RAIZ,
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+            "PYTHONPATH": str(RAIZ),
+            **ambiente,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stderr[-800:]
+
+
+def test_a_conferencia_acusa_o_que_falta() -> None:  # A-18
+    from tests.ambiente.apoio import conferir_dockerfile, variaveis_obrigatorias
+
+    dockerfile = _texto("Dockerfile")
+    sem_sentry = re.sub(r"\s*SENTRY_DSN=\S+", "", dockerfile)
+    problemas = conferir_dockerfile(sem_sentry, variaveis_obrigatorias())
+    assert any("SENTRY_DSN" in p for p in problemas)
+    novo = {
+        "config/settings/base.py": 'X = env("VARIAVEL_NOVA")\nY = env("COM_PADRAO", default="")\n',
+        "config/settings/prod.py": "",
+    }
+    obrigatorias = variaveis_obrigatorias(novo)
+    assert obrigatorias == {"VARIAVEL_NOVA"}
+    assert any("VARIAVEL_NOVA" in p for p in conferir_dockerfile(dockerfile, obrigatorias))
+    com_host_real = dockerfile.replace(
+        "ALLOWED_HOSTS=construcao.invalid", "ALLOWED_HOSTS=exemplo.com.br"
+    )
+    assert any("host não fictício" in p for p in conferir_dockerfile(com_host_real, set()))
+    com_env = dockerfile.replace("EXPOSE 8000", "ENV SENTRY_DSN=x\nEXPOSE 8000")
+    assert any("ENV" in p for p in conferir_dockerfile(com_env, {"SENTRY_DSN"}))
+
+
+def test_o_ci_recusa_segredos_na_configuracao_da_imagem() -> None:  # A-19
+    fluxo = yaml.safe_load(_texto(".github/workflows/ci.yml"))
+    passos = [p.get("run", "") for p in fluxo["jobs"]["imagem"]["steps"]]
+    inspecao = [p for p in passos if "docker image inspect" in p]
+    assert inspecao
+    for nome in ("SECRET_KEY", "DATABASE_URL", "SENTRY_DSN", "R2_", "BACKUP_"):
+        assert nome in inspecao[0], nome
