@@ -317,3 +317,18 @@ def test_o_ci_recusa_segredos_na_configuracao_da_imagem() -> None:  # A-19
     assert inspecao
     for nome in ("SECRET_KEY", "DATABASE_URL", "SENTRY_DSN", "R2_", "BACKUP_"):
         assert nome in inspecao[0], nome
+
+
+# --- correção E16-R07: os custos citam as faixas da infraestrutura 10, linha a linha (A-16) -----
+
+
+def test_os_custos_seguem_a_infraestrutura_10() -> None:  # A-16 (E16-08)
+    for arquivo in ("docs/operacao/homologacao.md", "docs/relatorio-fase1.md"):
+        texto = _texto(arquivo)
+        assert "US$ 15–35" in texto, arquivo  # noqa: RUF001
+        for linha in texto.splitlines():
+            if "US$ 8–15" in linha:  # noqa: RUF001
+                assert "Fly.io" in linha, f"{arquivo}: US$ 8–15 só vale para o Fly.io: {linha[:80]}"  # noqa: RUF001
+    homologacao = _texto("docs/operacao/homologacao.md")
+    for faixa in ("US$ 8–15", "US$ 5–20", "US$ 0–2", "US$ 15–35"):  # noqa: RUF001
+        assert faixa in homologacao, faixa

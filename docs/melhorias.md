@@ -49,3 +49,5 @@ aberto no fluxo de correção. Registro original preservado abaixo:
 | ID | Origem | Onde | Descrição | Sugestão original |
 |---|---|---|---|---|
 | M-13 | E16-03 (implementador) | `config/observabilidade.py` (`limpar_evento`) | A regra 3 manda manter o caminho da URL no evento do Sentry. Rotas com segredo no caminho (`/convite/<token>/`, `/entrar/link/<token>/`) mandariam o token ao Sentry quando uma delas falhar. Não é dado pessoal de comprador, mas é credencial de uso único. | Trocar o segmento do token por `[removido]` nessas rotas antes do envio (decisão do especificador). |
+
+**Encerrada pela correção (implementador, 2026-11-17):** o achado E16-R02 foi corrigido no commit `d254321` (regras 3-A a 3-C da E16-03: troca do token nas rotas `entrar/link/<token>/`, `convite/<token>/` e `convite/<token>/google/` em todo o envelope, chaves de identificação pessoal e `transaction_style="url"`), com os testes A-14 a A-20 em `tests/tecnicos/test_observabilidade.py`. A M-13 não volta à lista de pendentes. A M-14 continua melhoria.

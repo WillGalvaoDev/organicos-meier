@@ -20,12 +20,12 @@ Itens da infraestrutura 7 para a fase 1:
 
 | Etapa | PR | Reprovações | Observação |
 |---|---|---|---|
-| E01 a E04 | a consolidar | a consolidar | pareceres nos `review.md` de cada fatia |
-| E05 | #65 a #69 | a consolidar | correções R01 a R05 |
-| E06 | #70 a #77 | a consolidar | |
-| E07 | #78 | a consolidar | |
-| E08 | #79 | a consolidar | |
-| E09 | #81 | a consolidar | |
+| E01 a E04 | não registrado | não registrado | pareceres nos `review.md` de cada fatia |
+| E05 | #65 a #69 | não registrado | correções R01 a R05 |
+| E06 | #70 a #77 | não registrado | |
+| E07 | #78 | não registrado | |
+| E08 | #79 | não registrado | |
+| E09 | #81 | não registrado | |
 | E10 | #83 | 2 | |
 | E11 | #84 | 2 | |
 | E12 | #85 | 1 | |
@@ -34,7 +34,7 @@ Itens da infraestrutura 7 para a fase 1:
 | E15 | #88 | 2 | aprovada com a exceção de TDD autorizada pelo responsável |
 | E16 | em andamento | — | E16-01 a E16-07 implementadas; E16-08 bloqueada |
 
-As contagens de reprovação das E01 a E09 não foram consolidadas neste rascunho: o levantamento nos pareceres entra na versão final.
+Uma etapa sem número registrado nas notas de entrega e nos pareceres (`review.md`) está marcada como "não registrado", sem estimativa.
 
 ## Homologação
 
@@ -69,4 +69,4 @@ A revisão das melhorias pendentes com o responsável (regra 10) não foi feita.
 
 ## Custos
 
-Os custos observados serão registrados depois da implantação, na seção "Custos observados" de `docs/operacao/homologacao.md`, e comparados com a estimativa de US$ 8–15 por mês da infraestrutura 10.
+Os custos observados serão registrados depois da implantação, na seção "Custos observados" de `docs/operacao/homologacao.md`, e comparados com as faixas da infraestrutura 10, linha a linha: Fly.io de US$ 8–15; Neon de US$ 5–20; SES, R2, Sentry, Better Stack e Cloudflare de US$ 0–2; total fixo de US$ 15–35 por mês. A faixa de US$ 8–15 é só a do Fly.io.

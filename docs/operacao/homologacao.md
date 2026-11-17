@@ -75,13 +75,11 @@ Os segredos são definidos com `fly secrets set NOME=valor`. Só as cinco variá
 
 ## Custos observados
 
-A estimativa da infraestrutura 10 é de US$ 8–15 por mês (Fly.io com duas máquinas pequenas, Neon, R2, SES, Sentry e Better Stack em planos de entrada).
+A infraestrutura 10 estima, por mês: Fly.io de US$ 8–15 (web e worker); Neon de US$ 5–20; SES, R2, Sentry, Better Stack e Cloudflare de US$ 0–2; e o total fixo de US$ 15–35. A faixa de US$ 8–15 é só a do Fly.io, nunca a do total.
 
-| Serviço | Custo mensal observado | Comparação com a infraestrutura 10 |
+| Serviço | Estimativa da infraestrutura 10 | Custo mensal observado |
 |---|---|---|
-| Fly.io (web e worker) | a medir depois da implantação | — |
-| Neon | a medir depois da implantação | — |
-| Cloudflare R2 | a medir depois da implantação | — |
-| AWS SES | a medir depois da implantação | — |
-| Sentry | a medir depois da implantação | — |
-| Better Stack | a medir depois da implantação | — |
+| Fly.io (web e worker) | US$ 8–15 | a medir depois da implantação |
+| Neon | US$ 5–20 | a medir depois da implantação |
+| SES, R2, Sentry, Better Stack e Cloudflare | US$ 0–2 | a medir depois da implantação |
+| **Total fixo** | **US$ 15–35** | a medir depois da implantação |
