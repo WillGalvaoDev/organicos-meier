@@ -24,6 +24,7 @@ class MonitorExterno:
 
 MONITORES_EXTERNOS: dict[str, MonitorExterno] = {
     "verificar_operacao": MonitorExterno("*/5 * * * *", checkin_margin=10, max_runtime=5),
+    "backup_diario": MonitorExterno("0 6 * * *", checkin_margin=120, max_runtime=60),
 }
 
 

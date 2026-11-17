@@ -64,7 +64,7 @@ def tm() -> Iterator[TransporteEmMemoria]:
     sentry_sdk.init(**opcoes_do_sentry(DSN, "homologacao", None, transport=transporte))
     yield transporte
     sentry_sdk.get_client().close()
-    sentry_sdk.init(dsn=None)
+    sentry_sdk.get_global_scope().set_client(None)
 
 
 # --- inicialização ------------------------------------------------------------------------------

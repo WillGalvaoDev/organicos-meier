@@ -22,6 +22,12 @@ _AMBIENTE_MINIMO = {
     "R2_BUCKET_ARQUIVOS": "arquivos-teste",
     "R2_ACCESS_KEY_ID": "chave-de-acesso-do-r2-de-teste",
     "R2_SECRET_ACCESS_KEY": "segredo-do-r2-so-para-testes",
+    "R2_BUCKET_BACKUPS": "backups-teste",
+    "R2_BACKUP_ACCESS_KEY_ID": "chave-de-acesso-do-backup-de-teste",
+    "R2_BACKUP_SECRET_ACCESS_KEY": "segredo-do-backup-so-para-testes",
+    "BACKUP_CHAVE_PUBLICA_AGE": (
+        "age1chavepublicadetestequenaoevalidaparaousoreal00000000000000000000"
+    ),
     "SENTRY_DSN": "https://chave-publica@o0.ingest.sentry.io/1",
     "AMBIENTE": "homologacao",
     "SEGREDO_AVISOS_SIMULADOR": "segredo-de-teste",

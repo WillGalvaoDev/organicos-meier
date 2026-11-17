@@ -79,9 +79,10 @@ MIDDLEWARE = [
     *MIDDLEWARE[1:],  # noqa: F405
 ]
 # Arquivos enviados no bucket privado do R2 (E16-02). As quatro variáveis são obrigatórias.
+R2_ENDPOINT = env("R2_ENDPOINT")  # noqa: F405
 STORAGES = {
     "default": storage_do_r2(
-        env("R2_ENDPOINT"),  # noqa: F405
+        R2_ENDPOINT,
         env("R2_BUCKET_ARQUIVOS"),  # noqa: F405
         env("R2_ACCESS_KEY_ID"),  # noqa: F405
         env("R2_SECRET_ACCESS_KEY"),  # noqa: F405
@@ -100,3 +101,15 @@ SILENCED_SYSTEM_CHECKS = [
 # em `config/observabilidade.py`.
 SENTRY_DSN = env("SENTRY_DSN")  # noqa: F405
 iniciar_sentry(SENTRY_DSN, AMBIENTE)
+
+# Backup externo cifrado no R2 (E16-04): credencial própria, diferente da dos arquivos. A chave do
+# `age` é só a pública; a privada fica com o responsável, fora do Fly.io. A mensagem de erro não
+# repete o valor recebido.
+R2_BUCKET_BACKUPS = env("R2_BUCKET_BACKUPS")  # noqa: F405
+R2_BACKUP_ACCESS_KEY_ID = env("R2_BACKUP_ACCESS_KEY_ID")  # noqa: F405
+R2_BACKUP_SECRET_ACCESS_KEY = env("R2_BACKUP_SECRET_ACCESS_KEY")  # noqa: F405
+BACKUP_CHAVE_PUBLICA_AGE = env("BACKUP_CHAVE_PUBLICA_AGE")  # noqa: F405
+if not BACKUP_CHAVE_PUBLICA_AGE.startswith("age1"):
+    raise ImproperlyConfigured(
+        "BACKUP_CHAVE_PUBLICA_AGE deve ser uma chave pública do age (age1...)."
+    )

@@ -245,3 +245,34 @@ def test_a_suite_nao_envia_nada_ao_sentry() -> None:  # A-13
     assert not os.environ.get("SENTRY_DSN")
     fluxo = (RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "SENTRY_DSN" not in fluxo
+
+
+# --- E16-04: backup externo (A-13) --------------------------------------------------------------
+
+VARIAVEIS_DO_BACKUP = (
+    "R2_BUCKET_BACKUPS",
+    "R2_BACKUP_ACCESS_KEY_ID",
+    "R2_BACKUP_SECRET_ACCESS_KEY",
+    "BACKUP_CHAVE_PUBLICA_AGE",
+)
+MENSAGEM_DA_CHAVE_AGE = "BACKUP_CHAVE_PUBLICA_AGE deve ser uma chave pública do age (age1...)."
+
+
+@pytest.mark.parametrize("variavel", VARIAVEIS_DO_BACKUP)
+def test_cada_variavel_do_backup_e_obrigatoria(variavel: str) -> None:  # A-13
+    resultado = carregar(sem=(variavel,))
+    assert resultado.returncode != 0
+    assert variavel in resultado.stderr
+    for nome in VARIAVEIS_DO_BACKUP:
+        assert AF[nome] not in resultado.stderr
+
+
+def test_a_chave_do_age_precisa_ser_publica() -> None:  # A-13
+    resultado = carregar({"BACKUP_CHAVE_PUBLICA_AGE": "chave-invalida"})
+    assert resultado.returncode != 0
+    assert "ImproperlyConfigured" in resultado.stderr
+    assert MENSAGEM_DA_CHAVE_AGE in resultado.stderr
+    assert "chave-invalida" not in resultado.stderr.replace(MENSAGEM_DA_CHAVE_AGE, "")
+    privada = carregar({"BACKUP_CHAVE_PUBLICA_AGE": "AGE-SECRET-KEY-1ABCDEF"})
+    assert MENSAGEM_DA_CHAVE_AGE in privada.stderr
+    assert "AGE-SECRET-KEY" not in privada.stderr

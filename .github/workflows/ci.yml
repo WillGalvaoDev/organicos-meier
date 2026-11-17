@@ -29,8 +29,17 @@ jobs:
           --health-retries 30
     env:
       DATABASE_URL: postgres://organicos:organicos@localhost:5433/organicos
+      # o teste do backup com as ferramentas reais (E16-04) falha, em vez de pular, se faltarem
+      EXIGIR_FERRAMENTAS_DE_BACKUP: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Instalar o cliente PostgreSQL 17 e o age (backup, E16-04)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17 age
       - uses: astral-sh/setup-uv@v5
       - name: Instalar dependências (lockfile travado)
         run: uv sync --locked
