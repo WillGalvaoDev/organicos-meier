@@ -8,6 +8,7 @@
 from django.core.exceptions import ImproperlyConfigured
 
 from config.armazenamento import storage_do_r2
+from config.observabilidade import iniciar_sentry
 
 from .base import *  # noqa: F403
 
@@ -94,3 +95,8 @@ SILENCED_SYSTEM_CHECKS = [
     # da homologação não pode entrar nela. A decisão volta com o domínio próprio (fase 2a).
     "security.W021",
 ]
+
+# Sentry sem dados pessoais (E16-03): o DSN é obrigatório em homologação e produção. O filtro está
+# em `config/observabilidade.py`.
+SENTRY_DSN = env("SENTRY_DSN")  # noqa: F405
+iniciar_sentry(SENTRY_DSN, AMBIENTE)

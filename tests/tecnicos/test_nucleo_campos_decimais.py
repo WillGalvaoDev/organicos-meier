@@ -55,6 +55,8 @@ def test_app_de_testes_fora_da_producao(monkeypatch: pytest.MonkeyPatch) -> None
     # as variáveis obrigatórias em prod.py (E07-02, E16)
     for nome, valor in _AMBIENTE_MINIMO.items():
         monkeypatch.setenv(nome, valor)
+    # `prod.py` inicia o Sentry (E16-03); a suíte nunca o inicia de verdade
+    monkeypatch.setattr("sentry_sdk.init", lambda *args, **kwargs: None)
     for modulo in ("config.settings.base", "config.settings.prod"):
         ja_importado = modulo in sys.modules
         configuracao = importlib.import_module(modulo)

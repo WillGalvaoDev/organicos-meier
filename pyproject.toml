@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=12.3.0",
     "procrastinate[django]>=3",
     "psycopg[binary]>=3.2",
+    "sentry-sdk>=2.75.0",
     "whitenoise>=6.12.0",
 ]
 

@@ -113,6 +113,7 @@ BANCOS_DO_SIMULADOR = ["default", "simulador_pagamentos"]
 PREFIXOS_COM_SIMULADOR = (
     "test_pagamentos_",
     "test_arquivos_no_",
+    "test_observabilidade",
     "test_pedidos_",
     "test_simulador_pagamentos_",
     "test_financeiro_",

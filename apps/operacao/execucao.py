@@ -16,6 +16,7 @@ from django.db import IntegrityError, transaction
 from apps.nucleo.tempo import agora
 from apps.operacao.catalogo import POR_NOME, TAREFAS_MONITORADAS
 from apps.operacao.models import ExecucaoDaTarefa
+from apps.operacao.monitores_externos import checkins_da_tarefa
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,8 @@ def execucao_monitorada(nome: str) -> Iterator[None]:
     if nome not in POR_NOME:
         raise ValueError(f"tarefa fora do catálogo: {nome!r}")
     try:
-        yield
+        with checkins_da_tarefa(nome):
+            yield
     except Exception as excecao:
         _gravar_sem_falhar(nome, type(excecao).__name__)
         raise

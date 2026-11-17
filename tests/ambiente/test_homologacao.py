@@ -195,3 +195,53 @@ def test_o_armazenamento_de_teste_e_o_local() -> None:  # A-3
     # `config.settings.test` roda esta suíte: o armazenamento padrão é o do Django, em disco
     assert settings.SETTINGS_MODULE == "config.settings.test"
     assert settings.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
+
+
+# --- E16-03: observabilidade (A-1, A-2 e A-13) --------------------------------------------------
+
+
+def test_o_sentry_e_obrigatorio_em_homologacao() -> None:  # A-1
+    resultado = carregar(sem=("SENTRY_DSN",))
+    assert resultado.returncode != 0
+    assert "SENTRY_DSN" in resultado.stderr
+
+
+def test_as_opcoes_do_sentry_em_homologacao() -> None:  # A-2
+    codigo = (
+        "import json, importlib, environ, sentry_sdk;"
+        "environ.Env.read_env = classmethod(lambda cls, *a, **k: None);"
+        "importlib.import_module('config.settings.prod');"
+        "o = sentry_sdk.get_client().options;"
+        "r = {k: o.get(k) for k in ('environment', 'send_default_pii', 'include_local_variables',"
+        " 'max_request_body_size', 'traces_sample_rate')};"
+        "r['before_send'] = getattr(o.get('before_send'), '__name__', None);"
+        "r['before_breadcrumb'] = getattr(o.get('before_breadcrumb'), '__name__', None);"
+        "print(json.dumps(r))"
+    )
+    base = {k: v for k, v in os.environ.items() if k not in AF}
+    resultado = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", codigo],
+        cwd=RAIZ,
+        env={**base, **AF, "PYTHONPATH": str(RAIZ)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    opcoes = lido(resultado)
+    assert opcoes["environment"] == "homologacao"
+    assert not opcoes["send_default_pii"]
+    assert not opcoes["include_local_variables"]
+    assert opcoes["max_request_body_size"] == "never"
+    assert opcoes["traces_sample_rate"] == 0
+    assert opcoes["before_send"] == "antes_de_enviar"
+    assert opcoes["before_breadcrumb"] == "antes_do_breadcrumb"
+
+
+def test_a_suite_nao_envia_nada_ao_sentry() -> None:  # A-13
+    from django.conf import settings
+
+    assert settings.SETTINGS_MODULE == "config.settings.test"
+    assert settings.SENTRY_DSN == ""
+    assert not os.environ.get("SENTRY_DSN")
+    fluxo = (RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "SENTRY_DSN" not in fluxo
