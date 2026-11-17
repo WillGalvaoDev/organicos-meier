@@ -27,12 +27,80 @@ _CHAVE_SENSIVEL = re.compile(
     r"senha|password|token|secret|segredo|chave|key|authorization|cookie|email|whatsapp",
     re.IGNORECASE,
 )
+# Chaves de identificação pessoal: um segmento da chave (minúscula, dividida por `_`, `-` e `.`)
+# igual a um destes (E16-R02, regra 3-B). `first_name` e `telefone_do_comprador` entram;
+# `pedido` e `id_externo` não.
+_SEGMENTOS_PESSOAIS = frozenset(
+    {
+        "nome",
+        "name",
+        "username",
+        "usuario",
+        "telefone",
+        "phone",
+        "celular",
+        "cpf",
+        "endereco",
+        "address",
+        "ip",
+    }
+)
+# Contextos técnicos do SDK: o nome do interpretador e do sistema não identificam ninguém.
+_CONTEXTOS_TECNICOS = frozenset({"runtime", "os", "trace"})
 _SEM_TEXTO_LIMPO = {"trace_id", "span_id", "parent_span_id"}
 _PARTES_COM_CHAVES_SENSIVEIS = ("extra", "tags", "contexts")
 
+# Rotas com credencial de uso único no caminho (E16-R02, regra 3-A). O segmento do token é qualquer
+# sequência sem `/`, `?`, `#` ou espaço; o resto do caminho fica (`/convite/[removido]/google/`).
+# O padrão da rota (`/convite/{token}/`, nome da transação) não é um token e fica como está.
+ROTAS_COM_SEGREDO = (
+    re.compile(r"(/entrar/link/)(?!\{)[^/?#\s]+"),
+    re.compile(r"(/convite/)(?!\{)[^/?#\s]+"),
+)
+
+
+def _trocar_tokens(texto: str) -> str:
+    for padrao in ROTAS_COM_SEGREDO:
+        texto = padrao.sub(rf"\1{REMOVIDO}", texto)
+    return texto
+
 
 def limpar_texto(texto: str) -> str:
-    return _TELEFONE.sub(REMOVIDO, _EMAIL.sub(REMOVIDO, texto))
+    return _TELEFONE.sub(REMOVIDO, _EMAIL.sub(REMOVIDO, _trocar_tokens(texto)))
+
+
+def _chave_sensivel(chave: str) -> bool:
+    segmentos = set(re.split(r"[_\-.]", chave.lower()))
+    return bool(_CHAVE_SENSIVEL.search(chave)) or bool(segmentos & _SEGMENTOS_PESSOAIS)
+
+
+def rotas_com_token_nao_cobertas(padroes: Any) -> list[str]:
+    """As rotas com parâmetro `token` que `ROTAS_COM_SEGREDO` não cobre (para o teste que impede
+    que uma rota nova com token fique esquecida)."""
+    from django.urls import URLPattern, URLResolver
+
+    sentinela = "TOKEN-DE-VERIFICACAO"
+    esquecidas: list[str] = []
+
+    def percorrer(lista: Any, prefixo: str) -> None:
+        for padrao in lista:
+            rota = str(padrao.pattern)
+            if isinstance(padrao, URLResolver):
+                percorrer(padrao.url_patterns, prefixo + rota)
+            elif isinstance(padrao, URLPattern):
+                completa = prefixo + rota
+                if not re.search(r"<(?:\w+:)?\w*token\w*>|\(\?P<\w*token\w*>", completa):
+                    continue
+                caminho = "/" + re.sub(
+                    r"<(?:\w+:)?(\w+)>|\(\?P<(\w+)>[^)]*\)",
+                    lambda m: sentinela if "token" in (m.group(1) or m.group(2)) else "x",
+                    completa,
+                ).lstrip("^").rstrip("$")
+                if sentinela in limpar_texto(caminho):
+                    esquecidas.append(completa)
+
+    percorrer(padroes, "")
+    return esquecidas
 
 
 def _limpar_valor(valor: Any, *, chaves_sensiveis: bool) -> Any:
@@ -43,7 +111,7 @@ def _limpar_valor(valor: Any, *, chaves_sensiveis: bool) -> Any:
     if isinstance(valor, dict):
         limpo = {}
         for chave, item in valor.items():
-            if chaves_sensiveis and isinstance(chave, str) and _CHAVE_SENSIVEL.search(chave):
+            if chaves_sensiveis and isinstance(chave, str) and _chave_sensivel(chave):
                 limpo[chave] = REMOVIDO
             elif chave in _SEM_TEXTO_LIMPO:
                 limpo[chave] = item
@@ -69,7 +137,7 @@ def limpar_evento(evento: dict[str, Any]) -> dict[str, Any]:
         if "method" in requisicao:
             nova["method"] = requisicao["method"]
         if isinstance(requisicao.get("url"), str):
-            nova["url"] = _sem_consulta(requisicao["url"])
+            nova["url"] = limpar_texto(_sem_consulta(requisicao["url"]))
         cabecalhos = requisicao.get("headers")
         if isinstance(cabecalhos, dict):
             agente = {k: v for k, v in cabecalhos.items() if str(k).lower() == "user-agent"}
@@ -83,6 +151,9 @@ def limpar_evento(evento: dict[str, Any]) -> dict[str, Any]:
             for m in migalhas["values"]
             if not (isinstance(m, dict) and m.get("category") == "query")
         ]
+        for migalha in migalhas["values"]:
+            if isinstance(migalha, dict) and isinstance(migalha.get("data"), dict):
+                migalha["data"] = _limpar_valor(migalha["data"], chaves_sensiveis=True)
     usuario = evento.get("user")
     if isinstance(usuario, dict):
         if "id" in usuario:
@@ -91,6 +162,12 @@ def limpar_evento(evento: dict[str, Any]) -> dict[str, Any]:
             del evento["user"]
     for parte, valor in list(evento.items()):
         if parte in ("request", "user", "event_id", "timestamp", "release", "environment"):
+            continue
+        if parte == "contexts" and isinstance(valor, dict):
+            evento[parte] = {
+                nome: _limpar_valor(contexto, chaves_sensiveis=nome not in _CONTEXTOS_TECNICOS)
+                for nome, contexto in valor.items()
+            }
             continue
         evento[parte] = _limpar_valor(valor, chaves_sensiveis=parte in _PARTES_COM_CHAVES_SENSIVEIS)
     return evento
@@ -133,7 +210,7 @@ def opcoes_do_sentry(
         "max_request_body_size": "never",
         "traces_sample_rate": 0,
         "integrations": [
-            DjangoIntegration(),
+            DjangoIntegration(transaction_style="url"),
             LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
         ],
         "before_send": antes_de_enviar,

@@ -12,6 +12,7 @@ import pytest
 import sentry_sdk
 from django.core.signals import request_finished
 from django.db import close_old_connections, connection
+from django.http import HttpResponse
 from django.test import Client
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
@@ -27,6 +28,9 @@ pytestmark = pytest.mark.django_db
 DSN = "https://chave-publica@o0.ingest.sentry.io/1"
 EMAIL = "ana@exemplo.com"
 TELEFONE = "(21) 99999-0000"
+TOKEN_5 = "TOKEN-SINTETICO-5"  # noqa: S105
+TOKEN_6 = "TOKEN-SINTETICO-6"  # noqa: S105
+PESSOA_SINTETICA = "Pessoa Sintetica"
 
 
 class TransporteEmMemoria(Transport):
@@ -100,13 +104,17 @@ def com_rota(settings: Any) -> None:
     settings.ROOT_URLCONF = "tests.tecnicos.test_observabilidade"
 
 
-def _chamar_pelo_wsgi(caminho: str, dados: dict[str, str], cookies: str) -> str:
+def _chamar_pelo_wsgi(
+    caminho: str, dados: dict[str, str], cookies: str, metodo: str = "POST"
+) -> str:
     """A aplicação WSGI de verdade (o Sentry se liga a ela; o cliente de testes não passa por
     ela e, por isso, o evento não teria nem o método nem a URL)."""
     from django.core.wsgi import get_wsgi_application
     from django.test import RequestFactory
 
-    ambiente = RequestFactory().post(caminho, dados, HTTP_COOKIE=cookies).environ
+    fabrica = RequestFactory()
+    requisicao = getattr(fabrica, metodo.lower())
+    ambiente = requisicao(caminho, dados, HTTP_COOKIE=cookies).environ
     resposta: dict[str, str] = {}
 
     def iniciar(
@@ -289,3 +297,166 @@ def test_monitores_externos() -> None:  # A-12
     monitor = MONITORES_EXTERNOS["verificar_operacao"]
     assert (monitor.schedule, monitor.checkin_margin, monitor.max_runtime) == ("*/5 * * * *", 10, 5)
     assert slug_do_monitor("verificar_operacao") == "verificar-operacao"
+
+
+# --- correção E16-R02: tokens no caminho e nomes não chegam ao Sentry (A-14 a A-20) ---------------
+
+
+def test_token_na_url_do_evento_e_trocado(tm: TransporteEmMemoria) -> None:  # A-14
+    sentry_sdk.capture_event(
+        {
+            "message": "erro",
+            "request": {
+                "method": "GET",
+                "url": "https://exemplo.invalid/entrar/link/TOKEN-SINTETICO-1/?x=1",
+            },
+        }
+    )
+    (evento,) = tm.eventos()
+    assert evento["request"]["url"] == "https://exemplo.invalid/entrar/link/[removido]/"
+    assert "TOKEN-SINTETICO-1" not in tm.texto()
+
+
+@pytest.mark.parametrize(
+    ("caminho", "funcao", "padrao"),
+    [
+        ("/convite/TOKEN-SINTETICO-2/", "validar_convite", "/convite/{token}/"),
+        ("/convite/TOKEN-SINTETICO-3/google/", "validar_convite", "/convite/{token}/google/"),
+        ("/entrar/link/TOKEN-SINTETICO-4/", "validar_link", "/entrar/link/{token}/"),
+    ],
+)
+def test_requisicao_com_token_no_caminho(
+    tm: TransporteEmMemoria,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    settings: Any,
+    caminho: str,
+    funcao: str,
+    padrao: str,
+) -> None:  # A-15
+    from apps.contas import views
+
+    # a requisição de teste não carrega o cookie do CSRF; o que se prova aqui é o evento
+    settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if "csrf" not in m.lower()]
+
+    def quebra(token: str) -> Any:
+        logging.getLogger("teste").warning("tentativa em %s", caminho)
+        raise RuntimeError(f"falha em {caminho}")
+
+    monkeypatch.setattr(views, funcao, quebra)
+    metodo = "POST" if caminho.endswith("/google/") else "GET"
+    status = _chamar_pelo_wsgi(caminho, {}, "", metodo=metodo)
+    assert status.startswith("500")
+    (evento,) = tm.eventos()
+    token = caminho.split("/")[2] if "link" not in caminho else caminho.split("/")[3]
+    assert token.startswith("TOKEN-SINTETICO-")
+    assert token not in tm.texto()
+    assert evento["request"]["url"].endswith(caminho.replace(token, "[removido]"))
+    assert evento.get("transaction") == padrao
+    assert caminho.replace(token, "[removido]") in tm.texto()
+
+
+def _rota_de_teste(request: Any, token_de_teste: str) -> Any:
+    return HttpResponse("ok")
+
+
+def test_toda_rota_com_token_esta_coberta() -> None:  # A-16
+    from django.urls import get_resolver, path
+
+    from config.observabilidade import ROTAS_COM_SEGREDO, rotas_com_token_nao_cobertas
+
+    assert len(ROTAS_COM_SEGREDO) >= 2
+    assert rotas_com_token_nao_cobertas(get_resolver().url_patterns) == []
+    extra = [path("teste/<str:token_de_teste>/", _rota_de_teste, name="teste_token")]
+    assert rotas_com_token_nao_cobertas(extra) == ["teste/<str:token_de_teste>/"]
+
+
+def test_nomes_e_identificacao_por_chave(tm: TransporteEmMemoria) -> None:  # A-17
+    sentry_sdk.capture_event({"message": "erro", "extra": {"nome": "Pessoa Sintetica Revisora"}})
+    logging.getLogger("teste").error(
+        "x",
+        extra={
+            "first_name": "Fulana Sintetica",
+            "nome_completo": "Fulana Sintetica Completa",
+            "username": "fulana.sintetica",
+            "telefone_do_comprador": "21 3333 4444",
+            "cpf": "000.000.000-00",
+            "pedido": 7,
+            "id_externo": "SIM-1",
+        },
+    )
+    with sentry_sdk.new_scope() as escopo:
+        escopo.set_tag("usuario", "fulana-tag")
+        escopo.set_context("comprador", {"name": "Fulana Contexto"})
+        sentry_sdk.capture_message("com tag e contexto")
+    primeiro, segundo, terceiro = tm.eventos()
+    assert primeiro["extra"]["nome"] == "[removido]"
+    for chave in ("first_name", "nome_completo", "username", "telefone_do_comprador", "cpf"):
+        assert segundo["extra"][chave] == "[removido]", chave
+    assert segundo["extra"]["pedido"] == 7
+    assert segundo["extra"]["id_externo"] == "SIM-1"
+    assert terceiro["tags"]["usuario"] == "[removido]"
+    assert terceiro["contexts"]["comprador"]["name"] == "[removido]"
+    assert terceiro["contexts"]["runtime"]["name"] != "[removido]"
+    texto = tm.texto()
+    for valor in (
+        "Pessoa Sintetica Revisora",
+        "Fulana Sintetica",
+        "fulana.sintetica",
+        "21 3333 4444",
+        "000.000.000-00",
+        "fulana-tag",
+        "Fulana Contexto",
+    ):
+        assert valor not in texto, valor
+
+
+def test_breadcrumb_com_token_e_nome(tm: TransporteEmMemoria) -> None:  # A-18
+    sentry_sdk.add_breadcrumb(
+        category="migalha-de-teste",
+        message=f"visitou /entrar/link/{TOKEN_5}/",
+        data={"nome": PESSOA_SINTETICA, "url": f"https://exemplo.invalid/convite/{TOKEN_6}/?a=b"},
+    )
+    try:
+        raise RuntimeError("erro depois do breadcrumb")
+    except RuntimeError as erro:
+        sentry_sdk.capture_exception(erro)
+    (evento,) = tm.eventos()
+    (migalha,) = [
+        m for m in evento["breadcrumbs"]["values"] if m.get("category") == "migalha-de-teste"
+    ]
+    assert migalha["message"] == "visitou /entrar/link/[removido]/"
+    assert migalha["data"]["nome"] == "[removido]"
+    assert migalha["data"]["url"] == "https://exemplo.invalid/convite/[removido]/"
+    texto = tm.texto()
+    for valor in (TOKEN_5, TOKEN_6, PESSOA_SINTETICA):
+        assert valor not in texto, valor
+
+
+def test_so_o_user_agent_fica_nos_cabecalhos(tm: TransporteEmMemoria) -> None:  # A-19
+    sentry_sdk.capture_event(
+        {
+            "message": "erro",
+            "request": {
+                "method": "GET",
+                "url": "https://exemplo.invalid/rota/",
+                "headers": {
+                    "User-Agent": "navegador",
+                    "Cookie": "sessionid=segredo-do-cookie",
+                    "Authorization": "Bearer segredo-bearer",
+                    "X-Forwarded-For": "203.0.113.9",
+                    "Referer": "https://exemplo.invalid/convite/TOKEN-SINTETICO-7/",
+                },
+            },
+        }
+    )
+    (evento,) = tm.eventos()
+    assert evento["request"]["headers"] == {"User-Agent": "navegador"}
+    texto = tm.texto()
+    for valor in ("TOKEN-SINTETICO-7", "segredo-do-cookie", "segredo-bearer", "203.0.113.9"):
+        assert valor not in texto, valor
+
+
+def test_a_transacao_usa_o_padrao_da_rota(tm: TransporteEmMemoria) -> None:  # A-20
+    integracao = sentry_sdk.get_client().integrations["django"]
+    assert getattr(integracao, "transaction_style", None) == "url"
