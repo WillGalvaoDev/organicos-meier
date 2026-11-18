@@ -208,3 +208,39 @@ As execuções completas e a prova real no contêiner concluíram antes da inter
 Correção documental dos custos e explicitação da pendência aceitas. Continuam faltando homologação nos provedores, restauração dos caminhos A/B com RTO medido, suíte no Neon e decisões do responsável sobre melhorias, conforme as regras da E16-08. Os xfails são permitidos durante a pendência, mas não autorizam encerrar a etapa. Pela regra 15 corrigida, iniciar essa execução real somente após R01 a R06 aprovados; R03, R05 e R06 ainda impedem esse gate.
 
 Próximo passo: especificador/implementador tratam a garantia insuficiente do R03 e o implementador conclui R05/R06 com evidência. Nova revisão técnica antes da homologação. Não houve correção de produção pelo revisor. Pareceres anteriores e registros Red/Green permanecem integralmente preservados.
+
+
+## Nova revalidação independente — 2026-11-18 — commit 9f4163b
+
+**Veredito global: REPROVADO. E16 e encerramento da fase 1 continuam pendentes.** Revisão das correções de 07deb0e a 9f4163b, sobre o parecer 91c7c6f. Árvore inicialmente limpa.
+
+| Achado | Resultado atual |
+|---|---|
+| R01/R02/R04 | Encerramentos anteriores mantidos; respectivas implementações não alteradas nesta rodada |
+| R03 | **Encerrado**: identificador por execução e reprodução de perda da sessão passaram |
+| R05 — importante | **Aberto**: matriz ainda atribui provas parciais a afirmações completas |
+| R06 — importante | **Aberto**: formas não coletadas/puladas aceitas; A-23 admite erro de configuração como sucesso e falha com xfailed real |
+| R07 — bloqueador de encerramento | **Aberto**: homologação, restauração real/RTO e decisões pendentes |
+
+### Verificações independentes
+
+Runner temporário: `config.settings.test`, PYTHONPATH da raiz e TEST.NAME `test_organicos_revisor_e16_9f4163b`, sem mudança no repositório. Comando de pytest:
+
+```text
+pytest -q tests/tecnicos/test_backup_externo.py tests/rastreabilidade tests/ambiente tests/aceitacao/test_cenarios_17_25_webhook_e_aprovacao_tardia.py -p no:cacheprovider --tb=short
+```
+
+Resultado: **1 failed, 113 passed, 2 xfailed, 1 warning, 64,56s**. Falha em A-23 detalhada na E16-07. Os testes de backup (inclusive A-26), caracterizações novas e demais guardas selecionadas passaram. Xfails continuam sendo restauração/RTO e decisão sobre melhorias da E16-08; não contam como aprovação. Warning de depreciação send_default_pii.
+
+- `ruff check .`: passou.
+- `ruff format --check .`: 466 arquivos já formatados.
+- `mypy .`: 559 arquivos sem erros.
+- `python manage.py makemigrations --check --dry-run`: No changes detected.
+- Terceira amostra semântica de 20 cenários e 10 técnicos, mais revalidação dos exemplos e limites declarados: R05 permanece (E16-07).
+- Probes em arquivos temporários: dois casos aceitos pelo validador, mas sem asserção executada pelo pytest; diagnóstico do falso verde de A-23 comprovado com e sem PYTHONPATH (E16-07).
+
+Não foi repetida a suíte completa nesta rodada: a seleção abrange os arquivos de implementação/testes alterados e já revela falha impeditiva. O resultado **3626 passed, 1 skipped, 2 xfailed** permanece como relato do implementador, não como execução independente desta revisão; o falso verde do A-23 exige revalidar esse registro. Build e backup com ferramentas reais têm evidência da revisão anterior, não foram reexecutados neste commit. Sem execução de CI remoto, deploy, acesso a provedor real, push ou alteração de produção.
+
+### Próximo gate
+
+R03 está aprovado no escopo corrigido. Implementador deve completar a cobertura semântica de R05 e a guarda/prova real de R06, com registros Red/Green e regressões pertinentes. Só após aprovação de R01 a R06 começa a homologação real prevista pela regra 15 da E16-08. R07 não pode ser encerrado por testes locais nem pelos xfails. Os pareceres e registros anteriores foram preservados integralmente.

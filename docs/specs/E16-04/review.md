@@ -161,3 +161,12 @@ Regra 1-B: a chave do objeto passou a levar um identificador de execução de 12
 - **Green:** chave com identificador gerado antes da reserva; `docs/operacao/restauracao.md` atualizado (formato e ordenação). `tests/tecnicos/test_backup_externo.py` + `tests/ambiente`: **66 passed, 2 xfailed** (os dois xfail são da E16-08, bloqueados por contas da fase 0).
 - Arranjo dos testes antigos: a fixture `ab` força o identificador para as chaves ficarem previsíveis; A-1, A-18, A-26 e A-27 o soltam. Nenhuma asserção foi removida ou afrouxada; o A-18 antigo (mesma chave recusada) virou "mesmo instante gera outra chave" + identificador repetido recusado, conforme a spec.
 - Commit: `9da84a7`. Suíte completa: ver E16-07/review.md.
+
+
+## Nova revalidação independente — 2026-11-18 — commit 9f4163b
+
+**APROVADO no escopo local corrigido. E16-R03 encerrado.** Confrontados a regra 1-B e A-1/A-18/A-19/A-24/A-25/A-26/A-27/A-28 corrigidos com o código, testes e roteiro de restauração. A alteração usa `secrets.token_hex(16)` antes da reserva e inclui o identificador na chave; nenhuma coordenação entre objetos de execuções distintas depende da sessão perdida. A repetição do instante produz outro backup; colisão forçada já existente continua recusada antes das ferramentas. Aceita a solução técnica prevista na especificação, com identificadores aleatórios de 128 bits; isso não é uma demonstração matemática de impossibilidade de colisão aleatória.
+
+Executados os testes de backup e ambiente junto da validação da matriz (resultado global em E16-08). A reprodução A-26 fecha a conexão PostgreSQL de A durante o despejo, libera a trava, deixa B concluir entre o segundo HEAD e o envio de A e confere os objetos por suas respectivas chaves: **passou**. A-18 e A-27 também passaram. Os fixtures soltam o identificador fixo nesses casos, preservando o gerador real; A-19/A-24 mantêm colisões controladas. O roteiro mostra o sufixo novo, e o painel continua sem expor a chave.
+
+Registro TDD conferido: ImportError inicial, função substituível ainda sem uso para obter falha comportamental, 11 falhas registradas e correção posterior da chave. A mudança do A-18 corresponde à especificação anterior ao código, não oculta a repetição de uma chave forçada. Não foi alterado código pelo revisor. O teste com ferramentas reais/build da revisão de 5f12d21 não foi repetido nesta rodada, cuja alteração de produção se restringe à identidade do objeto; restauração operacional e RTO continuam pendentes na E16-08.

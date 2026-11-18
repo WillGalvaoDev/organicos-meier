@@ -378,3 +378,53 @@ Referências: `conferencia.py:77` avalia apenas a primeira condição posicional
 - **Limitações/dúvidas para o revisor:** (1) cenário 17, "mensagem formal": o webhook não aciona o pedido formal; provei a notificação ao comprador (`pagamento_confirmado`). Se a spec quer o e-mail ao fornecedor, é lacuna de especificação. (2) Algumas afirmações compostas são provadas só em parte (ex.: C20 bloqueio de novo cadastro com o e-mail; C59 variação de maiúsculas; T-38 "mais de 3 casas"); não criei testes além dos exigidos.
 - Verificações: suíte completa **3626 passed, 1 skipped, 2 xfailed** (674 s) antes do último ajuste da matriz (cenário 71); depois, `tests/rastreabilidade` 45 passed; `ruff check --no-cache` e `mypy` limpos; `makemigrations --check` sem mudanças.
 - R07 segue bloqueada (contas da fase 0, decisões do responsável). Sem push, PR nem merge.
+
+
+## Nova revalidação independente — 2026-11-18 — commit 9f4163b
+
+**REPROVADO. E16-R05 e E16-R06 permanecem importantes.** Revisão das regras residuais 2-D/3-C e A-20 a A-28, dos commits 07deb0e, a832f9c e 9f4163b, dos testes novos, do validador e do gerador. A estrutura das 563 ligações passou na conferência automática; isso não substitui a prova semântica.
+
+### R05 — cobertura ainda parcial
+
+Terceira amostra: cenários **28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49** e técnicos **T-15, T-16, T-18, T-19, T-20, T-21, T-22, T-23, T-25, T-26**. Não repete entradas das duas amostras anteriores. Conferidos textos-base, provas e corpos dos testes atribuídos; adicionalmente reavaliados C17, C25, T-11 e os limites declarados C20, C59 e T-38. **A-28 não atendido**: exemplos de afirmações sem prova suficiente permanecem.
+
+- **C34 — matriz.py:281; funcional §16.34:** a afirmação "Depois de novo aporte, a devolução é concluída sem duplicidade" aponta somente para `test_cenario_34_reserva_insuficiente.py::test_reserva_que_nao_cobre_alerta_e_o_aporte_do_administrador_resolve` (linha 22). O teste registra aporte, resolve alerta e designa reserva; termina verificando saldo livre de 20. Não autoriza/processa estorno, não liquida a obrigação e não repete a operação. A prova textual agora descreve corretamente o alerta, mas continua não provando a conclusão/ausência de duplicidade afirmada.
+- **C17 — matriz.py:158; funcional §16.17 e §10:** as novas caracterizações enviam webhooks repetidos e melhoram a prova de pagamento/quitação/estorno. Contudo `pagamento_confirmado` é notificação ao comprador, não o pedido formal por e-mail ao fornecedor da seção 10. Nenhuma das três referências cria/confere pedido formal ou seus envios. O webhook não iniciar diretamente esse fluxo não elimina a obrigação de demonstrar que repeti-lo não duplica o pedido/envio já existente no fluxo pertinente. Não é necessário redefinir regra de negócio nem trocar "mensagem formal" por outra notificação.
+- **T-38 — matriz.py:1354; infraestrutura §8 T-38:** "Incremento zero, negativo ou com mais de 3 casas recusado" cita apenas `test_criar_produto_recusa_incremento_float_ou_int`, parametrizado com **[0.25, 1]** (float/int). Demonstra recusa do tipo, sem exercitar zero, negativo ou precisão excedente em entrada decimal válida quanto ao tipo.
+- **C20 e C59 — matriz.py:181/:478:** os limites declarados pelo implementador são reais. Os dois testes de C20 preservam convite/conta e parcelas, sem tentar login/novo cadastro nem criar pedido pago. A primeira afirmação de C59 só cita login de alias com `+`; não tenta endereço banido com variação de maiúsculas. Precisam dos demais vínculos ou caracterizações exigidos pelas regras 2/2-B/2-D.
+
+C25 agora exercita aprovação T0+30h e aviso T0+50h; T-11 passou a incluir movimentações proibidas entre destinações/fornecedores, corrigindo os exemplos específicos anteriores. Isso não aprova o restante da matriz. Números 679 − 141 + 25 = 563 e declaração do método foram registrados, mas a própria declaração de afirmações parcialmente provadas impede considerar a leitura integral concluída com cobertura válida. Retorno: completar todas as afirmações, não só os exemplos encontrados nesta amostra. A regra 5 já permite caracterizações onde faltar prova; não há limite de três testes novos imposto pela tarefa.
+
+### R06 — formas ainda aceitas e A-23 com falso positivo
+
+As três fontes da revisão anterior são recusadas agora; A-20/A-21/A-22 passaram. Persistem duas combinações dentro do contrato de falhar fechado da regra 3-C. Em diretórios temporários, `_conferir_referencia` **e** `_conferir_prova(..., 'Resultado: `assert False`')` retornaram `None` para:
+
+```python
+# tests/test_aninhado.py::test_exemplo
+import pytest
+pytestmark = []
+if True:
+    pytestmark.append(pytest.mark.skip(reason="pulado"))
+def test_exemplo(): assert False
+```
+
+Pytest real: **1 skipped**. `_definicao_aninhada` (conferencia.py:148) só procura atribuições; não examina a mutação do controle por chamada dentro do if, embora essa forma de mutação e o contexto condicional sejam explicitamente cobertos pela regra 3-C.
+
+```python
+# tests/test_encadeado.py::test_exemplo
+__test__ = habilitado = False
+def test_exemplo(): assert False
+```
+
+Pytest real: **no tests ran**. `_controle_do_corpo` (linha 185) só processa Assign com um alvo e ignora a atribuição encadeada, inclusive o `__test__` literal. Não são pulos por fixture/conftest nem expressões cuja avaliação exigiria executar código. Retorno: analisar ou recusar formas não provadas, incluindo combinações das formas previstas; não limitar a guarda a exemplos isolados.
+
+**A-23 não comprova o que declara** (`test_matriz.py:391–405`). A execução independente com PYTHONPATH da raiz terminou **1 failed, 113 passed, 2 xfailed**, falhando neste teste: ele exige `"failed" not in saida`, mas `1 xfailed` contém essa substring. Há também um falso verde reproduzível:
+
+1. Num diretório temporário, gravar a fonte `TestExemplo` com `pytestmark: list = [pytest.mark.xfail]` e `assert False` do próprio A-21.
+2. Executar `[sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-c', '/dev/null']`, cwd nesse diretório, com `DJANGO_SETTINGS_MODULE=config.settings.test` herdado do processo pai.
+3. Sem PYTHONPATH da raiz: subprocesso sai **1**, `ImportError: No module named 'config'`; as duas guardas do teste passam, pois a saída não contém "failed" nem "passed". Reexecução direta do A-23 nessas condições: **1 passed em 6,23s**.
+4. Com PYTHONPATH da raiz: subprocesso sai **0**, **1 xfailed**; a guarda `"failed" not in saida` falha.
+
+Portanto o verde relatado pelo implementador não basta como evidência de A-23. Isolar o subprocesso das configurações Django irrelevantes e conferir códigos/resultados concretos esperados (skip/xfail/ausência de coleta), recusando erro de configuração/coleta. Corrigir a interpretação de xfailed. Esta é correção do teste errado com evidência, não autorização para afrouxar o requisito.
+
+Registros Red/Green lidos; as três caracterizações que passaram na primeira execução são justificadas pela regra 5, sem nova produção. O Red/Green de A-23 precisa ser revalidado após corrigir o falso positivo. Nenhum teste ou produção foi alterado pelo revisor. Evidências e limites gerais em E16-08.
