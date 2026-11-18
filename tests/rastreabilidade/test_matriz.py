@@ -261,3 +261,147 @@ def test_o_cenario_2_tem_as_seis_afirmacoes() -> None:  # A-16
 
 def test_t40_tem_duas_afirmacoes() -> None:  # A-17 (estrutura)
     assert len(matriz.TECNICOS["T-40"]) == 2
+
+
+# --- correção residual E16-R06: formas que a árvore de sintaxe não prova que rodam (A-20 a A-23) --
+
+FONTES_DO_REVISOR = {
+    "pytestmark da classe": (
+        "import pytest\n"
+        "class TestExemplo:\n"
+        '    pytestmark = pytest.mark.skip(reason="pulado")\n'
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        "pytestmark da classe TestExemplo",
+    ),
+    "skipif com duas condições": (
+        "import pytest\n"
+        '@pytest.mark.skipif(False, True, reason="segunda verdadeira")\n'
+        "def test_exemplo(): assert False\n",
+        "test_exemplo",
+        "skipif",
+    ),
+    "__test__ anotado": (
+        "__test__: bool = False\ndef test_exemplo(): assert False\n",
+        "test_exemplo",
+        "__test__",
+    ),
+}
+FONTES_RECUSADAS = {
+    "pytestmark anotado de classe com xfail": (
+        "import pytest\n"
+        "class TestExemplo:\n"
+        "    pytestmark: list = [pytest.mark.xfail]\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        "pytestmark da classe TestExemplo",
+    ),
+    "skipif sem condição": (
+        "import pytest\n@pytest.mark.skipif()\ndef test_exemplo(): assert False\n",
+        "test_exemplo",
+        "skipif",
+    ),
+    "skipif com condition=True depois de False": (
+        "import pytest\n"
+        "@pytest.mark.skipif(False, condition=True)\n"
+        "def test_exemplo(): assert False\n",
+        "test_exemplo",
+        "skipif",
+    ),
+    "__test__ com nome na classe": (
+        "HABILITADO = False\n"
+        "class TestExemplo:\n"
+        "    __test__ = HABILITADO\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        "__test__",
+    ),
+    "pytestmark com atribuição aumentada": (
+        "import pytest\n"
+        "pytestmark = []\n"
+        "pytestmark += [pytest.mark.skip]\n"
+        "def test_exemplo(): assert False\n",
+        "test_exemplo",
+        "atribuição aumentada",
+    ),
+    "pytestmark.append": (
+        "import pytest\n"
+        "pytestmark = []\n"
+        "pytestmark.append(pytest.mark.skip)\n"
+        "def test_exemplo(): assert False\n",
+        "test_exemplo",
+        "append",
+    ),
+    "pytestmark dentro de if": (
+        "import pytest\n"
+        "if True:\n"
+        "    pytestmark = pytest.mark.skip\n"
+        "def test_exemplo(): assert False\n",
+        "test_exemplo",
+        "if",
+    ),
+}
+
+
+def test_as_tres_fontes_do_revisor(tmp_path: Path) -> None:  # A-20
+    for nome, (fonte, funcao, motivo) in FONTES_DO_REVISOR.items():
+        ref = _arquivo(tmp_path, "test_exemplo.py", fonte)
+        problemas = _problemas_de(tmp_path, ref + funcao)
+        assert problemas, nome
+        assert motivo in problemas[0], (nome, problemas)
+
+
+def test_formas_residuais_recusadas(tmp_path: Path) -> None:  # A-21
+    for nome, (fonte, funcao, motivo) in FONTES_RECUSADAS.items():
+        ref = _arquivo(tmp_path, "test_exemplo.py", fonte)
+        problemas = _problemas_de(tmp_path, ref + funcao)
+        assert problemas, nome
+        assert motivo in problemas[0], (nome, problemas)
+
+
+@pytest.mark.parametrize(
+    ("fonte", "funcao"),
+    [
+        (
+            "import pytest\n"
+            '@pytest.mark.skipif(False, False, reason="x")\n'
+            "def test_exemplo(): ...\n",
+            "test_exemplo",
+        ),
+        (
+            "class TestValida:\n    __test__ = True\n    def test_exemplo(self): ...\n",
+            "TestValida::test_exemplo",
+        ),
+        (
+            "import pytest\n"
+            "class TestValida:\n"
+            "    pytestmark = [pytest.mark.django_db]\n"
+            "    def test_exemplo(self): ...\n",
+            "TestValida::test_exemplo",
+        ),
+        (
+            "import pytest\npytestmark: list = [pytest.mark.tecnico]\ndef test_exemplo(): ...\n",
+            "test_exemplo",
+        ),
+    ],
+)
+def test_formas_residuais_aceitas(tmp_path: Path, fonte: str, funcao: str) -> None:  # A-22
+    ref = _arquivo(tmp_path, "test_valido.py", fonte)
+    assert _problemas_de(tmp_path, ref + funcao) == []
+
+
+def test_o_pytest_confirma_que_as_fontes_recusadas_nao_rodam(tmp_path: Path) -> None:  # A-23
+    for nome, (fonte, _funcao, _motivo) in {**FONTES_DO_REVISOR, **FONTES_RECUSADAS}.items():
+        pasta = tmp_path / nome.replace(" ", "_")
+        pasta.mkdir()
+        (pasta / "test_exemplo.py").write_text(fonte, encoding="utf-8")
+        resultado = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null"],
+            cwd=pasta,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        saida = resultado.stdout + resultado.stderr
+        assert "failed" not in saida, (nome, saida)
+        assert "passed" not in saida, (nome, saida)
