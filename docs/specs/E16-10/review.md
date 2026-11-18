@@ -15,3 +15,36 @@ Conferidos: funcional §5.1; E05-06 (aviso de preço); política `comprador_ativ
 A exceção de TDD é adequada ao escopo exclusivamente documental: nenhum comportamento novo, nenhum teste a alterar. O implementador ainda deve executar os testes e registrar a correspondência exigida; o gate não substitui essa evidência.
 
 Verificações realizadas: leitura das fontes, dos critérios alterados, dos corpos de testes citados e do diff de `b4d2a64..696a378`; nenhum teste executado neste gate. Não foram modificadas especificações, testes ou produção pelo revisor. Nenhum achado impeditivo de especificação. Próximo passo: registro da verificação e execução pelo implementador, seguido de revisão independente de conclusão e encerramento das melhorias. R07 depende ainda das demais evidências operacionais da E16-08.
+
+## Registro do implementador — 2026-11-18
+
+Agente 2. Fatia só de documentação. Nenhum código de produção nem teste foi alterado por esta fatia.
+
+### Exceção técnica (AGENTS.md §3)
+
+Não há Red possível: o comportamento já é o da redação nova. A evidência é a execução dos testes da regra 2 e a leitura dos asserts.
+
+### Execução
+
+`uv run pytest tests/tecnicos/test_pedidos_abertura_tela.py tests/tecnicos/test_pedidos_concorrencia.py tests/tecnicos/test_financeiro_telas.py`: **71 passed**, sem alteração dos arquivos. Para a recusa do administrador pela política, que o teste da E08-02 aceita como 302 ou 403, rodei também `tests/tecnicos/test_interesses_carrinho.py::test_quem_pode_ver_e_quem_pode_gravar` (E05-05 A-14): **1 passed**; ele exige 403 do administrador em `POST /interesses/`.
+
+### Correspondência entre a redação nova e os asserts (leitura do corpo)
+
+| Critério | Teste | Assert que confere |
+|---|---|---|
+| E08-02 A-12, 409 para A | `test_interesse_depois_da_abertura_e_recusado_com_409` | `resposta.status_code == 409` e a mensagem "Os interesses deste fornecedor não podem ser alterados nesta etapa." para A, aumentando (7) e reduzindo (5) |
+| E08-02 A-12, administrador recusado pela política, sem a mensagem da etapa | o mesmo teste e o E05-05 A-14 | no primeiro, `resposta.status_code in (302, 403)` (tolerância apontada no gate; não reescrita); no segundo, `assert cliente.post(rota, corpo).status_code == 403` para o administrador. A ausência da mensagem da etapa não é afirmada em nenhum dos dois: **lacuna registrada**, sem devolução (a política recusa antes da regra da etapa, E02-10, e a redação descreve esse fato) |
+| E08-02 A-12, pedidos não mudam | o mesmo teste | `list(Pedido...values()), list(ItemDoPedido...values()) == antes` |
+| E08-02 A-21, preço antes | `test_preco_gravado_antes_da_abertura_entra_nos_itens` | `_precos_de_p1(arranjo) == {D("11.00")}`; `sorted(_preco_alterado(arranjo)) == sorted([a.pk, b.pk])` |
+| E08-02 A-21, preço depois | `test_preco_gravado_depois_da_abertura_nao_muda_os_itens` | `_precos_de_p1(arranjo) == {D("10.00")}`; `preco == D("11.00")`; `_preco_alterado(arranjo) == []` |
+| E09-08 A-3 | `test_aporte_com_passkey_recente_entra_na_reserva_e_no_historico` | POST com `"valor": "1000,00"`; `situacao_da_reserva().saldo == D("2000.00")`; linha do histórico com "R$ 1.000,00" e "Aporte inicial". Os negativos de separador de milhar seguem na spec da E09-08 |
+
+Todos os testes correspondem à redação nova. Nenhuma devolução ao especificador.
+
+### Diff da fatia (A-4)
+
+Base `b4d2a64`, caminhos examinados: `docs/specs/E08-02/acceptance.md` (A-12, A-21 e o texto anterior preservado) e `docs/specs/E09-08/acceptance.md` (A-3 e o texto anterior preservado), ambos alterados no commit `696a378` do especificador, que também reúne os arquivos da E16-07 e da E16-09. O implementador não alterou nenhum desses dois arquivos. `docs/melhorias.md` só muda no encerramento (A-5), depois da aprovação do revisor.
+
+### Pendente
+
+A-5 (mover M-3 e M-8 para "Encerradas") só depois da revisão de conclusão do agente 3.
