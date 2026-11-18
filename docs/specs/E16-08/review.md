@@ -244,3 +244,34 @@ Não foi repetida a suíte completa nesta rodada: a seleção abrange os arquivo
 ### Próximo gate
 
 R03 está aprovado no escopo corrigido. Implementador deve completar a cobertura semântica de R05 e a guarda/prova real de R06, com registros Red/Green e regressões pertinentes. Só após aprovação de R01 a R06 começa a homologação real prevista pela regra 15 da E16-08. R07 não pode ser encerrado por testes locais nem pelos xfails. Os pareceres e registros anteriores foram preservados integralmente.
+
+## Revalidação independente das novas correções — 2026-11-18 — de1111c
+
+**Veredito global: REPROVADO. A E16 e o encerramento da fase 1 não estão aprovados.** Revisados os commits 181bf98 a de1111c, sobre o parecer ec5c9d3. Árvore inicialmente limpa. As alterações desta rodada concentram-se na E16-07, testes, matriz e conferência no CI; não há alteração de produção.
+
+R01, R02, R03 e R04 mantêm seus encerramentos anteriores. **R05 permanece importante e aberto**: a quarta amostra e a releitura das entradas apontadas encontraram vínculos insuficientes em C63, T-11 e T-38; C96 continua sem cobertura do histórico exigido pelo texto-base. Evidências, requisitos e retorno detalhados no novo parecer de `docs/specs/E16-07/review.md`. O verde da suíte e da conferência estrutural/JUnit não comprova sozinho a adequação semântica dessas ligações.
+
+**R07 permanece bloqueador de encerramento**: faltam as evidências de homologação nos provedores, suíte no Neon, restauração dos caminhos A/B com RTO medido e decisões do responsável sobre melhorias. Os xfails de pendência não representam critérios cumpridos. A regra 15 da E16-08 continua impedindo iniciar essa execução real antes de R01 a R06 aprovados; R05 ainda impede esse gate. Não se realizou deploy nem acesso a provedor real nesta revisão.
+
+Próximo gate: implementador corrige a rastreabilidade residual; especificador trata a devolução de C96 conforme a fonte de verdade, sem eliminar silenciosamente o requisito. Após aprovação técnica, executar e revisar a homologação/recuperação e as decisões previstas pela E16-08. Pareceres e registros anteriores preservados integralmente. Sem correções de produção e sem push pelo revisor.
+
+### Resultado final das verificações independentes
+
+**R06 encerrado**, conforme a revisão da lista fechada, do A-23 isolado, dos testes do JUnit e do fluxo de CI registrada na E16-07. Situação final: **R01 a R04 e R06 encerrados; R05 importante aberto; R07 bloqueador aberto**.
+
+Runner temporário fora do repositório, com `DJANGO_SETTINGS_MODULE=config.settings.test`, PYTHONPATH da raiz e TEST.NAME `test_organicos_revisor_e16_de1111c`, executando `pytest.main` com:
+
+```text
+pytest -q -p no:cacheprovider --tb=short --junitxml=<TEMP>/revisor_e16_de1111c.xml
+python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_de1111c.xml
+```
+
+- Suíte completa: **3651 passed, 1 skipped, 2 xfailed, 18 warnings em 844,31s**; saída 0.
+- JUnit: **“Toda referência da matriz passou na execução.”**, saída 0. As 279 referências distintas foram encontradas e passaram; nenhum skip/xfail da suíte integra a matriz.
+- `python -m ruff check .`: All checks passed.
+- `python -m ruff format --check .`: 469 arquivos já formatados.
+- `python -m mypy .`: 562 arquivos sem erros.
+- `python manage.py makemigrations --check --dry-run`: No changes detected.
+- Conferência estática da matriz: nenhum problema; 174 entradas, 594 afirmações e 599 ligações. Quarta amostra semântica: R05 permanece, pelos contraexemplos registrados na E16-07.
+
+O skip é `test_backup_externo_ferramentas.py`: pg_dump, pg_restore, age e age-keygen ausentes no ambiente Windows. Os dois xfails são `test_o_registro_da_restauracao_e_o_rto` e `test_as_melhorias_tem_decisao`; permanecem pendências explícitas de R07. Os warnings não causaram falha e incluem a depreciação de send_default_pii. Build e teste de backup com ferramentas reais têm evidências da revisão anterior, não foram repetidos nesta rodada sem alterações de produção. Nenhuma execução de CI remoto, homologação externa ou restauração operacional foi inferida desses resultados locais. **Veredito mantido: REPROVADO.**
