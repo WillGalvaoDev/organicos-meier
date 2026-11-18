@@ -31,7 +31,7 @@ Restauração a um instante, num branch novo.
 
 Para perda do próprio Neon (conta, projeto ou região).
 
-1. Localize o objeto mais recente no bucket de backups do R2 (`banco/<ambiente>/<AAAA>/<MM>/organicos-<ambiente>-<AAAAMMDD>T<HHMMSS>Z.dump.age`).
+1. Localize o objeto mais recente no bucket de backups do R2 (`banco/<ambiente>/<AAAA>/<MM>/organicos-<ambiente>-<AAAAMMDD>T<HHMMSS>Z-<EXECUCAO>.dump.age`, em que `<EXECUCAO>` são 32 caracteres hexadecimais próprios de cada execução). Dois backups feitos no mesmo instante têm chaves diferentes; a ordem segue o prefixo de data e hora.
 2. Baixe o objeto e decifre com a chave privada do `age`, guardada pelo responsável **fora do Fly.io**: `age --decrypt -i <chave-privada.txt> -o banco.dump <objeto>.age`.
 3. Crie um banco vazio (branch novo do Neon).
 4. Restaure: `pg_restore --no-owner --no-privileges --dbname "<url direta do banco vazio>" banco.dump`.

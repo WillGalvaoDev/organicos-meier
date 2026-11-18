@@ -7,6 +7,7 @@ ou falha sob comando; o R2 é o S3 simulado pelo `moto`. O A-15 (ferramentas rea
 
 import hashlib
 import logging
+import re
 import subprocess
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,7 @@ from django.db import IntegrityError, connection, transaction
 from moto import mock_aws
 
 from apps.nucleo.so_insercao import RegistroImutavel
+from apps.operacao.backup import identificador_da_execucao as IDENTIFICADOR_REAL
 from apps.operacao.models import BackupExterno
 from tests.conftest import RelogioControlado
 
@@ -33,11 +35,14 @@ BUCKET = "backups-teste"
 CHAVE_DE_ACESSO = "AKIABACKUPTESTE0000"
 SEGREDO_DE_ACESSO = "segredo-do-r2-de-backup-de-teste"
 CHAVE_PUBLICA = "age1chavepublicadetestequenaoevalidaparaousoreal0000000000000000000000"
-CHAVE_DO_OBJETO = "banco/homologacao/2026/11/organicos-homologacao-20261120T060000Z.dump.age"
+ID_FIXO = "0123456789abcdef0123456789abcdef"
+PREFIXO_DA_CHAVE = "banco/homologacao/2026/11/organicos-homologacao-20261120T060000Z"
+CHAVE_DO_OBJETO = f"{PREFIXO_DA_CHAVE}-{ID_FIXO}.dump.age"
 EMAIL_NO_ERRO = "ana@exemplo.com"
 SENHA_DO_BANCO = "senha-unica-do-banco-so-para-este-teste"
 CONTEUDO_DO_DESPEJO = b"DESPEJO-EM-CLARO"
 CONTEUDO_CIFRADO = b"CONTEUDO-CIFRADO-PELO-DUBLE"
+CONTEUDO_ORIGINAL = CONTEUDO_CIFRADO
 
 
 class Ferramentas:
@@ -97,6 +102,9 @@ def ab(settings: Any, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlad
     monkeypatch.setenv("MOTO_S3_CUSTOM_ENDPOINTS", ENDPOINT)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", CHAVE_DE_ACESSO)
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", SEGREDO_DE_ACESSO)
+    from apps.operacao import backup
+
+    monkeypatch.setattr(backup, "identificador_da_execucao", lambda: ID_FIXO)
     relogio.congelar(I)
     settings.AMBIENTE = "homologacao"
     settings.R2_ENDPOINT = ENDPOINT
@@ -133,19 +141,29 @@ def _fazer(instante: datetime = I) -> Any:
     return fazer_backup_externo(instante)
 
 
-def test_backup_completo(ab: Any, ferramentas: Ferramentas) -> None:  # A-1
+def _soltar_o_identificador(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Volta ao identificador aleatório de verdade (o arranjo AB o força)."""
+    from apps.operacao import backup
+
+    monkeypatch.setattr(backup, "identificador_da_execucao", IDENTIFICADOR_REAL)
+
+
+def test_backup_completo(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch
+) -> None:  # A-1
+    _soltar_o_identificador(monkeypatch)
     registro = _fazer()
     assert isinstance(registro, BackupExterno)
-    assert registro.chave == CHAVE_DO_OBJETO
+    assert re.fullmatch(re.escape(PREFIXO_DA_CHAVE) + r"-[0-9a-f]{32}\.dump\.age", registro.chave)
     assert registro.ambiente == "homologacao"
     assert registro.tamanho_bytes == len(CONTEUDO_CIFRADO)
     assert registro.sha256 == hashlib.sha256(CONTEUDO_CIFRADO).hexdigest()
     assert registro.iniciado_em == I
     assert registro.concluido_em >= registro.iniciado_em
-    assert _chaves(ab) == [CHAVE_DO_OBJETO]
-    objeto = ab.head_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)
+    assert _chaves(ab) == [registro.chave]
+    objeto = ab.head_object(Bucket=BUCKET, Key=registro.chave)
     assert objeto["Metadata"]["sha256"] == registro.sha256
-    assert ab.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)["Body"].read() == CONTEUDO_CIFRADO
+    assert ab.get_object(Bucket=BUCKET, Key=registro.chave)["Body"].read() == CONTEUDO_CIFRADO
 
 
 def test_o_despejo_recebe_a_conexao_pelo_ambiente(
@@ -434,17 +452,30 @@ def _sha_do_objeto(s3: Any) -> str:
     return hashlib.sha256(corpo).hexdigest()
 
 
-def test_repetir_com_a_mesma_chave_nao_substitui(
+def test_repetir_com_o_mesmo_instante_nao_substitui(
     ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # A-18
+    from apps.operacao import backup
+
+    _soltar_o_identificador(monkeypatch)
     primeiro = _fazer()
-    chamadas = len(ferramentas.chamadas)
     _trocar_o_conteudo_cifrado(monkeypatch, b"OUTRO-BACKUP-CIFRADO")
+    segundo = _fazer()  # o mesmo instante: outra chave, o primeiro intacto
+    assert segundo.chave != primeiro.chave
+    assert ab.get_object(Bucket=BUCKET, Key=primeiro.chave)["Body"].read() == CONTEUDO_ORIGINAL
+    assert BackupExterno.objects.count() == 2
+    for registro in BackupExterno.objects.all():
+        corpo = ab.get_object(Bucket=BUCKET, Key=registro.chave)["Body"].read()
+        assert hashlib.sha256(corpo).hexdigest() == registro.sha256
+    # um identificador repetido (improvável) é recusado antes de qualquer trabalho
+    chamadas = len(ferramentas.chamadas)
+    identificador = primeiro.chave.rsplit("-", 1)[1].removesuffix(".dump.age")
+    monkeypatch.setattr(backup, "identificador_da_execucao", lambda: identificador)
     falha = _falha_do_backup()
     assert (falha.etapa, falha.causa) == ("reserva", "ChaveExistente")
     assert len(ferramentas.chamadas) == chamadas  # despejo e cifragem não foram chamados
-    assert _sha_do_objeto(ab) == primeiro.sha256
-    assert BackupExterno.objects.count() == 1
+    assert ab.get_object(Bucket=BUCKET, Key=primeiro.chave)["Body"].read() == CONTEUDO_ORIGINAL
+    assert BackupExterno.objects.count() == 2
 
 
 def test_objeto_sem_registro_tambem_e_protegido(ab: Any, ferramentas: Ferramentas) -> None:
@@ -580,7 +611,9 @@ def test_falha_no_envio_nao_deixa_objeto_nem_trava(
 
     assert fazer_backup_externo(I).chave == CHAVE_DO_OBJETO
     assert _trancas_do_backup() == 0
-    assert fazer_backup_externo(I + timedelta(hours=1)).chave.endswith("20261120T070000Z.dump.age")
+    assert fazer_backup_externo(I + timedelta(hours=1)).chave.endswith(
+        f"20261120T070000Z-{ID_FIXO}.dump.age"
+    )
     assert _trancas_do_backup() == 0
 
 
@@ -649,3 +682,82 @@ def test_comando_e_tarefa_com_a_chave_existente(ab: Any, ferramentas: Ferramenta
     with pytest.raises(BackupFalhou):
         tarefas.backup_diario(timestamp=0)
     assert ExecucaoDaTarefa.objects.get(nome="backup_diario").ultimo_erro == "BackupFalhou"
+
+
+# --- correção residual E16-R03: a chave é única por execução (A-26 e A-27) ------------------------
+
+
+@pytest.mark.concorrencia
+@pytest.mark.django_db(transaction=True)
+def test_perda_da_trava_nao_substitui_backup_confirmado(
+    ab: Any, monkeypatch: pytest.MonkeyPatch, relogio: RelogioControlado
+) -> None:  # A-26 (reprodução do revisor de 2026-11-18, sem forçar o identificador)
+    import threading
+
+    from django.db import connections
+
+    from apps.operacao import backup
+
+    _soltar_o_identificador(monkeypatch)
+    livre = threading.Event()
+    concluido = threading.Event()
+    resultados: dict[str, Any] = {}
+    original = backup._reservar
+
+    def ferramenta(args: Any, env: Any, timeout: int) -> None:
+        if args[0] == "pg_dump":
+            if threading.current_thread().name == "A":
+                connections["default"].close()  # a sessão cai: a trava de A se perde
+            destino = next(a for a in args if a.startswith("--file=")).split("=", 1)[1]
+            Path(destino).write_bytes(b"dump")
+        else:
+            Path(args[args.index("--output") + 1]).write_bytes(
+                threading.current_thread().name.encode()
+            )
+
+    def reservar(*args: Any, **kwargs: Any) -> Any:
+        original(*args, **kwargs)
+        if threading.current_thread().name == "A" and kwargs.get("so_o_bucket"):
+            livre.set()
+            assert concluido.wait(20), "B não concluiu"
+
+    def executar(nome: str) -> None:
+        try:
+            if nome == "B":
+                assert livre.wait(20), "A não chegou à segunda conferência"
+            resultados[nome] = backup.fazer_backup_externo(I)
+        except Exception as erro:
+            resultados[nome] = erro
+        finally:
+            connections.close_all()
+            if nome == "B":
+                concluido.set()
+
+    monkeypatch.setattr(backup, "executar_ferramenta", ferramenta)
+    monkeypatch.setattr(backup, "_reservar", reservar)
+    threads = [threading.Thread(target=executar, args=(n,), name=n) for n in ("A", "B")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(40)
+    assert all(not thread.is_alive() for thread in threads)
+    assert isinstance(resultados["B"], BackupExterno), resultados
+    for registro in BackupExterno.objects.all():
+        corpo = ab.get_object(Bucket=BUCKET, Key=registro.chave)["Body"].read()
+        assert hashlib.sha256(corpo).hexdigest() == registro.sha256, registro.chave
+    objeto_de_b = ab.get_object(Bucket=BUCKET, Key=resultados["B"].chave)["Body"].read()
+    assert hashlib.sha256(objeto_de_b).hexdigest() == resultados["B"].sha256
+
+
+def test_o_identificador_da_execucao(
+    ab: Any, ferramentas: Ferramentas, monkeypatch: pytest.MonkeyPatch, settings: Any
+) -> None:  # A-27
+    _soltar_o_identificador(monkeypatch)
+    primeiro = _fazer()
+    segundo = _fazer()
+    ids = [r.chave.rsplit("-", 1)[1].removesuffix(".dump.age") for r in (primeiro, segundo)]
+    assert ids[0] != ids[1]
+    for identificador in ids:
+        assert re.fullmatch(r"[0-9a-f]{32}", identificador)
+        assert settings.AMBIENTE not in identificador
+        assert str(connection.settings_dict["NAME"]) not in identificador

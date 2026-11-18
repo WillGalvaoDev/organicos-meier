@@ -332,3 +332,11 @@ def test_os_custos_seguem_a_infraestrutura_10() -> None:  # A-16 (E16-08)
     homologacao = _texto("docs/operacao/homologacao.md")
     for faixa in ("US$ 8–15", "US$ 5–20", "US$ 0–2", "US$ 15–35"):  # noqa: RUF001
         assert faixa in homologacao, faixa
+
+
+def test_a_chave_do_backup_nos_documentos() -> None:  # A-28 (E16-04)
+    for arquivo in ("docs/operacao/restauracao.md", "docs/operacao/homologacao.md"):
+        texto = _texto(arquivo)
+        if "organicos-<ambiente>" in texto or "<AAAAMMDD>T<HHMMSS>Z" in texto:
+            assert "T<HHMMSS>Z-<EXECUCAO>.dump.age" in texto, arquivo
+    assert "<EXECUCAO>" in _texto("docs/operacao/restauracao.md")

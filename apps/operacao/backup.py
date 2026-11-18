@@ -12,6 +12,7 @@ URL do banco, as credenciais do R2 nem a saída de erro das ferramentas (que pod
 import hashlib
 import logging
 import os
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -111,12 +112,20 @@ def _sha256(caminho: Path) -> str:
     return resumo.hexdigest()
 
 
-def _chave_do_objeto(instante: datetime) -> str:
+def identificador_da_execucao() -> str:
+    """O identificador próprio de cada execução (128 bits aleatórios, 32 hexadecimais)."""
+    return secrets.token_hex(16)
+
+
+def _chave_do_objeto(instante: datetime, execucao: str) -> str:
+    """`banco/<amb>/<AAAA>/<MM>/organicos-<amb>-<AAAAMMDD>T<HHMMSS>Z-<EXECUCAO>.dump.age`. O
+    identificador da execução (E16-R03, regra 1-B) garante que duas execuções nunca escrevam no
+    mesmo objeto, com ou sem trava: a invariante não depende da trava nem do `head_object`."""
     utc = instante.astimezone(UTC)
     ambiente = settings.AMBIENTE
     return (
         f"banco/{ambiente}/{utc:%Y}/{utc:%m}/"
-        f"organicos-{ambiente}-{utc:%Y%m%d}T{utc:%H%M%S}Z.dump.age"
+        f"organicos-{ambiente}-{utc:%Y%m%d}T{utc:%H%M%S}Z-{execucao}.dump.age"
     )
 
 
@@ -204,7 +213,7 @@ def fazer_backup_externo(instante: datetime) -> BackupExterno:
         configuracao = _configuracao()
     except ImproperlyConfigured as erro:
         raise _falhar("configuracao", erro) from erro
-    chave = _chave_do_objeto(instante)
+    chave = _chave_do_objeto(instante, identificador_da_execucao())
     cliente = _cliente_s3(configuracao)
     try:
         with _trava_do_backup():
@@ -260,7 +269,8 @@ def _fazer_o_backup(
         despejo.unlink(missing_ok=True)  # o despejo em claro não precisa mais existir
         tamanho = cifrado.stat().st_size
         sha256 = _sha256(cifrado)
-        # a trava pode ter se perdido (queda da conexão) durante o despejo: confere de novo
+        # defesa a mais: a trava pode ter se perdido (queda da conexão) durante o despejo. A
+        # invariante vem do identificador único da chave, não desta conferência (E16-R03, 1-B)
         _reservar(cliente, configuracao["bucket"], chave, so_o_bucket=True)
         try:
             cliente.upload_file(
