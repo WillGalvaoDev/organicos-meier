@@ -911,3 +911,58 @@ def test_as_entradas_apontadas_tem_as_afirmacoes_atomicas() -> None:  # A-36
     formal = [a for a in matriz.CENARIOS[17] if "mensagem formal" in a]
     assert len(formal) == 1
     assert len(matriz.CENARIOS[17][formal[0]]) == 2  # depois do envio e antes da aprovação
+
+
+# --- terceira correção E16-R05: o caso de parametrização citável e conferido (A-39 e A-40) -------
+
+TESTE_COM_CASOS = (
+    "import pytest\n\n"
+    'CASOS_USADOS = [(1, "0.5", True)]\n'
+    'CASOS_SOLTOS = [(9, "9.5", False)]\n\n'
+    '@pytest.mark.parametrize(("u", "x", "ok"), CASOS_USADOS)\n'
+    "def test_a(u, x, ok):\n"
+    '    fora_do_decorador = (7, "7.7", True)\n'
+    "    assert ok is True\n\n"
+    '@pytest.mark.parametrize(("u", "x", "ok"), [(2, "1.5", False)])\n'
+    "def test_b(u, x, ok):\n"
+    "    assert ok is False\n"
+)
+
+
+def _problemas_do_caso(raiz: Path, funcao: str, prova: str) -> list[str]:
+    ref = _arquivo(raiz, "test_casos.py", TESTE_COM_CASOS)
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {"afirmação": {ref + funcao: prova}}
+    return [p for p in conferir(cenarios, tecnicos, raiz=raiz) if p.startswith("cenário 1:")]
+
+
+@pytest.mark.parametrize(
+    ("funcao", "caso"),
+    [
+        ("test_a", '(7, "7.7", True)'),  # no corpo, fora do decorador e de qualquer assert
+        ("test_a", '(2, "1.5", False)'),  # no `parametrize` de outro teste do módulo
+        ("test_a", '(9, "9.5", False)'),  # numa constante que o decorador do teste não usa
+    ],
+)
+def test_o_caso_fora_do_parametrize_do_teste_e_acusado(
+    tmp_path: Path, funcao: str, caso: str
+) -> None:  # A-39
+    prova = f"Confere `ok is True` no caso `{caso}`."
+    problemas = _problemas_do_caso(tmp_path, funcao, prova)
+    assert problemas, caso
+    assert "prova inválida" in problemas[0]
+    assert "test_casos.py::" + funcao in problemas[0]
+    assert "parametrize" in problemas[0]
+
+
+@pytest.mark.parametrize(
+    ("funcao", "prova"),
+    [
+        ("test_b", 'Confere `ok is False` no caso `(2, "1.5", False)`.'),
+        ("test_a", 'Confere `ok is True` no caso `(1, "0.5", True)`.'),
+    ],
+)
+def test_o_caso_do_decorador_ou_da_constante_usada_e_aceito(
+    tmp_path: Path, funcao: str, prova: str
+) -> None:  # A-40
+    assert _problemas_do_caso(tmp_path, funcao, prova) == []

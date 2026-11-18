@@ -494,34 +494,67 @@ def _trechos_de_prova(funcao: ast.AST, auxiliares: dict[str, ast.AST], fonte: st
     return trechos
 
 
+def _decoradores_de_caso(arvore: ast.Module, cadeia: Sequence[ast.AST], fonte: str) -> list[str]:
+    """O texto (normalizado) de cada `parametrize` que vale para o teste (o da função e o das
+    classes que a contêm) e de cada constante do módulo que esse decorador usa pelo nome."""
+    constantes: dict[str, str] = {}
+    for no in arvore.body:
+        if isinstance(no, ast.Assign) and len(no.targets) == 1:
+            alvo, valor = no.targets[0], no.value
+        elif isinstance(no, ast.AnnAssign) and no.value is not None:
+            alvo, valor = no.target, no.value
+        else:
+            continue
+        if isinstance(alvo, ast.Name):
+            constantes[alvo.id] = _normalizar(ast.get_source_segment(fonte, valor) or "")
+    casos: list[str] = []
+    for dono in cadeia:
+        for decorador in getattr(dono, "decorator_list", []):
+            alvo = decorador.func if isinstance(decorador, ast.Call) else decorador
+            if getattr(alvo, "attr", "") != "parametrize":
+                continue
+            casos.append(_normalizar(ast.get_source_segment(fonte, decorador) or ""))
+            casos.extend(
+                constantes[nome.id]
+                for nome in ast.walk(decorador)
+                if isinstance(nome, ast.Name) and nome.id in constantes
+            )
+    return casos
+
+
 def _localizar_funcao(
     raiz: Path, referencia: str
-) -> tuple[ast.AST, dict[str, ast.AST], str] | None:
-    """A função de teste, as funções do módulo (por nome) e o texto do arquivo."""
+) -> tuple[ast.AST, dict[str, ast.AST], str, list[str]] | None:
+    """A função de teste, as funções do módulo (por nome), o texto do arquivo e os casos de
+    parametrização do teste."""
     caminho, _, resto = referencia.partition("::")
     partes = [p for p in resto.split("::") if p]
     fonte = (raiz / caminho).read_text(encoding="utf-8")
     arvore = ast.parse(fonte)
     corpo = arvore.body
+    cadeia: list[ast.AST] = []
     for nome_da_classe in partes[:-1]:
         classes = [n for n in corpo if isinstance(n, ast.ClassDef) and n.name == nome_da_classe]
         if not classes:
             return None
+        cadeia.append(classes[-1])
         corpo = classes[-1].body
     funcao = _ultima_definicao(corpo, partes[-1])
     if funcao is None:
         return None
+    cadeia.append(funcao)
     auxiliares: dict[str, ast.AST] = {}
     for no in arvore.body:
         if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
             auxiliares[no.name] = no  # a última definição vale
-    return funcao, auxiliares, fonte
+    return funcao, auxiliares, fonte, _decoradores_de_caso(arvore, cadeia, fonte)
 
 
 def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
     """O motivo de a prova ser inválida, ou `None` (regra 2-D): texto, até 200 caracteres, com
     trecho entre crases copiado de um `assert` ou `pytest.raises(...)` da função ou de uma função
-    do módulo que ela chama pelo nome."""
+    do módulo que ela chama pelo nome. Todo trecho entre crases tem de estar num desses lugares
+    ou no `parametrize` do teste (regra 2-F): um assert correto não esconde um caso inválido."""
     if not prova.strip():
         return "prova sem texto"
     if len(prova) > MAXIMO_DA_PROVA:
@@ -532,15 +565,23 @@ def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
     localizada = _localizar_funcao(raiz, referencia)
     if localizada is None:
         return "função não localizada"
-    funcao, auxiliares, fonte = localizada
+    funcao, auxiliares, fonte, casos = localizada
     asserts = _trechos_de_prova(funcao, auxiliares, fonte)
+    achou_assert = False
     for trecho in trechos:
         procurado = _normalizar(trecho)
-        if procurado in _normalizar(fonte):
-            if any(procurado in texto for texto in asserts):
-                return None
-            return f"o trecho `{trecho}` aparece no arquivo, mas não num assert nem num raises"
-    return f"o trecho `{trecho}` não aparece no arquivo"
+        if procurado not in _normalizar(fonte):
+            return f"o trecho `{trecho}` não aparece no arquivo"
+        if any(procurado in texto for texto in asserts):
+            achou_assert = True
+        elif not any(procurado in texto for texto in casos):
+            return (
+                f"o trecho `{trecho}` aparece no arquivo, mas não num assert, num raises "
+                "nem no parametrize do teste (ou numa constante que ele usa)"
+            )
+    if not achou_assert:
+        return "nenhum trecho entre crases vem de um assert ou de um raises do teste"
+    return None
 
 
 def _conferir_chaves(achadas: set[object], esperadas: Sequence[object], rotulo: str) -> list[str]:
