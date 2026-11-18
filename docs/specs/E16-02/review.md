@@ -54,3 +54,8 @@ Registros TDD conferidos: configuração ausente, três falhas de comportamento 
 do tratamento, guardas existentes e correção explicitada do teste de STORAGES.
 Nenhum achado novo específico desta fatia. A prova contra R2 real é o A-9 da E16-08,
 ainda pendente; o build integrado tem R01 e a observabilidade tem R02.
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+Revalidação de regressão: implementação desta fatia não foi alterada pelas correções; suíte completa passou. Mantido o parecer local anterior, sem novo achado. Integração com R2 real continua dependente da E16-08; não foi executada nesta revisão. Evidências globais na E16-08.

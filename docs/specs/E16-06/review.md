@@ -47,3 +47,8 @@ foi registrada e não removeu a negativa de autorização. A leitura literal de
 “sem alteração” do A-3 não deve impedir a mudança de texto expressamente exigida.
 Não há decisão comercial nova nem afrouxamento de comportamento. Registros Red/Green
 conferidos, com guardas existentes identificadas. Sem achado novo nesta fatia.
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+Revalidação de regressão: implementação desta fatia não foi alterada pelas correções; suíte completa passou. Mantido o parecer anterior, sem novo achado. Evidências globais na E16-08.

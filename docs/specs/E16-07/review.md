@@ -318,3 +318,45 @@ corpos: não sustenta cobertura integral. Registros TDD preservados.
 | T-55 | completada (3 afirmação(ões); acrescentados: 3) |
 
 - Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**REPROVADO. R05 e R06 permanecem importantes.** Registros Red/Green do validador e justificativa de caracterização sem alteração de produção conferidos. A estrutura por afirmação foi implementada, mas não basta para aprovação semântica.
+
+### R05 residual — regra 2-B e A-19 não atendidos
+
+Nova amostra independente: cenários **5, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27** e técnicos **T-2, T-3, T-5, T-6, T-7, T-9, T-10, T-11, T-13, T-14**, diferentes da primeira amostra, mais **2 e T-40**. Lidos textos, corpos e asserções dos testes citados. C2 e T-40 têm as caracterizações exigidas, mas A-19 falha em outras entradas. Exemplos reproduzíveis em `tests/rastreabilidade/matriz.py`:
+
+- **C17, linha 163:** afirma não duplicar pagamento, pedido, mensagem formal ou estorno por webhook repetido. Seu único teste, `test_notificacoes_emissao.py::test_emissao_repetida_nao_duplica`, chama `_estorno` duas vezes; esse helper apenas chama `emitir_evento`. Asserts de Notificacao/Envio não provam webhook, pagamento, pedido ou estorno financeiro.
+- **C25, linha 223:** exige aprovação T0+30h e notificação depois das 48h. O único teste, `test_pedidos_quitacao.py::test_aprovacao_no_prazo_quita_o_pedido` (linha 97), aprova em T0+2h e recebe um minuto depois; afirma expressamente `na_margem is False`. Não exercita o cenário declarado.
+- **T-11, linha 1184:** a primeira afirmação exige recusar uso dos recursos de A para tarifa, déficit ou obrigação de B. O único teste atribuído, `test_dois_repasses_que_juntos_passam_do_liberado`, disputa dois repasses da mesma conta A. Não tenta lançar tarifa/déficit/obrigação de B. Os testes da segunda afirmação não corrigem a prova ausente da primeira.
+
+O próprio registro do implementador (linha 139) declara que 630 dos 679 pares foram aceitos por aderência de termos/nomes, sem leitura de cada corpo, contrariando a regra 2-B. Retorno: executar a conferência integral exigida, corrigir cada vínculo por afirmação e acrescentar caracterizações onde realmente faltar prova. Não basta trocar os três exemplos acima nem delegar ao revisor a leitura integral prevista para a implementação.
+
+### R06 residual — regras 3-A/3-B
+
+Probes independentes em diretório temporário, usando `_conferir_referencia` e o pytest instalado. Nas três fontes abaixo o validador retornou **None** (referência aceita); pytest confirmou que nenhuma executa uma asserção:
+
+```python
+# tests/test_classe.py::TestExemplo::test_exemplo — 1 skipped
+import pytest
+class TestExemplo:
+    pytestmark = pytest.mark.skip(reason="pulado")
+    def test_exemplo(self): assert False
+```
+
+```python
+# tests/test_condicoes.py::test_exemplo — 1 skipped
+import pytest
+@pytest.mark.skipif(False, True, reason="segunda verdadeira")
+def test_exemplo(): assert False
+```
+
+```python
+# tests/test_anotacao.py::test_exemplo — no tests ran
+__test__: bool = False
+def test_exemplo(): assert False
+```
+
+Referências: `conferencia.py:77` avalia apenas a primeira condição posicional; `:157` em diante confere decoradores de classe, mas não seu pytestmark; `_define` só trata Assign. A limitação aprovada para fixtures/conftest não abrange estas formas explícitas. Retorno: negar essas referências, com testes Red/Green, preservando os casos válidos. Isso é falha da guarda; não afirma que a matriz atual já contenha esses três casos. A suíte local só pulou ferramentas reais (reexecutadas no contêiner) e apresentou os dois xfails operacionais; nenhum dos três está mapeado. CI remoto não foi executado pelo revisor.

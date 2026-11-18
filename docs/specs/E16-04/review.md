@@ -92,3 +92,62 @@ com o teste de restauração operacional completo da E16-08.
 - **Ajustes de arranjo (nenhuma asserção removida):** os testes A-8 (logs) e A-12 (comando) repetiam o backup com o mesmo instante; com a reserva isso passou a ser recusado por desenho, então a segunda tentativa usa outro instante. O fixture `ab` deixou de trocar a senha do banco (o que quebrava conexões novas): a senha única vive em `senha_unica`, só nos testes A-2 e A-8.
 - A-15 (ferramentas reais) reexecutado dentro da imagem do commit `281d191`: 1 passed (ver E16-01).
 - Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**REPROVADO; R03 permanece importante, com reprodução residual.** A repetição normal e a concorrência com conexão viva estão corrigidas (A-18 a A-25 verdes). Porém a regra 1-A.4 e a invariante de nunca substituir um backup confirmado não estão garantidas: `_reservar(..., so_o_bucket=True)` faz HEAD, seguido de `upload_file` incondicional. Se a sessão da trava cair durante o despejo, duas execuções podem observar a chave livre antes de uma delas terminar.
+
+Reprodução independente: duas threads com conexões PostgreSQL reais e bucket moto, mesmo instante I. Na thread A, fechar `connections['default']` durante o pg_dump simulado libera a trava de sessão. Depois do segundo HEAD de A, uma barreira permite B executar e confirmar seu backup. A retoma, substitui o objeto por seus bytes e falha com IntegrityError na chave única. Resultado: **1 failed em 19,50s**, na asserção de que o hash do objeto corresponde ao registro confirmado por B. Registro: `df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c`; objeto: `559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd`. Nenhum banco operacional ou bucket externo foi usado.
+
+A nova especificação prescreve HEAD como proteção contra perda da trava, mas essa consequência não é verdadeira. Devolver o ponto ao especificador e implementador: manter a invariante, com coordenação que permaneça válida até o envio ou aborto seguro após perder a sessão; não presumir suporte de escrita condicional do R2. A-24 cobre objeto que já apareceu antes do HEAD, não esta janela entre HEAD e upload. Teste reproduzível abaixo; arquivo temporário do revisor removido após a execução. O A-15 real passou dentro da imagem atual (ver E16-01); não resolve esta corrida.
+
+```python
+import hashlib
+import threading
+from pathlib import Path
+import pytest
+from django.db import connections
+from apps.operacao import backup
+from apps.operacao.models import BackupExterno
+from tests.tecnicos.test_backup_externo import ab, I, BUCKET, CHAVE_DO_OBJETO
+
+@pytest.mark.django_db(transaction=True)
+def test_perda_da_sessao_nao_substitui_backup_confirmado(ab, monkeypatch):
+    livre = threading.Event()
+    concluido = threading.Event()
+    resultados = {}
+    original = backup._reservar
+    def ferramenta(args, env, timeout):
+        if args[0] == 'pg_dump':
+            if threading.current_thread().name == 'A':
+                connections['default'].close()
+            Path(next(a for a in args if a.startswith('--file=')).split('=', 1)[1]).write_bytes(b'dump')
+        else:
+            Path(args[args.index('--output') + 1]).write_bytes(threading.current_thread().name.encode())
+    def reservar(*args, **kwargs):
+        original(*args, **kwargs)
+        if threading.current_thread().name == 'A' and kwargs.get('so_o_bucket'):
+            livre.set()
+            assert concluido.wait(20)
+    def executar(nome):
+        try:
+            if nome == 'B':
+                assert livre.wait(20)
+            resultados[nome] = backup.fazer_backup_externo(I)
+        except Exception as erro:
+            resultados[nome] = erro
+        finally:
+            connections.close_all()
+            if nome == 'B':
+                concluido.set()
+    monkeypatch.setattr(backup, 'executar_ferramenta', ferramenta)
+    monkeypatch.setattr(backup, '_reservar', reservar)
+    threads = [threading.Thread(target=executar, args=(n,), name=n) for n in ('A', 'B')]
+    for t in threads: t.start()
+    for t in threads: t.join(30)
+    assert all(not t.is_alive() for t in threads)
+    assert isinstance(resultados['B'], BackupExterno), resultados
+    objeto = ab.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)['Body'].read()
+    assert hashlib.sha256(objeto).hexdigest() == resultados['B'].sha256, (resultados, objeto)
+```

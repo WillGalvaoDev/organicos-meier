@@ -90,3 +90,8 @@ não encontrei contradição que autorize afirmar uma violação de TDD.
 - **A-20, evidência no commit corrigido `281d191` (imagem `organicos-meier:e16-281d191`):** `docker build` saída 0; `pg_dump (PostgreSQL) 17.12`; `age 1.1.1`; `id -u` = 10001; `docker image inspect` saída 0, com 0 variáveis `SECRET_KEY|DATABASE_URL|SENTRY_DSN|R2_*|BACKUP_*` em `Config.Env`; `test_backup_externo_ferramentas.py` dentro dessa imagem (`EXIGIR_FERRAMENTAS_DE_BACKUP=1`): **1 passed**. Um build anterior (`7b96491`) também passou, mas não é a evidência.
 - Ajuste: o A-13 da E16-03 conferia que `SENTRY_DSN` não aparece no texto do CI; o passo novo cita o nome para recusá-lo. O teste passou a conferir o `env` dos jobs e passos no YAML.
 - Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**APROVADO no escopo local; R01 encerrado.** Especificação corrigida e A-16 a A-20 confrontados com Dockerfile, testes e CI. Build independente `docker build -q -t organicos-meier:revisor-e16-5f12d21 .`: saída 0, imagem `sha256:12115dc40d2d093aadc3526770ac95baf0ed6ef696aad66ffea85b2f46ad3484`. Conferidos `pg_dump` 17.12, `age` 1.1.1, UID 10001 e ausência de SECRET_KEY, DATABASE_URL, SENTRY_DSN, R2_* e BACKUP_* em Config.Env. Collectstatic recebeu ambiente fictício completo. A-15 do backup executado nesta imagem: 1 passed (7,42s), com ferramentas reais e PostgreSQL local. Isso não substitui a homologação E16-08. Registro Red/Green preservado e conferido; suíte e verificações globais em E16-08.

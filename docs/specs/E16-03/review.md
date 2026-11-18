@@ -91,3 +91,8 @@ assim, sem invalidar o ciclo observado. M-14 permanece melhoria, sem novo achado
 - A prova é no texto serializado do envelope inteiro (regra 3-C). Os valores sintéticos dos testes ficam em constantes fora da linha que levanta o erro, porque o SDK anexa ao evento as linhas de código ao redor da pilha.
 - M-13 encerrada em `docs/melhorias.md` ("Reclassificação pelo revisor"), com o commit `d254321`.
 - Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**APROVADO no escopo corrigido; R02 encerrado.** A-14 a A-20 confrontados com a limpeza do evento e executados na suíte completa: envelope serializado sem tokens das três rotas, dados pessoais nas chaves previstas removidos, contexto técnico preservado, guarda para novas rotas, cabeçalhos restritos e transaction_style explícito. Testes WSGI exercitam as três rotas e falha real na view com transporte em memória. Registros Red/Green conferidos; não é evidência de envio ao Sentry real. Encerramento de M-13 confirmado para este escopo; demais melhorias seguem seu registro. Evidências globais na E16-08.

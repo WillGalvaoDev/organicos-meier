@@ -174,3 +174,37 @@ E16 aprovada nem fase 1 encerrada enquanto esses critérios não forem satisfeit
 ## Verificação final da correção
 
 `uv run pytest -q -p no:cacheprovider -ra` no commit `281d191`: **3604 passed, 1 skipped, 2 xfailed** em 10 min 34 s. `ruff` (check e format) e `mypy` (558 arquivos) limpos; `makemigrations --check` sem mudanças. Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**Veredito global: REPROVADO. A E16 e o encerramento da fase 1 não estão aprovados.** Revisados os commits de correção até 5f12d21, sobre o parecer 6200dac, com especificações corrigidas e registros do implementador preservados.
+
+| Achado | Classificação | Resultado desta revisão |
+|---|---|---|
+| R01 | Bloqueador anterior | Encerrado: build e ferramentas reais conferidos |
+| R02 | Bloqueador anterior | Encerrado: tokens e identificação nos envelopes cobertos |
+| R03 | Importante | Aberto: perda de sessão permite sobrescrita concorrente |
+| R04 | Importante anterior | Encerrado: estoque histórico excluído |
+| R05 | Importante | Aberto: matriz ainda contém provas incorretas; leitura integral não feita |
+| R06 | Importante | Aberto: validador ainda aceita testes pulados/não coletados |
+| R07 | Bloqueador de encerramento | Aberto: homologação, restauração real e decisões pendentes |
+
+### Execução independente
+
+- Suíte completa, runner temporário com `config.settings.test`, PYTHONPATH da raiz e TEST.NAME `test_organicos_revisor_e16_5f12d21`: `pytest -q -p no:cacheprovider --tb=short` — **3604 passed, 1 skipped, 2 xfailed, 18 warnings, 830,86s**. O runner só isola o banco; nenhuma alteração de produção.
+- Skip local: `test_backup_externo_ferramentas.py`, ausência de pg_dump/pg_restore/age/age-keygen no Windows. Reexecutado na imagem construída de 5f12d21, com EXIGIR_FERRAMENTAS_DE_BACKUP=1 e banco isolado: **1 passed em 7,42s**.
+- Xfails: `test_o_registro_da_restauracao_e_o_rto` e `test_as_melhorias_tem_decisao`. São pendências explícitas, não critérios aprovados. Nenhum deles integra a matriz.
+- `ruff check .`: passou; `ruff format --check .`: 465 arquivos já formatados; `mypy .`: 558 arquivos sem erros; `python manage.py makemigrations --check --dry-run`: No changes detected. Verificações estáticas sobre a árvore entregue, antes de adicionar a prova temporária.
+- Docker build: saída 0; PG 17.12, age 1.1.1, UID 10001 e Config.Env conferidos (E16-01).
+- Prova adicional de perda de sessão do backup: **1 failed**, hash do objeto diverge do registro confirmado (E16-04).
+- Três probes do validador: referências aceitas, porém dois skips e uma ausência de coleta no pytest (E16-07).
+- Amostra semântica nova de 20 cenários + 10 técnicos, além de C2 e T-40: falhas de prova documentadas em E16-07.
+
+As execuções completas e a prova real no contêiner concluíram antes da interrupção da sessão. Nesta retomada, Docker/PostgreSQL estavam desligados; foram reiniciados para a prova residual, que concluiu. Nenhum deploy, conta externa, dinheiro real, push ou execução de CI remoto. Os 18 warnings da suíte não causaram falha (incluem depreciação da opção send_default_pii).
+
+### R07 e próximo gate
+
+Correção documental dos custos e explicitação da pendência aceitas. Continuam faltando homologação nos provedores, restauração dos caminhos A/B com RTO medido, suíte no Neon e decisões do responsável sobre melhorias, conforme as regras da E16-08. Os xfails são permitidos durante a pendência, mas não autorizam encerrar a etapa. Pela regra 15 corrigida, iniciar essa execução real somente após R01 a R06 aprovados; R03, R05 e R06 ainda impedem esse gate.
+
+Próximo passo: especificador/implementador tratam a garantia insuficiente do R03 e o implementador conclui R05/R06 com evidência. Nova revisão técnica antes da homologação. Não houve correção de produção pelo revisor. Pareceres anteriores e registros Red/Green permanecem integralmente preservados.

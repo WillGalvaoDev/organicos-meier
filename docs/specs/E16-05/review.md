@@ -86,3 +86,8 @@ Registros Red/Green lidos; nenhum código de produção corrigido pelo revisor.
 - **Red observado** (`tests/tecnicos/test_conferir_restauracao.py`): A-14 falhou com `FALHA` em vez de `OK` (estoque 1 da retirada antiga contra 5 reservadas); A-15 trouxe duas linhas (estoque 1 e estoque 3). A-16 (rodada cancelada) passou (guarda).
 - **Green:** `_estoque` considera só `EstoqueDaRodada` com limite de rodadas em `ETAPAS_ATIVAS`; a retirada liberada e a cancelada guardam limite histórico. O excesso real no estoque atual continua `FALHA`.
 - Sem push, PR nem merge. Código corrigido no commit `281d191` (os commits seguintes só mudam documentos).
+
+
+## Revalidação independente — 2026-11-18 — commit 5f12d21
+
+**APROVADO no escopo local; R04 encerrado.** `_estoque` restringe os limites a ETAPAS_ATIVAS. A-14 reproduz limite histórico 1 e atual 10 com reserva 5 sem falso erro; A-15 mantém FALHA para limite atual 3 e exclui a linha histórica; A-16 preserva exclusão de rodada cancelada. Testes executados na suíte completa e registros Red/Green conferidos. Restauração operacional nos dois caminhos e RTO continuam pendentes na E16-08.
