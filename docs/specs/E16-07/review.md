@@ -681,3 +681,23 @@ Agente 1. Especificação da terceira correção do E16-R05: regra 2-F e critér
 
 Próximo gate: revisão independente das especificações (E16-07 regra 2-F, E16-09 e E16-10). Depois, o implementador corrige a matriz, a E16-09 com TDD e a E16-10.
 
+## Gate independente de especificação — regra 2-F — 2026-11-18
+
+**APROVADO para implementação**, sobre `696a378`, no escopo da regra 2-F e A-39 a A-46. Este gate foi solicitado expressamente pelo responsável; a remissão histórica ao gate do especificador na E16-01 não substitui esta avaliação independente. Não é aprovação da implementação nem encerramento de R05.
+
+Conferidos funcional §§2, 5.2, 13, 16.63, 16.85 e 16.96; infraestrutura T-11/T-38 e arquitetura; E05-05 (interface e respostas de `POST /interesses/`); regras 2-D/2-E e 3 da própria fatia; especificação e aceitação da E16-09; decisão do responsável registrada pelo especificador para o histórico atual. A referência às versões v1.7/v1.8 e sua diferença em relação à milestone já está declarada na E16-01; não foi encontrada divergência material nas regras usadas neste gate.
+
+| Critérios | Resultado do gate |
+|---|---|
+| A-39/A-40 | Testáveis com fontes sintéticas: separar caso do decorador correto, caso de outro teste e constante não usada. Preservar a exigência de asserção real; o caso de parametrização é evidência complementar, não seu substituto. |
+| A-41 | Interface, entrada decimal, unidade, preço e preservação das parcelas definidos. A resposta 200 é a recusa de quantidade da tabela aprovada da E05-05, não sucesso. A chamada direta à rota atende à interface existente sem criar API nova. |
+| A-42 | Direção A → obrigação B e preservação de saldos/movimentos explícitas; a referência indicada contém a tentativa exigida. O repasse para A fica corretamente separado. |
+| A-43 | Unidade explícita e casos válidos/inválidos de litros eliminam a dependência do padrão da fábrica. A prova continua exigindo ação e resultado, além da presença textual de `Unidade.*`. |
+| A-44 | Dependência explícita da E16-09 aprovada; C96 não pode voltar a ser declarado completo antes da implementação e revisão do histórico. |
+| A-45/A-46 | Retificação preserva o registro anterior; revisão integral, contagens, suíte/JUnit e nova amostra são evidências verificáveis. Os quatro exemplos não substituem a revisão das demais entradas. |
+
+**Interpretação operacional de 2-F, sem alteração do contrato:** a exigência de literal entre crases para o caso se aplica à parametrização. No T-11, a tentativa está na lista local `tentativas`, percorrida por `for`, e não num `parametrize`. Ela deve ser descrita no texto da prova (origem A, financiamento de obrigação B); os trechos entre crases são `pytest.raises(MovimentoProibido)` e a asserção que preserva saldos/contagem. Isso satisfaz A-42 sem tornar um trecho arbitrário de preparação admissível na guarda. Não se deve ampliar o validador para aceitar qualquer trecho do arquivo, nem modificar o teste financeiro para acomodar a prova. Na revisão semântica, o revisor confere a lista e a chamada a `mover` que estabelecem a direção descrita.
+
+Na implementação de A-39/A-40, validar os trechos exigidos mesmo quando outro trecho da mesma prova já aponta para um assert válido: um assert correto não pode esconder um caso inválido. Esta consequência decorre dos três negativos de A-39 e da regra que acusa trecho fora dos locais permitidos; não requer decisão de negócio. O limite de 200 caracteres de 2-D permanece aplicável.
+
+Verificação realizada: leitura das fontes, diff de `b4d2a64..696a378`, critérios e corpos dos testes referenciados para conferir a viabilidade das ligações. Não executada suíte neste gate documental; não há produção nova para validar. Nenhum achado impeditivo de especificação. Próximo passo: implementação TDD das guardas, correção dos vínculos e caracterizações justificadas; E16-09 deve concluir sua própria revisão antes da aprovação final da E16-07. **R05 e R07 permanecem abertos; R06 permanece encerrado.**
