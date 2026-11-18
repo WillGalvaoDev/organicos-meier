@@ -70,6 +70,22 @@ Esta fatia cria:
      - a primeira precisa de um teste que mude o preço do produto no catálogo **depois** do pagamento, reembolse o item **inteiro** e confira que o valor devolvido é o subtotal registrado, diferente do novo preço vezes a quantidade;
      - se nenhum teste existente fizer isso, entra o teste de caracterização `test_t40_reembolso_do_item_inteiro_depois_de_mudar_o_preco` (regra 5).
 
+2-D. **Prova escrita por referência** (correção residual E16-R05, revalidação de 2026-11-18). A conferência por aderência de termos não atende à regra 2-B. Para que a leitura integral fique verificável:
+   - **Formato:** cada afirmação passa a mapear cada referência para a sua prova: `dict[str, dict[str, str]]` (afirmação → {referência → prova}). A prova é um texto de até 200 caracteres que diz o que o teste prepara e o que o assert confere, em relação à afirmação.
+   - **Trecho literal:** a prova contém, entre crases, pelo menos um trecho copiado literalmente do código. O trecho precisa estar dentro de um `assert` ou de um `pytest.raises(...)`:
+     - da própria função de teste;
+     - ou de uma função do mesmo módulo que ela chama pelo nome.
+   - **Conferência automática:** a da regra 3 confere, lendo a árvore de sintaxe e o texto do arquivo, que cada prova tem texto, que tem o trecho entre crases e que o trecho aparece num desses lugares. Prova vazia, sem trecho ou com trecho que não está num assert é acusada com a referência.
+   - **O limite:** a conferência automática prova que o implementador abriu o corpo e apontou um assert real. Ela não prova que o assert basta para a afirmação: isso continua sendo a leitura do implementador (regra 2-B) e a amostra do revisor (A-19).
+   - **Exemplos já apontados, que precisam ser corrigidos** (não bastam esses três; a correção vale para todas as 679 ligações):
+     - **cenário 17:** o webhook repetido não duplica pagamento, pedido, mensagem formal nem estorno, e cada parte precisa de um teste que **envie o webhook repetido**. Um teste que só chama `emitir_evento` duas vezes não prova webhook, pagamento, pedido nem estorno;
+     - **cenário 25:** um teste com a aprovação em `T0 + 30h` e a notificação recebida depois de `T0 + 48h`, com o resultado que o cenário pede. Se nenhum existir, entra uma caracterização (regra 5);
+     - **T-11**, primeira afirmação: um teste que tente usar os recursos do fornecedor A para tarifa, déficit ou obrigação de B e confira a recusa. Dois repasses da própria conta A não provam isso.
+   - **Ligação sem prova:** é retirada da afirmação. Se a afirmação ficar sem nenhuma, entra uma caracterização (regra 5). Se a caracterização falhar, é defeito e volta ao especificador.
+   - **Registro no `review.md`:**
+     - os números: pares antes e depois, ligações retiradas, ligações acrescentadas e caracterizações novas;
+     - a declaração de que todas as provas foram escritas pela leitura do corpo, sem classificação automática por termos.
+
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
    - cada referência aponta para um arquivo existente em `tests/` e para uma função `test_*` (ou método numa classe `Test*`) definida nele. A conferência é feita lendo a árvore de sintaxe do arquivo, sem importar nem rodar o teste;
@@ -90,6 +106,19 @@ Esta fatia cria:
      - chamadas a `pytest.skip(...)`, `pytest.xfail(...)` e `pytest.importorskip(...)` no corpo da função de teste ou no nível do módulo, fora de funções.
    - **Formas reconhecidas:** `pytest.mark.<marca>`, com ou sem chamada; `<apelido>.mark.<marca>`, com `import pytest as <apelido>`; `mark.<marca>`, com `from pytest import mark`; e `skip`, `xfail` e `importorskip` importados de `pytest`.
    - **Limite declarado:** o pulo feito por fixture ou por `conftest.py` não é visto pela árvore de sintaxe. Para cobri-lo, o `review.md` registra a lista de testes pulados ou com falha esperada da última execução completa do CI (saída de `-ra`) e confirma que nenhum está na matriz.
+
+3-C. **Formas residuais** (correção residual E16-R06, revalidação de 2026-11-18). A conferência passa a **falhar fechada**: o que a árvore de sintaxe não consegue provar que roda é recusado. Em particular:
+   - **`pytestmark` de classe:** o `pytestmark` definido no corpo de qualquer classe da cadeia é examinado como o do módulo. Isso vale para `Assign` e `AnnAssign`, com um valor só ou com lista ou tupla.
+   - **`skipif` com várias condições:** o pytest pula quando qualquer condição é verdadeira. A referência só é aceita se **todas** as condições, posicionais ou `condition=`, forem a constante literal `False`. Um `skipif` sem condição também é recusado.
+   - **`__test__`:** examinado no módulo e em cada classe da cadeia, como `Assign` ou `AnnAssign`. Só a constante literal `True` é aceita. Outro valor, inclusive um nome ou uma expressão, recusa a referência.
+   - **Atribuição que não se pode analisar:** recusa a referência qualquer outra forma de definir `pytestmark` ou `__test__` no módulo ou na classe:
+     - atribuição aumentada (`pytestmark += ...`);
+     - chamada de método (`pytestmark.append(...)`);
+     - `setattr`;
+     - `globals()[...]`;
+     - desempacotamento em tupla;
+     - definição dentro de `if`, `try` ou `with` no nível do módulo ou da classe.
+   - **Motivo citado:** a mensagem de recusa diz a forma encontrada (por exemplo, "pytestmark da classe TestExemplo com skip").
 
 4. **Documento gerado:** `python -m tests.rastreabilidade.gerar` escreve `docs/rastreabilidade-fase1.md` com duas tabelas:
    - "Cenários (§16)": número, um resumo de até 100 caracteres tirado do texto do cenário e os testes;

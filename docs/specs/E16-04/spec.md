@@ -48,7 +48,7 @@ A segunda camada protege contra a perda do próprio Neon (conta, projeto ou regi
 1. **`fazer_backup_externo(instante) -> BackupExterno`**, em quatro etapas, sem transação longa aberta durante o despejo:
    1. **Despejo:** `pg_dump --format=custom --no-owner --no-privileges` do banco `default` para um arquivo temporário. Os dados de conexão vão por variáveis de ambiente do processo (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`), derivadas de `DATABASES["default"]`. A senha nunca vai na linha de comando.
    2. **Cifragem:** `age --encrypt --recipient <BACKUP_CHAVE_PUBLICA_AGE>` do despejo para um segundo arquivo temporário. A aplicação só conhece a chave pública: a privada nunca fica no Fly.io.
-   3. **Envio:** o arquivo cifrado vai para o bucket `R2_BUCKET_BACKUPS`, com a chave `banco/<AMBIENTE>/<AAAA>/<MM>/organicos-<AMBIENTE>-<AAAAMMDD>T<HHMMSS>Z.dump.age` (instante em UTC) e o metadado `sha256` do arquivo cifrado.
+   3. **Envio:** o arquivo cifrado vai para o bucket `R2_BUCKET_BACKUPS`, com a chave `banco/<AMBIENTE>/<AAAA>/<MM>/organicos-<AMBIENTE>-<AAAAMMDD>T<HHMMSS>Z-<EXECUCAO>.dump.age` (instante em UTC; `<EXECUCAO>` pela regra 1-B) e o metadado `sha256` do arquivo cifrado.
    4. **Conferência:** um `head_object` confirma que o tamanho no bucket é igual ao do arquivo local.
 
    Depois das quatro etapas, a rotina grava o `BackupExterno` (regra 4). Cada ferramenta tem tempo-limite de 30 minutos.
@@ -60,9 +60,21 @@ A segunda camada protege contra a perda do próprio Neon (conta, projeto ou regi
       - Se existir em um dos dois, levanta `BackupFalhou("reserva", "ChaveExistente")` sem rodar ferramenta, sem enviar e sem apagar nada. Um objeto sem registro é o de um envio anterior interrompido. Ele fica para análise do responsável e nunca é sobrescrito.
       - Um erro do R2 diferente de 404 nessa consulta levanta `BackupFalhou("reserva", <classe do erro>)`.
    3. **Liberação:** a trava é liberada no fim (`pg_advisory_unlock`), com sucesso ou com falha em qualquer etapa. Se a conexão cair, o Postgres libera a trava sozinho.
-   4. **Nova conferência antes do envio:** logo antes da etapa 1.3, a rotina repete o `head_object`. Se o objeto tiver aparecido, levanta `BackupFalhou("reserva", "ChaveExistente")` e não envia. Isso protege mesmo se a trava se perder por queda da conexão durante o despejo.
+   4. **Nova conferência antes do envio:** logo antes da etapa 1.3, a rotina repete o `head_object`. Se o objeto tiver aparecido, levanta `BackupFalhou("reserva", "ChaveExistente")` e não envia. É só uma defesa a mais. Ela **não** fecha a janela entre o `head_object` e o envio quando a trava se perde (revalidação de 2026-11-18). Quem garante a invariante é a regra 1-B.
 
    O formato da chave não muda. A rotina só apaga o objeto que ela mesma enviou nesta execução, como manda a regra 2 na conferência com tamanho divergente.
+
+1-B. **Chave única por execução** (correção residual E16-R03, revalidação de 2026-11-18).
+   - **Por que muda:** a trava de sessão se perde se a conexão cair durante o despejo. Com a chave derivada só do instante, duas execuções podem achar a chave livre e enviar para o mesmo objeto. Nenhuma conferência anterior ao envio fecha essa janela sem escrita condicional no R2, que o projeto não validou.
+   - **A regra:** cada execução gera, antes da reserva, um identificador próprio `<EXECUCAO>`, com 32 caracteres hexadecimais minúsculos de `secrets.token_hex(16)` (128 bits aleatórios). Ele entra na chave da regra 1.3.
+   - **O que isso garante:** duas execuções nunca escrevem no mesmo objeto, com ou sem trava, e o backup confirmado de uma não pode ser substituído pela outra. A invariante passa a depender do identificador, não da trava nem do `head_object`.
+   - **Função substituível:** o identificador vem de uma função própria, que os testes podem trocar para forçar uma colisão. Ele não deriva de nenhum dado do banco nem do ambiente.
+   - **O que continua:**
+     - a trava (regra 1-A.1) evita trabalho em dobro e a execução simultânea da tarefa e do comando;
+     - as conferências das regras 1-A.2 e 1-A.4 continuam como defesa, para o caso improvável de identificador repetido;
+     - `BackupExterno.chave` continua única.
+   - **Repetição com o mesmo instante:** gera um segundo backup, com outra chave, e não toca no primeiro. É a resposta segura: nada é substituído.
+   - **Leitura pelo responsável:** a ordem dos objetos no bucket continua dada pelo prefixo de data e hora. `docs/operacao/restauracao.md` e `docs/operacao/homologacao.md` passam a mostrar o formato com `-<EXECUCAO>`, e o painel continua sem mostrar a chave.
 
 2. **Falhas:**
    - se qualquer etapa falhar (código de saída diferente de zero, tempo esgotado, erro do R2 ou tamanho divergente), a rotina levanta `BackupFalhou(etapa, causa)`, em que `etapa` é `reserva` (regra 1-A), `despejo`, `cifragem`, `envio` ou `conferencia` e `causa` é a classe do erro ou o código de saída;
