@@ -701,3 +701,39 @@ Conferidos funcional §§2, 5.2, 13, 16.63, 16.85 e 16.96; infraestrutura T-11/T
 Na implementação de A-39/A-40, validar os trechos exigidos mesmo quando outro trecho da mesma prova já aponta para um assert válido: um assert correto não pode esconder um caso inválido. Esta consequência decorre dos três negativos de A-39 e da regra que acusa trecho fora dos locais permitidos; não requer decisão de negócio. O limite de 200 caracteres de 2-D permanece aplicável.
 
 Verificação realizada: leitura das fontes, diff de `b4d2a64..696a378`, critérios e corpos dos testes referenciados para conferir a viabilidade das ligações. Não executada suíte neste gate documental; não há produção nova para validar. Nenhum achado impeditivo de especificação. Próximo passo: implementação TDD das guardas, correção dos vínculos e caracterizações justificadas; E16-09 deve concluir sua própria revisão antes da aprovação final da E16-07. **R05 e R07 permanecem abertos; R06 permanece encerrado.**
+
+## Terceira correção residual de R05 — implementador (2026-11-18)
+
+Agente 2. Regra 2-F e A-39 a A-46 (gate `696a378`/`bbe2775`). R06 não foi tocado.
+
+### Red e Green
+
+- **A-39 (Red):** `test_o_caso_fora_do_parametrize_do_teste_e_acusado` falhou nos três negativos (caso no corpo, no `parametrize` de outro teste, em constante não usada), pois a conferência aceitava qualquer trecho se outro já fosse de um assert (`assert []`). **A-40:** os dois positivos já passavam (regressão).
+- **Green:** `_decoradores_de_caso` e `_conferir_prova` em `tests/rastreabilidade/conferencia.py`: todo trecho entre crases tem de estar num assert, num `raises` ou no `parametrize` do teste (ou em constante que ele usa), e ao menos um vem de assert/raises. Interpretação do gate seguida: o T-11 não usa `parametrize`; a tentativa é descrita no texto, com `pytest.raises(MovimentoProibido)` e o assert de saldos entre crases.
+- **A-41:** caracterização `test_cenario_63_rota_recusa_1_2_kg_sem_gravar` (`tests/aceitacao/test_cenario_63_rota_1_2_kg.py`), passou na 1ª execução: exceção técnica da regra 5, o comportamento já existia (E05-05). Cobre os dois casos (sem interesse; com 1,5 reservado).
+- **A-42 a A-44:** `test_c63_liga_a_rota...`, `test_t11_a_direcao...`, `test_t38_as_provas_de_unidade...`, `test_c96_tem_a_afirmacao...` em `test_matriz.py` (passaram após a correção da matriz; a estrutura nova não existia antes).
+
+### Resposta aos quatro pontos do complemento
+
+1. **C63:** "pela API" = `POST /interesses/` direto; 1,2 kg a R$ 12,00/0,5 ligado à rota e aos casos `(Unidade.KG, "0.5", "1.2", False)` e `(Unidade.KG, "0.5", "1.5", True)`.
+2. **T-11:** A → obrigação de B agora prova em `test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso`; `test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b` ficou só em "o repasse a A é limitado ao liberado de A". O C32 tinha a mesma inversão e foi corrigido igual.
+3. **T-38:** L, kg e unidade ligados a `test_quantidades_e_incrementos` com o caso e a unidade; `test_quantidades_aceitas`/`_recusadas` saíram dessas afirmações.
+4. **C96:** retificação: a linha "C96: completada" do registro anterior fica **"pendente: depende da E16-09"**, sem apagar a antiga. Agora há a afirmação do histórico, ligada ao teste da E16-09 (A-1, commit `6756ad2`). A E16-09 ainda depende de revisão independente; a entrada 96 só fecha com ela.
+
+### Revisão completa pelas três falhas (A-45)
+
+Método: varredura por script das 595 afirmações (valor só nos casos; unidade só na fábrica; direção) e leitura de cada candidata.
+- **(a) valor ausente dos parâmetros / só nos casos:** 21 ligações com valor só nos casos (C63×3, C85×5, C87×2, C109×8, C110, C111×3, T-50) passaram a citar o caso. Valores só em constante de apoio (C115: 0,6 e 0,15; C112/C113: 1,000 e 7,99): asserts explícitos de `(unidade, quantidade, preço)` acrescentados em 5 testes (`test_cenarios_90_91_112_117_reembolso.py`×3, `test_devolucoes_reembolso.py`, `test_ocorrencias.py`). Só acrescentam asserts; passam.
+- **(b) direção/sujeito:** além de T-11, o C32 ("obrigação do fornecedor B"). As demais 18 afirmações que nomeiam A/B foram lidas: sem inversão. O "tarifa" do C32/T-11 é a conta global de despesas (`T.COBERTURA_DE_DESPESA` de custódia de A para `despesas()`).
+- **(c) unidade vinda da fábrica (padrão KG):** C109 (8, antes apontando para testes sem unidade: religados com o caso; novo caso `(Unidade.LITRO, "0.5", "2.5", True)` em `CASOS_DE_QUANTIDADE`, caracterização, passou de primeira), C105/C106 (`_cenario_105` passou a passar `unidade=Unidade.KG`), C112/C113/C115 (asserts acima). Fora da lista da spec, achado adicional: C106, o motivo "múltiplo 3 não é divisível por 2" estava ligado a um teste que sai como `codigo == "quantidade"`; acrescentei `test_incremento_incompativel_com_o_multiplo_e_recusado` como segunda prova.
+- **Julgamentos que o revisor deve ler:** C64, C88, C89 (aritmética pura, sem produto: o "kg" só rotula a quantidade; sem mudança). T-50 "float na API": a prova segue em `test_conversao_recusa_float` (nível de serviço; pela rota HTTP não chega float). C85 e T-26 "pela API" receberam também a rota como prova. A prova de "0,015" (C115) usa a derivação 0,1 × 0,15 dita no texto, não um literal.
+
+### Números e execução
+
+- Matriz: **595 afirmações, 604 ligações**, 279 referências distintas (antes: 594 / 599 / 279). `docs/rastreabilidade-fase1.md` regerado.
+- Suíte completa com `--junitxml`: **3669 passed, 1 skipped, 2 xfailed** (930 s). `conferir_execucao relatorio-pytest.xml`: "Toda referência da matriz passou na execução."
+- `ruff check`, `ruff format`, `mypy apps tests` (554 arquivos) e `makemigrations --check` limpos.
+
+### Devoluções ao especificador
+
+Nenhuma nova. Pendências já conhecidas: C96 só fecha com a revisão da E16-09 (A-44); A-46 (quinta amostra) é do revisor.

@@ -382,7 +382,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso": "cobertura do frete de B com dinheiro de A é recusada: `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`; `pytest.raises(MovimentoProibido)`",
         },
         "Recursos do fornecedor A não cobrem obrigação do fornecedor B": {
-            "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b": "o repasse de A não usa o liberado de B: `pytest.raises(LiquidezInsuficiente)`; `saldo(obrigacao_de(b.fornecedor, b.rodada)) == antes`",
+            "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso": "tentativas de financiar e de repassar da obrigação devida de A para obrigação de B: `pytest.raises(MovimentoProibido)`; `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`",
         },
         "A movimentação com esse efeito é recusada": {
             "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso": "MovimentoProibido e saldos iguais: `pytest.raises(MovimentoProibido)`; `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`",
@@ -766,16 +766,16 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     63: {
         "Produto por peso a R$ 12,00/kg com incremento de 0,5 kg: 1,5 kg é aceito": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "a quantidade reservada é a pedida: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'kg, incremento 0,5: `(Unidade.KG, "0.5", "1.5", True)`; `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Produto por peso a R$ 12,00/kg: 1,5 kg custa R$ 18,00": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'o subtotal é 18,00: `calcular_subtotal(produto.preco, parcela.quantidade_reservada) == D("18.00")`',
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'preço 12,00 no preparo; `(Unidade.KG, "0.5", "1.5", True)`: `calcular_subtotal(produto.preco, parcela.quantidade_reservada) == D("18.00")`',
         },
         "Produto por peso com incremento de 0,5 kg: 1,2 kg é recusado pelo servidor": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "QuantidadeInvalida e nada gravado: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.KG, "0.5", "1.2", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "A recusa de 1,2 kg vale também pela API": {
-            "tests/tecnicos/test_interesses_servicos.py::test_entradas_invalidas_nao_gravam": "o serviço recusa e não grava: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`",
+            "tests/aceitacao/test_cenario_63_rota_1_2_kg.py::test_cenario_63_rota_recusa_1_2_kg_sem_gravar": 'POST direto com 1,2 kg, sem e com 1,5 reservado: `resposta.status_code == 200`; `"Interesse atualizado" not in resposta.content.decode()`; `total_reservado(produto) == D("1.500")`',
         },
     },
     64: {
@@ -1065,22 +1065,23 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     85: {
         "Produto em litros com incremento de 0,5 L: 1,5 L é aceito": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "a quantidade reservada é a pedida: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.LITRO, "0.5", "1.5", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Produto em litros com incremento de 0,5 L: 1,2 L é recusado": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "QuantidadeInvalida e nada gravado: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.LITRO, "0.5", "1.2", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Produto em unidades com incremento 1: 2 é aceito": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "a quantidade reservada é a pedida: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "1", "2", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Produto em unidades com incremento 1: 2,5 é recusado": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "QuantidadeInvalida e nada gravado: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "1", "2.5", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Produto em kg com incremento de 0,25 kg: 0,75 kg é aceito": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "a quantidade reservada é a pedida: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.KG, "0.25", "0.75", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "As validações de quantidade ocorrem no servidor, inclusive pela API": {
             "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "validar_quantidade levanta QuantidadeInvalida: `pytest.raises(QuantidadeInvalida)`",
+            "tests/aceitacao/test_cenario_63_rota_1_2_kg.py::test_cenario_63_rota_recusa_1_2_kg_sem_gravar": 'rota HTTP chamada direto com 1,2 kg: `resposta.status_code == 200`; `"Interesse atualizado" not in resposta.content.decode()`; `total_reservado(produto) == D("1.500")`',
         },
     },
     86: {
@@ -1093,10 +1094,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     87: {
         "Múltiplo de 1 kg com incremento de 0,25 kg é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_valido_no_cadastro": 'o cadastro passa e guarda o múltiplo: `resposta.status_code == 302`; `Produto.objects.get().multiplo == D(multiplo.replace(",", "."))`',
+            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_valido_no_cadastro": 'kg do _dados da tela; caso `("0,25", "1")`: `resposta.status_code == 302`; `Produto.objects.get().multiplo == D(multiplo.replace(",", "."))`',
         },
         "Múltiplo de 1 kg com incremento de 0,3 kg é recusado": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_servico_recusa_multiplo_invalido": "MultiploInvalido e nenhum produto: `pytest.raises(MultiploInvalido)`; `Produto.objects.count() == 0`",
+            "tests/tecnicos/test_catalogo_quantidades.py::test_servico_recusa_multiplo_invalido": 'kg no corpo; caso `("0.3", "1")`: `pytest.raises(MultiploInvalido)`; `Produto.objects.count() == 0`',
         },
         "Na fase de interesse, alteração que torne o múltiplo incompatível é recusada": {
             "tests/tecnicos/test_catalogo_condicoes.py::test_multiplo_invalido_em_interesse": 'erro no formulário e múltiplo igual: `"multiplo" in resposta.context["form"].errors`; `produto.multiplo == D("1.000")`',
@@ -1199,6 +1200,9 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
         },
         "O carrinho mostra reservado e pendente separados com o estoque do produto zerado": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_carrinho_separa_reservado_e_pendente_com_o_livre_zero": 'Reservado: 4 e Pendente: 4 com livre zero: `"Reservado: 4" in texto`; `"Pendente: 4" in texto`',
+        },
+        "O histórico (Meus pedidos) mostra Reservado: 6 e Pendente: 4, inclusive com o estoque do produto zerado": {
+            "tests/aceitacao/test_cenario_96_historico.py::test_cenario_96_historico_mostra_reservado_e_pendente_com_estoque_zerado": 'A com 6 reservados e 4 pendentes reais, livre zero, em GET /pedidos/: `"Reservado: 6" in secao`; `"Pendente: 4" in secao`; `total_reservado(fp.p) == D("6.000")`',
         },
     },
     97: {
@@ -1306,6 +1310,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
         },
         "A alteração para 2 kg é recusada porque o múltiplo de 3 kg não é divisível por 2": {
             "tests/tecnicos/test_catalogo_incremento.py::test_incremento_para_2_no_cenario_106_e_recusado": 'IncrementoIncompativel: `pytest.raises(IncrementoIncompativel)`; `erro.value.codigo == "quantidade"`',
+            "tests/tecnicos/test_catalogo_incremento.py::test_incremento_incompativel_com_o_multiplo_e_recusado": 'sem as reservadas, só a pendente de 2,0 em uso: `erro.value.codigo == "multiplo"`; `pytest.raises(IncrementoIncompativel, match=MSG_MULTIPLO)`',
         },
         "Na recusa da alteração para 1 kg, nada é alterado": {
             "tests/tecnicos/test_catalogo_incremento.py::test_incremento_incompativel_com_reservada_e_recusado": 'incremento e parcelas iguais: `produto.incremento == D("0.500")`; `_estado_das_parcelas() == antes`',
@@ -1335,28 +1340,28 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     109: {
         "Ovos (unidade, incremento 1): 12 é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade devolve a quantidade: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "1", "12", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Ovos (unidade, incremento 1): 12,5 é recusado": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "QuantidadeInvalida: `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "1", "12.5", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Maçãs (unidade, incremento 2): 4 é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade devolve a quantidade: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "2", "4", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Maçãs (unidade, incremento 2): 3 é recusado": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "QuantidadeInvalida: `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.UNIDADE, "2", "3", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Banana (kg, 0,25): 1,25 é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade devolve a quantidade: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.KG, "0.25", "1.25", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Leite (litro, 0,5): 2,5 é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade devolve a quantidade: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.LITRO, "0.5", "2.5", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Caixa de produtos (caixa, 1): 3 é aceito": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade devolve a quantidade: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.CAIXA, "1", "3", True)`: `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Caixa de produtos (caixa, 1): 1,5 é recusado": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "QuantidadeInvalida: `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.CAIXA, "1", "1.5", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
     },
     110: {
@@ -1370,26 +1375,26 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/aceitacao/test_cenarios_20_34_59_t38_atomicos.py::test_t38_incremento_com_mais_de_3_casas_e_recusado_e_o_produto_nao_e_criado": "IncrementoInvalido e nenhum produto: `pytest.raises(IncrementoInvalido)`; `Produto.objects.count() == 0`",
         },
         "Os incrementos 0,001 e 2 são aceitos": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_validos": "validar_incremento devolve o valor: `validar_incremento(entrada) == esperado`; `validar_incremento(D(entrada)) == esperado`",
+            "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_validos": 'casos `("2", D(2))` e `("0.001", D("0.001"))`: `validar_incremento(entrada) == esperado`',
         },
     },
     111: {
         "Maçãs com incremento 2 e múltiplo 12 são aceitas": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_valido_no_cadastro": 'o cadastro passa e guarda o múltiplo: `resposta.status_code == 302`; `Produto.objects.get().multiplo == D(multiplo.replace(",", "."))`',
+            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_valido_no_cadastro": 'caso `("2", "12")`: `resposta.status_code == 302`; `Produto.objects.get().multiplo == D(multiplo.replace(",", "."))`',
         },
         "Com múltiplo 5 e incremento 2 a configuração é recusada pelo serviço": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_servico_recusa_multiplo_invalido": "MultiploInvalido e nenhum produto: `pytest.raises(MultiploInvalido)`; `Produto.objects.count() == 0`",
+            "tests/tecnicos/test_catalogo_quantidades.py::test_servico_recusa_multiplo_invalido": 'caso `("2", "5")`: `pytest.raises(MultiploInvalido)`; `Produto.objects.count() == 0`',
         },
         "Com múltiplo 5 e incremento 2 a configuração é recusada pelo formulário": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_invalido_no_cadastro": 'erro de múltiplo e nenhum produto: `"multiplo" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
+            "tests/tecnicos/test_catalogo_quantidades.py::test_multiplo_invalido_no_cadastro": 'caso `("2", "5")`: `"multiplo" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
         },
     },
     112: {
         "O item de 1,000 kg a R$ 7,99/kg tem subtotal registrado de R$ 7,99": {
-            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_117_cada_devolucao_e_registrada_separadamente": 'quantidade 1,000 e subtotal 7,99: `ItemDoPedido.objects.get(pk=item.pk).quantidade == D("1.000")`; `ItemDoPedido.objects.get(pk=item.pk).subtotal == D("7.99")`',
+            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_117_cada_devolucao_e_registrada_separadamente": 'item kg 1,000 a 7,99: `Unidade.KG, D("1.000"), D("7.99")`; `ItemDoPedido.objects.get(pk=item.pk).subtotal == D("7.99")`',
         },
         "A ocorrência de 0,25 kg reembolsa R$ 2,00 de produtos": {
-            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_112_parcial_usa_o_valor_registrado": 'produtos 2,00: `componentes(parcial(item, "0.25"))[0] == D("2.00")`',
+            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_112_parcial_usa_o_valor_registrado": 'item kg 1,000 a 7,99: `Unidade.KG, D("1.000"), D("7.99")`; `componentes(parcial(item, "0.25"))[0] == D("2.00")`',
         },
         "Uma mudança posterior do preço não altera o valor": {
             "tests/tecnicos/test_devolucoes_reembolso.py::test_o_valor_vem_do_registrado_e_nao_do_catalogo": 'reembolso de 2,00 pelo registrado: `registrado.reembolso.produtos == D("2.00")`; `(linha.item_id, linha.quantidade, linha.valor) == (item.pk, D("0.250"),`',
@@ -1397,7 +1402,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     113: {
         "Três ocorrências de 0,25 kg reembolsam R$ 2,00 cada": {
-            "tests/tecnicos/test_devolucoes_reembolso.py::test_quatro_parciais_completam_o_pedido_exatamente": '2,00 2,00 2,00 e 1,99: `[p for p, _, _ in feitos] == [D("2.00"), D("2.00"), D("2.00"), D("1.99")]`',
+            "tests/tecnicos/test_devolucoes_reembolso.py::test_quatro_parciais_completam_o_pedido_exatamente": 'item kg 1,000 a 7,99, parciais de 0,25: `Unidade.KG, D("1.000"), D("7.99")`; `[p for p, _, _ in feitos] == [D("2.00"), D("2.00"), D("2.00"), D("1.99")]`',
         },
         "A quarta ocorrência reembolsa R$ 1,99": {
             "tests/tecnicos/test_devolucoes_reembolso.py::test_quatro_parciais_completam_o_pedido_exatamente": 'a quarta leva 1,99 com serviço 0,10 e frete 0,40: `[p for p, _, _ in feitos] == [D("2.00"), D("2.00"), D("2.00"),`; `feitos[3][1:] == (D("0.10"), D("0.40"))`',
@@ -1416,10 +1421,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     115: {
         "O item de 0,6 kg a R$ 0,15/kg tem subtotal de R$ 0,09": {
-            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_115_centavos_nao_passam_do_pago": 'a soma dos reembolsos é 0,09: `sum(produtos, D("0.00")) == D("0.09")`',
+            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenario_115_centavos_nao_passam_do_pago": 'item kg 0,600 a 0,15: `Unidade.KG, D("0.600"), D("0.15")`; `sum(produtos, D("0.00")) == D("0.09")`',
         },
         "Cada ocorrência de 0,1 kg calcula R$ 0,015 arredondado para R$ 0,02": {
-            "tests/tecnicos/test_ocorrencias.py::test_cenario_115_centavos_nao_passam_do_pago": 'as quatro primeiras reembolsam 0,02: `produtos == [D("0.02"), D("0.02"), D("0.02"), D("0.02"), D("0.01"), D("0.00")]`',
+            "tests/tecnicos/test_ocorrencias.py::test_cenario_115_centavos_nao_passam_do_pago": 'item kg 0,600 a 0,15 (0,1 x 0,15 = 0,015): `Unidade.KG, D("0.600"), D("0.15")`; `produtos == [D("0.02"), D("0.02"), D("0.02"), D("0.02"), D("0.01"), D("0.00")]`',
         },
         "A quinta ocorrência é limitada a R$ 0,01": {
             "tests/tecnicos/test_ocorrencias.py::test_cenario_115_centavos_nao_passam_do_pago": 'a quinta reembolsa 0,01: `produtos == [D("0.02"), D("0.02"), D("0.02"), D("0.02"), D("0.01"), D("0.00")]`',
@@ -1581,10 +1586,11 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso": "cobertura do frete de B com dinheiro de A é recusada: `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`; `pytest.raises(MovimentoProibido)`",
         },
         "Lançamento com recursos do fornecedor A para obrigação de B é recusado": {
-            "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b": "o repasse de A não usa o liberado de B: `pytest.raises(LiquidezInsuficiente)`; `saldo(obrigacao_de(b.fornecedor, b.rodada)) == antes`",
+            "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso": "tentativas de financiar e de repassar da obrigação devida de A para obrigação de B: `pytest.raises(MovimentoProibido)`; `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`",
         },
         "O repasse a A é limitado ao valor liberado de A": {
             "tests/tecnicos/test_repasse.py::test_o_repasse_nao_passa_do_liberado": "LiquidezInsuficiente e nada muda: `pytest.raises(LiquidezInsuficiente)`; `_foto() == antes`",
+            "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b": "repasse de A acima do liberado de A, sem usar o de B: `pytest.raises(LiquidezInsuficiente)`; `saldo(obrigacao_de(b.fornecedor, b.rodada)) == antes`",
         },
         "O repasse acima do liberado é recusado pela tela": {
             "tests/tecnicos/test_pedido_formal_ponta_a_ponta.py::test_repasse_limitado_ao_liberado_e_conciliado": '409 com o liberado: `recusado.status_code == 409`; `"Só R$ 0,00 estão liberados no provedor" in _texto(recusado)`',
@@ -1753,6 +1759,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
     "T-26": {
         "A quantidade fora do incremento é recusada pela API": {
             "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "QuantidadeInvalida: `pytest.raises(QuantidadeInvalida)`",
+            "tests/aceitacao/test_cenario_63_rota_1_2_kg.py::test_cenario_63_rota_recusa_1_2_kg_sem_gravar": 'rota HTTP chamada direto com 1,2 kg: `resposta.status_code == 200`; `"Interesse atualizado" not in resposta.content.decode()`; `total_reservado(produto) == D("1.500")`',
         },
         "0,35 × 12,99 resulta em 455 centavos": {
             "tests/tecnicos/test_catalogo_quantidades.py::test_subtotal_de_455_centavos": '455 centavos: `int(calcular_subtotal(D("12.99"), D("0.35")) * 100) == 455`',
@@ -1890,13 +1897,13 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
     },
     "T-38": {
         "Quantidades em L são validadas contra o incremento": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_aceitas": "validar_quantidade aceita 2,5 com incremento 0,5: `validar_quantidade(_produto(incremento), entrada) == D(entrada)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'L: `(Unidade.LITRO, "0.5", "1.5", True)` aceito e `(Unidade.LITRO, "0.5", "1.2", False)` recusado: `resumo.reservado == D(entrada)`; `pytest.raises(QuantidadeInvalida)`',
         },
         "Quantidades em kg são validadas contra o incremento": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_quantidades_recusadas": "QuantidadeInvalida fora do incremento: `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'kg: `(Unidade.KG, "0.5", "1.2", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Quantidades em unidade são validadas contra o incremento": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": "unidade 2,5 recusada e nada gravado: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`",
+            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'unidade: `(Unidade.UNIDADE, "1", "2.5", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
         },
         "Incremento zero é recusado": {
             "tests/aceitacao/test_cenarios_20_34_59_t38_atomicos.py::test_t38_incremento_zero_e_recusado_e_o_produto_nao_e_criado": "IncrementoInvalido e nenhum produto: `pytest.raises(IncrementoInvalido)`; `Produto.objects.count() == 0`",
@@ -2070,7 +2077,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_validos": "validar_incremento devolve o valor: `validar_incremento(entrada) == esperado`",
         },
         "Os incrementos inválidos 0, -1 e 0,0001 são recusados": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_invalidos_no_servico": "IncrementoInvalido: `pytest.raises(IncrementoInvalido)`",
+            "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_invalidos_no_servico": 'casos `"0"`, `"-1"` e `"0.0001"` do `parametrize`: `pytest.raises(IncrementoInvalido)`',
         },
         "Quantidades inteiras e fracionárias são validadas com Decimal": {
             "tests/tecnicos/test_catalogo_quantidades.py::test_incrementos_validos": "a entrada Decimal também é aceita: `validar_incremento(D(entrada)) == esperado`",

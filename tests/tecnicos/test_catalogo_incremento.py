@@ -9,7 +9,7 @@ from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
-from apps.catalogo.models import Produto
+from apps.catalogo.models import Produto, Unidade
 from apps.catalogo.quantidades import IncrementoInvalido
 from apps.catalogo.servicos import IncrementoIncompativel, alterar_incremento
 from apps.contas.models import Conta, Papel
@@ -53,7 +53,7 @@ def _url(produto: Produto) -> str:
 
 def _cenario_105(etapa: Etapa | None = Etapa.INTERESSE) -> tuple[Produto, list[ParcelaDeInteresse]]:
     """Incremento 0,5, múltiplo 3, reservadas 1,0 e 1,5 e uma pendente de 2,0."""
-    produto = ProdutoFactory.create(incremento=D("0.500"), multiplo=D("3.000"))
+    produto = ProdutoFactory.create(unidade=Unidade.KG, incremento=D("0.500"), multiplo=D("3.000"))
     if etapa is not None:
         RodadaFactory.create(fornecedor=produto.fornecedor, etapa=etapa)
     parcelas = [

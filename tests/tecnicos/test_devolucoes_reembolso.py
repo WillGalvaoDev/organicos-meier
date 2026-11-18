@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from django.db import transaction
 
+from apps.catalogo.models import Unidade
 from apps.financeiro.livro import conta_da_obrigacao, saldo
 from apps.financeiro.models import ItemReembolsado, ObrigacaoComComprador, Reembolso
 from apps.financeiro.reembolsos import (
@@ -70,6 +71,11 @@ def test_o_valor_vem_do_registrado_e_nao_do_catalogo(relogio: RelogioControlado)
 
 def test_quatro_parciais_completam_o_pedido_exatamente(relogio: RelogioControlado) -> None:  # A-2
     _, (item,) = pedido_pago_com_itens(K)
+    assert (item.unidade, item.quantidade, item.preco_unitario) == (
+        Unidade.KG,
+        D("1.000"),
+        D("7.99"),
+    )
     feitos = [_componentes(_parcial(item, "0.25")) for _ in range(4)]
     assert [p for p, _, _ in feitos] == [D("2.00"), D("2.00"), D("2.00"), D("1.99")]
     assert sum((p for p, _, _ in feitos), D("0.00")) == D("7.99")

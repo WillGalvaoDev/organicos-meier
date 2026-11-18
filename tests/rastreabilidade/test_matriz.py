@@ -966,3 +966,71 @@ def test_o_caso_do_decorador_ou_da_constante_usada_e_aceito(
     tmp_path: Path, funcao: str, prova: str
 ) -> None:  # A-40
     assert _problemas_do_caso(tmp_path, funcao, prova) == []
+
+
+# --- terceira correção E16-R05: elementos concretos (A-41 a A-44, estrutura) ----------------------
+
+TESTE_DO_DINHEIRO = (
+    "tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py"
+    "::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso"
+)
+TESTE_DA_ROTA = (
+    "tests/aceitacao/test_cenario_63_rota_1_2_kg.py::test_cenario_63_rota_recusa_1_2_kg_sem_gravar"
+)
+TESTE_DO_HISTORICO = (
+    "tests/aceitacao/test_cenario_96_historico.py"
+    "::test_cenario_96_historico_mostra_reservado_e_pendente_com_estoque_zerado"
+)
+
+
+def _afirmacao(entrada: dict[str, dict[str, str]], trecho: str) -> dict[str, str]:
+    achadas = [provas for afirmacao, provas in entrada.items() if trecho in afirmacao]
+    assert len(achadas) == 1, trecho
+    return achadas[0]
+
+
+def test_c63_liga_a_rota_e_cita_o_caso_do_kg() -> None:  # A-41 (estrutura)
+    api = _afirmacao(matriz.CENARIOS[63], "pela API")
+    assert list(api) == [TESTE_DA_ROTA]
+    assert "`resposta.status_code == 200`" in api[TESTE_DA_ROTA]
+    aceito = _afirmacao(matriz.CENARIOS[63], "1,5 kg é aceito")
+    assert any('`(Unidade.KG, "0.5", "1.5", True)`' in prova for prova in aceito.values())
+
+
+def test_t11_a_direcao_vai_de_a_para_a_obrigacao_de_b() -> None:  # A-42 (estrutura)
+    provas = _afirmacao(matriz.TECNICOS["T-11"], "para obrigação de B")
+    assert list(provas) == [TESTE_DO_DINHEIRO]
+    prova = provas[TESTE_DO_DINHEIRO]
+    assert "`pytest.raises(MovimentoProibido)`" in prova
+    assert "(_saldos(), MovimentoFinanceiro.objects.count()) == antes" in prova
+    assert not any("test_o_repasse_de_a_nao_usa" in ref for ref in provas)
+    limite = _afirmacao(matriz.TECNICOS["T-11"], "limitado ao valor liberado de A")
+    assert any("test_o_repasse_de_a_nao_usa" in ref for ref in limite)
+
+
+def test_t38_as_provas_de_unidade_citam_o_caso_e_a_unidade() -> None:  # A-43 (estrutura)
+    esperado = {
+        "em L são": (
+            "Unidade.LITRO",
+            ['(Unidade.LITRO, "0.5", "1.5", True)', '"0.5", "1.2", False)'],
+        ),
+        "em kg são": ("Unidade.KG", ['(Unidade.KG, "0.5", "1.2", False)']),
+        "em unidade são": ("Unidade.UNIDADE", ['(Unidade.UNIDADE, "1", "2.5", False)']),
+    }
+    for trecho, (unidade, casos) in esperado.items():
+        provas = _afirmacao(matriz.TECNICOS["T-38"], trecho)
+        assert not any("test_quantidades_aceitas" in ref for ref in provas), trecho
+        assert not any("test_quantidades_recusadas" in ref for ref in provas), trecho
+        for prova in provas.values():
+            assert unidade in prova, trecho
+            assert all(caso in prova for caso in casos), trecho
+
+
+def test_c96_tem_a_afirmacao_do_carrinho_e_a_do_historico() -> None:  # A-44
+    entrada = matriz.CENARIOS[96]
+    historico = _afirmacao(entrada, "O histórico")
+    assert TESTE_DO_HISTORICO in historico
+    assert any("carrinho" in afirmacao for afirmacao in entrada)
+    assert not any(
+        "histórico" in afirmacao.lower() for afirmacao in entrada if "carrinho" in afirmacao
+    )

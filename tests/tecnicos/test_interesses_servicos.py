@@ -143,6 +143,7 @@ CASOS_DE_QUANTIDADE = [
     (Unidade.KG, "0.5", "1.2", False),
     (Unidade.LITRO, "0.5", "1.5", True),
     (Unidade.LITRO, "0.5", "1.2", False),
+    (Unidade.LITRO, "0.5", "2.5", True),
     (Unidade.UNIDADE, "1", "2", True),
     (Unidade.UNIDADE, "1", "2.5", False),
     (Unidade.KG, "0.25", "0.75", True),
