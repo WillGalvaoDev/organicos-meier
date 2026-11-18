@@ -428,3 +428,192 @@ Pytest real: **no tests ran**. `_controle_do_corpo` (linha 185) só processa Ass
 Portanto o verde relatado pelo implementador não basta como evidência de A-23. Isolar o subprocesso das configurações Django irrelevantes e conferir códigos/resultados concretos esperados (skip/xfail/ausência de coleta), recusando erro de configuração/coleta. Corrigir a interpretação de xfailed. Esta é correção do teste errado com evidência, não autorização para afrouxar o requisito.
 
 Registros Red/Green lidos; as três caracterizações que passaram na primeira execução são justificadas pela regra 5, sem nova produção. O Red/Green de A-23 precisa ser revalidado após corrigir o falso positivo. Nenhum teste ou produção foi alterado pelo revisor. Evidências e limites gerais em E16-08.
+
+
+## Segunda correção residual R05 e R06 — implementador (2026-11-18, sobre ec5c9d3/181bf98)
+
+### R06 (regras 3-D, 3-E e 3-F)
+- **Red:** A-23 (diferencial), A-29 a A-35 escritos primeiro: **7 failed, 1 passed** (o A-32, de aceitação, é guarda e passou). O A-23 falhou na reprodução do revisor: `append dentro de if` aceito pela conferência e `1 skipped` no pytest real. Observações do pytest real que ajustaram o corpus declarado: `skipif()` sem condição e `skipif(False, condition=True)` dão *erro de avaliação* (não "pulado"), então ficam como "não executável: só a recusa vale"; `import pytest as pytestmark` idem (erro de coleta).
+- **Green:** `conferencia.py` ganhou a lista fechada: só `Assign` de um alvo ou `AnnAssign` com valor, filhos diretos do módulo ou de classe, uma definição por corpo; toda outra ocorrência (nome, atributo, alias, parâmetro, argumento nomeado, `global`, `match`, `except`, texto literal fora de docstring) recusa com forma e linha; `import *`, `__getattr__` no módulo, `exec/eval/compile` fora de função, metaclasse/argumento nomeado e `__getattr__`/`__getattribute__`/`__init_subclass__` nas classes da cadeia recusam; as bases têm de ser classe do arquivo, `object`, `unittest.TestCase` ou classes de `django.test`. As 599 ligações da matriz passam na lista fechada sem trocar arquivo de teste. Novo `tests/rastreabilidade/conferir_execucao.py` e as duas etapas no `ci.yml` (`--junitxml=relatorio-pytest.xml` e a conferência logo depois; `relatorio-pytest.xml` no `.gitignore`). O A-23 roda o pytest real isolado (ambiente do zero, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`, `pytest.ini` próprio, sem `DJANGO_SETTINGS_MODULE`/`PYTHONPATH`) e confere código e contagem exatos, com controle positivo e propriedade diferencial; "recusas por precaução" declaradas: `del`, `__getattr__` na classe, `import pytest as pytestmark`. Commit `6fd7669`.
+- **A-35 (execução completa local):** `uv run pytest -q -p no:cacheprovider -ra --junitxml=relatorio-pytest.xml`: **3651 passed, 1 skipped, 2 xfailed** (730 s; o skipped é a ferramenta de backup ausente e os 2 xfailed são da E16-08, nenhum na matriz). `uv run python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml`: "Toda referência da matriz passou na execução." (código 0). Isso substitui a lista manual do `-ra`.
+
+### R05 (regra 2-E)
+- **Números:** afirmações **301 → 594**; ligações (afirmação, teste) **563 → 599**; testes referenciados distintos 313 → 279. **17 testes de caracterização novos** (regra 5), em `tests/aceitacao/test_cenarios_17_25_webhook_e_aprovacao_tardia.py` (+3: pedido, pedido formal depois do envio e antes da aprovação), `test_cenarios_20_34_59_t38_atomicos.py` (9) e `test_cenarios_15_30_45_56_104_atomicos.py` (5). **Todos passaram na primeira execução** (o comportamento já existia): exceção técnica justificada, sem Red. A estrutura das entradas apontadas (17: 4; 20: 4; 34: 4; 59: 6; T-38: 8) foi conferida por teste escrito depois da matriz; antes eram 1, 1, 2, 2 e 3 afirmações.
+- **Método (declaração):** todas as provas foram escritas pela leitura do corpo dos testes (lista dos `assert` de cada um, escolha à mão dos índices, descrição redigida por mim); o trecho entre crases é copiado do código pelo montador. Nenhuma afirmação foi dada como provada em parte: onde nenhum teste existente provava a parte inteira, entrou caracterização ou a ligação saiu da afirmação. A conferência automática só prova que o assert existe, não que basta (limite da regra 2-E).
+- **Conflito entre regras (decisão técnica, para o revisor):** A-16 e A-17 fixam seis afirmações no cenário 2 e duas em `T-40`; mantive essas contagens, com cada afirmação provada por inteiro (testes parametrizados por banido/removido cobrem os dois casos).
+- **Devoluções ao especificador:** **C96**: o texto-base diz "O carrinho e o histórico mostram separadamente reservado e pendente", mas não há tela de histórico de interesses para exercitar; o carrinho está provado e a parte do histórico fica sem prova até a decisão. A entrada C96 não deve ser dada como concluída.
+- **Resultado por entrada:**
+- C1: atomizada (2 → 4)
+- C2: completada
+- C3: completada
+- C4: completada
+- C5: atomizada (2 → 3)
+- C6: completada
+- C7: atomizada (4 → 5)
+- C8: completada
+- C9: completada
+- C10: atomizada (1 → 2)
+- C11: atomizada (1 → 3)
+- C12: atomizada (3 → 7)
+- C13: atomizada (1 → 3)
+- C14: atomizada (1 → 2)
+- C15: atomizada (1 → 4) e caracterização nova
+- C16: atomizada (1 → 3)
+- C17: atomizada (1 → 4) e caracterização nova
+- C18: atomizada (1 → 2)
+- C19: atomizada (2 → 4)
+- C20: atomizada (1 → 4) e caracterização nova
+- C21: atomizada (1 → 3)
+- C22: atomizada (2 → 3)
+- C23: atomizada (1 → 3)
+- C24: atomizada (1 → 3)
+- C25: atomizada (1 → 2) e caracterização nova
+- C26: atomizada (1 → 4) e caracterização nova
+- C27: atomizada (2 → 3)
+- C28: atomizada (2 → 3)
+- C29: atomizada (1 → 3)
+- C30: atomizada (1 → 4) e caracterização nova
+- C31: atomizada (1 → 4)
+- C32: atomizada (2 → 4)
+- C33: atomizada (2 → 4) e caracterização nova
+- C34: atomizada (2 → 4) e caracterização nova
+- C35: atomizada (2 → 4)
+- C36: atomizada (1 → 3)
+- C37: atomizada (1 → 2)
+- C38: completada
+- C39: atomizada (1 → 3)
+- C40: atomizada (1 → 2)
+- C41: completada
+- C42: atomizada (2 → 5)
+- C43: atomizada (2 → 5)
+- C44: atomizada (2 → 4)
+- C45: atomizada (1 → 2) e caracterização nova
+- C46: atomizada (1 → 3)
+- C47: atomizada (1 → 4)
+- C48: atomizada (2 → 6)
+- C49: completada
+- C50: atomizada (1 → 2)
+- C51: atomizada (1 → 4)
+- C52: atomizada (1 → 2)
+- C53: atomizada (2 → 4)
+- C54: atomizada (2 → 3)
+- C55: atomizada (2 → 4)
+- C56: atomizada (3 → 6) e caracterização nova
+- C57: atomizada (1 → 2)
+- C58: atomizada (2 → 6) e caracterização nova
+- C59: atomizada (2 → 6) e caracterização nova
+- C60: atomizada (1 → 2)
+- C61: atomizada (2 → 5)
+- C62: atomizada (1 → 3)
+- C63: atomizada (1 → 4)
+- C64: atomizada (1 → 2)
+- C65: atomizada (1 → 3)
+- C66: atomizada (1 → 2)
+- C67: atomizada (2 → 13)
+- C68: atomizada (1 → 3)
+- C69: atomizada (2 → 5)
+- C70: atomizada (2 → 4)
+- C71: atomizada (2 → 4)
+- C72: atomizada (2 → 7)
+- C73: atomizada (1 → 2)
+- C74: atomizada (2 → 5)
+- C75: atomizada (2 → 4)
+- C76: completada
+- C77: atomizada (2 → 3)
+- C78: atomizada (2 → 4)
+- C79: atomizada (1 → 2)
+- C80: atomizada (1 → 3)
+- C81: completada
+- C82: atomizada (2 → 3)
+- C83: atomizada (3 → 6)
+- C84: completada
+- C85: atomizada (4 → 6)
+- C86: atomizada (1 → 2)
+- C87: atomizada (3 → 4)
+- C88: atomizada (1 → 2)
+- C89: atomizada (2 → 3)
+- C90: atomizada (2 → 3)
+- C91: atomizada (1 → 3)
+- C92: atomizada (2 → 4)
+- C93: atomizada (1 → 3)
+- C94: atomizada (1 → 2)
+- C95: atomizada (3 → 4)
+- C96: completada
+- C97: atomizada (2 → 7)
+- C98: atomizada (1 → 2)
+- C99: atomizada (2 → 3)
+- C100: atomizada (1 → 3)
+- C101: completada
+- C102: completada
+- C103: atomizada (1 → 2)
+- C104: atomizada (2 → 5) e caracterização nova
+- C105: atomizada (1 → 2)
+- C106: atomizada (2 → 4)
+- C107: atomizada (2 → 3)
+- C108: completada
+- C109: atomizada (5 → 8)
+- C110: atomizada (2 → 4) e caracterização nova
+- C111: atomizada (2 → 3)
+- C112: completada
+- C113: completada
+- C114: atomizada (1 → 2)
+- C115: atomizada (4 → 6)
+- C116: atomizada (1 → 3)
+- C117: atomizada (2 → 3)
+- C118: atomizada (1 → 2)
+- C119: atomizada (1 → 3)
+- T-1: atomizada (2 → 3)
+- T-2: atomizada (1 → 2)
+- T-3: completada
+- T-4: atomizada (2 → 3)
+- T-5: atomizada (1 → 3)
+- T-6: completada
+- T-7: atomizada (1 → 4)
+- T-8: atomizada (1 → 2)
+- T-9: completada
+- T-10: atomizada (2 → 3)
+- T-11: atomizada (2 → 5)
+- T-12: completada
+- T-13: atomizada (1 → 2)
+- T-14: atomizada (1 → 2)
+- T-15: atomizada (1 → 2)
+- T-16: atomizada (2 → 3)
+- T-17: completada
+- T-18: atomizada (2 → 3)
+- T-19: atomizada (1 → 4)
+- T-20: atomizada (1 → 3)
+- T-21: atomizada (1 → 2)
+- T-22: atomizada (1 → 3)
+- T-23: atomizada (3 → 8)
+- T-24: atomizada (3 → 6) e caracterização nova
+- T-25: atomizada (2 → 3)
+- T-26: atomizada (2 → 3)
+- T-27: completada
+- T-28: atomizada (2 → 4)
+- T-29: completada
+- T-30: atomizada (1 → 3)
+- T-31: atomizada (1 → 3)
+- T-32: atomizada (1 → 2)
+- T-33: atomizada (3 → 4)
+- T-34: atomizada (1 → 2)
+- T-35: atomizada (2 → 3)
+- T-36: atomizada (2 → 3)
+- T-37: atomizada (2 → 6)
+- T-38: atomizada (3 → 8) e caracterização nova
+- T-39: atomizada (4 → 5)
+- T-40: completada
+- T-41: atomizada (1 → 6)
+- T-42: atomizada (2 → 3)
+- T-43: atomizada (2 → 6)
+- T-44: atomizada (2 → 3)
+- T-45: atomizada (1 → 3)
+- T-46: completada
+- T-47: atomizada (2 → 6) e caracterização nova
+- T-48: atomizada (1 → 5)
+- T-49: atomizada (1 → 2)
+- T-50: atomizada (3 → 4)
+- T-51: atomizada (2 → 4)
+- T-52: atomizada (3 → 4)
+- T-53: atomizada (1 → 3)
+- T-54: atomizada (2 → 5)
+- T-55: atomizada (3 → 4)

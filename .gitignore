@@ -10,3 +10,5 @@ htmlcov/
 .hypothesis/
 staticfiles/
 media/
+
+relatorio-pytest.xml
