@@ -8,6 +8,7 @@ from apps.catalogo.models import Unidade
 from apps.contas.models import Conta, Situacao
 from apps.contas.permissoes import exige_comprador, exige_comprador_ativo
 from apps.financeiro.estornos import estornos_do_pedido
+from apps.interesses.consultas import carrinho_do_comprador
 from apps.nucleo.tempo import agora
 from apps.pedidos.apresentacao import (
     data_e_hora,
@@ -79,7 +80,8 @@ def lista(request: HttpRequest) -> HttpResponse:
         }
         for pedido in pedidos
     ]
-    return render(request, "pedidos/lista.html", {"linhas": linhas})
+    contexto = {"linhas": linhas, "interesses": carrinho_do_comprador(comprador)}
+    return render(request, "pedidos/lista.html", contexto)
 
 
 @exige_comprador

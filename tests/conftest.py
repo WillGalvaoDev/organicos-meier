@@ -124,6 +124,7 @@ PREFIXOS_COM_SIMULADOR = (
     "test_cenario_32_",
     "test_cenario_33_",
     "test_cenario_40_",
+    "test_cenario_96_",
     "test_cenario_39_",
     "test_cenarios_",
     "test_devolucoes_",

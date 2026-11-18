@@ -73,8 +73,15 @@ class FP:
     admin: Conta
 
 
-def montar_fp(relogio: RelogioControlado, sim: Any) -> FP:
-    """Os passos 1 a 6 do arranjo FP: R1 apurada, aprovada e fora das etapas ativas."""
+def montar_fp(
+    relogio: RelogioControlado,
+    sim: Any,
+    quantidades_de_p: tuple[int, int, int] = (6, 8, 6),
+) -> FP:
+    """Os passos 1 a 6 do arranjo FP: R1 apurada, aprovada e fora das etapas ativas.
+
+    `quantidades_de_p` são as de A, C e B em P; a soma tem de ser o múltiplo da caixa (20).
+    """
     relogio.congelar(T0 - 25 * H)
     fornecedor = FornecedorFactory.create(nome="F", minimo=D("50.00"))
     r1 = RodadaFactory.create(fornecedor=fornecedor)
@@ -94,7 +101,8 @@ def montar_fp(relogio: RelogioControlado, sim: Any) -> FP:
     a = ContaFactory.create(nome="Comprador A")
     b = ContaFactory.create(nome="Comprador B")
     c = ContaFactory.create(nome="Comprador C")
-    for dono, produto, quantidade in ((a, p, 6), (c, p, 8), (b, p, 6), (a, q, 10)):
+    qa, qc, qb = quantidades_de_p
+    for dono, produto, quantidade in ((a, p, qa), (c, p, qc), (b, p, qb), (a, q, 10)):
         ParcelaFactory.create(
             comprador=dono,
             produto=produto,

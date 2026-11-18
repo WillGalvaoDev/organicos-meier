@@ -21,3 +21,41 @@ As regras adicionais de título, ordem, nomes, unidade/formatação, fonte únic
 Conferida a viabilidade da interface pela leitura de `apps/interesses/consultas.py::carrinho_do_comprador`, da view de pedidos e da política especificada, depois dos requisitos. A consulta existente já permite reutilizar os dados sem novo cálculo. Nenhum achado impeditivo de especificação; nenhuma nova decisão comercial necessária.
 
 Verificações: leitura documental e diff do commit; sem testes executados neste gate, sem alteração de produção. Próximo passo: implementador escreve e observa os testes falharem pela ausência do comportamento, implementa a seção e registra Red/Green/Refactor e regressões. A-6 é a exceção de regressão explicitamente prevista. Depois, revisão independente da implementação e ligação do teste aprovado na E16-07 A-44. A aprovação deste documento não basta para fechar C96.
+
+## Registro do implementador — 2026-11-18
+
+Agente 2. Implementação da E16-09 conforme `spec.md` e A-1 a A-7. Nenhuma migração, rota, serviço ou política nova.
+
+### Red (observado antes do código de produção)
+
+Comando: `uv run pytest tests/tecnicos/test_pedidos_historico_interesses.py tests/aceitacao/test_cenario_96_historico.py`.
+
+- **A-1** (`test_cenario_96_historico_mostra_reservado_e_pendente_com_estoque_zerado`): falhou em `assert "Interesses reservados e pendentes" in texto`, depois de o arranjo confirmar 6 reservados e 4 pendentes reais de A e a caixa invalidada. Era o Red esperado (seção ausente).
+- **A-2, A-3, A-4, A-5, A-7:** 5 falhas em `assert f"<h2>Interesses reservados e pendentes</h2>" in html` / título ausente do texto. Red esperado.
+- **A-6** (`test_a_politica_da_rota_nao_mudou`): passou no Red, como a spec prevê (teste de regressão: a política não muda). Não há Red possível.
+
+### Arranjo do A-1
+
+O arranjo da E11-08 dá 6 reservados e 4 pendentes a C, e não a A, com A e C diferentes de 6/4. Para obter exatamente 6/4 em A, `montar_fp` de `tests/tecnicos/test_fila_ponta_a_ponta.py` ganhou o parâmetro `quantidades_de_p` (padrão `(6, 8, 6)`, igual ao anterior; os 99 testes da área seguem verdes). O teste usa `(10, 4, 6)` e a rodada nova com limite 6: A fica com Reservado 6 e Pendente 4, e `total_reservado(P)` igual ao limite (livre zero). `tests/conftest.py` ganhou o prefixo `test_cenario_96_` em `PREFIXOS_COM_SIMULADOR`, porque o arquivo da spec usa o simulador de pagamentos.
+
+### Green
+
+- `apps/pedidos/views.py::lista`: o contexto ganha `interesses = carrinho_do_comprador(comprador)`.
+- `templates/pedidos/lista.html`: depois da lista de pedidos, `<h2>Interesses reservados e pendentes</h2>`, um `<h3>` por fornecedor, uma linha por produto com "Reservado: <x> <unidade>" e "Pendente: <y> <unidade>" (filtro `quantidade_br` e `get_unidade_display`), a mensagem "Você não tem interesses reservados nem pendentes." quando não há linhas e o link "Alterar no carrinho" para `/carrinho/`. Sem formulário, sem botão, sem escrita.
+
+### Resultados
+
+- Testes da fatia: 7 passed (A-1 a A-7).
+- Regressão da área (telas do comprador, moderação, carrinho, fila ponta a ponta): 99 passed junto com os da fatia.
+- Varredura de rotas e políticas (`test_permissoes_politica_rotas.py`): 15 passed.
+- `ruff check`, `ruff format` e `mypy` limpos.
+
+### Refactor
+
+Nenhum necessário: a mudança é uma linha de contexto e o bloco do template.
+
+### Limites
+
+- O A-2 compara os pares (produto, reservado, pendente) lidos do HTML do carrinho e do histórico no mesmo estado do banco, sem alteração entre as leituras (gate: regra 9).
+- A afirmação do histórico na matriz (E16-07 A-44) é ligada na correção da matriz, depois deste registro.
+- A suíte completa roda ao fim do conjunto de fatias (registro na E16-07).
