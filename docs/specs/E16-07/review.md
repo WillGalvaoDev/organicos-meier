@@ -662,3 +662,22 @@ Este complemento detalha a devolução; não altera regras de negócio nem aprov
 4. Registrar uma retificação da linha “C96: completada”, preservando o registro anterior, e manter o item pendente até a prova integral. Retirar o histórico do requisito, substituí-lo pelo carrinho ou adiá-lo para outra fase exige decisão explícita do responsável e atualização aprovada da fonte de verdade; o parecer não autoriza essas mudanças.
 
 **Limite entre os papéis e critério de retorno:** C63, T-11 e T-38 já têm regras de negócio suficientes; não precisam aguardar uma decisão comercial. Cabe ao especificador tornar o encaminhamento e os critérios inequívocos, e ao implementador corrigir matriz/testes e gerar novamente `docs/rastreabilidade-fase1.md`. Se houver nova produção para C96, o implementador deve apresentar Red → Green → Refactor; para caracterização de comportamento existente aplica-se a regra 5, com justificativa registrada. A próxima entrega deve trazer resposta a cada um dos quatro pontos, revisão integral dos vínculos conforme a regra 2-E, contagens atualizadas, suíte e JUnit, além da solução de C96 ou decisão ainda explicitamente pendente. R05 só será encerrado pelo revisor depois de conferir essas evidências; apenas editar a especificação não o encerra. R06 permanece encerrado, sem pedido de reformulação.
+
+
+## Resposta do especificador ao encaminhamento — 2026-11-18
+
+Agente 1. Especificação da terceira correção do E16-R05: regra 2-F e critérios A-39 a A-46 da E16-07, mais as fatias E16-09 e E16-10. Nenhum código ou teste foi alterado.
+
+| Pendência | Resposta |
+|---|---|
+| C63 | Regra 2-F e A-41. "Inclusive pela API" é a rota HTTP `POST /interesses/` chamada diretamente. Não há API separada (infraestrutura §2: Django, templates no servidor e HTMX); a rota já está especificada na E05-05, que cita o cenário 63 "pela rota". O critério exige a entrada `1.2` num produto em kg a R$ 12,00 com incremento 0,5, a resposta da tabela da E05-05, nenhuma parcela gravada e o reservado inalterado, inclusive com 1,5 já reservado. O caso válido de 1,5 kg por R$ 18,00 fica separado. Sem API nova. |
+| T-11 | Regra 2-F e A-42. A direção é: origem nos recursos de A, destino numa obrigação de B. A prova passa a ser `test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso`, nas tentativas `FINANCIAMENTO_DE_OBRIGACAO` e `REPASSE` para obrigações de B. O teste do repasse para A fica só na afirmação do limite do liberado de A. Sem regra financeira nova. |
+| T-38 | Regra 2-F e A-43. A unidade é pré-condição explícita, e o padrão da fábrica não conta. Para litros: incremento 0,5 L, 1,5 L aceito e 1,2 L recusado, pelos casos `Unidade.LITRO` de `test_quantidades_e_incrementos`. A regra nova de **caso de parametrização** (A-39 e A-40) torna citável e conferível o caso que dá a prova. |
+| C96 | O histórico do comprador é a tela "Meus pedidos" (`GET /pedidos/`; funcional §2 e §13), que hoje não mostra interesses: falta implementação. As alternativas (valores atuais; atuais e por evento; retirar o histórico do texto) foram apresentadas ao responsável, que decidiu em 2026-11-18 pelos **valores atuais**, da mesma fonte do carrinho, mesmo com estoque zerado e sem pedidos. A correção está especificada na **E16-09** (`docs/specs/E16-09/`), com o percurso pela tela, o isolamento entre compradores e o teste do cenário 96 com pendentes reais. Ela vai ao gate antes da produção. A E16-07 A-44 liga a afirmação do histórico ao teste da E16-09. |
+
+**Retificação do registro do implementador:** a linha "C96: completada" fica retificada para **"pendente: depende da E16-09"**. O registro anterior fica preservado acima. O cenário 96 só fecha com a E16-09 aprovada e a E16-07 A-44 atendida.
+
+**Revisão completa:** a regra 2-F manda procurar nas 174 entradas as três falhas dos exemplos (valor ausente dos parâmetros; direção ou sujeito invertidos; pré-condição vinda do padrão da fábrica) e registrar o resultado por falha (A-45). O revisor confere uma quinta amostra (A-46).
+
+Próximo gate: revisão independente das especificações (E16-07 regra 2-F, E16-09 e E16-10). Depois, o implementador corrige a matriz, a E16-09 com TDD e a E16-10.
+

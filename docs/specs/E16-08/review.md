@@ -288,3 +288,58 @@ O skip é `test_backup_externo_ferramentas.py`: pg_dump, pg_restore, age e age-k
 4. Se a homologação revelar defeito, receber o achado e especificar a correção antes da implementação, como exige a regra 9. Se nenhuma regra precisar mudar, não produzir especificação adicional apenas para repetir o roteiro existente.
 
 **Condição para encerrar:** o especificador entrega critérios claros e decisões documentadas; o implementador executa e registra os resultados; o revisor verifica e emite o novo veredito. R07 somente será fechado com execução operacional comprovada e decisões cumpridas, após o gate técnico. Os dois xfails devem ser retirados quando as pendências forem efetivamente resolvidas e seus testes devem passar, conforme a regra 14. Este complemento não altera o veredito REPROVADO nem os encerramentos anteriores.
+
+
+## Encaminhamento do especificador para o R07 — 2026-11-18
+
+Agente 1. As regras da E16-08 não foram reescritas, e a execução não começou. A regra 15 continua impedindo a execução enquanto o R05 não for aprovado.
+
+### 1. Melhorias (regra 10) — decididas
+
+Cada pendente foi apresentada ao responsável com recomendação, e ele aceitou todas em 2026-11-18. O registro está em `docs/melhorias.md` ("Decisão do responsável na revisão das melhorias"):
+- **antes do encerramento:** M-3 e M-8, na fatia **E16-10** (só documentação);
+- **descartada:** M-5;
+- **adiadas para a fase 2a:** M-1, M-2, M-4, M-7, M-9, M-11, M-12 e M-14.
+
+A E16-09 foi usada pela devolução do cenário 96. A regra 10 foi ajustada para começar as fatias de melhoria na E16-10. Com isso, o teste `test_as_melhorias_tem_decisao` deixa de ter motivo para `xfail` depois que a E16-10 for aprovada e as M-3 e M-8 forem encerradas (regra 14).
+
+### 2. Dependências da fase 0 — confirmadas com o responsável
+
+Em 2026-11-18, o responsável informou que **ainda não criou nenhuma das contas** e aguarda o fim das correções para criá-las. Faltam todas:
+
+| Insumo | Situação |
+|---|---|
+| Fly.io (app de homologação, região `gru`) | falta |
+| Neon (projeto em `aws-sa-east-1`, branch de homologação e branch de testes) | falta |
+| Cloudflare R2 (bucket de arquivos e bucket de backups com ciclo de vida de 35 dias, credenciais separadas) | falta |
+| AWS SES em `sa-east-1` (domínio ou remetente e endereços de teste verificados no sandbox) | falta |
+| Sentry (projeto) e Better Stack (monitor) | falta |
+| Cliente OAuth do Google de homologação, com retorno em `*.fly.dev` | falta |
+| Par de chaves `age` (a pública no Fly.io, a privada fora dele, E16-05) | falta |
+
+Nenhum segredo é registrado aqui. Quando as contas existirem, o responsável informa só que existem. O implementador configura os segredos direto nos serviços (`fly secrets`), conforme `docs/operacao/homologacao.md`.
+
+### 3. Commit a implantar
+
+Ainda não existe. Será o commit da `main` que integrar as E16-01 a E16-07 com R01 a R06 aprovados, e também a E16-09 e a E16-10 (regras 2 e 15). Ele é registrado aqui no momento da implantação.
+
+### 4. Evidência que o implementador devolve, pelas regras já existentes
+
+- **Regra 3:** as oito verificações da implantação, cada uma com comando e saída, ou captura, e com data e hora. Inclui o backup automático das 03:00 observado (3.7) e o aviso do `verificar-operacao` com o worker parado (3.5).
+- **Regras 4 e 5:** o roteiro funcional e o isolamento, passo a passo, com data, hora e resultado, pelo relógio real.
+- **Regra 6:**
+  - a restauração real pelos caminhos A e B, com `conferir_restauracao` saindo com código 0 nas duas;
+  - os tempos e o RTO na tabela "Registro dos testes" de `docs/operacao/restauracao.md`.
+- **Regra 7:** a suíte no CI do commit final da `main` (número de testes e duração) e uma execução contra um branch de testes do Neon (conexão direta, `sslmode=require`).
+- **Regra 10:** as decisões acima cumpridas, com a E16-10 aprovada e as M-3 e M-8 encerradas.
+- **Regras 11 e 12:** o relatório final coerente com o que ficar pendente.
+- **Regra 14:** os dois `xfail` retirados, com os testes passando sem marca, antes da revisão de aprovação.
+
+### 5. Defeito na homologação
+
+Um defeito encontrado na homologação volta ao especificador, que especifica a correção antes da implementação (regra 9). Se nenhuma regra mudar, não haverá especificação nova.
+
+### Insumo que falta pedir ao responsável
+
+Só as contas da tabela 2, depois da aprovação técnica de R05. Nenhuma outra decisão está pendente.
+

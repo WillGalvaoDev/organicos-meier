@@ -102,7 +102,7 @@ Sem eles, a fatia fica **bloqueada por dependência**, sem decisão comercial: o
 10. **Revisão das melhorias** (decisão do responsável de 2026-10-20):
     - o especificador apresenta ao responsável cada melhoria pendente de `docs/melhorias.md`, com uma recomendação: tratar antes do encerramento, tratar na fase 2a ou descartar;
     - a decisão do responsável é registrada em `docs/melhorias.md`. A descartada vai para "Encerradas" com o motivo, e a adiada fica pendente, com a fase indicada;
-    - uma melhoria a tratar antes do encerramento vira fatia própria (E16-09 em diante), especificada e revisada no fluxo normal.
+    - uma melhoria a tratar antes do encerramento vira fatia própria, especificada e revisada no fluxo normal. A E16-09 foi usada pela devolução do cenário 96 (E16-07, regra 2-F), e por isso as fatias de melhoria começam na E16-10 (decisão de 2026-11-18: M-3 e M-8 na E16-10).
 
 ### Relatório final
 
@@ -159,5 +159,5 @@ Sem eles, a fatia fica **bloqueada por dependência**, sem decisão comercial: o
 
 ## Dependências e decisões em aberto
 
-- Depende das E16-01 a E16-07 e dos pré-requisitos operacionais acima.
+- Depende das E16-01 a E16-07, da E16-09 e da E16-10 e dos pré-requisitos operacionais acima.
 - **Decisões do responsável previstas na própria fatia:** as da revisão das melhorias (regra 10), por decisão de 2026-10-20. Não há decisão comercial em aberto para especificar a fatia.

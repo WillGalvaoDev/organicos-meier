@@ -133,6 +133,44 @@ Esta fatia cria:
      - a declaração de que nenhuma afirmação foi dada como provada em parte;
      - a lista das devoluções ao especificador, ou a frase "Nenhuma devolução".
 
+2-F. **Elementos concretos, casos de parametrização e devolução do cenário 96** (terceira correção E16-R05, revalidação de 2026-11-18 sobre de1111c e complemento do revisor).
+   - **Elementos concretos da afirmação:** os valores, a unidade, o ator, a direção do lançamento, a interface e a tela que a afirmação nomeia têm de estar estabelecidos explicitamente no módulo do teste: no corpo, nos parâmetros ou numa função auxiliar do mesmo módulo. O valor padrão de uma fábrica (`tests/fabricas.py`) não conta. Exemplo: o `ProdutoFactory` cria kg sem que o teste diga nada, e isso não prova litros nem kg. Na leitura integral (regra 2-B), o implementador confere cada elemento nomeado e retira a ligação em que algum falta.
+   - **Caso de parametrização:** a referência continua sem parâmetros (regra 1). Quando a prova depende de um caso de `pytest.mark.parametrize`, ela cita entre crases, além do trecho do assert (regra 2-D), o caso como está escrito no código, por exemplo `(Unidade.LITRO, "0.5", "1.2", False)`.
+     - A conferência automática aceita esse trecho se ele estiver no decorador `parametrize` do teste ou numa constante do mesmo módulo que esse decorador usa pelo nome.
+     - A prova tem de citar o caso quando a afirmação nomeia um valor ou uma unidade que só aparece nos parâmetros.
+     - Um trecho que não está num assert, num `pytest.raises(...)` nem num desses lugares é acusado com a referência.
+   - **Cenário 63** (funcional §16.63; infraestrutura §5, R-8):
+     - **"inclusive pela API":** a aplicação não tem API separada. A arquitetura é Django com templates no servidor e HTMX, num único deploy, sem front separado (infraestrutura §2). A validação de quantidade vale "em toda adição ou alteração, inclusive pela API" (infraestrutura, item "Validação de quantidade" de R-8). A interface que materializa isso é a rota HTTP `POST /interesses/`, chamada diretamente, com os campos montados pelo teste e não pelo formulário da página. Essa rota já está especificada na E05-05, na tabela de respostas de `POST /interesses/`, e a E05-05 cita o cenário 63 "pela rota". Não se cria API nova;
+     - **"1,2 kg é recusado pelo servidor":** produto em kg, preço R$ 12,00, incremento 0,5. A prova é pelo serviço `adicionar_interesse` com a entrada `"1.2"`, que levanta `QuantidadeInvalida` sem gravar parcela, citando o caso `(Unidade.KG, "0.5", "1.2", False)`;
+     - **"a recusa de 1,2 kg vale também pela API":** o mesmo produto. Um comprador ativo faz `POST /interesses/` com `produto=<P>`, `quantidade=1.2` e `origem=carrinho`. A resposta é 200 com a página de origem e a mensagem do serviço (tabela da E05-05), e o teste confere que:
+       - não há `ParcelaDeInteresse` desse comprador para o produto;
+       - o total reservado do produto não mudou;
+       - a resposta não traz a mensagem de sucesso "Interesse atualizado".
+
+       Num segundo caso, o comprador já tem 1,5 reservado. O mesmo `POST` com `1.2` deixa o reservado em 1,5, com a parcela original sem alteração. Um teste com `1.5`, `"abc"` ou valor negativo não prova esta afirmação. Se nenhum teste existente fizer esse `POST`, entra a caracterização `test_cenario_63_rota_recusa_1_2_kg_sem_gravar` (regra 5);
+     - **"1,5 kg é aceito por R$ 18,00":** essa afirmação continua separada. Ela é provada pelo caso `(Unidade.KG, "0.5", "1.5", True)`, com preço R$ 12,00 e o assert do subtotal `D("18.00")`, citando o caso.
+   - **T-11** (infraestrutura §8, T-11; P-2):
+     - **direção:** a afirmação "lançamento com recursos do fornecedor A para obrigação de B é recusado" fala de um lançamento cuja **origem** é uma conta de recursos de A e cujo **destino** é uma obrigação de B. A prova tem de tentar esse lançamento e conferir a recusa e a preservação dos saldos e da contagem de movimentos;
+     - **teste que prova:** `tests/aceitacao/test_cenario_32_recursos_por_fornecedor.py::test_o_dinheiro_do_fornecedor_nao_cobre_despesa_nem_vai_para_outro_uso` faz isso nas tentativas `(T.FINANCIAMENTO_DE_OBRIGACAO, devida, obrigacao_com(m.rb, m.cb, m.x, numero=2))` e `(T.REPASSE, devida, obrigacao_de(m.fb, m.rb))`, com `pytest.raises(MovimentoProibido)` e `(_saldos(), MovimentoFinanceiro.objects.count()) == antes`. Ele passa a ser a referência dessa afirmação, e a prova cita a tentativa e os dois asserts;
+     - **o que sai:** a ligação atual, `test_o_repasse_de_a_nao_usa_o_dinheiro_liberado_de_b`, sai dessa afirmação. Esse teste tenta um repasse **para A** com o saldo insuficiente de A, que é a outra metade do T-11. Ele pode continuar como prova da afirmação "o repasse a A é limitado ao valor liberado de A", que fica separada, com a sua própria prova;
+     - **o que não muda:** não há regra financeira nova nem teste novo. É a correção da ligação.
+   - **T-38** (infraestrutura §8, T-38; funcional §16.85):
+     - **unidade como pré-condição:** cada uma das três afirmações de unidade (L, kg e unidade) aponta para um teste que define a unidade do produto explicitamente, por um parâmetro ou por um argumento da montagem. A prova cita o caso;
+     - **litros:** o exemplo aprovado no §16.85 é incremento 0,5 L, com 1,5 L aceito e 1,2 L recusado. O `tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos` tem os casos `(Unidade.LITRO, "0.5", "1.5", True)` e `(Unidade.LITRO, "0.5", "1.2", False)`, que exercitam a validação contra o incremento num produto em litro. A prova cita os dois casos e os asserts `resumo.reservado == D(entrada)` e `pytest.raises(QuantidadeInvalida)`;
+     - **kg e unidade:** valem as mesmas exigências, com `(Unidade.KG, "0.5", "1.2", False)` e `(Unidade.UNIDADE, "1", "2.5", False)` ou outros casos explícitos;
+     - **o que sai:** o `test_catalogo_quantidades.py::test_quantidades_aceitas`, cujo produto é kg só pelo padrão da fábrica, sai das afirmações de unidade.
+   - **Cenário 96, histórico do comprador:** a afirmação do histórico é obrigatória e fica na matriz, separada da do carrinho: "o histórico mostra Reservado: 6 e Pendente: 4, inclusive com o estoque zerado".
+     - **qual é o histórico:** é a tela "Meus pedidos" (`GET /pedidos/`), a única que a especificação define como histórico do comprador (funcional §2 e §13: "Histórico de pedidos, pagamentos, estornos e retirada por item");
+     - **o que falta:** hoje essa tela não mostra interesses, então falta implementação, e não só prova. Ela é especificada na fatia **E16-09** (`docs/specs/E16-09/`), com a decisão do responsável de 2026-11-18;
+     - **ligação:** depois da E16-09, a afirmação aponta para o teste dela que percorre `GET /pedidos/`. Até lá, a entrada 96 fica pendente, e a E16-07 não pode ser aprovada.
+   - **Revisão completa com o mesmo critério:** os pontos de C63, T-11 e T-38 são exemplos de três falhas que o implementador procura nas 174 entradas:
+     - o valor da afirmação não aparece nos parâmetros;
+     - a direção ou o sujeito estão invertidos;
+     - a pré-condição vem do padrão de uma fábrica.
+
+     O `review.md` registra, para cada falha, as entradas encontradas e corrigidas, ou "nenhuma além dos exemplos".
+   - **Retificação:** o `review.md` registra que a linha "C96: completada" do registro anterior fica retificada para "pendente: depende da E16-09", sem apagar a linha antiga.
+
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
    - cada referência aponta para um arquivo existente em `tests/` e para uma função `test_*` (ou método numa classe `Test*`) definida nele. A conferência é feita lendo a árvore de sintaxe do arquivo, sem importar nem rodar o teste;
@@ -254,6 +292,6 @@ Esta fatia cria:
 
 ## Dependências e decisões em aberto
 
-- Depende das E01 a E15.
+- Depende das E01 a E15 e, para a afirmação do histórico do cenário 96, da E16-09 (regra 2-F).
 - Nenhuma dependência nova.
 - Nenhuma decisão em aberto.
