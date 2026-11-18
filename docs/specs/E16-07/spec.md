@@ -34,7 +34,8 @@ Esta fatia cria:
 - o módulo da matriz;
 - o teste de cobertura da matriz;
 - o gerador do documento e o documento `docs/rastreabilidade-fase1.md`;
-- testes novos só para cenários ou testes técnicos sem nenhum teste que os prove.
+- testes novos só para cenários ou testes técnicos sem nenhum teste que os prove;
+- a conferência pela execução real (`tests/rastreabilidade/conferir_execucao.py`) e as duas mudanças na etapa `pytest` do `.github/workflows/ci.yml` (regra 3-E).
 
 **Fora:**
 - reescrever testes existentes;
@@ -85,6 +86,52 @@ Esta fatia cria:
    - **Registro no `review.md`:**
      - os números: pares antes e depois, ligações retiradas, ligações acrescentadas e caracterizações novas;
      - a declaração de que todas as provas foram escritas pela leitura do corpo, sem classificação automática por termos.
+2-E. **Afirmação atômica e prova integral** (segunda correção residual E16-R05, revalidação de 2026-11-18 sobre 9f4163b). A regra 2-D garante que a prova aponta um assert real. Ela não impede que uma afirmação composta seja "provada" por um teste que confere só uma das partes, como nos cenários 17, 20, 34 e 59 e em T-38. Para fechar isso:
+   - **Afirmação atômica:** cada chave diz uma única coisa observável. Ao dividir o texto-base:
+     - **enumeração:** uma afirmação por item. Exemplo: "não duplica pagamento, pedido, mensagem formal ou estorno" vira quatro afirmações;
+     - **conjunção de efeitos:** uma afirmação por efeito. Exemplo: "bloqueia acesso e novo cadastro com o e-mail, mas mantém histórico e pedidos pagos" vira quatro afirmações;
+     - **contraste:** "vale para X, mas não para Y" vira uma afirmação para X e outra para Y. Os exemplos de Y também se separam (alias com `+`, alias com pontos);
+     - **lista de valores recusados ou aceitos:** uma afirmação por valor. Exemplo: "incremento zero, negativo ou com mais de 3 casas" vira três afirmações;
+     - **resultado com qualificador:** "concluída sem duplicidade" vira "é concluída" e "não é duplicada";
+     - **o que não se separa:** a condição fica junto do resultado dela. Exemplo: "depois de novo aporte, a devolução é concluída".
+   - **Cobertura do texto:** cada oração do texto-base corresponde a pelo menos uma afirmação, e nenhuma fica de fora. O documento gerado (regra 4) mostra o texto e as afirmações lado a lado, o que permite essa leitura.
+   - **Prova integral:** cada afirmação atômica precisa de pelo menos uma referência cujo teste faça as duas coisas:
+     1. executar a ação ou a condição da afirmação. O webhook repetido é enviado; o novo cadastro com o e-mail é tentado; o login com o endereço em maiúsculas é tentado; o incremento zero é submetido;
+     2. conferir com assert o resultado que a afirmação pede, e não um estado vizinho. Preservar a conta não prova que o acesso é recusado. Resolver o alerta não prova que a devolução foi concluída. Recusar um `float` não prova a recusa de um incremento negativo.
+   - **Prova parcial:** uma referência que prova só parte de uma afirmação atômica não conta para ela e sai da lista. Ela pode continuar em outra afirmação que prove por inteiro.
+   - **Sem afirmação parcialmente provada:** o `review.md` não pode declarar nenhuma afirmação "provada em parte". Se faltar prova integral, entra uma caracterização (regra 5), sem limite de quantidade. Se a caracterização falhar, é defeito e volta ao especificador (regra 5). Se o texto-base pedir algo que o produto não tem como exercitar, é dúvida de especificação: o implementador registra a afirmação e o motivo e devolve ao especificador, sem dar a entrada como concluída.
+   - **Exemplos apontados na revalidação, que precisam ser corrigidos** (não bastam esses; a regra vale para as 174 entradas):
+     - **cenário 17**, quatro afirmações:
+       - **pagamento:** o webhook repetido não cria outro pagamento, destino nem quitação;
+       - **pedido:** o webhook repetido não cria outro `Pedido` do comprador nem muda a situação dele;
+       - **mensagem formal:** é o pedido formal enviado por e-mail ao fornecedor (funcional, seção 10). São dois testes, ambos com o webhook repetido enviado pelo mesmo caminho das caracterizações de 9f4163b:
+         - (i) **depois do envio:** a rodada tem o resultado aprovado e o pedido formal já enviado. O webhook de um pagamento já confirmado da rodada chega de novo. Continua havendo um só `PedidoFormal` da rodada, com as mesmas linhas, nenhuma `TentativaDeEnvioDoPedidoFormal` nova e nenhum e-mail novo ao fornecedor;
+         - (ii) **antes da aprovação:** o mesmo webhook chega duas vezes antes da aprovação. Na aprovação, é gerado um só `PedidoFormal`, com as quantidades de um único pagamento, e um só envio;
+       - **estorno:** o webhook repetido depois da devolução não cria outro estorno;
+     - **cenário 20**, quatro afirmações:
+       - **acesso bloqueado:** depois da remoção, o login por senha, por Google e por link não abre sessão;
+       - **novo cadastro bloqueado:** um novo convite ou cadastro com o mesmo e-mail, inclusive escrito com maiúsculas diferentes, é recusado e não cria conta;
+       - **histórico mantido:** o administrador ainda consulta o histórico do removido, inclusive o financeiro;
+       - **pedidos pagos mantidos:** o pedido pago continua com a situação de pago e consultável pelo administrador;
+     - **cenário 34**, quatro afirmações:
+       - a obrigação continua registrada pelo valor integral;
+       - o sistema alerta;
+       - **concluída:** depois do novo aporte, a devolução é processada até o fim. O estorno é concluído no simulador e a obrigação fica liquidada, com saldo devido zero;
+       - **sem duplicidade:** repetir o acionamento da devolução depois da conclusão não cria outro estorno, não liquida outra vez e não debita a reserva de novo;
+     - **cenário 59**, seis afirmações:
+       - o endereço banido escrito com maiúsculas diferentes é recusado no login e num novo cadastro;
+       - o alias com `+` não é afetado;
+       - o alias com pontos não é afetado;
+       - IP, dispositivo e telefone, uma afirmação cada, não são bloqueados;
+     - **T-38:**
+       - a validação contra o incremento vale para L, para kg e para unidade, uma afirmação cada;
+       - o incremento é recusado com zero, com valor negativo e com mais de 3 casas, uma afirmação cada. A entrada tem o tipo aceito (`Decimal` ou o texto do formulário), para que a recusa seja do valor e não do tipo. Em cada caso, o produto não é criado;
+       - o múltiplo incompatível é recusado no cadastro e na alteração em interesse, uma afirmação cada.
+   - **Registro no `review.md`:**
+     - por entrada, o resultado: "atomizada (n → m afirmações)", "completada" ou "caracterização nova";
+     - os números da regra 2-D, atualizados;
+     - a declaração de que nenhuma afirmação foi dada como provada em parte;
+     - a lista das devoluções ao especificador, ou a frase "Nenhuma devolução".
 
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
@@ -120,6 +167,64 @@ Esta fatia cria:
      - definição dentro de `if`, `try` ou `with` no nível do módulo ou da classe.
    - **Motivo citado:** a mensagem de recusa diz a forma encontrada (por exemplo, "pytestmark da classe TestExemplo com skip").
 
+3-D. **Lista fechada de ocorrências** (segunda correção residual E16-R06, revalidação de 2026-11-18 sobre 9f4163b). A regra 3-C listava formas proibidas. As combinações que ficaram de fora mostram que essa lista não fecha: `pytestmark.append(...)` dentro de um `if` e o encadeamento `__test__ = habilitado = False` passaram. A regra 3-C passa a ser aplicada pelo contrário: há uma lista de formas aceitas, e tudo o que não está nela é recusado.
+   - **Ocorrência:** em qualquer ponto do arquivo, em qualquer profundidade, inclusive dentro de funções, classes, compreensões e lambdas, é ocorrência de `pytestmark` ou `__test__`:
+     - um nome (`ast.Name`) com esse identificador, em qualquer contexto: leitura, escrita ou `del`;
+     - um atributo (`ast.Attribute`) com esse nome;
+     - um alias de importação (`import`/`from ... import`), pelo nome ou pelo `as`;
+     - uma função ou classe com esse nome;
+     - um parâmetro de função ou lambda;
+     - um argumento nomeado (`f(pytestmark=...)`);
+     - `global` ou `nonlocal` com esse nome;
+     - um nome capturado em `match`, `except ... as` ou `with ... as`;
+     - um texto literal (inclusive dentro de f-string) que contenha o identificador como palavra. A exceção são as docstrings de módulo, classe e função.
+   - **Únicas ocorrências aceitas:** uma instrução que seja filha direta do corpo do módulo ou do corpo de uma classe, em uma destas formas:
+     - `Assign` com exatamente um alvo, que é o nome `pytestmark` ou `__test__`;
+     - `AnnAssign` com esse nome como alvo e com valor.
+
+     O valor segue as regras 3-B e 3-C: em `pytestmark`, uma marca reconhecida ou uma lista ou tupla de marcas reconhecidas; em `__test__`, só a constante literal `True`.
+   - **Uma definição por corpo:** cada controle é definido no máximo uma vez em cada corpo. Uma segunda definição recusa a referência.
+   - **Recusa:** qualquer outra ocorrência no arquivo recusa a referência. A mensagem diz a forma e a linha, por exemplo "pytestmark lido em chamada de método dentro de if (linha 4)" ou "__test__ em atribuição encadeada (linha 2)". A regra vale em qualquer ponto do arquivo, mesmo fora da cadeia da referência, porque a conferência não executa código para saber o que alcança o teste.
+   - **Formas que trazem nomes ou atributos sem escrevê-los:** recusam a referência:
+     - `from ... import *`;
+     - `__getattr__` definido no nível do módulo;
+     - nas classes da cadeia: argumento nomeado na definição da classe (por exemplo, `metaclass=`) ou definição de `__getattr__`, `__getattribute__` ou `__init_subclass__`;
+     - `exec`, `eval` ou `compile` chamados fora de funções.
+   - **Herança:** o pytest lê `pytestmark` e `__test__` pela herança da classe. Por isso, cada base de uma classe da cadeia deve ser uma destas:
+     - uma classe definida no mesmo arquivo, que entra na cadeia e é conferida pelas regras 3-A a 3-D (marcas, `__test__`, `__init__`);
+     - `object`;
+     - `unittest.TestCase` ou as classes de teste de `django.test` (`SimpleTestCase`, `TestCase`, `TransactionTestCase`, `LiveServerTestCase`), importadas desses módulos.
+
+     Uma base importada de outro lugar, ou uma expressão, recusa a referência.
+   - **Testes existentes:** a regra se aplica só aos arquivos referenciados na matriz. Se um deles for recusado, o implementador troca a referência por um teste que prove a afirmação (regra 2-E) ou faz uma caracterização (regra 5). Não reescreve o arquivo existente.
+3-E. **Conferência pela execução real** (segunda correção residual E16-R06). A árvore de sintaxe não vê pulos feitos em tempo de execução, como fixture, `conftest.py` ou decorador. A conferência manual do `-ra` (regra 3-B) passa a ser automática:
+   - **CI:** a etapa `pytest` do `.github/workflows/ci.yml` passa a gravar `--junitxml=relatorio-pytest.xml`. Logo depois, uma etapa roda `python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml`.
+   - **O que confere:** cada referência da matriz corresponde a pelo menos um `testcase` do relatório. A correspondência é pelo módulo em notação de pontos, pela classe, se houver, e pelo nome, com ou sem o sufixo de parametrização `[...]`. Todos os `testcase` dessa referência têm de ter passado, sem `skipped`, `failure` nem `error`. Referência sem `testcase` ou com qualquer resultado diferente de passado falha a etapa, com a referência e o resultado.
+   - **Fora do CI:** o módulo é uma função reaproveitável. Ela recebe o caminho do relatório e a matriz, para os testes de aceitação usarem relatórios montados por eles.
+   - **Registro:** o `review.md` registra a execução completa local com `--junitxml` e a saída da conferência. Esse registro substitui a lista manual do `-ra` da regra 3-B.
+   - **A conferência estática continua:** ela falha cedo e sem banco. A da execução é a rede final.
+3-F. **Prova do A-23 pelo pytest real** (segunda correção residual E16-R06). O teste que confirma as recusas com o pytest tinha dois problemas:
+   - aceitava erro de configuração como sucesso: sem `PYTHONPATH`, o subprocesso parava com `ImportError` e a guarda passava;
+   - falhava com um `xfailed` legítimo, porque procurava o texto `failed`, que aparece dentro de `xfailed`.
+
+   Ele passa a ser um teste diferencial, com isolamento e resultado concreto:
+   - **Isolamento:**
+     - cada fonte roda num diretório temporário próprio, com um `pytest.ini` contendo só `[pytest]`;
+     - o comando é `[sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", <esse pytest.ini>, "--rootdir", <o diretório>, "--junitxml", <arquivo no diretório>]`. `/dev/null` não existe no Windows;
+     - o ambiente do subprocesso é montado do zero: só `PATH`, `SYSTEMROOT`, `TEMP`, `TMP`, `HOME` e `USERPROFILE` que existirem no processo pai, mais `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`. Não leva `DJANGO_SETTINGS_MODULE` nem `PYTHONPATH`. As fontes só importam `pytest`.
+   - **Resultado concreto:**
+     - cada fonte declara o resultado esperado: "pulado", "falha esperada", "não coletado" ou, no controle, "falhou";
+     - o teste confere o código de saída exato: 0 para pulado e falha esperada, 5 para não coletado e 1 para o controle;
+     - confere também a contagem exata por resultado, lida do relatório JUnit ou da linha final com fronteira de palavra (`xfailed` não é `failed`);
+     - não se usa busca de trecho na saída;
+     - qualquer outro código de saída (2, 3 ou 4), um `error` no relatório ou um erro de importação falham o teste, com a saída anexada.
+   - **Corpo das fontes:** todas as fontes do corpus têm `assert False` no corpo do teste. Assim, "falhou" prova que o teste rodou, e qualquer outro resultado prova que ele não rodou ou que a falha foi mascarada.
+   - **Controle positivo:** as fontes aceitas do A-22, com o corpo trocado por `assert False`, têm de dar código 1 e exatamente um `failed`. Isso prova que o ambiente do subprocesso coleta e executa. Um ambiente quebrado não passa mais por verde.
+   - **Propriedade diferencial:** para cada fonte do corpus (A-20, A-21, A-22 e A-29 a A-31), a conferência estática aceita a referência se, e somente se, o pytest real dá exatamente um `failed`.
+     - Se a conferência aceita e o pytest não roda o teste, é aceitação indevida.
+     - Se a conferência recusa e o pytest roda o teste, a recusa é a mais e precisa estar prevista na regra 3-D. As formas da regra 3-D que o pytest executaria, como uma leitura inofensiva de `pytestmark`, entram numa lista declarada de "recusas por precaução". Para elas, a propriedade exige só a recusa.
+   - **Red e Green:** o `review.md` registra o Red do novo A-23 contra a conferência atual, que aceita as duas fontes da revalidação e o pytest não as executa, e o Green depois da regra 3-D.
+
 4. **Documento gerado:** `python -m tests.rastreabilidade.gerar` escreve `docs/rastreabilidade-fase1.md` com duas tabelas:
    - "Cenários (§16)": número, um resumo de até 100 caracteres tirado do texto do cenário e os testes;
    - "Testes técnicos (infraestrutura 8)": ID, a regra e os testes.
@@ -134,11 +239,16 @@ Esta fatia cria:
 
 - **Matriz em Python, conferida pela árvore de sintaxe.** Um dicionário versionado é fácil de revisar no diff e de checar no CI. Ler a árvore de sintaxe evita depender da coleta completa do pytest e não executa nada. Marcadores em centenas de testes espalhariam a informação e seriam mais difíceis de auditar.
 - **Documento gerado e conferido.** O relatório final precisa de uma tabela legível. Gerar o documento a partir da matriz e conferir a igualdade no CI evita que o documento e a matriz divirjam.
+- **Lista fechada mais execução real (regras 3-D e 3-E).** Uma lista de formas proibidas nunca fecha: cada revisão achou combinações novas. Aceitar só as formas declarativas simples e recusar todo o resto troca o risco de aceitação indevida pelo de recusa a mais, que é visível e se resolve trocando a referência. O relatório JUnit do CI cobre o que a árvore não vê (fixture, `conftest.py`, decorador), sem dependência nova, porque `--junitxml` é do próprio pytest e a leitura usa `xml.etree` da biblioteca padrão.
+- **Atomicidade (regra 2-E).** A prova parcial nasce de afirmações compostas. Dividir o texto em afirmações atômicas torna a leitura do revisor binária: cada afirmação está provada ou não está.
 - **Defeito encontrado não é corrigido aqui.** A fatia é de evidência. Corrigir comportamento sem especificação mudaria escopo (AGENTS.md §3).
 
 ## Invariantes
 
 - Cada cenário de 1 a 119 e cada teste técnico de T-1 a T-55 tem pelo menos um teste existente, não pulado, na matriz.
+- Cada afirmação é atômica e tem pelo menos um teste que executa a ação dela e confere o resultado dela por inteiro (regra 2-E).
+- Toda referência da matriz passou na última execução completa do CI (regra 3-E).
+- A conferência estática só aceita uma referência cujo arquivo tenha apenas as formas da lista fechada (regra 3-D).
 - O documento gerado corresponde à matriz.
 - Nenhum código de produção muda nesta fatia.
 
