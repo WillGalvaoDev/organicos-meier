@@ -1,9 +1,10 @@
-"""A conferência da matriz de rastreabilidade (E16-07, regras 2-A, 3, 3-A e 3-B).
+"""A conferência da matriz de rastreabilidade (E16-07, regras 2-A, 3 e 3-A a 3-D).
 
 Lê a árvore de sintaxe dos arquivos de `tests/`: não importa nem roda nenhum teste. A referência só
 vale se o pytest a coletaria com a configuração do projeto e se ela não pula nem tem falha esperada.
-O pulo feito por fixture ou por `conftest.py` não aparece na árvore: o `review.md` registra a lista
-de pulados e de falhas esperadas da execução completa do CI e confirma que nenhum está na matriz.
+`pytestmark` e `__test__` só valem nas formas aceitas (regra 3-D); qualquer outra ocorrência recusa a
+referência. O pulo feito em tempo de execução (fixture, `conftest.py`) é conferido pela execução real
+em `conferir_execucao.py` (regra 3-E).
 """
 
 import ast
@@ -103,103 +104,262 @@ def _motivo_da_marca(nomes: _Nomes, marcas: Sequence[ast.expr], onde: str) -> st
 
 
 CONTROLES = ("pytestmark", "__test__")
+_PALAVRA = re.compile(r"\b(pytestmark|__test__)\b")
+_BASES_DE_TESTE = {
+    "unittest": {"TestCase"},
+    "django.test": {"SimpleTestCase", "TestCase", "TransactionTestCase", "LiveServerTestCase"},
+}
+_METODOS_DE_ACESSO = ("__getattr__", "__getattribute__", "__init_subclass__")
+_CONTEXTOS = {
+    ast.If: "if", ast.Try: "try", ast.With: "with", ast.AsyncWith: "with", ast.For: "for",
+    ast.AsyncFor: "for", ast.While: "while", ast.FunctionDef: "função",
+    ast.AsyncFunctionDef: "função", ast.Match: "match",
+}  # fmt: skip
 
 
-def _nomes_alvo(alvo: ast.expr) -> set[str]:
-    """Os nomes simples que a atribuição liga (inclusive dentro de tupla, lista ou `*`)."""
-    if isinstance(alvo, ast.Name):
-        return {alvo.id}
-    if isinstance(alvo, (ast.Tuple, ast.List)):
-        return set().union(*(_nomes_alvo(e) for e in alvo.elts)) if alvo.elts else set()
-    if isinstance(alvo, ast.Starred):
-        return _nomes_alvo(alvo.value)
-    return set()
+def _pais_de(arvore: ast.AST) -> dict[int, ast.AST]:
+    pais: dict[int, ast.AST] = {}
+    for no in ast.walk(arvore):
+        for filho in ast.iter_child_nodes(no):
+            pais[id(filho)] = no
+    return pais
 
 
-def _toca_controle(no: ast.AST) -> str | None:
-    """O nome de controle (`pytestmark` ou `__test__`) que `no` altera de um jeito que a árvore
-    não analisa: atribuição aumentada, desempacotamento, chamada de método, `setattr` ou
-    `globals()[...]`. `None` se não há nada disso."""
-    if isinstance(no, ast.AugAssign):
-        achados = _nomes_alvo(no.target) & set(CONTROLES)
-        return f"{sorted(achados)[0]} com atribuição aumentada" if achados else None
-    if isinstance(no, ast.Assign):
-        for alvo in no.targets:
-            if isinstance(alvo, (ast.Tuple, ast.List)) and _nomes_alvo(alvo) & set(CONTROLES):
-                return "pytestmark ou __test__ por desempacotamento"
-            if isinstance(alvo, ast.Subscript) and isinstance(alvo.value, ast.Call):
-                return "pytestmark ou __test__ por globals()[...]"
-    if isinstance(no, ast.Expr) and isinstance(no.value, ast.Call):
-        chamada = no.value
-        funcao = chamada.func
-        if (
-            isinstance(funcao, ast.Attribute)
-            and isinstance(funcao.value, ast.Name)
-            and funcao.value.id in CONTROLES
-        ):
-            return f"{funcao.value.id}.{funcao.attr}(...)"
-        if isinstance(funcao, ast.Name) and funcao.id == "setattr":
-            literais = {a.value for a in chamada.args if isinstance(a, ast.Constant)}
-            if literais & set(CONTROLES):
-                return "setattr de pytestmark ou __test__"
+def _contexto_de(no: ast.AST, pais: dict[int, ast.AST]) -> str | None:
+    """O `if`, `try`, `with`, `for`, `while`, função ou `match` mais próximo que envolve `no`."""
+    atual = pais.get(id(no))
+    while atual is not None:
+        for tipo, nome in _CONTEXTOS.items():
+            if isinstance(atual, tipo):
+                return nome
+        atual = pais.get(id(atual))
     return None
 
 
-def _definicao_aninhada(corpo: list[ast.stmt]) -> str | None:
-    """`pytestmark` ou `__test__` definido dentro de `if`, `try`, `with`, `for` ou `while`."""
-    for no in corpo:
-        if isinstance(no, (ast.If, ast.Try, ast.With, ast.AsyncWith, ast.For, ast.While)):
-            for filho in ast.walk(no):
-                if isinstance(filho, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    continue
-                alvos: list[ast.expr] = []
-                if isinstance(filho, ast.Assign):
-                    alvos = list(filho.targets)
-                elif isinstance(filho, (ast.AnnAssign, ast.AugAssign)):
-                    alvos = [filho.target]
-                for alvo in alvos:
-                    achados = _nomes_alvo(alvo) & set(CONTROLES)
-                    if achados:
-                        return (
-                            f"{sorted(achados)[0]} definido dentro de {type(no).__name__.lower()}"
-                        )
+def _forma_do_nome(no: ast.Name, pais: dict[int, ast.AST]) -> str:
+    pai = pais.get(id(no))
+    if isinstance(no.ctx, ast.Del):
+        forma = "removido com del"
+    elif isinstance(no.ctx, ast.Load):
+        forma = "lido"
+        if isinstance(pai, ast.Attribute):
+            avo = pais.get(id(pai))
+            if isinstance(avo, ast.Call) and avo.func is pai:
+                forma = f"lido em chamada de método {pai.attr}"
+            else:
+                forma = f"lido em acesso ao atributo {pai.attr}"
+        elif isinstance(pai, ast.Subscript):
+            forma = "lido em subscrito"
+    else:
+        forma = "definido"
+        while isinstance(pai, (ast.Tuple, ast.List, ast.Starred)):
+            forma = "em desempacotamento"
+            pai = pais.get(id(pai))
+        if isinstance(pai, ast.AugAssign):
+            forma = "em atribuição aumentada"
+        elif isinstance(pai, ast.NamedExpr):
+            forma = "no operador :="
+        elif isinstance(pai, (ast.For, ast.AsyncFor)):
+            forma = "como alvo de for"
+        elif isinstance(pai, ast.comprehension):
+            forma = "como alvo de compreensão"
+        elif isinstance(pai, ast.withitem):
+            forma = "como alvo de with"
+        elif isinstance(pai, ast.Assign) and len(pai.targets) > 1:
+            forma = "em atribuição encadeada"
+    contexto = _contexto_de(no, pais)
+    if contexto and (forma in ("definido", "lido") or forma.startswith("lido em")):
+        forma = f"{forma} dentro de {contexto}"
+    return forma
+
+
+def _docstrings(arvore: ast.AST) -> set[int]:
+    achadas: set[int] = set()
+    for no in ast.walk(arvore):
+        if isinstance(no, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            corpo = no.body
+            if (
+                corpo
+                and isinstance(corpo[0], ast.Expr)
+                and isinstance(corpo[0].value, ast.Constant)
+                and isinstance(corpo[0].value.value, str)
+            ):
+                achadas.add(id(corpo[0].value))
+    return achadas
+
+
+def _alvo_aceito(no: ast.stmt) -> ast.Name | None:
+    """O nome de controle definido por `no` na forma aceita, ou `None`."""
+    if isinstance(no, ast.Assign) and len(no.targets) == 1:
+        alvo = no.targets[0]
+        if isinstance(alvo, ast.Name) and alvo.id in CONTROLES:
+            return alvo
+    if isinstance(no, ast.AnnAssign) and no.value is not None:
+        if isinstance(no.target, ast.Name) and no.target.id in CONTROLES:
+            return no.target
     return None
 
 
-def _controle_do_corpo(
+def _ocorrencias(arvore: ast.Module) -> list[tuple[int, str]]:
+    """Toda ocorrência de `pytestmark` e `__test__` que não é a forma aceita (regra 3-D), mais as
+    formas que trazem esses nomes sem escrevê-los. Cada item é (linha, motivo)."""
+    pais = _pais_de(arvore)
+    aceitos: set[int] = set()
+    achadas: list[tuple[int, str]] = []
+    corpos: list[list[ast.stmt]] = [arvore.body]
+    corpos += [no.body for no in ast.walk(arvore) if isinstance(no, ast.ClassDef)]
+    for corpo in corpos:
+        vistos: set[str] = set()
+        for instrucao in corpo:
+            alvo = _alvo_aceito(instrucao)
+            if alvo is None:
+                continue
+            if alvo.id in vistos:
+                achadas.append(
+                    (
+                        instrucao.lineno,
+                        f"{alvo.id} definido mais de uma vez (linha {instrucao.lineno})",
+                    )
+                )
+            vistos.add(alvo.id)
+            aceitos.add(id(alvo))
+    docstrings = _docstrings(arvore)
+    for no in ast.walk(arvore):
+        linha = getattr(no, "lineno", 0)
+        if isinstance(no, ast.Name) and no.id in CONTROLES and id(no) not in aceitos:
+            forma = _forma_do_nome(no, pais)
+            achadas.append((linha, f"{no.id} {forma} (linha {linha})"))
+        elif isinstance(no, ast.Attribute) and no.attr in CONTROLES:
+            achadas.append((linha, f"{no.attr} como atributo (linha {linha})"))
+        elif isinstance(no, ast.alias):
+            for nome in (no.name, no.asname):
+                if nome in CONTROLES:
+                    linha = getattr(no, "lineno", linha)
+                    achadas.append((linha, f"{nome} importado (linha {linha})"))
+        elif isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if no.name in CONTROLES:
+                achadas.append((linha, f"{no.name} definido como função ou classe (linha {linha})"))
+        elif isinstance(no, ast.arg) and no.arg in CONTROLES:
+            achadas.append((linha, f"{no.arg} como parâmetro (linha {linha})"))
+        elif isinstance(no, ast.keyword) and no.arg in CONTROLES:
+            linha = getattr(no, "lineno", linha)
+            achadas.append((linha, f"{no.arg} como argumento nomeado (linha {linha})"))
+        elif isinstance(no, (ast.Global, ast.Nonlocal)):
+            for nome in no.names:
+                if nome in CONTROLES:
+                    achadas.append((linha, f"{nome} declarado global ou nonlocal (linha {linha})"))
+        elif isinstance(no, ast.ExceptHandler) and no.name in CONTROLES:
+            achadas.append((linha, f"{no.name} capturado por except (linha {linha})"))
+        elif isinstance(no, (ast.MatchAs, ast.MatchStar)) and no.name in CONTROLES:
+            achadas.append((linha, f"{no.name} capturado por match (linha {linha})"))
+        elif isinstance(no, ast.MatchMapping) and no.rest in CONTROLES:
+            achadas.append((linha, f"{no.rest} capturado por match (linha {linha})"))
+        elif isinstance(no, ast.Constant) and isinstance(no.value, str):
+            if id(no) not in docstrings:
+                achado = _PALAVRA.search(no.value)
+                if achado:
+                    achadas.append((linha, f"{achado.group(1)} em texto literal (linha {linha})"))
+        elif isinstance(no, ast.ImportFrom) and any(a.name == "*" for a in no.names):
+            achadas.append((linha, f"import * (linha {linha})"))
+        elif isinstance(no, ast.Call) and isinstance(no.func, ast.Name):
+            if no.func.id in ("exec", "eval", "compile") and not _dentro_de_funcao(no, pais):
+                achadas.append((linha, f"{no.func.id} chamado fora de função (linha {linha})"))
+    for no in arvore.body:
+        if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)) and no.name == "__getattr__":
+            achadas.append((no.lineno, f"__getattr__ definido no módulo (linha {no.lineno})"))
+    return sorted(achadas, key=lambda a: (a[0], not a[1].startswith(CONTROLES)))
+
+
+def _dentro_de_funcao(no: ast.AST, pais: dict[int, ast.AST]) -> bool:
+    atual = pais.get(id(no))
+    while atual is not None:
+        if isinstance(atual, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            return True
+        atual = pais.get(id(atual))
+    return False
+
+
+def _marcas_do_corpo(
     nomes: _Nomes, corpo: list[ast.stmt], onde: str
 ) -> tuple[list[ast.expr], str | None]:
-    """As marcas do `pytestmark` do corpo (módulo ou classe) e o motivo de recusa, se houver:
-    forma que não se pode analisar, `__test__` que não é a constante `True` (ou `False`, que já
-    recusa) e marca que não é do pytest."""
+    """As marcas do `pytestmark` da forma aceita e o motivo de recusa do valor, se houver:
+    `pytestmark` que não é marca do pytest e `__test__` que não é a constante `True`."""
     marcas: list[ast.expr] = []
-    aninhado = _definicao_aninhada(corpo)
-    if aninhado:
-        return marcas, f"{aninhado} ({onde})"
     for no in corpo:
-        forma = _toca_controle(no)
-        if forma:
-            return marcas, f"{forma} ({onde})"
-        alvo: ast.expr | None = None
-        valor: ast.expr | None = None
-        if isinstance(no, ast.Assign) and len(no.targets) == 1:
-            alvo, valor = no.targets[0], no.value
-        elif isinstance(no, ast.AnnAssign):
-            alvo, valor = no.target, no.value
-        if not isinstance(alvo, ast.Name) or valor is None:
+        alvo = _alvo_aceito(no)
+        if alvo is None or not isinstance(no, (ast.Assign, ast.AnnAssign)) or no.value is None:
             continue
+        valor = no.value
         if alvo.id == "pytestmark":
             elementos = valor.elts if isinstance(valor, (ast.List, ast.Tuple)) else [valor]
             for elemento in elementos:
                 if nomes.marca(elemento) is None:
                     return marcas, f"pytestmark com valor que não se analisa ({onde})"
             marcas.extend(elementos)
-        elif alvo.id == "__test__":
+        else:
             if isinstance(valor, ast.Constant) and valor.value is False:
                 return marcas, f"__test__ = False ({onde})"
             if not (isinstance(valor, ast.Constant) and valor.value is True):
                 return marcas, f"__test__ com valor que não é a constante True ({onde})"
     return marcas, None
+
+
+def _base_aceita(
+    base: ast.expr, arvore: ast.Module, classes: dict[str, ast.ClassDef]
+) -> str | None:
+    """`None` se a base é aceita; senão o motivo. Aceitas: classe do mesmo arquivo, `object`,
+    `unittest.TestCase` e as classes de teste de `django.test`."""
+    if isinstance(base, ast.Name):
+        if base.id in classes or base.id == "object":
+            return None
+        for no in arvore.body:
+            if isinstance(no, ast.ImportFrom) and no.module in _BASES_DE_TESTE:
+                for alias in no.names:
+                    if (alias.asname or alias.name) == base.id:
+                        if alias.name in _BASES_DE_TESTE[no.module]:
+                            return None
+    if (
+        isinstance(base, ast.Attribute)
+        and isinstance(base.value, ast.Name)
+        and base.value.id == "unittest"
+        and base.attr == "TestCase"
+        and any(
+            isinstance(n, ast.Import)
+            and any(a.name == "unittest" and not a.asname for a in n.names)
+            for n in arvore.body
+        )
+    ):
+        return None
+    texto = ast.unparse(base)
+    return f"base {texto} importada de outro lugar ou expressão (a herança não é conferida)"
+
+
+def _cadeia_da_classe(
+    classe: ast.ClassDef, arvore: ast.Module, nomes: _Nomes
+) -> tuple[list[ast.ClassDef], str | None]:
+    """A classe e as bases do mesmo arquivo, conferidas pelas regras 3-A a 3-D."""
+    classes = {n.name: n for n in arvore.body if isinstance(n, ast.ClassDef)}
+    cadeia: list[ast.ClassDef] = []
+    pendentes = [classe]
+    while pendentes:
+        atual = pendentes.pop()
+        if atual in cadeia:
+            continue
+        cadeia.append(atual)
+        if atual.keywords:
+            nome = atual.keywords[0].arg
+            return cadeia, f"a classe {atual.name} tem argumento nomeado na definição ({nome}=)"
+        for item in atual.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if item.name in _METODOS_DE_ACESSO:
+                    return cadeia, f"a classe {atual.name} define {item.name}"
+        for base in atual.bases:
+            motivo = _base_aceita(base, arvore, classes)
+            if motivo:
+                return cadeia, f"classe {atual.name}: {motivo}"
+            if isinstance(base, ast.Name) and base.id in classes:
+                pendentes.append(classes[base.id])
+    return cadeia, None
 
 
 def _chamadas_no_nivel_do_modulo(arvore: ast.Module, nomes: _Nomes) -> list[str]:
@@ -248,7 +408,10 @@ def _conferir_referencia(raiz: Path, referencia: str) -> str | None:
         return f"{referencia}: a função não começa com test_"
     arvore = ast.parse(arquivo.read_text(encoding="utf-8"))
     nomes = _Nomes(arvore)
-    marcas_do_modulo, recusa = _controle_do_corpo(nomes, arvore.body, "módulo")
+    ocorrencias = _ocorrencias(arvore)
+    if ocorrencias:
+        return f"{referencia}: {ocorrencias[0][1]}"
+    marcas_do_modulo, recusa = _marcas_do_corpo(nomes, arvore.body, "módulo")
     if recusa:
         return f"{referencia}: {recusa}"
     motivo = _motivo_da_marca(nomes, marcas_do_modulo, "pytestmark do módulo")
@@ -264,18 +427,23 @@ def _conferir_referencia(raiz: Path, referencia: str) -> str | None:
         classe = classes[-1]
         if not nome_da_classe.startswith("Test"):
             return f"{referencia}: a classe {nome_da_classe} não começa com Test (não é coletada)"
-        if any(isinstance(n, ast.FunctionDef) and n.name == "__init__" for n in classe.body):
-            return f"{referencia}: a classe {nome_da_classe} define __init__ (não é coletada)"
-        marcas_da_classe, recusa = _controle_do_corpo(
-            nomes, classe.body, f"classe {nome_da_classe}"
-        )
+        cadeia, recusa = _cadeia_da_classe(classe, arvore, nomes)
         if recusa:
             return f"{referencia}: {recusa}"
-        motivo = _motivo_da_marca(
-            nomes, classe.decorator_list, f"decorador da classe {nome_da_classe}"
-        ) or _motivo_da_marca(nomes, marcas_da_classe, f"pytestmark da classe {nome_da_classe}")
-        if motivo:
-            return f"{referencia}: {motivo}"
+        for membro in cadeia:
+            if any(
+                isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "__init__"
+                for n in membro.body
+            ):
+                return f"{referencia}: a classe {membro.name} define __init__ (não é coletada)"
+            marcas_da_classe, recusa = _marcas_do_corpo(nomes, membro.body, f"classe {membro.name}")
+            if recusa:
+                return f"{referencia}: {recusa}"
+            motivo = _motivo_da_marca(
+                nomes, membro.decorator_list, f"decorador da classe {membro.name}"
+            ) or _motivo_da_marca(nomes, marcas_da_classe, f"pytestmark da classe {membro.name}")
+            if motivo:
+                return f"{referencia}: {motivo}"
         corpo = classe.body
     funcao = _ultima_definicao(corpo, partes[-1])
     if funcao is None:

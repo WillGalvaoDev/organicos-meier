@@ -50,7 +50,9 @@ jobs:
       - name: mypy
         run: uv run mypy .
       - name: pytest
-        run: uv run pytest
+        run: uv run pytest --junitxml=relatorio-pytest.xml
+      - name: Conferir a matriz de rastreabilidade pela execução (E16-07)
+        run: uv run python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml
 
   imagem:
     runs-on: ubuntu-latest

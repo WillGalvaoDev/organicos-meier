@@ -4,8 +4,10 @@ Os casos negativos montam matrizes e arquivos de teste de exemplo aqui mesmo e o
 de conferência, que lê as árvores de sintaxe dos arquivos de `tests/` sem importar nem rodar nada.
 """
 
+import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -357,52 +359,480 @@ def test_formas_residuais_recusadas(tmp_path: Path) -> None:  # A-21
         assert motivo in problemas[0], (nome, problemas)
 
 
-@pytest.mark.parametrize(
-    ("fonte", "funcao"),
-    [
-        (
-            "import pytest\n"
-            '@pytest.mark.skipif(False, False, reason="x")\n'
-            "def test_exemplo(): ...\n",
-            "test_exemplo",
-        ),
-        (
-            "class TestValida:\n    __test__ = True\n    def test_exemplo(self): ...\n",
-            "TestValida::test_exemplo",
-        ),
-        (
-            "import pytest\n"
-            "class TestValida:\n"
-            "    pytestmark = [pytest.mark.django_db]\n"
-            "    def test_exemplo(self): ...\n",
-            "TestValida::test_exemplo",
-        ),
-        (
-            "import pytest\npytestmark: list = [pytest.mark.tecnico]\ndef test_exemplo(): ...\n",
-            "test_exemplo",
-        ),
-    ],
-)
+FONTES_A22 = [
+    (
+        'import pytest\n@pytest.mark.skipif(False, False, reason="x")\ndef test_exemplo(): ...\n',
+        "test_exemplo",
+    ),
+    (
+        "class TestValida:\n    __test__ = True\n    def test_exemplo(self): ...\n",
+        "TestValida::test_exemplo",
+    ),
+    (
+        "import pytest\n"
+        "class TestValida:\n"
+        "    pytestmark = [pytest.mark.django_db]\n"
+        "    def test_exemplo(self): ...\n",
+        "TestValida::test_exemplo",
+    ),
+    (
+        "import pytest\npytestmark: list = [pytest.mark.tecnico]\ndef test_exemplo(): ...\n",
+        "test_exemplo",
+    ),
+]
+
+
+@pytest.mark.parametrize(("fonte", "funcao"), FONTES_A22)
 def test_formas_residuais_aceitas(tmp_path: Path, fonte: str, funcao: str) -> None:  # A-22
     ref = _arquivo(tmp_path, "test_valido.py", fonte)
     assert _problemas_de(tmp_path, ref + funcao) == []
 
 
-def test_o_pytest_confirma_que_as_fontes_recusadas_nao_rodam(tmp_path: Path) -> None:  # A-23
-    for nome, (fonte, _funcao, _motivo) in {**FONTES_DO_REVISOR, **FONTES_RECUSADAS}.items():
-        pasta = tmp_path / nome.replace(" ", "_")
+# --- segunda correção residual E16-R06: lista fechada, execução real e A-23 diferencial ----------
+
+APOIO = (
+    "from contextlib import contextmanager\n"
+    "import pytest\n"
+    'pytestmark = pytest.mark.skip(reason="do apoio")\n'
+    "class BaseImportada:\n"
+    '    pytestmark = pytest.mark.skip(reason="base importada")\n'
+    "class Meta(type):\n"
+    "    __test__ = False\n"
+    "@contextmanager\n"
+    "def contexto():\n"
+    '    yield [pytest.mark.skip(reason="com with")]\n'
+)
+PULADO, FALHA_ESPERADA, NAO_COLETADO, FALHOU = "pulado", "falha esperada", "não coletado", "falhou"
+EXECUCAO = {  # resultado esperado do pytest real -> (código de saída, contagem por resultado)
+    PULADO: (0, {"skipped": 1}),
+    FALHA_ESPERADA: (0, {"xfailed": 1}),
+    NAO_COLETADO: (5, {}),
+    FALHOU: (1, {"failed": 1}),
+}
+ESPERADO_DO_A20_E_A21 = {
+    "pytestmark da classe": PULADO,
+    "skipif com duas condições": PULADO,
+    "__test__ anotado": NAO_COLETADO,
+    "pytestmark anotado de classe com xfail": FALHA_ESPERADA,
+    "skipif sem condição": None,
+    "skipif com condition=True depois de False": None,
+    "__test__ com nome na classe": NAO_COLETADO,
+    "pytestmark com atribuição aumentada": PULADO,
+    "pytestmark.append": PULADO,
+    "pytestmark dentro de if": PULADO,
+}
+_C = "import pytest\n"
+_T = "def test_exemplo(): assert False\n"
+# nome -> (fonte, referência, trechos do motivo, resultado do pytest)
+FONTES_A29 = {
+    "append dentro de if": (
+        _C
+        + "pytestmark = []\n"
+        + "if True:\n"
+        + '    pytestmark.append(pytest.mark.skip(reason="pulado"))\n'
+        + _T,
+        "test_exemplo",
+        ["lido", "chamada de método", "dentro de if", "(linha 4)"],
+        PULADO,
+    ),
+    "__test__ encadeado": (
+        "__test__ = habilitado = False\n" + _T,
+        "test_exemplo",
+        ["__test__", "atribuição encadeada", "(linha 1)"],
+        NAO_COLETADO,
+    ),
+}
+# nome -> (fonte, referência, trechos do motivo, resultado do pytest, só recusa por precaução)
+FONTES_A30 = {
+    "leitura por alias": (
+        _C + "pytestmark = []\nx = pytestmark\nx.append(pytest.mark.skip)\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "lido"],
+        PULADO,
+        False,
+    ),
+    "definido duas vezes": (
+        _C + "pytestmark = []\npytestmark = [pytest.mark.skip]\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "mais de uma vez"],
+        PULADO,
+        False,
+    ),
+    "operador morsa": (
+        _C + "(pytestmark := [pytest.mark.skip])\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "operador :="],
+        PULADO,
+        False,
+    ),
+    "alvo de for": (
+        _C + "for pytestmark in [[pytest.mark.skip]]: pass\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "alvo de for"],
+        PULADO,
+        False,
+    ),
+    "alvo de with": (
+        "from apoio import contexto\nwith contexto() as pytestmark: pass\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "alvo de with"],
+        PULADO,
+        False,
+    ),
+    "del": (
+        _C + "pytestmark = []\ndel pytestmark\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "del"],
+        FALHOU,
+        True,
+    ),
+    "importado do apoio": (
+        "from apoio import pytestmark\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "importado"],
+        PULADO,
+        False,
+    ),
+    "import estrela": (
+        "from apoio import *\n" + _T,
+        "test_exemplo",
+        ["import *"],
+        PULADO,
+        False,
+    ),
+    "import como pytestmark": (
+        "import pytest as pytestmark\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "importado"],
+        None,
+        True,
+    ),
+    "globals().update": (
+        _C + "globals().update(pytestmark=[pytest.mark.skip])\n" + _T,
+        "test_exemplo",
+        ["pytestmark", "argumento nomeado"],
+        PULADO,
+        False,
+    ),
+    "vars()": (
+        'vars()["__test__"] = False\n' + _T,
+        "test_exemplo",
+        ["__test__", "texto literal"],
+        NAO_COLETADO,
+        False,
+    ),
+    "exec": (
+        _C + 'exec("pytestmark = [pytest.mark.skip]")\n' + _T,
+        "test_exemplo",
+        ["pytestmark", "texto literal"],
+        PULADO,
+        False,
+    ),
+    "__getattr__ do módulo": (
+        _C
+        + "def __getattr__(nome):\n"
+        + '    if nome == "pytestmark":\n'
+        + '        return [pytest.mark.skip(reason="getattr")]\n'
+        + "    raise AttributeError(nome)\n"
+        + _T,
+        "test_exemplo",
+        ["__getattr__"],
+        PULADO,
+        False,
+    ),
+    "append em função chamada": (
+        _C
+        + "pytestmark = []\n"
+        + "def _arma():\n"
+        + "    pytestmark.append(pytest.mark.skip)\n"
+        + "_arma()\n"
+        + _T,
+        "test_exemplo",
+        ["pytestmark", "lido"],
+        PULADO,
+        False,
+    ),
+    "__test__ dentro de try na classe": (
+        "class TestExemplo:\n"
+        "    try:\n"
+        "        __test__ = False\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["__test__", "dentro de try"],
+        NAO_COLETADO,
+        False,
+    ),
+}
+FONTES_A31 = {
+    "base com pytestmark skip": (
+        _C
+        + "class Base:\n"
+        + "    pytestmark = pytest.mark.skip\n"
+        + "class TestExemplo(Base):\n"
+        + "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["Base", "skip"],
+        PULADO,
+        False,
+    ),
+    "base com __test__ False": (
+        "class Base:\n"
+        "    __test__ = False\n"
+        "class TestExemplo(Base):\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["Base", "__test__"],
+        NAO_COLETADO,
+        False,
+    ),
+    "base importada": (
+        "from apoio import BaseImportada\n"
+        "class TestExemplo(BaseImportada):\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["BaseImportada", "base"],
+        PULADO,
+        False,
+    ),
+    "metaclasse": (
+        "from apoio import Meta\n"
+        "class TestExemplo(metaclass=Meta):\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["metaclass", "argumento nomeado"],
+        NAO_COLETADO,
+        False,
+    ),
+    "__getattr__ na classe": (
+        "class TestExemplo:\n"
+        "    def __getattr__(self, nome): raise AttributeError(nome)\n"
+        "    def test_exemplo(self): assert False\n",
+        "TestExemplo::test_exemplo",
+        ["__getattr__"],
+        FALHOU,
+        True,
+    ),
+}
+FONTES_A32 = {
+    "base com django_db": (
+        _C
+        + "class Base:\n"
+        + "    pytestmark = [pytest.mark.django_db]\n"
+        + "class TestExemplo(Base):\n"
+        + "    def test_exemplo(self): ...\n",
+        "TestExemplo::test_exemplo",
+    ),
+    "TestCase do django": (
+        "from django.test import TestCase\n"
+        "class TestExemplo(TestCase):\n"
+        "    def test_exemplo(self): ...\n",
+        "TestExemplo::test_exemplo",
+    ),
+    "unittest.TestCase": (
+        "import unittest\nclass TestExemplo(unittest.TestCase):\n    def test_exemplo(self): ...\n",
+        "TestExemplo::test_exemplo",
+    ),
+    "docstring que cita pytestmark": (
+        '"""Este módulo não define pytestmark nem __test__."""\n\ndef test_exemplo(): ...\n',
+        "test_exemplo",
+    ),
+    "comentário com __test__": (
+        "# __test__ = False não vale aqui\ndef test_exemplo(): ...\n",
+        "test_exemplo",
+    ),
+}
+
+
+def _recusa_de(tmp_path: Path, fonte: str, funcao: str) -> str:
+    ref = _arquivo(tmp_path, "test_exemplo.py", fonte)
+    problemas = _problemas_de(tmp_path, ref + funcao)
+    assert problemas, fonte
+    return problemas[0]
+
+
+def test_as_duas_fontes_da_revalidacao_de_9f4163b(tmp_path: Path) -> None:  # A-29
+    for nome, (fonte, funcao, trechos, _) in FONTES_A29.items():
+        mensagem = _recusa_de(tmp_path, fonte, funcao)
+        for trecho in trechos:
+            assert trecho in mensagem, (nome, trecho, mensagem)
+
+
+def test_a_lista_fechada_recusa_as_demais_ocorrencias(tmp_path: Path) -> None:  # A-30
+    for nome, (fonte, funcao, trechos, *_) in FONTES_A30.items():
+        mensagem = _recusa_de(tmp_path, fonte, funcao)
+        assert "linha" in mensagem, (nome, mensagem)
+        for trecho in trechos:
+            assert trecho in mensagem, (nome, trecho, mensagem)
+
+
+def test_a_heranca_e_recusada(tmp_path: Path) -> None:  # A-31
+    for nome, (fonte, funcao, trechos, *_) in FONTES_A31.items():
+        mensagem = _recusa_de(tmp_path, fonte, funcao)
+        for trecho in trechos:
+            assert trecho in mensagem, (nome, trecho, mensagem)
+
+
+def test_formas_da_lista_fechada_e_heranca_aceitas(tmp_path: Path) -> None:  # A-32
+    for nome, (fonte, funcao) in FONTES_A32.items():
+        ref = _arquivo(tmp_path, "test_valido.py", fonte)
+        assert _problemas_de(tmp_path, ref + funcao) == [], nome
+    for fonte_a22, funcao_a22 in FONTES_A22:
+        ref = _arquivo(tmp_path, "test_valido.py", fonte_a22)
+        assert _problemas_de(tmp_path, ref + funcao_a22) == []
+
+
+def _ambiente_isolado() -> dict[str, str]:
+    base = ("PATH", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE")
+    ambiente = {k: os.environ[k] for k in base if k in os.environ}
+    ambiente["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    return ambiente
+
+
+def _rodar_o_pytest_real(pasta: Path, fonte: str) -> tuple[int, dict[str, int], str]:
+    """Roda a fonte com o pytest real, isolado (regra 3-F); devolve código, contagens e saída."""
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (pasta / "apoio.py").write_text(APOIO, encoding="utf-8")
+    (pasta / "test_exemplo.py").write_text(fonte, encoding="utf-8")
+    relatorio = pasta / "relatorio.xml"
+    comando = [
+        sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+        "-c", str(pasta / "pytest.ini"), "--rootdir", str(pasta), "--junitxml", str(relatorio),
+    ]  # fmt: skip
+    resultado = subprocess.run(  # noqa: S603
+        comando, cwd=pasta, env=_ambiente_isolado(), capture_output=True, text=True, check=False
+    )
+    saida = resultado.stdout + resultado.stderr
+    contagens: dict[str, int] = {}
+    if relatorio.is_file():
+        for caso in ET.parse(relatorio).getroot().iter("testcase"):  # noqa: S314
+            pulo = caso.find("skipped")
+            if caso.find("error") is not None:
+                chave = "error"
+            elif caso.find("failure") is not None:
+                chave = "failed"
+            elif pulo is not None:
+                chave = "xfailed" if pulo.get("type") == "pytest.xfail" else "skipped"
+            else:
+                chave = "passed"
+            contagens[chave] = contagens.get(chave, 0) + 1
+    return resultado.returncode, contagens, saida
+
+
+def _corpus() -> list[tuple[str, str, str, str | None, bool]]:
+    """(nome, fonte, referência, resultado esperado do pytest, só precaução)."""
+    corpus: list[tuple[str, str, str, str | None, bool]] = []
+    for nome, (fonte, funcao, _) in {**FONTES_DO_REVISOR, **FONTES_RECUSADAS}.items():
+        corpus.append((nome, fonte, funcao, ESPERADO_DO_A20_E_A21[nome], False))
+    for nome, (fonte, funcao, _, resultado29) in FONTES_A29.items():
+        corpus.append((nome, fonte, funcao, resultado29, False))
+    for nome, (fonte, funcao, _, resultado, precaucao) in {**FONTES_A30, **FONTES_A31}.items():
+        corpus.append((nome, fonte, funcao, resultado, precaucao))
+    return corpus
+
+
+def test_o_pytest_real_confirma_cada_recusa_e_cada_aceitacao(tmp_path: Path) -> None:  # A-23
+    # o controle: as fontes aceitas do A-22 com `assert False` dão 1 failed (o ambiente executa)
+    for i, (fonte, _funcao) in enumerate(FONTES_A22):
+        corpo = fonte.replace("...", "assert False")
+        codigo, contagens, saida = _rodar_o_pytest_real(tmp_path / f"controle{i}", corpo)
+        assert (codigo, contagens) == EXECUCAO[FALHOU], (i, saida)
+    # o corpus: resultado declarado, código e contagem exatos, e a propriedade diferencial
+    for i, (nome, fonte, funcao, esperado, precaucao) in enumerate(_corpus()):
+        estatico = tmp_path / f"estatico{i}"
+        ref = _arquivo(estatico, "test_exemplo.py", fonte)
+        recusada = bool(_problemas_de(estatico, ref + funcao))
+        if esperado is None:  # não executável: o pytest dá erro de coleta; só a recusa vale
+            assert recusada, nome
+            continue
+        codigo, contagens, saida = _rodar_o_pytest_real(tmp_path / f"real{i}", fonte)
+        assert (codigo, contagens) == EXECUCAO[esperado], (nome, codigo, contagens, saida)
+        rodou = contagens == {"failed": 1}
+        if precaucao:
+            assert recusada, nome
+        else:
+            assert recusada == (not rodou), (nome, recusada, contagens)
+
+
+def _relatorio(tmp_path: Path, *casos: str) -> Path:
+    arquivo = tmp_path / "relatorio-pytest.xml"
+    corpo = "".join(casos)
+    arquivo.write_text(
+        f"<?xml version='1.0'?><testsuites><testsuite>{corpo}</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    return arquivo
+
+
+def _caso(modulo: str, nome: str, filho: str = "") -> str:
+    return f'<testcase classname="{modulo}" name="{nome}" time="0.01">{filho}</testcase>'
+
+
+M = "tests.tecnicos.test_exemplo"
+R_FUNCAO = "tests/tecnicos/test_exemplo.py::test_a"
+R_METODO = "tests/tecnicos/test_exemplo.py::TestC::test_b"
+
+
+def _execucao(relatorio: Path, *referencias: str) -> list[str]:
+    from tests.rastreabilidade.conferir_execucao import conferir_execucao
+
+    cenarios = {1: {"afirmação": {r: "x" for r in referencias}}}
+    return conferir_execucao(relatorio, cenarios, {})
+
+
+def test_a_execucao_acusa_o_que_nao_passou(tmp_path: Path) -> None:  # A-33
+    pulo = '<skipped type="pytest.skip" message="x">pulado</skipped>'
+    xfail = '<skipped type="pytest.xfail" message="x">falha esperada</skipped>'
+    casos = {
+        "ausente": ([_caso(M, "test_outro")], "sem testcase"),
+        "skipped": ([_caso(M, "test_a", pulo)], "skipped"),
+        "xfail": ([_caso(M, "test_a", xfail)], "xfail"),
+        "failure": ([_caso(M, "test_a", '<failure message="x">x</failure>')], "failure"),
+        "error": ([_caso(M, "test_a", '<error message="x">x</error>')], "error"),
+        "parametrizada": ([_caso(M, "test_a[a]"), _caso(M, "test_a[b]", pulo)], "skipped"),
+    }
+    for nome, (xml, resultado) in casos.items():
+        pasta = tmp_path / nome
         pasta.mkdir()
-        (pasta / "test_exemplo.py").write_text(fonte, encoding="utf-8")
-        resultado = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", "/dev/null"],
-            cwd=pasta,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        saida = resultado.stdout + resultado.stderr
-        assert "failed" not in saida, (nome, saida)
-        assert "passed" not in saida, (nome, saida)
+        problemas = _execucao(_relatorio(pasta, *xml), R_FUNCAO)
+        assert len(problemas) == 1, (nome, problemas)
+        assert R_FUNCAO in problemas[0], (nome, problemas)
+        assert resultado in problemas[0], (nome, problemas)
+
+
+def test_a_execucao_aceita_o_que_passou(tmp_path: Path) -> None:  # A-34
+    relatorio = _relatorio(
+        tmp_path,
+        _caso(M, "test_a"),
+        _caso(M + ".TestC", "test_b"),
+        _caso(M, "test_p[1]"),
+        _caso(M, "test_p[2]"),
+    )
+    referencias = (R_FUNCAO, R_METODO, "tests/tecnicos/test_exemplo.py::test_p")
+    assert _execucao(relatorio, *referencias) == []
+
+
+def test_o_ci_grava_e_confere_o_relatorio_da_execucao() -> None:  # A-35
+    import yaml
+
+    fluxo = yaml.safe_load((RAIZ / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    comandos = [
+        str(passo.get("run", ""))
+        for trabalho in fluxo["jobs"].values()
+        for passo in trabalho["steps"]
+        if "pytest" in str(passo.get("run", ""))
+    ]
+    gravacao = [n for n, c in enumerate(comandos) if "--junitxml=relatorio-pytest.xml" in c]
+    conferencia = [
+        n
+        for n, c in enumerate(comandos)
+        if "python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml" in c
+    ]
+    assert gravacao
+    assert conferencia
+    assert conferencia[0] == gravacao[0] + 1
 
 
 # --- correção residual E16-R05: a prova escrita por referência (A-24 a A-26) ----------------------
