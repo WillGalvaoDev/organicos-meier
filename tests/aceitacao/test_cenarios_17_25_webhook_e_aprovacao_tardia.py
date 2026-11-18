@@ -7,24 +7,38 @@ existem; estes testes os caracterizam, e por isso passam na primeira execução.
 
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
+from django.core import mail
 
 from apps.financeiro.devolucoes import autorizar_devolucao
 from apps.financeiro.models import ObrigacaoComComprador, ParcelaDeDevolucao
+from apps.fornecedores.models import Fornecedor
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pagamentos.models import AvisoRecebido, PagamentoNoProvedor
-from apps.pedidos.models import DestinoDoPagamento, Pedido, SituacaoDoPedido
+from apps.pedidos.apuracao import aprovar_resultado, iniciar_apuracao
+from apps.pedidos.models import (
+    DestinoDoPagamento,
+    LinhaDoPedidoFormal,
+    Pedido,
+    PedidoFormal,
+    SituacaoDoPedido,
+    TentativaDeEnvioDoPedidoFormal,
+)
 from apps.simulador_pagamentos.models import EstornoSimulado
+from tests.apoio.apuracao import arranjo_ap, pagar
+from tests.apoio.pedido_formal import EMAIL_DO_PEDIDO, PRAZO, M, arranjo_af, processar
 from tests.apoio.pedidos import T0, Arranjo, pedido_aberto, tentativa_criada
 from tests.conftest import RelogioControlado
 
 pytestmark = pytest.mark.django_db
 
 H = timedelta(hours=1)
+D = Decimal
 REPETICOES = 5
 
 
@@ -93,3 +107,71 @@ def test_cenario_25_aprovado_em_30h_e_avisado_depois_de_48h_quita_o_pedido(
     assert (situacao.situacao, situacao.quitado_em) == ("pago", T0 + 30 * H)
     assert PagamentoNoProvedor.objects.get(id_externo=c.p).primeiro_aviso_em == T0 + 50 * H
     assert not ObrigacaoComComprador.objects.filter(pedido=c.x).exists()
+
+
+def test_cenario_17_webhook_repetido_nao_cria_outro_pedido_nem_muda_a_situacao(
+    cenario: Cenario, relogio: RelogioControlado
+) -> None:
+    c = cenario
+    relogio.congelar(T0 + 2 * H + timedelta(minutes=1))
+    c.sim.aprovar(c.p, em=T0 + 2 * H)
+    c.sim.entregar_avisos()
+    processar_chamadas()
+    pedidos = list(Pedido.objects.order_by("pk").values())
+    situacoes = list(SituacaoDoPedido.objects.order_by("pk").values())
+    c.sim.reemitir_aviso(c.p)
+    c.sim.entregar_avisos(vezes=REPETICOES)
+    processar_chamadas()
+    assert list(Pedido.objects.order_by("pk").values()) == pedidos
+    assert list(SituacaoDoPedido.objects.order_by("pk").values()) == situacoes
+
+
+def _emails_do_pedido() -> int:
+    return len([m for m in mail.outbox if m.to == [EMAIL_DO_PEDIDO]])
+
+
+def test_cenario_17_webhook_repetido_depois_do_envio_nao_duplica_o_pedido_formal(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:
+    a, x, _y, pedido = arranjo_af(relogio, simulador_pagamentos)
+    assert processar(relogio, PRAZO) == 1
+    linhas = list(LinhaDoPedidoFormal.objects.filter(pedido_formal=pedido).order_by("pk").values())
+    tentativas = TentativaDeEnvioDoPedidoFormal.objects.count()
+    enviados = _emails_do_pedido()
+    quitado_por = SituacaoDoPedido.objects.get(pedido=x).quitado_por
+    assert quitado_por is not None
+    simulador_pagamentos.reemitir_aviso(quitado_por.id_externo)
+    simulador_pagamentos.entregar_avisos(vezes=REPETICOES)
+    processar_chamadas()
+    processar(relogio, PRAZO + 10 * M)
+    assert PedidoFormal.objects.filter(rodada=a.rodada).count() == 1
+    assert (
+        list(LinhaDoPedidoFormal.objects.filter(pedido_formal=pedido).order_by("pk").values())
+        == linhas
+    )
+    assert TentativaDeEnvioDoPedidoFormal.objects.count() == tentativas == 1
+    assert _emails_do_pedido() == enviados == 1
+
+
+def test_cenario_17_webhook_repetido_antes_da_aprovacao_gera_um_so_pedido_formal(
+    relogio: RelogioControlado, simulador_pagamentos: Any
+) -> None:
+    a, x, y = arranjo_ap(relogio)
+    Fornecedor.objects.filter(pk=a.fornecedor.pk).update(email_pedido=EMAIL_DO_PEDIDO)
+    for pedido in (x, y):
+        id_externo = pagar(relogio, simulador_pagamentos, pedido)
+        simulador_pagamentos.reemitir_aviso(id_externo)
+        simulador_pagamentos.entregar_avisos(vezes=2)
+        processar_chamadas()
+    relogio.congelar(PRAZO)
+    iniciar_apuracao(a.admin, a.rodada)
+    aprovar_resultado(a.admin, a.rodada)
+    pedido_formal = PedidoFormal.objects.get(rodada=a.rodada)
+    quantidades = {
+        linha.nome: linha.quantidade
+        for linha in LinhaDoPedidoFormal.objects.filter(pedido_formal=pedido_formal)
+    }
+    assert quantidades == {"P1": D("11.000"), "P2": D("12.000")}
+    assert processar(relogio, PRAZO) == 1
+    assert TentativaDeEnvioDoPedidoFormal.objects.count() == 1
+    assert _emails_do_pedido() == 1

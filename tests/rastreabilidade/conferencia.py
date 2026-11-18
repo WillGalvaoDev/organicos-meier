@@ -1,10 +1,10 @@
 """A conferência da matriz de rastreabilidade (E16-07, regras 2-A, 3 e 3-A a 3-D).
 
 Lê a árvore de sintaxe dos arquivos de `tests/`: não importa nem roda nenhum teste. A referência só
-vale se o pytest a coletaria com a configuração do projeto e se ela não pula nem tem falha esperada.
-`pytestmark` e `__test__` só valem nas formas aceitas (regra 3-D); qualquer outra ocorrência recusa a
-referência. O pulo feito em tempo de execução (fixture, `conftest.py`) é conferido pela execução real
-em `conferir_execucao.py` (regra 3-E).
+vale se o pytest a coletaria com a configuração do projeto e se ela não pula nem tem falha
+esperada. `pytestmark` e `__test__` só valem nas formas aceitas (regra 3-D); qualquer outra
+ocorrência recusa a referência. O pulo feito em tempo de execução (fixture, `conftest.py`) é
+conferido pela execução real em `conferir_execucao.py` (regra 3-E).
 """
 
 import ast
