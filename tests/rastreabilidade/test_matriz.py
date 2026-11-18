@@ -16,13 +16,14 @@ from tests.rastreabilidade.gerar import gerar_documento
 
 REAL = "tests/tecnicos/test_nucleo_tempo.py::test_fronteira_prazo_encerrado_exclusivo"
 DOCUMENTO = RAIZ / "docs" / "rastreabilidade-fase1.md"
-Afirmacoes = dict[str, list[str]]
+Afirmacoes = dict[str, dict[str, str]]
+PROVA = "A fronteira de 24 h: `assert prazo_encerrado(limite, limite) is True`."
 
 
 def _completa() -> tuple[dict[int, Afirmacoes], dict[str, Afirmacoes]]:
     """Uma matriz válida: todas as entradas com uma afirmação que aponta para um teste real."""
-    cenarios = {n: {f"afirmação do cenário {n}": [REAL]} for n in range(1, 120)}
-    tecnicos = {f"T-{n}": {f"afirmação de T-{n}": [REAL]} for n in range(1, 56)}
+    cenarios = {n: {f"afirmação do cenário {n}": {REAL: PROVA}} for n in range(1, 120)}
+    tecnicos = {f"T-{n}": {f"afirmação de T-{n}": {REAL: PROVA}} for n in range(1, 56)}
     return cenarios, tecnicos
 
 
@@ -36,8 +37,12 @@ def _arquivo(raiz: Path, nome: str, conteudo: str) -> str:
 
 def _problemas_de(raiz: Path, referencia: str) -> list[str]:
     cenarios, tecnicos = _completa()
-    cenarios[1] = {"afirmação": [referencia]}
-    return [p for p in conferir(cenarios, tecnicos, raiz=raiz) if p.startswith("cenário 1:")]
+    cenarios[1] = {"afirmação": {referencia: "x"}}
+    return [
+        p
+        for p in conferir(cenarios, tecnicos, raiz=raiz)
+        if p.startswith("cenário 1:") and "prova inválida" not in p
+    ]
 
 
 def test_a_matriz_entregue_e_valida() -> None:  # A-1
@@ -45,17 +50,17 @@ def test_a_matriz_entregue_e_valida() -> None:  # A-1
     assert sorted(matriz.TECNICOS, key=lambda k: int(k[2:])) == [f"T-{n}" for n in range(1, 56)]
     for entrada in (*matriz.CENARIOS.values(), *matriz.TECNICOS.values()):
         assert entrada
-        for texto, testes in entrada.items():
+        for texto, provas in entrada.items():
             assert texto.strip()
-            assert testes
+            assert provas
     assert conferir(matriz.CENARIOS, matriz.TECNICOS) == []
 
 
 def test_chaves_faltando_ou_sobrando() -> None:  # A-2
     cenarios, tecnicos = _completa()
     del cenarios[42]
-    cenarios[120] = {"x": [REAL]}
-    tecnicos["T-56"] = {"x": [REAL]}
+    cenarios[120] = {"x": {REAL: PROVA}}
+    tecnicos["T-56"] = {"x": {REAL: PROVA}}
     problemas = " | ".join(conferir(cenarios, tecnicos))
     assert "42" in problemas
     assert "faltando" in problemas
@@ -66,9 +71,9 @@ def test_chaves_faltando_ou_sobrando() -> None:  # A-2
 
 def test_referencias_invalidas() -> None:  # A-3
     cenarios, tecnicos = _completa()
-    cenarios[1] = {"a": ["tests/tecnicos/nao_existe.py::test_x"]}
-    cenarios[2] = {"a": ["tests/tecnicos/test_nucleo_tempo.py::test_que_nao_existe"]}
-    cenarios[3] = {"a": ["tests/tecnicos/test_nucleo_tempo.py::_auxiliar_sem_prefixo_test"]}
+    cenarios[1] = {"a": {"tests/tecnicos/nao_existe.py::test_x": "x"}}
+    cenarios[2] = {"a": {"tests/tecnicos/test_nucleo_tempo.py::test_que_nao_existe": "x"}}
+    cenarios[3] = {"a": {"tests/tecnicos/test_nucleo_tempo.py::_auxiliar_sem_prefixo_test": "x"}}
     problemas = conferir(cenarios, tecnicos)
     texto = " | ".join(problemas)
     assert "nao_existe.py" in texto
@@ -89,12 +94,6 @@ def test_teste_pulado_simples_e_recusado(tmp_path: Path) -> None:  # A-4
     )
     assert any("skip" in p for p in _problemas_de(tmp_path, ref + "test_pulado"))
     assert any("skipif" in p for p in _problemas_de(tmp_path, ref + "test_pulado_sempre"))
-
-
-def test_referencia_repetida_na_mesma_afirmacao() -> None:  # A-5
-    cenarios, tecnicos = _completa()
-    cenarios[7] = {"a": [REAL, REAL]}
-    assert any("repetida" in p and REAL in p for p in conferir(cenarios, tecnicos))
 
 
 def test_metodo_de_classe_de_teste_e_aceito(tmp_path: Path) -> None:  # A-6
@@ -133,7 +132,7 @@ def test_o_documento_versionado_esta_em_dia(tmp_path: Path) -> None:  # A-8
 
 def test_cenario_sem_texto_nos_documentos_base_falha_a_geracao() -> None:  # A-9
     cenarios, tecnicos = _completa()
-    cenarios[999] = {"x": [REAL]}
+    cenarios[999] = {"x": {REAL: PROVA}}
     with pytest.raises(ValueError, match="999"):
         gerar_documento(cenarios, tecnicos)
 
@@ -241,12 +240,11 @@ def test_a_ultima_definicao_pulada_e_recusada(tmp_path: Path) -> None:  # A-14 (
 def test_afirmacoes_mal_formadas() -> None:  # A-15
     cenarios, tecnicos = _completa()
     cenarios[1] = {}
-    cenarios[2] = {"": [REAL]}
-    cenarios[3] = {"afirmação": []}
-    cenarios[4] = {"afirmação": [REAL, REAL]}
-    cenarios[5] = {"a": [REAL], "b": [REAL]}  # o mesmo teste em afirmações diferentes: aceito
+    cenarios[2] = {"": {REAL: PROVA}}
+    cenarios[3] = {"afirmação": {}}
+    cenarios[5] = {"a": {REAL: PROVA}, "b": {REAL: PROVA}}  # o mesmo teste em duas afirmações
     problemas = conferir(cenarios, tecnicos)
-    for numero in (1, 2, 3, 4):
+    for numero in (1, 2, 3):
         assert any(p.startswith(f"cenário {numero}:") for p in problemas), numero
     assert not any(p.startswith("cenário 5:") for p in problemas)
 
@@ -405,3 +403,67 @@ def test_o_pytest_confirma_que_as_fontes_recusadas_nao_rodam(tmp_path: Path) -> 
         saida = resultado.stdout + resultado.stderr
         assert "failed" not in saida, (nome, saida)
         assert "passed" not in saida, (nome, saida)
+
+
+# --- correção residual E16-R05: a prova escrita por referência (A-24 a A-26) ----------------------
+
+TESTE_DE_PROVA = (
+    "import pytest\n\n"
+    "def _confere(valor):\n"
+    "    assert valor == 42\n\n"
+    "def _nao_chamada(valor):\n"
+    "    assert valor == 77\n\n"
+    "def test_exemplo():\n"
+    "    resultado = calcular(2)\n"
+    "    assert resultado == 5\n"
+    "    with pytest.raises(ValueError):\n"
+    "        calcular(-1)\n"
+    "    _confere(resultado)\n"
+)
+
+
+def _problemas_de_prova(raiz: Path, prova: str) -> list[str]:
+    ref = _arquivo(raiz, "test_prova.py", TESTE_DE_PROVA)
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {"afirmação": {ref + "test_exemplo": prova}}
+    return [p for p in conferir(cenarios, tecnicos, raiz=raiz) if p.startswith("cenário 1:")]
+
+
+@pytest.mark.parametrize(
+    ("prova", "motivo"),
+    [
+        ("", "texto"),
+        ("O teste confere o resultado.", "crases"),
+        ("O teste confere `resultado == 99`.", "não aparece"),
+        ("O teste chama `calcular(2)`.", "assert"),
+        ("O teste confere `valor == 77`.", "assert"),
+    ],
+)
+def test_provas_invalidas(tmp_path: Path, prova: str, motivo: str) -> None:  # A-24
+    problemas = _problemas_de_prova(tmp_path, prova)
+    assert problemas, prova
+    assert "prova inválida" in problemas[0]
+    assert motivo in problemas[0], problemas
+
+
+@pytest.mark.parametrize(
+    "prova",
+    [
+        "O teste confere `resultado == 5`.",
+        "O teste exige `pytest.raises(ValueError)` para entrada inválida.",
+        "O auxiliar chamado confere `valor == 42`.",
+    ],
+)
+def test_provas_validas(tmp_path: Path, prova: str) -> None:  # A-25
+    assert _problemas_de_prova(tmp_path, prova) == []
+
+
+def test_a_prova_passa_de_200_caracteres(tmp_path: Path) -> None:
+    problemas = _problemas_de_prova(tmp_path, "`resultado == 5` " + "x" * 200)
+    assert problemas
+    assert "200" in problemas[0]
+
+
+def test_todas_as_ligacoes_tem_prova_valida() -> None:  # A-26
+    assert conferir(matriz.CENARIOS, matriz.TECNICOS) == []
+    assert conferir_documento(DOCUMENTO, matriz.CENARIOS, matriz.TECNICOS) is None

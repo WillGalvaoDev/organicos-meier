@@ -7,7 +7,7 @@ correspondente faz a geração falhar.
 
 import argparse
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
 from tests.rastreabilidade.conferencia import RAIZ
@@ -48,18 +48,19 @@ def _resumo(texto: str) -> str:
     return texto[: MAXIMO_DO_RESUMO - 3].rstrip() + "..."
 
 
-def _afirmacoes(afirmacoes: Mapping[str, Sequence[str]]) -> str:
-    """Cada afirmação seguida dos testes que a provam."""
+def _afirmacoes(afirmacoes: Mapping[str, Mapping[str, str]]) -> str:
+    """Cada afirmação seguida dos testes que a provam e da prova de cada um."""
     blocos = []
-    for texto, referencias in afirmacoes.items():
-        testes = "<br>".join(f"`{r}`" for r in referencias)
-        blocos.append(f"**{texto.replace('|', '/')}**<br>{testes}")
+    for texto, provas in afirmacoes.items():
+        linhas = [f"**{texto.replace('|', '/')}**"]
+        linhas += [f"`{ref}` — {prova.replace('|', '/')}" for ref, prova in provas.items()]
+        blocos.append("<br>".join(linhas))
     return "<br><br>".join(blocos)
 
 
 def gerar_documento(
-    cenarios: Mapping[int, Mapping[str, Sequence[str]]],
-    tecnicos: Mapping[str, Mapping[str, Sequence[str]]],
+    cenarios: Mapping[int, Mapping[str, Mapping[str, str]]],
+    tecnicos: Mapping[str, Mapping[str, Mapping[str, str]]],
 ) -> str:
     textos = _cenarios_do_documento()
     regras = _tecnicos_do_documento()

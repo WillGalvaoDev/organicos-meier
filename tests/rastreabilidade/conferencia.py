@@ -8,6 +8,7 @@ de pulados e de falhas esperadas da execução completa do CI e confirma que nen
 
 import ast
 import fnmatch
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -16,7 +17,9 @@ CENARIOS_ESPERADOS = tuple(range(1, 120))
 TECNICOS_ESPERADOS = tuple(f"T-{n}" for n in range(1, 56))
 MARCAS_RECUSADAS = ("skip", "skipif", "xfail")
 CHAMADAS_RECUSADAS = ("skip", "xfail", "importorskip")
-Afirmacoes = Mapping[str, Sequence[str]]
+Afirmacoes = Mapping[str, Mapping[str, str]]
+MAXIMO_DA_PROVA = 200
+PROFUNDIDADE_DOS_AUXILIARES = 2
 
 
 class _Nomes:
@@ -287,6 +290,91 @@ def _conferir_referencia(raiz: Path, referencia: str) -> str | None:
     return None
 
 
+def _normalizar(texto: str) -> str:
+    return " ".join(texto.split())
+
+
+def _trechos_de_prova(funcao: ast.AST, auxiliares: dict[str, ast.AST], fonte: str) -> list[str]:
+    """O texto (com espaços normalizados) de cada `assert` e de cada `pytest.raises(...)` da
+    função e das funções do mesmo módulo que ela chama pelo nome (até `PROFUNDIDADE...`)."""
+    trechos: list[str] = []
+    vistas: set[int] = set()
+
+    def visita(no: ast.AST, nivel: int) -> None:
+        if id(no) in vistas:
+            return
+        vistas.add(id(no))
+        for filho in ast.walk(no):
+            if isinstance(filho, ast.Assert):
+                trechos.append(_normalizar(ast.get_source_segment(fonte, filho) or ""))
+            elif isinstance(filho, (ast.With, ast.AsyncWith)):
+                for item in filho.items:
+                    expressao = item.context_expr
+                    funcao_chamada = expressao.func if isinstance(expressao, ast.Call) else None
+                    nome = getattr(funcao_chamada, "attr", getattr(funcao_chamada, "id", ""))
+                    if nome == "raises":
+                        trechos.append(_normalizar(ast.get_source_segment(fonte, expressao) or ""))
+            elif (
+                isinstance(filho, ast.Call)
+                and isinstance(filho.func, ast.Name)
+                and filho.func.id in auxiliares
+                and nivel < PROFUNDIDADE_DOS_AUXILIARES
+            ):
+                visita(auxiliares[filho.func.id], nivel + 1)
+
+    visita(funcao, 0)
+    return trechos
+
+
+def _localizar_funcao(
+    raiz: Path, referencia: str
+) -> tuple[ast.AST, dict[str, ast.AST], str] | None:
+    """A função de teste, as funções do módulo (por nome) e o texto do arquivo."""
+    caminho, _, resto = referencia.partition("::")
+    partes = [p for p in resto.split("::") if p]
+    fonte = (raiz / caminho).read_text(encoding="utf-8")
+    arvore = ast.parse(fonte)
+    corpo = arvore.body
+    for nome_da_classe in partes[:-1]:
+        classes = [n for n in corpo if isinstance(n, ast.ClassDef) and n.name == nome_da_classe]
+        if not classes:
+            return None
+        corpo = classes[-1].body
+    funcao = _ultima_definicao(corpo, partes[-1])
+    if funcao is None:
+        return None
+    auxiliares: dict[str, ast.AST] = {}
+    for no in arvore.body:
+        if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            auxiliares[no.name] = no  # a última definição vale
+    return funcao, auxiliares, fonte
+
+
+def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
+    """O motivo de a prova ser inválida, ou `None` (regra 2-D): texto, até 200 caracteres, com
+    trecho entre crases copiado de um `assert` ou `pytest.raises(...)` da função ou de uma função
+    do módulo que ela chama pelo nome."""
+    if not prova.strip():
+        return "prova sem texto"
+    if len(prova) > MAXIMO_DA_PROVA:
+        return f"prova com mais de {MAXIMO_DA_PROVA} caracteres"
+    trechos = re.findall(r"`([^`]+)`", prova)
+    if not trechos:
+        return "prova sem trecho do código entre crases"
+    localizada = _localizar_funcao(raiz, referencia)
+    if localizada is None:
+        return "função não localizada"
+    funcao, auxiliares, fonte = localizada
+    asserts = _trechos_de_prova(funcao, auxiliares, fonte)
+    for trecho in trechos:
+        procurado = _normalizar(trecho)
+        if procurado in _normalizar(fonte):
+            if any(procurado in texto for texto in asserts):
+                return None
+            return f"o trecho `{trecho}` aparece no arquivo, mas não num assert nem num raises"
+    return f"o trecho `{trecho}` não aparece no arquivo"
+
+
 def _conferir_chaves(achadas: set[object], esperadas: Sequence[object], rotulo: str) -> list[str]:
     problemas = []
     faltando = [c for c in esperadas if c not in achadas]
@@ -310,19 +398,21 @@ def conferir(
         for chave, afirmacoes in mapa.items():
             if not afirmacoes:
                 problemas.append(f"{rotulo} {chave}: nenhuma afirmação")
-            for afirmacao, referencias in afirmacoes.items():
+            for afirmacao, provas in afirmacoes.items():
                 if not afirmacao.strip():
                     problemas.append(f"{rotulo} {chave}: afirmação com texto vazio")
-                if not referencias:
+                if not provas:
                     problemas.append(f"{rotulo} {chave}: afirmação sem testes: {afirmacao[:40]}")
-                vistas: set[str] = set()
-                for referencia in referencias:
-                    if referencia in vistas:
-                        problemas.append(f"{rotulo} {chave}: referência repetida: {referencia}")
-                    vistas.add(referencia)
+                for referencia, prova in provas.items():
                     problema = _conferir_referencia(raiz, referencia)
                     if problema is not None:
                         problemas.append(f"{rotulo} {chave}: {problema}")
+                        continue
+                    motivo = _conferir_prova(raiz, referencia, prova)
+                    if motivo is not None:
+                        problemas.append(
+                            f"{rotulo} {chave}: prova inválida em {referencia}: {motivo}"
+                        )
     return problemas
 
 

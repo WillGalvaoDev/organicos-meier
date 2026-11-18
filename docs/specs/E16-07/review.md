@@ -360,3 +360,21 @@ def test_exemplo(): assert False
 ```
 
 Referências: `conferencia.py:77` avalia apenas a primeira condição posicional; `:157` em diante confere decoradores de classe, mas não seu pytestmark; `_define` só trata Assign. A limitação aprovada para fixtures/conftest não abrange estas formas explícitas. Retorno: negar essas referências, com testes Red/Green, preservando os casos válidos. Isso é falha da guarda; não afirma que a matriz atual já contenha esses três casos. A suíte local só pulou ferramentas reais (reexecutadas no contêiner) e apresentou os dois xfails operacionais; nenhum dos três está mapeado. CI remoto não foi executado pelo revisor.
+
+
+## Correções residuais R05 e R06 — implementador (2026-11-18)
+
+### R06 (regra 3-C)
+- **Red:** A-20 e A-21 falharam (2 failed, 34 passed): o validador aceitava as três fontes do revisor e as formas residuais. A-22 (formas válidas preservadas) e A-23 (pytest real em subprocesso confirma que as fontes recusadas não rodam nada) passaram na 1ª execução: são guardas, não Red.
+- **Green:** `skipif` exige todas as condições `False` (e recusa sem condição); `pytestmark` e `__test__` de módulo e de classe são lidos com `Assign`/`AnnAssign`; atribuição aumentada, `append`, desempacotamento, `setattr`, `globals()[...]`, definição dentro de `if/try/with/for/while` e valores não analisáveis falham fechado. 36 passed. Commit `a832f9c`.
+
+### R05 (regra 2-D)
+- **Red:** A-24 (5 casos) e o limite de 200 caracteres falharam (6 failed); depois do validador, A-26 falhou (`'list' object has no attribute 'items'`) até a matriz migrar.
+- **Green:** `afirmação → {referência → prova}`; a conferência exige texto, ≤ 200 caracteres, trecho entre crases presente em `assert`/`pytest.raises` do teste ou de função do módulo que ele chama (profundidade 2). `gerar.py` e `docs/rastreabilidade-fase1.md` regerados.
+- **Números:** pares antes **679**; ligações retiradas **141**; acrescentadas **25** (22 a testes existentes, 3 a testes novos); pares depois **563**; 301 afirmações, nenhuma vazia.
+- **Caracterizações novas (3), `tests/aceitacao/test_cenarios_17_25_webhook_e_aprovacao_tardia.py`:** webhook repetido 5× não duplica pagamento/pedido/notificação; webhook repetido não duplica estorno; aprovado em T0+30h e avisado em T0+50h quita. **Passaram na 1ª execução** (comportamento já existia): exceção técnica justificada (regra 5), sem Red.
+- **Itens apontados:** C17 agora tem 3 ligações que enviam o webhook repetido; C25 tem a caracterização (o teste de T0+2h foi retirado); T-11 a0 passou a usar `test_cenario_32...nao_cobre_despesa...` e `...repasse_de_a_nao_usa_o_dinheiro_liberado_de_b` (o de dois repasses de A saiu dessa afirmação). C27 a1, T-4 a1 e C41 a1 receberam testes de autorização/recusa já existentes.
+- **Método (declaração):** todas as provas foram escritas pela leitura do corpo de cada teste: listei os `assert` de cada um, escolhi à mão os índices e redigi a descrição. Uma tentativa inicial de pontuar por termos foi descartada e não alimenta a matriz. O trecho entre crases é copiado do código pelo montador; a conferência automática só prova que o assert existe, não que ele basta (limite da regra 2-D).
+- **Limitações/dúvidas para o revisor:** (1) cenário 17, "mensagem formal": o webhook não aciona o pedido formal; provei a notificação ao comprador (`pagamento_confirmado`). Se a spec quer o e-mail ao fornecedor, é lacuna de especificação. (2) Algumas afirmações compostas são provadas só em parte (ex.: C20 bloqueio de novo cadastro com o e-mail; C59 variação de maiúsculas; T-38 "mais de 3 casas"); não criei testes além dos exigidos.
+- Verificações: suíte completa **3626 passed, 1 skipped, 2 xfailed** (674 s) antes do último ajuste da matriz (cenário 71); depois, `tests/rastreabilidade` 45 passed; `ruff check --no-cache` e `mypy` limpos; `makemigrations --check` sem mudanças.
+- R07 segue bloqueada (contas da fase 0, decisões do responsável). Sem push, PR nem merge.

@@ -151,3 +151,13 @@ def test_perda_da_sessao_nao_substitui_backup_confirmado(ab, monkeypatch):
     objeto = ab.get_object(Bucket=BUCKET, Key=CHAVE_DO_OBJETO)['Body'].read()
     assert hashlib.sha256(objeto).hexdigest() == resultados['B'].sha256, (resultados, objeto)
 ```
+
+
+## Correção residual R03 — implementador (2026-11-18)
+
+Regra 1-B: a chave do objeto passou a levar um identificador de execução de 128 bits (`secrets.token_hex(16)`), `...Z-<EXECUCAO>.dump.age`. A invariante não depende mais da trava nem do `head_object`; os dois ficam como defesa.
+
+- **Red:** testes A-1 (regex), A-18, A-26 (reprodução do revisor, sem forçar o identificador), A-27 e A-28 escritos primeiro. 1ª execução: `ImportError` (função inexistente). Para observar falha de comportamento, acrescentei só a função `identificador_da_execucao()` sem usá-la na chave: **11 failed, 29 passed** (inclui A-26 e A-28). O passo intermediário (função sem uso) é declarado.
+- **Green:** chave com identificador gerado antes da reserva; `docs/operacao/restauracao.md` atualizado (formato e ordenação). `tests/tecnicos/test_backup_externo.py` + `tests/ambiente`: **66 passed, 2 xfailed** (os dois xfail são da E16-08, bloqueados por contas da fase 0).
+- Arranjo dos testes antigos: a fixture `ab` força o identificador para as chaves ficarem previsíveis; A-1, A-18, A-26 e A-27 o soltam. Nenhuma asserção foi removida ou afrouxada; o A-18 antigo (mesma chave recusada) virou "mesmo instante gera outra chave" + identificador repetido recusado, conforme a spec.
+- Commit: `9da84a7`. Suíte completa: ver E16-07/review.md.
