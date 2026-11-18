@@ -897,3 +897,17 @@ def test_a_prova_passa_de_200_caracteres(tmp_path: Path) -> None:
 def test_todas_as_ligacoes_tem_prova_valida() -> None:  # A-26
     assert conferir(matriz.CENARIOS, matriz.TECNICOS) == []
     assert conferir_documento(DOCUMENTO, matriz.CENARIOS, matriz.TECNICOS) is None
+
+
+# --- segunda correção residual E16-R05: afirmações atômicas (A-36, estrutura) ---------------------
+
+
+def test_as_entradas_apontadas_tem_as_afirmacoes_atomicas() -> None:  # A-36
+    assert len(matriz.CENARIOS[17]) == 4
+    assert len(matriz.CENARIOS[20]) == 4
+    assert len(matriz.CENARIOS[34]) == 4
+    assert len(matriz.CENARIOS[59]) == 6
+    assert len(matriz.TECNICOS["T-38"]) == 8
+    formal = [a for a in matriz.CENARIOS[17] if "mensagem formal" in a]
+    assert len(formal) == 1
+    assert len(matriz.CENARIOS[17][formal[0]]) == 2  # depois do envio e antes da aprovação
