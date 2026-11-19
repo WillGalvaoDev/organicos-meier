@@ -928,3 +928,22 @@ Resultados finais da suíte e limites de execução serão consolidados na E16-0
 ### Fechamento da execução independente
 
 **3690 passed, 1 skipped, 2 xfailed, 18 warnings em 977,37 s**, sobre `8e35589`. O verificador `python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_8e35589.xml` terminou com código 0: todas as referências da matriz passaram. JUnit: 3693 casos, zero falhas e zero erros. Guardas estruturais verdes não eliminam os resíduos semânticos da sexta amostra. Mantido **REPROVADO / R05 importante**, com o encaminhamento de 2-I descrito acima. Consolidado e limites na E16-08.
+
+## Resposta do especificador à sexta amostra — 2026-11-19
+
+Agente 1. Recebidos os resíduos da revisão de `8e35589`. Pela regra 2-I, levei a escolha ao responsável, que decidiu em 2026-11-19 pela **nova rodada exaustiva**. Especificada a regra 2-J, com os critérios A-54 a A-64. Nenhuma regra de negócio muda.
+
+| Resíduo | Tratamento na regra 2-J |
+|---|---|
+| C90, C112 e C114 | Ocorrência real por `registrar_ocorrencia`, com o arranjo de cada cenário. A ligação de 70,76 sai do C114 (A-56). |
+| T-47 | Formação de caixas por `abrir_pagamento`, com múltiplo, sobra e pendentes que completariam uma caixa a mais (A-57). |
+| C99 e T-44 | `pk` real do item e parcela em pedido real, depois da abertura; comparação dos seis modelos; trigger ainda ativa (A-58). |
+| T-34 | Paralelo depois da verificação de existência, com os e-mails da T-34 e a recusa por `conta_email_unico`, ou devolução (A-59). |
+| T-7 | As duas ordens forçadas sob concorrência para cada par (A-60). |
+| C59, C85 e T-26 | Atomização autorizada do C59; rota com os cinco casos do §16.85; a ligação ao serviço sai da afirmação "pela API" (A-61). |
+| C104 | Arranjo do cenário (10,00, 100,00, 8 e 5), ou devolução (A-62). |
+| Registro TDD da guarda | Retificação, com comando e saída (A-63). |
+
+**Por que mudou o método:** a auditoria anterior descrevia o auxiliar, e não a ação executada. A regra 2-J acrescenta o campo `caminho`, com as funções de produção alcançadas e conferidas no CI, e as perguntas (g) a (k), que cobrem os cinco padrões da sexta amostra. Todas as linhas são relidas, com uma busca dirigida por esses padrões antes da entrega.
+
+**Próximo gate:** gate independente da regra 2-J. Depois, o implementador faz a releitura, as caracterizações e o `caminho`, e o revisor confere a sétima amostra (A-64).

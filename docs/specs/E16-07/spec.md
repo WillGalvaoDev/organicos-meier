@@ -233,6 +233,82 @@ Esta fatia cria:
      - para os demais, o especificador leva ao responsável a escolha entre duas opções. A primeira é uma nova rodada exaustiva. A segunda é corrigir os resíduos apontados e registrar o restante, sem defeito de produção, como melhoria em `docs/melhorias.md`, com a R05 encerrada depois da correção dos apontados;
      - nenhum agente faz essa escolha sozinho.
 
+2-J. **Nova rodada exaustiva** (quinta correção E16-R05, sexta amostra do revisor sobre 8e35589; decisão do responsável de 2026-11-19 pela opção "nova rodada exaustiva" da regra 2-I).
+   - **Por que a auditoria da regra 2-G deixou passar:** a sexta amostra achou linhas de `AUDITORIA` marcadas "íntegra" em cinco situações:
+     - a ação descrita não era a ação executada. Um auxiliar com o motivo `ocorrencia_de_entrega` chama direto `reembolso_parcial`, sem registrar a ocorrência;
+     - um teste sequencial estava ligado a uma afirmação de concorrência;
+     - uma afirmação composta tinha uma ligação para cada cláusula;
+     - o arranjo era de outro cenário;
+     - a comparação "não muda" deixava de fora registros que a afirmação nomeia.
+
+     As perguntas (a) a (f) continuam valendo. Esta regra acrescenta as perguntas (g) a (k) e um campo novo, que obriga a seguir a ação até a produção.
+   - **Campo novo `caminho`:** toda linha de `AUDITORIA` ganha `caminho`, não vazio e com até 200 caracteres.
+     - **Conteúdo:** as funções de produção que a ação do teste efetivamente executa, seguindo os auxiliares do teste. São escritas como caminho pontuado a partir de `apps`, separadas por "; ": por exemplo `apps.pedidos.ocorrencias.registrar_ocorrencia` ou `apps.interesses.views.remover_pendentes`. Para uma rota, vale a view.
+     - **Conferência:** `test_matriz.py` verifica, pela árvore de sintaxe e sem importar, que cada caminho aponta para uma função ou um método que existe num arquivo de `apps/`.
+     - **Exceção:** quando a afirmação é sobre o próprio banco (restrição, trigger), o caminho é `banco:<nome da restrição ou da trigger>`, e a conferência aceita esse prefixo.
+   - **As cinco perguntas novas.** O veredito `"íntegra"` exige sim também nestas:
+     - (g) **ação efetiva:** quando a afirmação nomeia uma ação de negócio (ocorrência, apuração, abertura do pagamento, cadastro, remoção, cancelamento), o `caminho` contém a função de produção dessa ação. Chamar o cálculo financeiro que a ação usaria, ou um auxiliar cujo nome ou motivo cita a ação, não prova a ação;
+     - (h) **concorrência:** quando a afirmação diz "simultâneos", "concorrendo" ou "concorrente", o teste executa as operações em paralelo (`executar_em_paralelo`, E01-05). O resultado afirmado tem de sair do mecanismo que a afirmação nomeia. Quando a afirmação diz "em qualquer ordem", cada ordem é forçada sob concorrência: a primeira operação obtém a trava e a segunda fica comprovadamente esperando por ela antes de a primeira confirmar. Execução sequencial não prova concorrência;
+     - (i) **cláusulas:** uma afirmação com mais de uma cláusula ("e", "nem", "inclusive", lista) é provada inteira por cada ligação. Se nenhum teste prova todas as cláusulas, o implementador atomiza a afirmação pela regra 2-E, sem perder a condição comum, e cada parte ganha a sua prova integral. Uma ligação por cláusula não é permitida;
+     - (j) **arranjo do cenário:** numa entrada de cenário (1 a 119), cada número e cada ator do texto-base do cenário que a afirmação herda aparece no arranjo do teste. Isso inclui preço, quantidades, mínimo, quantidade reservada e pendente de cada comprador e valores cobrados. Um teste com outro arranjo prova uma regra geral parecida e sai da ligação. Os testes técnicos (`T-n`) seguem o texto da sua linha na infraestrutura;
+     - (k) **"não muda":** a comparação cobre todos os registros que a afirmação nomeia, lidos antes da ação e comparados por conteúdo. Para "pedido e registros financeiros", são `Pedido`, `ItemDoPedido`, `ParcelaNoPedido`, `ObrigacaoComComprador`, `MovimentoFinanceiro` e `Reembolso`. Uma função auxiliar que lê só situação e quantidades não é prova de obrigação.
+   - **Releitura de todas as linhas:** as 606 linhas são relidas com as onze perguntas, e não só as da sexta amostra. O campo `caminho` é preenchido em todas.
+     - **Busca dirigida antes da entrega:** um script levanta candidatos e a leitura decide:
+       - auxiliares de `tests/apoio/` que chamam funções financeiras com um motivo em texto;
+       - afirmações com "simultâne", "concorr" ou "qualquer ordem";
+       - números do texto-base de um cenário que não aparecem no módulo do teste ligado;
+       - afirmações com "e", "nem" ou "inclusive" com mais de uma ligação.
+     - **Registro:** o `review.md` traz o número de candidatos de cada busca e o resultado.
+   - **Os resíduos da sexta amostra:**
+     - **C90, C112 e C114, ocorrência real:**
+       - a ação de ocorrência é `apps.pedidos.ocorrencias.registrar_ocorrencia`, chamada por um administrador ativo, com o item, a quantidade afetada, o tipo e o acionamento;
+       - **C90:** item de 0,25 kg a R$ 7,99/kg, cobrado R$ 2,00, com serviço e frete registrados; o preço muda para R$ 8,99/kg antes da ocorrência. A ocorrência da quantidade inteira (0,25) gera o reembolso de 2,00 de produtos, 0,10 de serviço e 0,40 de frete, ligado à ocorrência registrada;
+       - **C112:** item de 1,000 kg a R$ 7,99/kg, com subtotal 7,99; ocorrência de 0,25 kg com 2,00 de produtos. Na afirmação "uma mudança posterior do preço não altera o valor", o preço vai para R$ 9,99/kg depois, e o reembolso registrado continua 2,00;
+       - **C114:** item de R$ 7,99 com ocorrência parcial real de 2,00; depois, o cancelamento da rodada com reembolso devolve para esse item exatamente 5,99. A ligação para `test_o_cancelamento_devolve_so_o_saldo_restante` (arranjo AE, 70,76) sai. A segunda afirmação do C114 só fica se for provada no mesmo arranjo do item de 7,99; senão sai, porque o §16.114 só fala do item;
+       - a caracterização `test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado` passa a chamar `registrar_ocorrencia`, ou dá lugar a uma nova. As provas financeiras de `parcial(...)` continuam nas afirmações de cálculo que provarem por inteiro.
+     - **T-47, formação de caixas pela abertura:**
+       - a afirmação "a formação de caixas ignora a quantidade pendente" é provada por `apps.pedidos.abertura.abrir_pagamento`;
+       - o produto tem múltiplo 10 (ou outro definido), com reservadas que completam k caixas e sobram r unidades, e pendentes em quantidade de pelo menos 10 − r, de modo que contá-las completaria a caixa k + 1. Exemplo: 15 reservadas e 5 pendentes formam 1 caixa, e não 2;
+       - o teste confere as caixas efetivas das linhas congeladas (`caixa` das linhas do pedido), o destino das r unidades segundo a regra aprovada da abertura, e as pendentes, que continuam pendentes e na fila;
+       - `test_a_formacao_de_caixas_ignora_as_pendentes`, que só consulta o progresso, sai dessa afirmação. Pode ficar na do cálculo do mínimo ou do progresso, se a provar.
+     - **C99 e T-44, as duas entradas recusadas:**
+       - **item congelado:** depois de `abrir_pagamento`, a rota de remoção de pendentes recebe o `pk` real do `ItemDoPedido` de A em cada campo de identificação que aceita. Ela recusa sem gravar, e a comparação da pergunta (k) dá igualdade. Um status 200 com o erro do formulário é a recusa da tabela da rota e não é defeito: o teste confere a ausência da mensagem de sucesso e de escrita;
+       - **parcela "em pedido" real:** depois de `abrir_pagamento`, a parcela de A está em pedido e ligada a um item. `remover_pendente` recusa com `RemocaoAcimaDoPendente`, e a rota recusa com o identificador dessa parcela, com a mesma comparação. A parcela criada à mão em `EM_PEDIDO`, sem item, sai da ligação;
+       - **trigger:** a afirmação "pedido, trigger e registros financeiros ficam inalterados" ganha, além da comparação (k), a prova de que a trigger de imutabilidade continua ativa depois da tentativa. Um `UPDATE` direto sobre o item congelado é recusado, como no T-17, e o `caminho` registra `banco:<nome da trigger>`;
+       - `_estado` sai de toda prova de obrigação.
+     - **T-34, recusa pela `UNIQUE` em concorrência:**
+       - convite de comprador com `Ana@x.com` e convite de fornecedor com ` ana@x.com ` (o texto da T-34);
+       - os dois `consumir_convite` passam da verificação de existência do e-mail antes de qualquer um inserir, sincronizados pelo apoio de concorrência da E01-05;
+       - resultado: um sucesso, uma única conta, e a recusa do outro pela restrição `conta_email_unico`. Pode ser o `IntegrityError` com esse nome, ou a exceção de domínio em que o serviço o traduz, com esse `IntegrityError` como causa (`__cause__` ou `__context__`);
+       - `test_banco_recusa_segunda_conta_com_o_mesmo_email_pela_restricao_unique`, sequencial, sai da afirmação de concorrência e pode ficar numa afirmação própria da restrição;
+       - se o apoio de concorrência não conseguir sincronizar depois da verificação sem mudar a produção, o implementador para e devolve ao especificador.
+     - **T-7, ordens forçadas:**
+       - para webhook × bloqueio de `T0 + 24h` e webhook × apuração, cada par tem as duas ordens forçadas sob concorrência (pergunta (h)), com o mesmo resultado final de pagamento, destino e situação do pedido;
+       - o par bloqueio × apuração entra se as regras de prazo permitirem que os dois atuem sobre o mesmo pedido no mesmo instante. Se não permitirem, o `review.md` registra o porquê, com a referência do prazo;
+       - os testes sequenciais ficam como prova de afirmações próprias de ordem sequencial, se existirem, ou saem.
+     - **C59, atomização autorizada:** "o endereço banido com outras maiúsculas é recusado no login e no novo cadastro" vira duas afirmações, uma para o login e outra para o novo cadastro, cada uma com a sua prova atual. As demais afirmações do C59 não mudam.
+     - **C85 e T-26, a rota:**
+       - no C85, "as validações de quantidade ocorrem no servidor, inclusive pela API" é provada pela caracterização `test_cenario_85_rota_valida_as_quantidades_no_servidor`. Ela faz `POST /interesses/` direto com os cinco casos do §16.85 (L 0,5 com 1,5 e 1,2; unidade 1 com 2 e 2,5; kg 0,25 com 0,75), com a unidade explícita. Os aceitos ficam reservados com o valor, e os recusados não gravam;
+       - `test_quantidades_recusadas` sai dessa afirmação e da afirmação "recusada pela API" do T-26, que fica com a rota.
+     - **C104, o arranjo do cenário:**
+       - produto de R$ 10,00, mínimo de R$ 100,00, A com 8 reservadas e C com 5 pendentes sem reserva: progresso elegível 80,00 e fechamento recusado por `minimo_nao_atingido`;
+       - para "se a rodada chegar ao pagamento", o mesmo arranjo chega à abertura por um caminho já especificado que não converta as pendentes de C, como novas reservas de outro comprador até o mínimo. As pendentes de C não entram em pedido nem em cobrança e continuam na fila com 5;
+       - os testes com o arranjo FP/R2 (C com 4 + 4) saem das afirmações do C104;
+       - se nenhum caminho especificado levar esse arranjo ao pagamento sem converter as pendentes, o implementador para e devolve ao especificador.
+   - **Caracterizações e devoluções:** valem a regra 5 e a regra 2-G. Se uma caracterização falhar por falta de comportamento, o implementador para e devolve, sem corrigir a produção.
+   - **Retificação do registro da guarda (A-47):** o `review.md` retifica a frase "a conferência atual aceitava todos (`assert []`)", sem apagar o texto anterior. A versão-base `54be872` aceitava dois dos sete casos (reatribuição posterior e atribuição só posterior) e recusava cinco com o diagnóstico genérico. O implementador registra o comando e a saída que mostram isso, ou identifica o estado intermediário que de fato usou no Red.
+   - **Registro:** o `review.md` traz:
+     - o número de linhas relidas e o de corrigidas por pergunta (a) a (k);
+     - as ligações retiradas e as afirmações atomizadas;
+     - as caracterizações novas, com a primeira execução de cada uma;
+     - o resultado da busca dirigida e a retificação acima;
+     - as devoluções ao especificador ou "Nenhuma devolução";
+     - as contagens da matriz, a suíte completa e a saída de `conferir_execucao`.
+   - **Sétima amostra e encerramento:** vale a regra 2-I.
+     - **A amostra:** o revisor confere uma sétima amostra de pelo menos 20 cenários e 10 testes técnicos, diferente das seis anteriores, e relê os resíduos da sexta.
+     - **Sem resíduo:** a R05 é encerrada.
+     - **Com resíduo:** a escolha da regra 2-I volta ao responsável.
+
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
    - cada referência aponta para um arquivo existente em `tests/` e para uma função `test_*` (ou método numa classe `Test*`) definida nele. A conferência é feita lendo a árvore de sintaxe do arquivo, sem importar nem rodar o teste;
@@ -343,6 +419,7 @@ Esta fatia cria:
 - **Atomicidade (regra 2-E).** A prova parcial nasce de afirmações compostas. Dividir o texto em afirmações atômicas torna a leitura do revisor binária: cada afirmação está provada ou não está.
 - **Auditoria por ligação, conferida no CI (regra 2-G).** Cada rodada por amostra achou resíduos de tipos novos, e cada busca por tipo deixou os outros tipos de fora. Uma linha por ligação torna a completude verificável por máquina (as chaves batem com a matriz) e a qualidade verificável por amostra do revisor (a linha bate com o corpo). O dicionário em Python segue o padrão da matriz e não traz dependência nova.
 - **Guarda conservadora e congelada (regra 2-H).** Resolver qual valor uma constante tem no momento do decorador exigiria executar o módulo. Recusar a constante com mais de uma ligação ou alterada troca a aceitação indevida pela recusa a mais, que é visível e se resolve escrevendo o caso no próprio decorador. Congelar a guarda encerra a corrida entre formas novas e contraexemplos sintéticos.
+- **Caminho de produção na auditoria (regra 2-J).** O veredito "íntegra" da regra 2-G foi dado a ações que o teste não executava, porque a linha descrevia o nome do auxiliar. Registrar a função de produção alcançada, conferida pela árvore de sintaxe, obriga a seguir o auxiliar e torna a pergunta (g) verificável na leitura do revisor.
 - **Critério de encerramento combinado antes (regra 2-I).** Ele evita rodadas sem fim e deixa com o responsável a escolha que não é técnica.
 - **Defeito encontrado não é corrigido aqui.** A fatia é de evidência. Corrigir comportamento sem especificação mudaria escopo (AGENTS.md §3).
 
@@ -354,11 +431,12 @@ Esta fatia cria:
 - A conferência estática só aceita uma referência cujo arquivo tenha apenas as formas da lista fechada (regra 3-D).
 - O documento gerado corresponde à matriz.
 - Cada ligação da matriz tem exatamente uma linha em `AUDITORIA`, e cada linha, uma ligação (regra 2-G).
+- Cada linha de `AUDITORIA` nomeia no `caminho` funções de produção que existem (regra 2-J).
 - Nenhum código de produção muda nesta fatia.
 
 ## Dependências e decisões em aberto
 
 - Depende das E01 a E15 e, para a afirmação do histórico do cenário 96, da E16-09 (regra 2-F).
 - Nenhuma dependência nova.
-- O critério de encerramento da R05 foi decidido pelo responsável em 2026-11-19 (regra 2-I). Se a sexta amostra achar resíduos, a escolha da regra 2-I volta ao responsável.
+- O critério de encerramento da R05 foi decidido pelo responsável em 2026-11-19 (regra 2-I). Depois da sexta amostra, o responsável escolheu a nova rodada exaustiva (regra 2-J). Se a sétima amostra achar resíduos, a escolha da regra 2-I volta ao responsável.
 - Nenhuma outra decisão em aberto.
