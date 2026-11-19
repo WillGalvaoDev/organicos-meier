@@ -59,3 +59,28 @@ Nenhum necessário: a mudança é uma linha de contexto e o bloco do template.
 - O A-2 compara os pares (produto, reservado, pendente) lidos do HTML do carrinho e do histórico no mesmo estado do banco, sem alteração entre as leituras (gate: regra 9).
 - A afirmação do histórico na matriz (E16-07 A-44) é ligada na correção da matriz, depois deste registro.
 - A suíte completa roda ao fim do conjunto de fatias (registro na E16-07).
+
+## Revisão independente da implementação — 2026-11-18 — 3e8b4ff
+
+Revisado `6756ad2` e sua integração à matriz em `3e8b4ff`, contra a especificação aprovada no gate `bbe2775`. Escopo de produção limitado à view de lista e ao bloco de template. Não há alteração de modelo, serviço de escrita, cálculo de interesse, política ou migração.
+
+| Critério | Evidência conferida |
+|---|---|
+| A-1 | `test_cenario_96_historico_mostra_reservado_e_pendente_com_estoque_zerado` usa apuração real com caixa invalidada e nova rodada de limite 6; confirma 6 reservados/4 pendentes, reembolso da caixa e total reservado 6 antes de GET `/pedidos/`. Verifica os dois valores na seção do histórico. |
+| A-2 | Compara os pares extraídos do HTML das duas telas no mesmo estado, incluindo produto de outro fornecedor e zero pendente. Produção chama exatamente `carrinho_do_comprador(comprador)`, sem cálculo paralelo. |
+| A-3 | Produto indisponível e fornecedor sem rodada ativa ainda aparecem com zero reservado/4 pendentes e unidade. O template não introduz filtro por estoque/etapa. |
+| A-4 | Segundo comprador vê somente sua linha; o parâmetro `comprador` da URL não interfere. A view usa `request.user`; a consulta filtra pelo comprador. |
+| A-5 | Sem pedidos, a mensagem anterior permanece; a seção distingue ausência de interesses de presença de pendentes. |
+| A-6 | Anônimo redirecionado e fornecedor/administrador recusados com 403. Decorador `exige_comprador` preservado, mantendo também a consulta do comprador suspenso. |
+| A-7 | Não há form/button na seção; link ao carrinho correto. Teste compara parcelas, auditorias e notificações antes/depois; a view acrescenta somente consulta e renderização. |
+
+Título, posição depois dos pedidos, nomes de fornecedor/produto, ordenação da fonte, `quantidade_br`, unidade e escape padrão do template conferidos por leitura. Lista e links de pedidos existentes preservados. A troca do parâmetro auxiliar de `montar_fp` mantém o padrão anterior `(6, 8, 6)`; o caso novo usa `(10, 4, 6)` e não altera o arranjo dos testes anteriores. O prefixo do simulador em `conftest.py` é infraestrutura de teste coerente com o novo arquivo de aceitação.
+
+Registro Red/Green confrontado com a versão anterior da view/template, que não tinha a seção: seis falhas relatadas por ausência do título e A-6 como regressão verde; implementação mínima correspondente. Não há necessidade de migração ou nova regra de negócio. O registro é a evidência histórica de ordem; a execução independente desta revisão confirma o comportamento final, sem alegar ter presenciado o Red original.
+
+Nenhum achado novo nesta fatia. A ligação de C96 na E16-07 aponta para o teste efetivo do histórico, distinta das provas do carrinho. Resultados da suíte independente e conclusão final registrados ao término desta rodada, junto ao consolidado da E16-08.
+
+
+### Conclusão — 2026-11-19
+
+**APROVADO** sobre 3e8b4ff. Confirmados no JUnit os sete testes desta entrega: um em test_cenario_96_historico e seis em test_pedidos_historico_interesses, todos passando. Regressão completa: 3669 passed, 1 skipped, 2 xfailed; verificações estáticas e limites registrados na E16-08. A correção específica de C96 está atendida; a aprovação desta fatia não encerra os demais resíduos de R05 nem a E16.

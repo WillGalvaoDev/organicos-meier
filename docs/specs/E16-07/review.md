@@ -737,3 +737,56 @@ Método: varredura por script das 595 afirmações (valor só nos casos; unidade
 ### Devoluções ao especificador
 
 Nenhuma nova. Pendências já conhecidas: C96 só fecha com a revisão da E16-09 (A-44); A-46 (quinta amostra) é do revisor.
+
+## Revisão independente da terceira correção — 2026-11-18 — 3e8b4ff
+
+**REPROVADO: R05 permanece importante e aberto.** Escopo: correções desde o gate `bbe2775`, incluindo `024b0d9`/`3e8b4ff` e a ligação da E16-09. Requisitos e critérios aprovados relidos antes da comparação. A contagem por importação confirma **174 entradas, 595 afirmações, 604 ligações e 279 referências distintas**. Não houve correção de código pelo revisor.
+
+### Correções aceitas e quinta amostra (A-46)
+
+Os quatro exemplos da rodada anterior foram tratados: C63 tem POST real com 1,2 kg sem escrita e preserva a parcela de 1,5; T-11 liga a tentativa de financiamento A → obrigação B ao teste correto; T-38 cita unidades/casos explícitos; C96 ganhou a consulta real do histórico com 6/4 e estoque livre zero. A conclusão da E16-09 está em seu próprio parecer. A-39/A-40 têm os negativos/positivos especificados e a guarda passou a conferir todos os trechos, sem deixar um assert válido esconder outro trecho inválido. Isso não elimina os resíduos abaixo.
+
+Quinta amostra: cenários **74, 76, 77, 78, 79, 80, 81, 82, 83, 84, 86, 87, 88, 89, 90, 91, 92, 93, 94 e 97**, e técnicos **T-39, T-41, T-42, T-43, T-44, T-45, T-46, T-47, T-48 e T-49**, distintos das quatro amostras principais anteriores. Também relidos **C63, C96, T-11 e T-38**, os trechos alterados e os julgamentos declarados pelo implementador. A leitura confrontou texto-base, afirmações, corpos, parâmetros e auxiliares relevantes; não se limitou aos fragmentos de assert. As provas aritméticas puras de C64/C88/C89 não precisam instanciar produto só para rotular kg, pois as entradas e o arredondamento são explícitos e a operação não depende da unidade.
+
+### Resíduos semânticos reproduzíveis — R05
+
+| Referência | Evidência e problema | Retorno necessário |
+|---|---|---|
+| Funcional §16.74; `matriz.py`, C74, “O pedido congelado não muda” | Única referência: `test_apuracao_viavel.py::test_unidades_da_caixa_invalidada_voltam_para_a_fila`. O teste chama `_viavel` (que já apura) antes de ler a variável `antes`; compara vínculos da restauração e quantidades de parcelas. Não compara pedido/itens antes e depois da apuração. A igualdade de IDs não demonstra conteúdo congelado preservado. | Ligar prova integral. O mesmo arquivo já tem `test_o_pedido_congelado_nao_muda`, que fotografa Pedido/ItemDoPedido/ParcelaNoPedido antes de `_iniciar` e exige igualdade depois. Não é necessário mudar a regra de negócio. |
+| Funcional §16.84; C84, “usuario@gmail.com e usuario+teste@gmail.com podem pertencer a contas distintas” | Única referência: `test_contas_emails.py::test_normalizar_email_nao_altera_aliases`. Só chama a normalização e compara strings; não cria duas contas nem percorre cadastro. Distinção de strings é necessária, mas não comprova a coexistência de contas. | Associar teste que cria/consulta as contas distintas e demonstra o comportamento afirmado, ou caracterizá-lo. Manter separada a prova de banimento. |
+| Funcional §16.90; C90 | O cenário exige item inteiro de 0,25 kg cobrado em R$ 2,00, preço alterado de 7,99 para 8,99 e reembolso desse item pelo snapshot. `test_o_valor_vem_do_registrado_e_nao_do_catalogo` usa K (item de 1 kg/7,99), muda para 9,99 e devolve apenas 0,25. `test_cenarios_90_e_91_integral_devolve_exatamente_o_cobrado` usa N, devolve parcialmente e depois integralmente 100/5/20, sem mudar preço. A terceira referência prova proporção de serviço/frete. Nenhuma percorre o cenário inteiro com suas precondições e resultados; a atomização eliminou a condição comum “depois da mudança de preço” da afirmação de integral. | Vincular ou criar caracterização do item inteiro de 0,25 kg, alteração para 8,99 e reembolso de produtos 2,00 mais componentes registrados. Não usar três fluxos com precondições diferentes como substituto desse cenário. |
+| Infraestrutura T-44; primeira afirmação da entrada | “A remoção com item de pedido congelado é recusada” aponta apenas para `test_parcela_em_pedido_nao_entra_na_remocao`: monta uma ParcelaDeInteresse em pedido e chama o serviço com produto; não cria nem envia identificador de ItemDoPedido. A referência da afirmação seguinte, `test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido`, envia `item_de_a_em_q.pk + 10_000` e `fp.q.pk`, não o identificador real do item. | Provar separadamente a entrada com identificador real do item congelado e a entrada referente à parcela em pedido, conforme T-44/E11-08 A-9. O identificador inexistente não é prova do primeiro caso. |
+| Infraestrutura T-47; “A formação de caixas ignora a quantidade pendente” | Única referência: `test_fila_ponta_a_ponta.py::test_progresso_e_pedido_so_contam_as_reservadas`. Seu `abrir_r2` remove explicitamente o múltiplo de P (`alterar_multiplo(..., "")`); o assert citado é o valor elegível 200,00. Isso demonstra progresso/pedido sem pendentes, não formação de caixas com múltiplo. | Prova com produto de múltiplo definido, reservadas e pendentes, conferindo as caixas formadas sem usar as pendentes para completá-las. Reutilizar teste existente se suficiente. |
+| Regra 2-F; C86 e T-43 | C86 afirma zero/negativo, mas as duas provas citam apenas erro de formulário/nenhum produto, omitindo os casos `"0"` e `"-1"` que só aparecem no decorador. Em T-43, “fora do incremento” não cita `"1.5"`, que diferencia essa recusa das entradas de tipo/formato inválido do mesmo teste. Os testes exercitam esses casos, mas a prova escrita ainda descumpre a nova exigência de citação. | Completar as provas com os casos pertinentes e revisar o restante pelo mesmo critério. Aqui o problema é documental, não ausência de execução desses casos. |
+
+Estes exemplos não demonstram defeito na produção financeira nem autorizam alterar comportamentos. Demonstram que a matriz ainda atribui provas parciais ou diferentes às afirmações. A-45 registra a busca, mas A-46 não está atendido. Manter a revisão integral exigida por 2-E/2-F, não apenas corrigir as linhas desta amostra.
+
+### Guarda dos casos de parametrização — R05, regra 2-F
+
+Reprodução independente, fora do repositório, com este módulo:
+
+```python
+import pytest
+CASOS = [(1, "0.5", True)]
+@pytest.mark.parametrize(("u", "x", "ok"), CASOS)
+def test_exemplo(u, x, ok):
+    assert (u, x, ok) == (1, "0.5", True)
+CASOS = [(9, "9.5", False)]
+```
+
+Referência: `tests/test_exemplo.py::test_exemplo`. Prova: `Caso \`(9, "9.5", False)\`; \`(u, x, ok) == (1, "0.5", True)\``. `_conferir_referencia` e `_conferir_prova` retornam **None** (aceitam). O pytest real, com configuração/ambiente isolados e plugins automáticos desligados, coleta e executa somente **`test_exemplo[1-0.5-True]`: 1 passed**, saída 0. O caso 9/9.5/False nunca pertenceu ao decorador avaliado.
+
+Causa: `_decoradores_de_caso` (`conferencia.py:497`) reúne a última atribuição de cada nome em todo o módulo e a usa sem respeitar o instante de aplicação do decorador. O JUnit atual confere a referência sem parâmetros; portanto o teste verde não detecta que o caso citado é outro. Trata-se da nova prova de parametrização de R05, não da guarda de coleta/pulo de R06, cujo encerramento permanece.
+
+Retorno ao implementador: escrever negativo para esta reprodução antes da correção, resolver o vínculo de forma conservadora ou recusar reatribuição não comprovável, e preservar positivos e execução JUnit. Não importar/executar o módulo para resolver isso. Nenhuma decisão comercial do especificador é necessária: a regra já exige que o caso pertença à parametrização efetiva do teste.
+
+### Processo e encaminhamento
+
+Registros Red/Green lidos e confrontados com os diffs. A-39 descreve as três falhas antes da guarda; A-40 é controle positivo/regressão. Caracterização de C63, novo caso de quantidade e asserts adicionais sobre comportamento existente têm justificativa pela regra 5; nenhum deles altera produção. Não se confundem com a exceção de TDD da E15.
+
+Ao especificador: as regras 2-E/2-F já autorizam e exigem os reparos acima; não é necessário criar outra regra de negócio nem escolher novamente a semântica de C96. Receber de volta somente um comportamento que a caracterização revele ausente ou um conflito material demonstrado. Ao implementador: corrigir vínculos/provas, caracterizar cenários sem prova e corrigir a guarda com Red/Green. C96 não volta a ser pendência de especificação. Os resultados de execução desta rodada e o veredito global estão no parecer da E16-08.
+
+
+### Resultado final da execução — 2026-11-19
+
+Suíte independente sobre 3e8b4ff: 3669 passed, 1 skipped, 2 xfailed. Conferência do JUnit pela ferramenta do projeto: saída 0, todas as referências da matriz passaram. Mantido **REPROVADO / R05 importante**: execução bem-sucedida não resolve os vínculos semânticos insuficientes nem o contraexemplo da guarda descritos acima. Consolidado e limitações na E16-08.

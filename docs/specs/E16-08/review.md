@@ -343,3 +343,48 @@ Um defeito encontrado na homologação volta ao especificador, que especifica a 
 
 Só as contas da tabela 2, depois da aprovação técnica de R05. Nenhuma outra decisão está pendente.
 
+## Revisão independente das correções e novas entregas — 2026-11-18 — 3e8b4ff
+
+**Veredito global: REPROVADO.** Revisados `6756ad2`, `4a8e0b4`, `024b0d9` e `3e8b4ff`, a partir do gate `bbe2775`. Árvore inicialmente limpa. Produção alterada somente para exibir interesses atuais no histórico do comprador; demais mudanças são testes, guarda, matriz e registros.
+
+| Item | Situação nesta rodada |
+|---|---|
+| R01 a R04 | Encerramentos mantidos; implementações correspondentes não alteradas nesta rodada |
+| R05 — importante | Aberto: os quatro exemplos anteriores foram tratados, mas a quinta amostra ainda encontrou provas parciais e a nova guarda aceita um caso de parametrização que não foi executado |
+| R06 | Encerramento mantido; o novo problema de vínculo ao caso pertence a R05, não à coleta/pulo de testes |
+| E16-09 / C96 | Implementação do histórico conferida, sem novo achado; conclusão de execução no parecer da própria fatia |
+| E16-10 / R08 — importante | Reprovada: ausência da mensagem da etapa não comprovada pelos testes citados, lacuna reconhecida sem a devolução exigida pela regra 2 |
+| R07 — bloqueador de encerramento | Aberto: contas da fase 0 ausentes e homologação/restauração real ainda não executadas; decisões sobre melhorias registradas, mas as entregas escolhidas para antes do encerramento ainda precisam ser concluídas |
+
+R05 está detalhado na E16-07, com quinta amostra de 20 cenários/10 técnicos, releitura de C63/C96/T-11/T-38 e reprodução independente da guarda. R08 e o complemento exato esperado do especificador estão na E16-10. A nova seção de interesses e seus critérios A-1 a A-7 foram conferidos na E16-09. Não se atribuem defeitos financeiros de produção aos vínculos insuficientes da matriz.
+
+As decisões do responsável de 2026-11-18 sobre melhorias e a informação de que as contas externas ainda não foram criadas foram lidas no encaminhamento do especificador. Não se solicita novamente essa decisão nem se infere disponibilidade dos serviços. A execução operacional continua aguardando o gate técnico; testes locais não substituem homologação, suíte no Neon nem restauração dos caminhos A/B com RTO medido.
+
+Próximos passos: implementador corrige R05 pelas regras já aprovadas; especificador recebe a lacuna de E16-10 e detalha a prova complementar conforme o parecer R08; nova revisão das correções antes de iniciar a homologação. Nenhum deploy ou push; nenhuma alteração de produção ou dos testes auditados pelo revisor. Os pareceres anteriores e registros do implementador foram preservados integralmente.
+
+### Verificações independentes desta rodada
+
+Runner temporário fora do repositório, com `DJANGO_SETTINGS_MODULE=config.settings.test`, PYTHONPATH da raiz e TEST.NAME `test_organicos_revisor_e16_3e8b4ff`, executando `pytest.main` com os argumentos abaixo. O isolamento altera apenas o nome do banco de teste.
+
+```text
+pytest -q -p no:cacheprovider --tb=short --junitxml=<TEMP>/revisor_e16_3e8b4ff.xml
+python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_3e8b4ff.xml
+```
+
+- `python -m ruff check .`: All checks passed.
+- `python -m ruff format --check .`: 472 arquivos já formatados.
+- `python -m mypy .`: 565 arquivos sem erros.
+- `python manage.py makemigrations --check --dry-run`: No changes detected.
+- Prova independente de parametrização, em diretório temporário, com pytest real isolado: referência/prova aceitas, mas apenas o caso diferente do citado executado, **1 passed**, saída 0. Código e diagnóstico reproduzível na E16-07.
+- Conferência semântica de 20 cenários/10 técnicos adicionais e dos quatro exemplos anteriores: resíduos de R05 documentados. Leitura dos A-1 a A-7 da E16-09 e A-1 a A-5 da E16-10 e comparação com seus diffs/testes.
+
+Não foram reexecutados build nem backup com ferramentas reais, cujas implementações não mudaram nesta rodada e têm evidência anterior. Não houve CI remoto, banco Neon, acesso aos provedores nem restauração operacional. Nenhum resultado local é usado como substituto dessas evidências.
+
+
+### Fechamento da execução independente — 2026-11-19
+
+Suíte concluída sobre **3e8b4ff**: **3669 passed, 1 skipped, 2 xfailed, 18 warnings em 921,71 s**. JUnit: 3672 casos, zero falhas e zero erros. O comando de conferência do JUnit terminou com código 0: todas as referências da matriz passaram na execução. Isso comprova execução, não a suficiência semântica das afirmações; R05 permanece aberto.
+
+O skip corresponde ao backup real, por ausência de pg_dump, pg_restore, age e age-keygen. Os dois xfails são os registros de restauração/RTO e de melhorias; não contam como critérios aprovados. A justificativa textual compartilhada desses xfails ainda menciona decisão do responsável, mas as decisões já foram registradas: o que falta é cumprir as entregas e verificações de encerramento. Os 18 avisos são de depreciação de send_default_pii no Sentry.
+
+Os sete testes da E16-09 passaram (um de aceitação e seis técnicos), junto à regressão completa: **E16-09 APROVADA**. Mantido o veredito global **E16 REPROVADA**, pelos achados R05, R08 e pelo bloqueador operacional R07. Os relatórios desta rodada encerram a revisão técnica solicitada; não encerram a etapa.

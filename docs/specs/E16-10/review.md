@@ -48,3 +48,22 @@ Base `b4d2a64`, caminhos examinados: `docs/specs/E08-02/acceptance.md` (A-12, A-
 ### Pendente
 
 A-5 (mover M-3 e M-8 para "Encerradas") só depois da revisão de conclusão do agente 3.
+
+## Revisão independente da entrega — 2026-11-18 — 3e8b4ff
+
+**REPROVADO — E16-R08, importante: lacuna de prova reconhecida sem a devolução exigida.** Revisado o registro `4a8e0b4`, os critérios corrigidos em `696a378` e os testes indicados, sem alterações nestes últimos entre `bbe2775` e `3e8b4ff`.
+
+Referências: E16-10 regra 2 e A-3; E08-02 A-12; ressalva expressa no gate independente desta fatia. A redação exige que o administrador seja recusado pela política **sem a mensagem da etapa**. O registro admite que a ausência da mensagem não é afirmada por nenhum dos dois testes citados, mas conclui “lacuna registrada, sem devolução” e “Todos os testes correspondem à redação nova”. Isso contraria a regra 2: se um teste não conferir a redação nova, parar o ponto e devolvê-lo ao especificador.
+
+Leitura confirmada: `test_interesse_depois_da_abertura_e_recusado_com_409` exige mensagem/409 para o comprador e somente status 302/403 para o administrador; o complemento `test_quem_pode_ver_e_quem_pode_gravar` exige 403 do administrador, sem verificar o corpo da resposta. O código de `apps/contas/permissoes.py` recusa antes da view, coerentemente com a política. **Não foi demonstrado defeito de autorização ou de mensagem na produção.** A lacuna é da evidência exigida e do cumprimento do encaminhamento, não motivo para mudar a política ou o comportamento.
+
+**O que espero do especificador:** receber a devolução, verificar se existe outra prova automatizada já aprovada que confira a ausência da mensagem e, se houver, identificar precisamente referência/asserção para complementar a regra 2. Se não houver, especificar um complemento mínimo de caracterização da resposta para o administrador autenticado, admitindo essa adição ao escopo de testes da fatia (hoje proibida por “Fora” e pela invariante). Preservar a recusa 403 da E02-10, a ausência da mensagem da etapa e todos os testes existentes. Não retirar a exigência só para acomodar os testes, não solicitar decisão comercial para esse detalhe técnico e não alterar produção sem defeito demonstrado. O implementador registra e executa a prova aprovada; passar de primeira é caracterização de comportamento existente, não um Red histórico inventado.
+
+As correções de preço/notificações do A-21 e do literal de aporte são compatíveis com as fontes superiores e seus testes; não há achado novo nessas redações. Texto anterior preservado e diff documental da fatia respeitado. M-8 está resolvida quanto ao ajuste de redação, mas a conclusão conjunta da entrega e o movimento de M-3/M-8 para “Encerradas” (A-5) aguardam a pendência acima. O revisor não alterou `docs/melhorias.md` nem testes.
+
+Os três arquivos da regra 2 e o teste complementar de política integram a suíte independente desta rodada; resultados consolidados em E16-08. O verde desses arquivos não encerra R08, pois a asserção faltante não é executada. Próximo gate: complemento pelo especificador e verificação da evidência, seguido de nova revisão da conclusão da fatia.
+
+
+### Resultado final da execução — 2026-11-19
+
+A regressão completa sobre 3e8b4ff terminou com 3669 passed, 1 skipped, 2 xfailed, sem falhas; a conferência da matriz contra o JUnit também passou. Mantido **REPROVADO / R08 importante**: a execução dos testes existentes não acrescenta a asserção ausente nem substitui a devolução prevista na regra 2. Consolidado e limitações na E16-08.
