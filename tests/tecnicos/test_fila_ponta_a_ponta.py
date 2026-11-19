@@ -12,19 +12,20 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from django.db import transaction
+from django.contrib.messages import get_messages
+from django.db import DatabaseError, connection, transaction
 from django.test import Client
 
 from apps.catalogo.models import Produto, Unidade
 from apps.catalogo.quantidades import QuantidadeRecusada
 from apps.catalogo.servicos import alterar_multiplo
 from apps.contas.models import Conta
-from apps.financeiro.models import ObrigacaoComComprador, Reembolso
+from apps.financeiro.models import MovimentoFinanceiro, ObrigacaoComComprador, Reembolso
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
 from apps.interesses.consultas import total_reservado
 from apps.interesses.fila import alocar_pendentes
-from apps.interesses.models import ParcelaDeInteresse
+from apps.interesses.models import ParcelaDeInteresse, SituacaoParcela
 from apps.interesses.progresso import progresso_da_rodada
 from apps.interesses.servicos import (
     EstoqueInsuficiente,
@@ -35,7 +36,7 @@ from apps.interesses.servicos import (
 )
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.apuracao import aprovar_resultado, iniciar_apuracao
-from apps.pedidos.models import ItemDoPedido, Pedido
+from apps.pedidos.models import ItemDoPedido, ParcelaNoPedido, Pedido
 from apps.rodadas.estoque import alterar_estoque, incluir_produto_na_rodada
 from apps.rodadas.fechamento import TransicaoRecusada, encerrar_fechamento, iniciar_fechamento
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
@@ -299,6 +300,7 @@ def test_remover_pendentes_nao_mexe_nas_reservas_nem_no_estorno(
     fp = montar_fp(relogio, sim)
     abrir_r2(fp, 10)
     sequencias = _sequencias(fp.p)
+    financeiros = _registros(com_parcelas_de_interesse=False)
     estorno = list(
         Reembolso.objects.filter(pedido__comprador=fp.c).values_list(
             "chave", "produtos", "servico", "frete"
@@ -331,6 +333,7 @@ def test_remover_pendentes_nao_mexe_nas_reservas_nem_no_estorno(
         )
         == obrigacao
     )
+    assert _registros(com_parcelas_de_interesse=False) == financeiros
 
 
 def test_remocoes_invalidas_sao_recusadas_sem_escrita(
@@ -370,31 +373,90 @@ def test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido(
     ) == antes
 
 
+def _registros(*, com_parcelas_de_interesse: bool = True) -> dict[str, list[dict[str, Any]]]:
+    """Pedido, itens, parcelas dos pedidos, obrigações, movimentos, reembolsos e, se pedido, as
+    parcelas de interesse, lidos por conteúdo (E16-07 regra 2-J, pergunta (k))."""
+    modelos: tuple[Any, ...] = (
+        Pedido,
+        ItemDoPedido,
+        ParcelaNoPedido,
+        ObrigacaoComComprador,
+        MovimentoFinanceiro,
+        Reembolso,
+    )
+    if com_parcelas_de_interesse:
+        modelos += (ParcelaDeInteresse,)
+    return {m.__name__: list(m.objects.order_by("pk").values()) for m in modelos}
+
+
+def _afastar_os_pks_dos_itens() -> None:
+    """Põe o pk dos itens do pedido longe do pk de qualquer produto: a rota recebe um pk de item
+    que não é de produto, e a recusa não depende de uma coincidência de números."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT setval(pg_get_serial_sequence('pedidos_itemdopedido', 'id'), 5000)")
+
+
 def test_rota_com_o_pk_real_do_item_congelado_e_recusada(
     relogio: RelogioControlado, sim: Any
-) -> None:  # T-44, E16-07 regra 2-G
+) -> None:  # T-44, C99, E16-07 regra 2-J
+    _afastar_os_pks_dos_itens()
     fp = montar_fp(relogio, sim)
     item_de_a_em_q = ItemDoPedido.objects.get(pedido__comprador=fp.a, produto=fp.q)
-    assert item_de_a_em_q.pk > 0
-    parcelas_de_a = list(ParcelaDeInteresse.objects.filter(comprador=fp.a).order_by("pk").values())
-    antes = (
-        list(Pedido.objects.order_by("pk").values()),
-        list(ItemDoPedido.objects.order_by("pk").values()),
-        list(Reembolso.objects.order_by("pk").values()),
-        parcelas_de_a,
-    )
+    assert item_de_a_em_q.pk > 5000
+    assert not Produto.objects.filter(pk=item_de_a_em_q.pk).exists()
+    antes = _registros()
     cliente = Client()
     cliente.force_login(fp.a)
     resposta = cliente.post(
         "/interesses/pendentes/remover/", {"produto": item_de_a_em_q.pk, "quantidade": "1"}
     )
-    assert resposta.status_code in (200, 404, 409)
-    assert (
-        list(Pedido.objects.order_by("pk").values()),
-        list(ItemDoPedido.objects.order_by("pk").values()),
-        list(Reembolso.objects.order_by("pk").values()),
-        list(ParcelaDeInteresse.objects.filter(comprador=fp.a).order_by("pk").values()),
-    ) == antes
+    assert resposta.status_code == 404
+    assert list(get_messages(resposta.wsgi_request)) == []
+    assert _registros() == antes
+    with (
+        pytest.raises(DatabaseError, match="só aceita inserção"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            'UPDATE "pedidos_itemdopedido" SET quantidade = quantidade + 1 WHERE id = %s',
+            [item_de_a_em_q.pk],
+        )
+    assert _registros() == antes
+
+
+def test_parcela_em_pedido_depois_da_abertura_e_recusada_pelo_servico(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # T-44, C99, E16-07 regra 2-J
+    fp = montar_fp(relogio, sim)
+    parcela = _parcela(fp.a, fp.q)
+    assert parcela.situacao == SituacaoParcela.EM_PEDIDO
+    ligada = ParcelaNoPedido.objects.get(parcela=parcela)
+    assert (ligada.item.pedido.comprador, ligada.item.produto) == (fp.a, fp.q)
+    antes = _registros()
+    with pytest.raises(RemocaoAcimaDoPendente) as erro:
+        remover_pendente(fp.a, fp.q, "1")
+    assert erro.value.pendente == 0
+    assert _registros() == antes
+
+
+def test_parcela_em_pedido_depois_da_abertura_e_recusada_pela_rota(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # T-44, C99, E16-07 regra 2-J
+    fp = montar_fp(relogio, sim)
+    parcela = _parcela(fp.a, fp.q)
+    assert parcela.situacao == SituacaoParcela.EM_PEDIDO
+    assert ParcelaNoPedido.objects.filter(parcela=parcela).exists()
+    antes = _registros()
+    cliente = Client()
+    cliente.force_login(fp.a)
+    resposta = cliente.post(
+        "/interesses/pendentes/remover/", {"produto": fp.q.pk, "quantidade": "1"}
+    )
+    assert resposta.status_code == 200  # a recusa da rota é o erro do formulário
+    assert list(get_messages(resposta.wsgi_request)) == []
+    assert "Pendência removida" not in resposta.content.decode()
+    assert _registros() == antes
 
 
 @pytest.mark.concorrencia

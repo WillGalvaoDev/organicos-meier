@@ -906,7 +906,7 @@ def test_as_entradas_apontadas_tem_as_afirmacoes_atomicas() -> None:  # A-36
     assert len(matriz.CENARIOS[17]) == 4
     assert len(matriz.CENARIOS[20]) == 4
     assert len(matriz.CENARIOS[34]) == 4
-    assert len(matriz.CENARIOS[59]) == 6
+    assert len(matriz.CENARIOS[59]) == 7  # a regra 2-J atomiza login e novo cadastro (A-61)
     assert len(matriz.TECNICOS["T-38"]) == 8
     formal = [a for a in matriz.CENARIOS[17] if "mensagem formal" in a]
     assert len(formal) == 1
@@ -1093,7 +1093,13 @@ def test_a_constante_de_casos_de_uma_ligacao_so_e_aceita(tmp_path: Path) -> None
 def _auditoria_de(
     cenarios: dict[int, Afirmacoes], tecnicos: dict[str, Afirmacoes]
 ) -> dict[tuple[int | str, str, str], dict[str, str]]:
-    linha = {"preparacao": "p", "acao": "a", "resultado": "r", "veredito": "íntegra"}
+    linha = {
+        "preparacao": "p",
+        "acao": "a",
+        "resultado": "r",
+        "caminho": "apps.pedidos.ocorrencias.registrar_ocorrencia",
+        "veredito": "íntegra",
+    }
     return {
         (chave, afirmacao, ref): dict(linha)
         for tabela in (cenarios, tecnicos)
@@ -1174,12 +1180,13 @@ def test_os_sete_residuos_da_regra_2g_estao_corrigidos() -> None:  # A-51
     assert pk_real == [FILA + "::test_rota_com_o_pk_real_do_item_congelado_e_recusada"]
     em_pedido = _refs(matriz.TECNICOS["T-44"], "parcela em pedido é recusada pelo serviço")
     assert em_pedido == [
-        "tests/tecnicos/test_interesses_remover_pendente.py::test_parcela_em_pedido_nao_entra_na_remocao"
+        FILA + "::test_parcela_em_pedido_depois_da_abertura_e_recusada_pelo_servico"
     ]
     caixas = _refs(matriz.TECNICOS["T-47"], "formação de caixas")
     assert caixas == [
-        "tests/tecnicos/test_interesses_progresso.py::test_a_formacao_de_caixas_ignora_as_pendentes"
-    ]
+        "tests/tecnicos/test_pedidos_abertura_caixas_pendentes.py"
+        "::test_a_formacao_de_caixas_pela_abertura_ignora_as_pendentes"
+    ]  # a regra 2-J troca a prova que só consultava o progresso (A-57)
     for trecho, caso in (("igual a zero", '"0"'), ("negativo", '"-1"')):
         (prova,) = _afirmacao(matriz.CENARIOS[86], trecho).values()
         assert caso in prova, trecho
@@ -1187,3 +1194,191 @@ def test_os_sete_residuos_da_regra_2g_estao_corrigidos() -> None:  # A-51
     assert '"1.5"' in fora_do_incremento
     (acima,) = _afirmacao(matriz.TECNICOS["T-43"], "acima do pendente").values()
     assert '"5"' in acima
+
+
+# --- quinta correção E16-R05: o campo `caminho` da auditoria (A-54 e A-55) ---------------------
+
+CAMINHOS_INVALIDOS = [
+    "",
+    "x" * 201,
+    "apps.pedidos.ocorrencias.nao_existe",
+    "config.observabilidade.nao_existe",
+    "tests.apoio.devolucoes.parcial",
+    "modulo:config.settings.nao_existe",
+    "modulo:tests.apoio.devolucoes",
+    "comando:nao_existe.py check",
+    "rota:POST /nao-existe/",
+    "banco:nome_que_nao_aparece",
+    "fonte:tests/apoio",
+    "fonte:docs/specs",
+    "fonte:nao/existe.py",
+    "xyz:qualquer",
+    "banco:",
+]
+CAMINHOS_VALIDOS = [
+    "apps.pedidos.ocorrencias.registrar_ocorrencia",
+    "apps.interesses.views.remover_pendentes; banco:conta_email_unico",
+    "modulo:config.settings.prod",
+    "comando:manage.py procrastinate worker",
+    "rota:POST /entrar/",
+    "fonte:apps/nucleo/valores.py",
+    "config.observabilidade.limpar_evento",
+]
+
+
+def test_a_auditoria_acusa_o_caminho_invalido() -> None:  # A-54
+    from tests.rastreabilidade.conferencia import conferir_auditoria
+
+    cenarios, tecnicos = _completa()
+    base = _auditoria_de(cenarios, tecnicos)
+    chave = (1, "afirmação do cenário 1", REAL)
+    acusados = []
+    for caminho in CAMINHOS_INVALIDOS:
+        troca = {**base, chave: {**base[chave], "caminho": caminho}}
+        problemas = conferir_auditoria(troca, cenarios, tecnicos)
+        assert problemas, caminho
+        assert all("caminho" in p and REAL in p for p in problemas), (caminho, problemas)
+        acusados.append(caminho)
+    assert len(acusados) == 15  # o décimo sexto, a linha sem a chave `caminho`, vem abaixo
+    sem_campo = {k: v for k, v in base[chave].items() if k != "caminho"}
+    problemas = conferir_auditoria({**base, chave: sem_campo}, cenarios, tecnicos)
+    assert any("caminho" in p and REAL in p for p in problemas), problemas
+
+
+def test_a_auditoria_aceita_os_caminhos_das_sete_formas() -> None:  # A-55
+    from tests.rastreabilidade import auditoria
+    from tests.rastreabilidade.conferencia import conferir_auditoria
+
+    cenarios, tecnicos = _completa()
+    base = _auditoria_de(cenarios, tecnicos)
+    chave = (1, "afirmação do cenário 1", REAL)
+    for caminho in CAMINHOS_VALIDOS:
+        troca = {**base, chave: {**base[chave], "caminho": caminho}}
+        assert conferir_auditoria(troca, cenarios, tecnicos) == [], caminho
+    assert conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS) == []
+
+
+# --- quinta correção E16-R05: os resíduos da sexta amostra (A-56 a A-62, estrutura e caminho) ---
+
+OCORRENCIA = "apps.pedidos.ocorrencias.registrar_ocorrencia"
+ABERTURA = "apps.pedidos.abertura.abrir_pagamento"
+
+
+def _caminhos(entrada: int | str, trecho: str) -> list[str]:
+    from tests.rastreabilidade import auditoria
+
+    return [
+        linha["caminho"]
+        for (chave, afirmacao, _), linha in auditoria.AUDITORIA.items()
+        if chave == entrada and trecho in afirmacao
+    ]
+
+
+def test_c90_c112_e_c114_provam_a_ocorrencia_real() -> None:  # A-56
+    for entrada, trecho in (
+        (90, "O preço novo"),
+        (90, "A ocorrência da quantidade inteira"),
+        (90, "Serviço e frete"),
+        (112, "A ocorrência de 0,25 kg"),
+        (112, "Uma mudança posterior"),
+        (114, "O cancelamento depois de uma parcial"),
+        (114, "O cancelamento depois da parcial"),
+    ):
+        caminhos = _caminhos(entrada, trecho)
+        assert caminhos
+        assert all(OCORRENCIA in c for c in caminhos), (entrada, trecho)
+    assert not any(
+        "test_o_cancelamento_devolve_so_o_saldo_restante" in ref
+        for provas in matriz.CENARIOS[114].values()
+        for ref in provas
+    )
+
+
+def test_t47_prova_a_formacao_de_caixas_pela_abertura() -> None:  # A-57
+    (caminho,) = _caminhos("T-47", "formação de caixas")
+    assert ABERTURA in caminho
+    refs = _refs(matriz.TECNICOS["T-47"], "formação de caixas")
+    assert not any("test_interesses_progresso" in ref for ref in refs)
+
+
+def test_c99_e_t44_provam_a_recusa_com_a_comparacao_completa() -> None:  # A-58
+    for entrada in (99, "T-44"):
+        tabela = matriz.CENARIOS[99] if entrada == 99 else matriz.TECNICOS["T-44"]
+        refs = [ref for provas in tabela.values() for ref in provas]
+        assert not any("test_parcela_em_pedido_nao_entra_na_remocao" in r for r in refs)
+        assert not any(
+            "test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido" in r for r in refs
+        )
+        provas = [p for provas in tabela.values() for p in provas.values()]
+        assert not any("_estado" in p for p in provas)
+    for trecho, entrada in (("Pedido, trigger", "T-44"),):
+        (caminho,) = _caminhos(entrada, trecho)
+        assert "banco:" in caminho
+    pedido_e_registros = _afirmacao(matriz.CENARIOS[99], "Pedido e registros financeiros")
+    assert {ref.split("::")[-1] for ref in pedido_e_registros} == {
+        "test_rota_com_o_pk_real_do_item_congelado_e_recusada",
+        "test_parcela_em_pedido_depois_da_abertura_e_recusada_pelo_servico",
+        "test_parcela_em_pedido_depois_da_abertura_e_recusada_pela_rota",
+    }
+    assert all("_registros() == antes" in prova for prova in pedido_e_registros.values())
+
+
+def test_t34_a_recusa_pela_unique_e_provada_em_paralelo() -> None:  # A-59
+    refs = _refs(matriz.TECNICOS["T-34"], "dão uma recusa pela restrição UNIQUE")
+    assert [r.split("::")[-1] for r in refs] == [
+        "test_dois_cadastros_com_o_mesmo_email_passam_da_verificacao_e_o_banco_recusa_um"
+    ]
+    (caminho,) = _caminhos("T-34", "dão uma recusa pela restrição UNIQUE")
+    assert "banco:conta_email_unico" in caminho
+
+
+def test_t7_tem_as_duas_ordens_forcadas_e_o_comportamento_distinto_a_parte() -> None:  # A-60
+    tecnico = matriz.TECNICOS["T-7"]
+    igualdade = [a for a in tecnico if "mesmo resultado" in a or "mesmo resultado" in a.lower()]
+    assert len(igualdade) == 3  # webhook e bloqueio, webhook e apuração, bloqueio e apuração
+    sequenciais = ("test_aviso_antes_da_apuracao_quita_y",)
+    for afirmacao in igualdade:
+        refs = [r.split("::")[-1] for r in tecnico[afirmacao]]
+        assert refs
+        assert all("duas_ordens" in r for r in refs), afirmacao
+        assert not any(s in r for s in sequenciais for r in refs)
+    distinta = [a for a in tecnico if "sem identificar a aprovação" in a]
+    assert len(distinta) == 2  # A-16 e A-15 (ii) da E11-01, fora de qualquer igualdade
+    assert not set(distinta) & set(igualdade)
+    for afirmacao in distinta:
+        assert all("test_apuracao_inicio.py" in r for r in tecnico[afirmacao])
+    for afirmacao, provas in tecnico.items():
+        if any(p in afirmacao for p in ("simultâne", "concorr", "qualquer ordem")):
+            assert not any(
+                "test_bloqueio_e_aviso_dao_o_mesmo_resultado_nas_duas_ordens" in r for r in provas
+            )
+
+
+def test_c59_c85_e_t26_estao_atomizadas_e_na_rota() -> None:  # A-61
+    assert not [a for a in matriz.CENARIOS[59] if "no login e no novo cadastro" in a]
+    login = _afirmacao(matriz.CENARIOS[59], "recusado no login")
+    cadastro = _afirmacao(matriz.CENARIOS[59], "recusado no novo cadastro")
+    assert len(login) == len(cadastro) == 1
+    rota = "test_cenario_85_rota_valida_as_quantidades_no_servidor"
+    assert [r.split("::")[-1] for r in _afirmacao(matriz.CENARIOS[85], "inclusive pela API")] == [
+        rota
+    ]
+    refs = [r for p in matriz.CENARIOS[85].values() for r in p] + [
+        r for a, p in matriz.TECNICOS["T-26"].items() if "pela API" in a for r in p
+    ]
+    assert not any("test_quantidades_recusadas" in r for r in refs)
+
+
+def test_c104_usa_o_arranjo_do_cenario() -> None:  # A-62
+    refs = [r.split("::")[-1] for p in matriz.CENARIOS[104].values() for r in p]
+    assert "test_progresso_e_pedido_so_contam_as_reservadas" not in refs
+    assert "test_cenario_104_a_cobranca_do_pedido_ignora_as_pendentes" not in refs
+    do_pagamento = [
+        a for a in matriz.CENARIOS[104] if "chegar ao pagamento" in a or "continuam" in a
+    ]
+    assert len(do_pagamento) == 3
+    for afirmacao in do_pagamento:
+        assert [r.split("::")[-1] for r in matriz.CENARIOS[104][afirmacao]] == [
+            "test_cenario_104_as_pendentes_de_c_nao_entram_em_pedido_nem_em_cobranca"
+        ]
+        assert any(ABERTURA in c for c in _caminhos(104, afirmacao[:40]))

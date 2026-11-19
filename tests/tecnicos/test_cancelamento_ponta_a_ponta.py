@@ -255,6 +255,7 @@ def test_integral_depois_de_parcial_concluida_soma_exatamente_o_pago(
     _processar_tudo()
     do_cancelamento = Reembolso.objects.get(pedido=pedido, motivo=MOTIVO)
     assert do_cancelamento.produtos == D("5.99")
+    assert (do_cancelamento.servico, do_cancelamento.frete) == (D("0.30"), D("1.20"))
     assert _estornado_de(id_externo) == pedido.total == D("9.99")
     _invariante_ok()
 

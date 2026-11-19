@@ -708,8 +708,152 @@ def conferir(
     return problemas
 
 
-CAMPOS_DA_AUDITORIA = ("preparacao", "acao", "resultado", "veredito")
+CAMPOS_DA_AUDITORIA = ("preparacao", "acao", "resultado", "caminho", "veredito")
 MAXIMO_DO_CAMPO = 200
+METODOS_HTTP = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+PASTAS_DE_PRODUCAO = ("apps", "config")
+
+
+def _arquivo_do_modulo(raiz: Path, partes: Sequence[str]) -> Path | None:
+    """O `.py` de um módulo pontuado sob `apps/` ou `config/` (ou o `__init__.py` do pacote)."""
+    if not partes or partes[0] not in PASTAS_DE_PRODUCAO:
+        return None
+    base = raiz.joinpath(*partes)
+    for candidato in (base.with_suffix(".py"), base / "__init__.py"):
+        if candidato.is_file():
+            return candidato
+    return None
+
+
+def _definicoes(arquivo: Path) -> ast.Module | None:
+    try:
+        return ast.parse(arquivo.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return None
+
+
+def _nome_definido(arvore: ast.Module, nomes: Sequence[str]) -> bool:
+    """`nome` é função, classe ou nome ligado no módulo; `Classe.metodo` é método da classe."""
+    corpo: Sequence[ast.stmt] = arvore.body
+    for indice, nome in enumerate(nomes):
+        achado: ast.stmt | None = None
+        for no in corpo:
+            if isinstance(no, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                if no.name == nome:
+                    achado = no
+            elif isinstance(no, ast.Assign | ast.AnnAssign) and indice == 0:
+                alvos = no.targets if isinstance(no, ast.Assign) else [no.target]
+                if any(isinstance(a, ast.Name) and a.id == nome for a in alvos):
+                    achado = no
+        if achado is None:
+            return False
+        if indice + 1 < len(nomes):
+            if not isinstance(achado, ast.ClassDef):
+                return False
+            corpo = achado.body
+    return True
+
+
+def _caminho_de_funcao(raiz: Path, ponto: str) -> str | None:
+    """`apps.<módulo>.<função>`, `apps.<módulo>.<Classe>.<método>` ou `config.<módulo>.<função>`."""
+    partes = ponto.split(".")
+    for corte in range(len(partes) - 1, 0, -1):
+        arquivo = _arquivo_do_modulo(raiz, partes[:corte])
+        resto = partes[corte:]
+        if arquivo is None or len(resto) > 2:
+            continue
+        arvore = _definicoes(arquivo)
+        if arvore is not None and _nome_definido(arvore, resto):
+            return None
+    return "ponto de entrada de produção que não existe"
+
+
+def _arquivos_de(raiz: Path, pasta: str, padrao: str) -> list[Path]:
+    return sorted((raiz / pasta).rglob(padrao)) if (raiz / pasta).is_dir() else []
+
+
+def _caminho_de_rota(raiz: Path, valor: str) -> str | None:
+    metodo, _, caminho = valor.partition(" ")
+    if metodo not in METODOS_HTTP or not caminho.startswith("/"):
+        return "rota sem método ou sem caminho iniciado por barra"
+    prefixo = caminho.lstrip("/").split("<", 1)[0]
+    arquivos = [raiz / "config" / "urls.py", *_arquivos_de(raiz, "apps", "urls.py")]
+    for arquivo in arquivos:
+        arvore = _definicoes(arquivo) if arquivo.is_file() else None
+        for no in ast.walk(arvore) if arvore is not None else []:
+            if (
+                isinstance(no, ast.Call)
+                and isinstance(no.func, ast.Name)
+                and no.func.id in ("path", "re_path")
+                and no.args
+                and isinstance(no.args[0], ast.Constant)
+                and isinstance(no.args[0].value, str)
+                and no.args[0].value.startswith(prefixo)
+            ):
+                return None
+    return "rota que não aparece em nenhuma chamada path() das urls"
+
+
+def _caminho_de_banco(raiz: Path, nome: str) -> str | None:
+    if not nome:
+        return "banco sem nome"
+    for pasta in ("apps",):
+        for arquivo in _arquivos_de(raiz, pasta, "*.py"):
+            try:
+                if nome in arquivo.read_text(encoding="utf-8"):
+                    return None
+            except OSError:
+                continue
+    return "nome do banco que não aparece em nenhum .py de apps/"
+
+
+def _caminho_de_fonte(raiz: Path, relativo: str) -> str | None:
+    partes = Path(relativo).parts
+    if not partes or ".." in partes or Path(relativo).is_absolute():
+        return "caminho de fonte inválido"
+    if partes[0] in ("tests", "docs"):
+        return "fonte em tests/ ou docs/ não é produção"
+    if not (raiz / relativo).exists():
+        return "fonte que não existe"
+    return None
+
+
+def _problema_de_um_caminho(raiz: Path, ponto: str) -> str | None:
+    forma, separador, valor = ponto.partition(":")
+    if not separador:
+        if ponto.split(".")[0] in PASTAS_DE_PRODUCAO and ponto.count(".") >= 2:
+            return _caminho_de_funcao(raiz, ponto)
+        return "forma desconhecida (sem uma das sete formas da regra 2-J)"
+    valor = valor.strip()
+    if forma == "modulo":
+        if _arquivo_do_modulo(raiz, valor.split(".")) is None:
+            return "módulo que não existe em apps/ ou config/"
+        return None
+    if forma == "comando":
+        partes = valor.split()
+        if len(partes) < 2 or partes[0] != "manage.py" or not (raiz / "manage.py").is_file():
+            return "comando que não parte de manage.py com subcomando"
+        return None
+    if forma == "rota":
+        return _caminho_de_rota(raiz, valor)
+    if forma == "banco":
+        return _caminho_de_banco(raiz, valor)
+    if forma == "fonte":
+        return _caminho_de_fonte(raiz, valor)
+    return "forma desconhecida (sem uma das sete formas da regra 2-J)"
+
+
+def problema_do_caminho(caminho: str, raiz: Path = RAIZ) -> str | None:
+    """`None` se todo ponto de entrada do `caminho` (separados por "; ") existe numa das sete
+    formas da regra 2-J; senão o motivo. Confere a existência, não o alcance (pergunta (g))."""
+    pontos = [p.strip() for p in caminho.split("; ")]
+    if not caminho.strip() or any(not p for p in pontos):
+        return "caminho vazio ou com ponto de entrada vazio"
+    for ponto in pontos:
+        motivo = _problema_de_um_caminho(raiz, ponto)
+        if motivo is not None:
+            return f"{motivo}: {ponto}"
+    return None
 
 
 def conferir_auditoria(
@@ -740,6 +884,11 @@ def conferir_auditoria(
                 problemas.append(f"{onde}: campo vazio na auditoria: {campo}")
             elif len(valor) > MAXIMO_DO_CAMPO:
                 problemas.append(f"{onde}: {campo} com mais de {MAXIMO_DO_CAMPO} caracteres")
+        caminho = linha.get("caminho", "")
+        if caminho.strip() and len(caminho) <= MAXIMO_DO_CAMPO:
+            motivo = problema_do_caminho(caminho)
+            if motivo is not None:
+                problemas.append(f"{onde}: caminho inválido: {motivo}")
         veredito = linha.get("veredito", "")
         if veredito.strip() and veredito != "íntegra" and not veredito.startswith("corrigida: "):
             problemas.append(

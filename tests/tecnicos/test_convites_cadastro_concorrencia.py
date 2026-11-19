@@ -1,12 +1,15 @@
 """E02-05: consumo de convites em paralelo (acceptance A-13 e A-14)."""
 
 import secrets
+import threading
 from typing import Any
 
 import pytest
 from django.db import IntegrityError
+from django.db.models.query import QuerySet
 
 from apps.contas.convites import ConviteInvalido, MetodoCadastro, consumir_convite
+from apps.contas.emails import normalizar_email
 from apps.contas.models import Conta, Convite, EmailEmUso
 from tests.apoio.concorrencia import executar_em_paralelo
 from tests.fabricas import ConviteFactory, FornecedorFactory
@@ -75,3 +78,67 @@ def test_dois_convites_com_mesmo_email_normalizado_em_paralelo() -> None:  # A-1
         de_fornecedor.refresh_from_db()
         consumidos = [c for c in (comprador, de_fornecedor) if c.consumido_em is not None]
         assert len(consumidos) == 1  # o recusado continua não consumido
+
+
+def _causas(erro: BaseException) -> list[BaseException]:
+    """A exceção e a cadeia de `__cause__` e `__context__`, sem repetir."""
+    achadas: list[BaseException] = []
+    pendentes: list[BaseException | None] = [erro]
+    while pendentes:
+        atual = pendentes.pop()
+        if atual is None or atual in achadas:
+            continue
+        achadas.append(atual)
+        pendentes += [atual.__cause__, atual.__context__]
+    return achadas
+
+
+@pytest.mark.tecnico
+def test_dois_cadastros_com_o_mesmo_email_passam_da_verificacao_e_o_banco_recusa_um(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # T-34, E16-07 regra 2-J
+    """Os dois `consumir_convite` leem "não existe conta com este e-mail" e só depois de os dois
+    lerem é que cada um insere: a restrição `conta_email_unico` do banco decide."""
+    fornecedor = FornecedorFactory.create()
+    email_do_comprador = normalizar_email("Ana@x.com")
+    email_do_fornecedor = normalizar_email(" ana@x.com ")
+    assert email_do_comprador == email_do_fornecedor == "ana@x.com"
+    _, token_a = _convite(email_normalizado=email_do_comprador)
+    _, token_b = _convite(
+        email_normalizado=email_do_fornecedor, fornecedor=True, fornecedor_id=fornecedor.pk
+    )
+    encontro = threading.Barrier(2)
+    verificacoes: list[bool] = []
+    original = QuerySet.exists
+
+    def exists(self: QuerySet[Any], *args: Any, **kwargs: Any) -> bool:
+        resultado = original(self, *args, **kwargs)
+        if self.model is Conta:  # a verificação de existência do e-mail, em cada ponto do serviço
+            encontro.wait(timeout=10)  # nenhum dos dois segue antes de o outro ter verificado
+            verificacoes.append(resultado)
+        return resultado
+
+    monkeypatch.setattr(QuerySet, "exists", exists)
+
+    def consumir_a(barreira: Any) -> Conta:
+        barreira.wait(timeout=5)
+        return consumir_convite(token_a, "A", SENHA, metodo=MetodoCadastro.SENHA)
+
+    def consumir_b(barreira: Any) -> Conta:
+        barreira.wait(timeout=5)
+        return consumir_convite(token_b, "B", SENHA, metodo=MetodoCadastro.SENHA)
+
+    resultados = executar_em_paralelo(consumir_a, consumir_b)
+    assert verificacoes
+    assert not any(verificacoes)  # os dois passaram da verificação: nenhuma conta existia
+    sucessos = [r for r in resultados if r.excecao is None]
+    erros = [r.excecao for r in resultados if r.excecao is not None]
+    assert (len(sucessos), len(erros)) == (1, 1)
+    erro = erros[0]
+    assert isinstance(erro, ConviteInvalido | IntegrityError | EmailEmUso)
+    do_banco = [
+        e for e in _causas(erro) if isinstance(e, IntegrityError) and "conta_email_unico" in str(e)
+    ]
+    assert do_banco, f"a recusa não veio da restrição do banco: {erro!r}"
+    assert Conta.objects.filter(email_normalizado="ana@x.com").count() == 1
+    assert Convite.objects.filter(consumido_em__isnull=False).count() == 1

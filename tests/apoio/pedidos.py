@@ -66,8 +66,8 @@ def montar_arranjo(
     *,
     minimo: str = "100.00",
     pendente_a_p1: int = 0,
-    parcelas_de_p1: Sequence[tuple[str, int]] = PARCELAS_DE_P1,
-    parcelas_de_p2: Sequence[tuple[str, int]] = PARCELAS_DE_P2,
+    parcelas_de_p1: Sequence[tuple[str, int | str]] = PARCELAS_DE_P1,
+    parcelas_de_p2: Sequence[tuple[str, int | str]] = PARCELAS_DE_P2,
     unidade_de_p1: str = Unidade.UNIDADE,
     incremento_de_p1: str = "1.000",
     preco_de_p1: str = "10.00",
@@ -104,8 +104,8 @@ def montar_arranjo(
         ParcelaFactory.create(
             comprador=comprador,
             produto=produto,
-            quantidade_original=D(quantidade + pendente),
-            quantidade_reservada=D(quantidade),
+            quantidade_original=D(str(quantidade)) + D(pendente),
+            quantidade_reservada=D(str(quantidade)),
             quantidade_pendente=D(pendente),
         )
     return Arranjo(fornecedor, rodada, ciclo, p1, p2, a, b, administrador(), c)

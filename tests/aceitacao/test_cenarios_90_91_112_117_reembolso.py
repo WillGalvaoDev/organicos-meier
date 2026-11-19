@@ -8,7 +8,7 @@ import pytest
 from apps.catalogo.models import Unidade
 from apps.financeiro.models import Reembolso
 from apps.financeiro.reembolsos import ReembolsoRecusado, acumulado_do_pedido
-from apps.pedidos.models import ItemDoPedido
+from apps.pedidos.models import ItemDoPedido, ParcelaNoPedido, Pedido
 from tests.apoio.devolucoes import K, M, N, componentes, integral, parcial, pedido_pago_com_itens
 from tests.conftest import RelogioControlado
 
@@ -79,8 +79,18 @@ def test_cenario_117_cada_devolucao_e_registrada_separadamente(relogio: RelogioC
         D("1.000"),
         D("7.99"),
     )
+    composicao = (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(ParcelaNoPedido.objects.order_by("pk").values()),
+    )
     for _ in range(4):
         parcial(item, "0.25")
     assert Reembolso.objects.filter(pedido=pedido).count() == 4
     assert ItemDoPedido.objects.get(pk=item.pk).quantidade == D("1.000")
     assert ItemDoPedido.objects.get(pk=item.pk).subtotal == D("7.99")
+    assert (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(ParcelaNoPedido.objects.order_by("pk").values()),
+    ) == composicao

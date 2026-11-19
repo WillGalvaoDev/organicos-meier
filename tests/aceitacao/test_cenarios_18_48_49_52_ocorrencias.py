@@ -5,7 +5,8 @@ from typing import Any
 
 import pytest
 
-from apps.pedidos.models import ItemDoPedido, Pedido
+from apps.financeiro.models import Reembolso
+from apps.pedidos.models import ItemDoPedido, OcorrenciaDeEntrega, Pedido
 from apps.rodadas.models import Rodada
 from tests.apoio.entrega import arranjo_ae, arranjo_unico, item_de, ocorrer
 from tests.conftest import RelogioControlado
@@ -44,6 +45,9 @@ def test_cenarios_48_e_52_a_ocorrencia_nao_muda_pedido_nem_rodada(
     antes = (list(Pedido.objects.values()), list(ItemDoPedido.objects.values()))
     resultado = ocorrer(a.admin, item_de(pedido, a.p1), D("2"), "faltante")
     assert _componentes(resultado) == (D("20.00"), D("1.00"), D("4.00"))
+    assert resultado.reembolso.obrigacao.devido == D("25.00")
+    assert OcorrenciaDeEntrega.objects.count() == 1
+    assert Reembolso.objects.count() == 1
     assert (list(Pedido.objects.values()), list(ItemDoPedido.objects.values())) == antes
     assert Rodada.objects.get(pk=a.rodada.pk).etapa == "aguardando_fornecedor"
 
