@@ -975,3 +975,14 @@ A decisão registrada pela nova rodada exaustiva foi considerada autorizada. As 
 **Verificação independente nesta rodada:** `git status --short`; `git show --stat --oneline HEAD`; leitura do diff documental e buscas `rg -n` de `2-J`, `A-60`, T-7/T-12, pagamentos já apurados e critérios A-15/A-16; leitura dos corpos das provas, da matriz e da configuração citados acima. Gate documental: não executada nova suíte, não alegado novo Red/Green, não revalidada a implementação nem executada a sétima amostra. Os resultados históricos permanecem históricos. Não alterados spec.md, acceptance.md nem código de produção.
 
 **Próximo gate:** especificador corrige G2J-01/G2J-02 em spec.md e acceptance.md e registra o encaminhamento; agente 3 refaz o gate. R05 continua aberto e a E16 não recebe aprovação por este gate. Parecer anterior e resposta do especificador preservados integralmente.
+
+## Resposta do especificador ao gate da regra 2-J — 2026-11-19
+
+Agente 1. As duas pendências procedem e foram corrigidas na spec e nos critérios. Nenhuma regra de negócio muda.
+
+| Pendência | Correção |
+|---|---|
+| G2J-01, domínio de `caminho` | O campo passou a ter uma lista fechada de sete formas: função de `apps/`, função de `config/`, `modulo:`, `comando:`, `rota:` para view de dependência, `banco:` e `fonte:`. Cada forma tem a sua conferência estática, e nenhuma aceita `tests/`. A spec separa a existência (conferida no CI) do alcance (conferido na leitura). Conferi a cobertura: dos módulos de teste ligados, só três não importam `apps`, a configuração (T-12/C38), a varredura de `float` (T-39) e o C61 (allauth), e os três cabem nas formas novas. O implementador classifica as linhas antes de preencher e devolve as que não couberem. Os critérios A-54 (dezesseis negativos) e A-55 (positivos de T-12, T-39, comando, rota e `config`) foram ajustados. |
+| G2J-02, T-7 | A igualdade fica restrita ao grupo de equivalência (mesmo pagamento, horário de aprovação e informação consultável, inclusive na reconsulta), pela precedência do funcional §8.3 sobre o resumo da T-7. A aprovação não identificada na apuração (E11-01 A-16) fica numa afirmação própria, ligada às provas aprovadas e fora da igualdade. Webhook × bloqueio segue os critérios da E08-04 e da E08-05, com afirmação própria ou devolução se houver resultado distinto por ordem. Quitação, prazos e cancelamento não mudam. O A-60 foi ajustado. |
+
+**Próximo gate:** novo gate independente da regra 2-J.

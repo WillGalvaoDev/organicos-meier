@@ -243,9 +243,27 @@ Esta fatia cria:
 
      As perguntas (a) a (f) continuam valendo. Esta regra acrescenta as perguntas (g) a (k) e um campo novo, que obriga a seguir a ação até a produção.
    - **Campo novo `caminho`:** toda linha de `AUDITORIA` ganha `caminho`, não vazio e com até 200 caracteres.
-     - **Conteúdo:** as funções de produção que a ação do teste efetivamente executa, seguindo os auxiliares do teste. São escritas como caminho pontuado a partir de `apps`, separadas por "; ": por exemplo `apps.pedidos.ocorrencias.registrar_ocorrencia` ou `apps.interesses.views.remover_pendentes`. Para uma rota, vale a view.
-     - **Conferência:** `test_matriz.py` verifica, pela árvore de sintaxe e sem importar, que cada caminho aponta para uma função ou um método que existe num arquivo de `apps/`.
-     - **Exceção:** quando a afirmação é sobre o próprio banco (restrição, trigger), o caminho é `banco:<nome da restrição ou da trigger>`, e a conferência aceita esse prefixo.
+     - **Conteúdo:** os pontos de entrada de produção que a ação do teste efetivamente executa, seguindo os auxiliares do teste, separados por "; ".
+     - **Formas aceitas (lista fechada, correção G2J-01 do gate):**
+
+       | Forma | Uso | Conferência estática, pela árvore de sintaxe e sem importar |
+       |---|---|---|
+       | `apps.<módulo>.<função>` ou `apps.<módulo>.<Classe>.<método>` | função, método ou view do projeto | a função ou o método existe no arquivo `.py` correspondente em `apps/` |
+       | `config.<módulo>.<função>` | função de `config/`, como `config.observabilidade.limpar_evento` | a função existe no arquivo correspondente em `config/` |
+       | `modulo:<caminho pontuado>` | corpo de módulo executado ao carregar, como `modulo:config.settings.prod` (T-12) | o arquivo `.py` existe em `apps/` ou `config/` |
+       | `comando:manage.py <subcomando>` | comando executado pelo ponto de entrada, como `comando:manage.py procrastinate worker` | `manage.py` existe na raiz. Quando o subcomando é do projeto, existe `apps/*/management/commands/<subcomando>.py` |
+       | `rota:<MÉTODO> <caminho>` | rota cuja view é de uma dependência, como `rota:POST /entrar/` (allauth) | o caminho sem a barra inicial, até o primeiro parâmetro, aparece no começo de uma chamada `path(...)` de `config/urls.py` ou de um `urls.py` de `apps/` |
+       | `banco:<nome>` | restrição ou trigger do Postgres, como `banco:conta_email_unico` | o nome aparece literalmente num arquivo `.py` de `apps/` (migração ou módulo de gatilhos) |
+       | `fonte:<caminho relativo>` | inspeção estática de um artefato de produção, como a varredura de `float` do T-39 | o arquivo ou a pasta existe e não está em `tests/` nem em `docs/` |
+
+       Uma rota cuja view é do projeto usa a primeira forma, com a view. Nenhuma forma aceita algo de `tests/`: auxiliares de teste nunca são produção.
+     - **Existência estática e alcance efetivo:** o CI confere só que o ponto de entrada existe. Ele não confere que o teste o alcança. O alcance é da leitura humana (pergunta (g)): o implementador segue o auxiliar e o revisor confere na amostra. Indicar uma função que existe, mas que a ação não executa, é resíduo.
+     - **Classificação antes do preenchimento:** o especificador conferiu que a lista cobre os tipos de ligação da matriz. A leitura dos módulos de teste ligados achou três que não importam `apps`:
+       - `test_configuracao_pagamentos.py` (cenário 38 e T-12), que usa `modulo:` e `comando:`;
+       - `test_varredura_float.py` (T-39), que usa `fonte:`;
+       - `test_cenario_61_contas_independentes.py` (C61), que usa `rota:POST /entrar/` e as views do projeto que alcança.
+
+       O implementador classifica as 606 linhas antes de preencher. Se alguma não couber em nenhuma forma, ele para e devolve ao especificador com a lista, sem forçar uma forma. Não se move nem se refatora produção para caber no formato.
    - **As cinco perguntas novas.** O veredito `"íntegra"` exige sim também nestas:
      - (g) **ação efetiva:** quando a afirmação nomeia uma ação de negócio (ocorrência, apuração, abertura do pagamento, cadastro, remoção, cancelamento), o `caminho` contém a função de produção dessa ação. Chamar o cálculo financeiro que a ação usaria, ou um auxiliar cujo nome ou motivo cita a ação, não prova a ação;
      - (h) **concorrência:** quando a afirmação diz "simultâneos", "concorrendo" ou "concorrente", o teste executa as operações em paralelo (`executar_em_paralelo`, E01-05). O resultado afirmado tem de sair do mecanismo que a afirmação nomeia. Quando a afirmação diz "em qualquer ordem", cada ordem é forçada sob concorrência: a primeira operação obtém a trava e a segunda fica comprovadamente esperando por ela antes de a primeira confirmar. Execução sequencial não prova concorrência;
@@ -282,9 +300,17 @@ Esta fatia cria:
        - resultado: um sucesso, uma única conta, e a recusa do outro pela restrição `conta_email_unico`. Pode ser o `IntegrityError` com esse nome, ou a exceção de domínio em que o serviço o traduz, com esse `IntegrityError` como causa (`__cause__` ou `__context__`);
        - `test_banco_recusa_segunda_conta_com_o_mesmo_email_pela_restricao_unique`, sequencial, sai da afirmação de concorrência e pode ficar numa afirmação própria da restrição;
        - se o apoio de concorrência não conseguir sincronizar depois da verificação sem mudar a produção, o implementador para e devolve ao especificador.
-     - **T-7, ordens forçadas:**
-       - para webhook × bloqueio de `T0 + 24h` e webhook × apuração, cada par tem as duas ordens forçadas sob concorrência (pergunta (h)), com o mesmo resultado final de pagamento, destino e situação do pedido;
-       - o par bloqueio × apuração entra se as regras de prazo permitirem que os dois atuem sobre o mesmo pedido no mesmo instante. Se não permitirem, o `review.md` registra o porquê, com a referência do prazo;
+     - **T-7, ordens forçadas, delimitadas pelo §8.3** (correção G2J-02 do gate):
+       - **precedência:** a linha T-7 da infraestrutura resume ("o mesmo resultado em qualquer ordem"). O funcional §8.3 prevalece (AGENTS.md §2) e delimita esse resumo de duas formas:
+         - uma aprovação até `T0 + 48h` notificada depois é aceita "desde que identificada na apuração";
+         - um pagamento comunicado tardiamente "não autoriza editar pedidos já apurados".
+
+         Por isso, a igualdade entre as ordens vale só dentro de um grupo de equivalência, e não para qualquer arranjo;
+       - **grupo de equivalência:** o mesmo pedido, o mesmo pagamento, o mesmo horário de aprovação no provedor e a mesma informação consultável no provedor no instante em que cada operação a lê, em especial a reconsulta da apuração. Nesse grupo, para webhook × bloqueio de `T0 + 24h` e para webhook × apuração, as duas ordens são forçadas sob concorrência (pergunta (h)). O resultado final de pagamento, destino e situação do pedido é idêntico. Para webhook × apuração, é o caso da E11-01 A-15: aprovação identificável, Y `pago` e destino `quita` nas duas ordens;
+       - **comportamento distinto, em afirmação própria:** a aprovação **não** identificada na apuração, com a reconsulta devolvendo "pendente", segue a E11-01 A-16. A apuração cancela Y por inadimplência, e o aviso posterior à decisão espera a trava. Y continua `cancelado`, com destino `devolucao`, a obrigação integral e o alerta `aprovado_no_prazo_depois_da_apuracao`, sem editar o pedido apurado. Essa afirmação continua ligada às provas aprovadas (`tests/tecnicos/test_apuracao_inicio.py`, testes dos A-15 e A-16 da E11-01) e não entra em nenhuma afirmação de igualdade;
+       - **webhook × bloqueio:** o grupo de equivalência segue os critérios aprovados da E08-04 e da E08-05: a criação antes de `T0 + 24h` e o mesmo estado da cobrança no provedor. Se algum critério aprovado dessas fatias previr resultado diferente conforme a ordem, esse caso vira afirmação própria, como o do A-16. Se a leitura não permitir delimitar o grupo, o implementador para e devolve ao especificador;
+       - **bloqueio × apuração:** o par entra se as regras de prazo permitirem que os dois atuem sobre o mesmo pedido no mesmo instante, com o mesmo grupo de equivalência. Se não permitirem, o `review.md` registra o porquê, com a referência do prazo;
+       - **o que não muda:** quitação, prazos, cancelamento e devolução. Nenhuma regra financeira é alterada para obter igualdade;
        - os testes sequenciais ficam como prova de afirmações próprias de ordem sequencial, se existirem, ou saem.
      - **C59, atomização autorizada:** "o endereço banido com outras maiúsculas é recusado no login e no novo cadastro" vira duas afirmações, uma para o login e outra para o novo cadastro, cada uma com a sua prova atual. As demais afirmações do C59 não mudam.
      - **C85 e T-26, a rota:**
@@ -419,7 +445,7 @@ Esta fatia cria:
 - **Atomicidade (regra 2-E).** A prova parcial nasce de afirmações compostas. Dividir o texto em afirmações atômicas torna a leitura do revisor binária: cada afirmação está provada ou não está.
 - **Auditoria por ligação, conferida no CI (regra 2-G).** Cada rodada por amostra achou resíduos de tipos novos, e cada busca por tipo deixou os outros tipos de fora. Uma linha por ligação torna a completude verificável por máquina (as chaves batem com a matriz) e a qualidade verificável por amostra do revisor (a linha bate com o corpo). O dicionário em Python segue o padrão da matriz e não traz dependência nova.
 - **Guarda conservadora e congelada (regra 2-H).** Resolver qual valor uma constante tem no momento do decorador exigiria executar o módulo. Recusar a constante com mais de uma ligação ou alterada troca a aceitação indevida pela recusa a mais, que é visível e se resolve escrevendo o caso no próprio decorador. Congelar a guarda encerra a corrida entre formas novas e contraexemplos sintéticos.
-- **Caminho de produção na auditoria (regra 2-J).** O veredito "íntegra" da regra 2-G foi dado a ações que o teste não executava, porque a linha descrevia o nome do auxiliar. Registrar a função de produção alcançada, conferida pela árvore de sintaxe, obriga a seguir o auxiliar e torna a pergunta (g) verificável na leitura do revisor.
+- **Caminho de produção na auditoria (regra 2-J).** O veredito "íntegra" da regra 2-G foi dado a ações que o teste não executava, porque a linha descrevia o nome do auxiliar. Registrar o ponto de entrada de produção alcançado obriga a seguir o auxiliar e torna a pergunta (g) verificável na leitura do revisor. A lista fechada de formas cobre funções, corpo de módulo, comandos, rotas de dependências, banco e inspeção estática, porque nem toda prova correta passa por uma função de `apps/` (o T-12 carrega `config.settings.prod`). A existência é conferida por máquina; o alcance, pela leitura.
 - **Critério de encerramento combinado antes (regra 2-I).** Ele evita rodadas sem fim e deixa com o responsável a escolha que não é técnica.
 - **Defeito encontrado não é corrigido aqui.** A fatia é de evidência. Corrigir comportamento sem especificação mudaria escopo (AGENTS.md §3).
 
@@ -431,7 +457,7 @@ Esta fatia cria:
 - A conferência estática só aceita uma referência cujo arquivo tenha apenas as formas da lista fechada (regra 3-D).
 - O documento gerado corresponde à matriz.
 - Cada ligação da matriz tem exatamente uma linha em `AUDITORIA`, e cada linha, uma ligação (regra 2-G).
-- Cada linha de `AUDITORIA` nomeia no `caminho` funções de produção que existem (regra 2-J).
+- Cada linha de `AUDITORIA` nomeia no `caminho` pontos de entrada de produção que existem, numa das formas da lista fechada (regra 2-J). O alcance efetivo é conferido na leitura.
 - Nenhum código de produção muda nesta fatia.
 
 ## Dependências e decisões em aberto
