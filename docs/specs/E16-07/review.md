@@ -986,3 +986,27 @@ Agente 1. As duas pendências procedem e foram corrigidas na spec e nos critéri
 | G2J-02, T-7 | A igualdade fica restrita ao grupo de equivalência (mesmo pagamento, horário de aprovação e informação consultável, inclusive na reconsulta), pela precedência do funcional §8.3 sobre o resumo da T-7. A aprovação não identificada na apuração (E11-01 A-16) fica numa afirmação própria, ligada às provas aprovadas e fora da igualdade. Webhook × bloqueio segue os critérios da E08-04 e da E08-05, com afirmação própria ou devolução se houver resultado distinto por ordem. Quitação, prazos e cancelamento não mudam. O A-60 foi ajustado. |
 
 **Próximo gate:** novo gate independente da regra 2-J.
+
+## Novo gate independente da regra 2-J — 2026-11-19
+
+Agente 3. Base: `bee0db6`, branch `e16-especificacoes`, árvore inicialmente limpa. Comparação documental contra `227f869`. **Veredito: APROVADO — gate da especificação da regra 2-J e critérios A-54 a A-64.** G2J-01 e G2J-02 encerrados neste gate. Nenhum novo achado impeditivo identificado no escopo documental examinado.
+
+### Revalidação das pendências
+
+| Achado | Evidência da correção e conclusão |
+|---|---|
+| G2J-01 — domínio de `caminho` | A regra agora distingue função, corpo de módulo, comando, rota de dependência, banco e inspeção de fonte, incluindo funções de `config/`. T-12 pode declarar `modulo:config.settings.prod`, compatível com a ação do teste e a recusa no corpo de `config/settings/prod.py`. A-54 tem dezesseis negativos e A-55 positivos representativos. Conferidos também `config/urls.py:22` (login allauth do C61), `config/observabilidade.py:131` e a varredura de fontes do T-39. A regra distingue existência estática de alcance efetivo, exige classificação prévia e devolução de casos não representáveis, sem refatorar produção. **Encerrado.** |
+| G2J-02 — igualdade universal no T-7 | A regra e A-60 delimitam a equivalência por pagamento, horário de aprovação e informação consultável, preservando a precedência do funcional §8.3. A aprovação não identificada na apuração fica em afirmação própria, com cancelamento mantido, devolução, obrigação integral e alerta conforme E11-01 A-16. Webhook × bloqueio remete aos critérios E08-04/E08-05; E08-05 A-20 fornece o caso de cobrança já aprovada e A-21 o caso pendente. Os casos distintos não são forçados a uma igualdade indevida. **Encerrado.** |
+
+**Aplicação das regras já especificadas:** a referência à família A-15/A-16 não torna os respectivos testes intercambiáveis. A-15(ii) usa reconsulta pendente com aviso obtendo a trava primeiro; não prova sozinho as duas ordens com aprovação identificável na reconsulta. A equivalência exige as novas provas nas pré-condições expressas de 2-J/A-60; a afirmação de cancelamento/devolução exige a prova correspondente a A-16. Isso decorre da exigência mantida de que cada ligação prove integralmente sua afirmação, sem introduzir requisito financeiro novo. Da mesma forma, as formas estáticas de `caminho` identificam artefatos; não certificam por si sós execução, validade de argumentos de comando ou semântica da operação. Essa conferência permanece na leitura por ligação, expressamente exigida pela regra.
+
+### Cobertura do gate e limites
+
+- **A-54/A-55:** formatos, positivos, negativos e classificação prévia são verificáveis; os testes novos da conferência continuam sujeitos ao ciclo Red/Green.
+- **A-56 a A-59 e A-61/A-62:** mantidas as correções dirigidas de ocorrência real, formação efetiva de caixas, remoção com registros congelados, corrida do cadastro, atomização, rota de quantidades e arranjo de C104. As devoluções previstas continuam obrigatórias quando aplicáveis.
+- **A-60:** concorrência com ordens forçadas dentro das pré-condições, exceção financeira separada e justificativa do par bloqueio × apuração permitem avaliar o comportamento sem alterar regras aprovadas.
+- **A-63/A-64:** permanecem o registro da releitura exaustiva, buscas dirigidas, retificação histórica, execução da suíte e a sétima amostra independente, com o encaminhamento de 2-I se houver resíduos.
+
+**Verificações executadas:** `git status --short`; `git log -4 --oneline`; `git diff 227f869..HEAD -- docs/specs/E16-07/spec.md docs/specs/E16-07/acceptance.md docs/specs/E16-07/review.md`; `git diff --check 227f869..HEAD` (sem erros); leitura do AGENTS.md, funcional §8.3, critérios E11-01 A-15/A-16, E08-05 e dos artefatos/provas citados, com buscas `rg -n` na matriz e nos pontos de entrada. Não executada nova suíte: esta rodada aprova a especificação, não certifica a implementação. Nenhuma alegação de Red/Green novo ou de sétima amostra realizada.
+
+**Entrega ao implementador:** regra 2-J liberada para execução no escopo aprovado. Implementar a conferência com TDD, classificar e reler as ligações, produzir as caracterizaçōes e registros exigidos e devolver para revisão independente. **R05 permanece aberto; este gate não aprova a E16 nem encerra os bloqueios operacionais anteriores.** Alterado apenas este parecer, por acréscimo, preservando o histórico. Sem alteração de especificação ou produção pelo revisor.
