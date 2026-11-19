@@ -872,3 +872,59 @@ Todas passaram na primeira execução, porque o comportamento já existia (exce�
 ### Devoluções ao especificador
 
 Nenhuma.
+
+## Revisão independente da quarta correção — 2026-11-19 — 8e35589
+
+**REPROVADO — R05 importante permanece aberto.** Base do gate: `54be872`; commits avaliados: `4f84b76` e `8e35589`. Regras 2-G a 2-I e A-47 a A-53 relidos antes da comparação. Fontes: funcional v1.7, infraestrutura v1.8, especificações e critérios das fatias citadas. Árvore inicialmente limpa. Nenhuma alteração de produção pelo implementador nesta rodada; o revisor não alterou código nem testes.
+
+### Sexta amostra e método (A-53)
+
+Cenários **59, 72, 96, 98, 99, 100, 101, 102, 103, 104, 106, 107, 108, 109, 111, 112, 114, 115, 118 e 90**; técnicos **T-51, T-52, T-53, T-54, T-38, T-7, T-34, T-37, T-44 e T-47**. Os primeiros 19 cenários e T-51 a T-54/T-38 não pertenciam às cinco amostras principais anteriores; C90 e os cinco técnicos restantes são repetições intencionais, como permitido no gate. Alguns dos primeiros 19 já tinham sido relidos pontualmente. A amostra contém **116 afirmações e 119 ligações**.
+
+Além da amostra, relidos os sete resíduos de 2-G (C74, C84, C90, C86, T-43, T-44 e T-47), C85/T-26 e os julgamentos declarados pertinentes. Foram confrontados matriz, linhas de AUDITORIA, texto-base, corpos de 83 referências distintas e auxiliares/parâmetros relevantes. A leitura não se limitou ao texto dos asserts citados. Conferidos também todos os diffs de testes, guarda, auditoria e configuração desde o gate.
+
+Contagens independentes: **174 entradas, 596 afirmações, 606 ligações, 284 referências distintas**. AUDITORIA tem 606 chaves, 566 vereditos “íntegra” e 40 “corrigida”. O diff de chaves completas contra o gate tem 36 retiradas e 38 adicionadas; as 29 retiradas enumeradas no registro não são o total do diff, pois há também as substituições dos resíduos. A conferência estrutural não encontrou chave faltante ou excedente.
+
+### Correções confirmadas
+
+- C74: a afirmação de preservação do pedido aponta agora para o snapshot de Pedido/ItemDoPedido/ParcelaNoPedido anterior à apuração e comparado por conteúdo depois.
+- C84: a nova caracterização percorre dois cadastros por convite com os endereços literais, consulta duas contas e confirma sessões distintas. A prova separada de banimento mantém o alias ativo.
+- C86 e T-43: provas agora citam os casos `"0"`, `"-1"`, `"1.5"` e `"5"` pertinentes.
+- C90: valores, quantidade inteira, unidade e mudança de preço estão explícitos; os três componentes do reembolso são conferidos. A ação ainda não é a ocorrência especificada, conforme a tabela abaixo.
+- T-44: o novo teste envia o identificador real do item e fotografa pedidos, itens, reembolsos e parcelas. A abrangência da prova financeira e das demais ligações ainda é insuficiente.
+- T-47: passou a haver produto com múltiplo e asserções explícitas de caixas completas. A prova ainda se restringe à consulta de progresso.
+- A-47/A-48: os sete negativos recebem o diagnóstico exigido; constante de uma ligação e caso no decorador são aceitos. A-49/A-50: cinco negativos da auditoria e igualdade das chaves passam. A-51 passa como verificação estrutural, mas não substitui o conteúdo de A-53.
+
+### Resíduos da sexta amostra — evidência e retorno
+
+Todos os itens abaixo são **importantes, integrantes de R05**. Demonstram insuficiência ou inexatidão da evidência atribuída às ligações; **não demonstram defeito de produção**. A regra 2-G exige prova integral por ligação, com situação, ação, objeto e resultado correspondentes.
+
+| Referência | Evidência reproduzível | Correção esperada |
+|---|---|---|
+| C90 e C112; 2-G, fluxo inteiro, perguntas (a)/(b) | `test_cenarios_90_item_inteiro_de_0_25_kg.py:23` chama `parcial(item, "0.25")`. O auxiliar `tests/apoio/devolucoes.py:68` chama diretamente `reembolso_parcial`, com motivo textual `ocorrencia_de_entrega`; não registra uma `OcorrenciaDeEntrega` nem chama o serviço de ocorrência. AUDITORIA descreve a ação como ocorrência, mas só o cálculo financeiro é exercitado. A ligação “A ocorrência de 0,25 kg reembolsa R$ 2,00” de C112 usa o mesmo auxiliar diretamente em `test_cenario_112_parcial_usa_o_valor_registrado`. | Caracterizar o registro efetivo da ocorrência da quantidade inteira do item de 0,25 kg, após mudança 7,99 → 8,99, e conferir o reembolso 2,00/0,10/0,40 vinculado; para C112, usar o item de 1 kg e ocorrência parcial de 0,25. Preservar as provas financeiras existentes, sem tratá-las como provas da ação que não executam. |
+| T-47; 2-G, formação de caixas | `test_interesses_progresso.py:100` chama somente `progresso_da_rodada`: 7 reservadas + 5 pendentes dão zero caixas; depois 10 reservadas dão uma. Não há abertura/apuração nem leitura das alocações congeladas. A consulta é somente leitura; a formação congelada ocorre em `apps/pedidos/abertura.py`, separada da consulta. A regra aprovada exige apuração formando só caixas das reservadas e pendentes na fila. | Completar a prova do fluxo especificado, com múltiplo definido, pendentes suficientes para alterar o número de caixas se contassem, alocações/caixas efetivas e preservação da fila. O teste de consulta pode continuar como prova do progresso. |
+| C99 / T-44; 2-G (b)/(c)/(d) | `test_fila_ponta_a_ponta.py:349` compara ItemDoPedido, Reembolso e `_estado` (situação/reservado/pendente), mas não Pedido, obrigação nem lançamentos; a prova da matriz diz “obrigações iguais”. O teste novo em `:373` acrescenta Pedido e todas as parcelas de A, mas ainda não lê obrigações/lançamentos. A ligação de C99 para `test_parcela_em_pedido_nao_entra_na_remocao` cria apenas uma parcela com situação EM_PEDIDO, sem ItemDoPedido nem envio de seu identificador. | Separar as duas entradas recusadas e ligar cada afirmação à ação real correspondente. Comparar por conteúdo os registros financeiros pertinentes e o pedido; alinhar a afirmação de trigger à prova de preservação aplicável. Não chamar `_estado` de prova de obrigação. O status 200 não é, sozinho, defeito: a rota usa 200 para erros de formulário; conferir a recusa efetiva e a ausência de escrita. |
+| T-34; 2-G (a)/(b) | A afirmação “Dois cadastros simultâneos ... recusa pela restrição UNIQUE” aponta só para `test_contas_modelo.py:31`: dois INSERTs sequenciais. O teste de cadastros concorrentes é outra ligação e admite diferentes recusas; não transforma o INSERT sequencial em prova de concorrência. A própria AUDITORIA descreve uma conta já inserida e um segundo INSERT. | Vincular prova que reúna concorrência e resultado afirmado, ou devolver ao especificador a adequação da afirmação à origem T-34 sem perder a garantia exigida. Não registrar duas provas parciais como uma ligação íntegra. |
+| T-7; 2-G (a)/(b) | `test_pedidos_concorrencia.py:343` percorre duas ordens **em sequência**, mas é ligado à afirmação “concorrendo ... em qualquer ordem”. A outra referência roda com barreira, sem forçar ambas as ordens. Cada linha prova parte diferente do enunciado e a AUDITORIA admite a sequência. | Prova integral das ordens concorrentes especificadas, ou atomização compatível com a origem, mantendo evidência das corridas e das ordens sem atribuir a um teste uma ação que não executa. |
+| C59, C85 e T-26; 2-G, proibição de ligação complementar parcial | O registro declara uma ligação por cláusula. Em C59, um teste só faz login e outro só emite convite para a afirmação composta login/cadastro. Em C85, `test_quantidades_recusadas` só chama `validar_quantidade`, sem HTTP; em T-26, a mesma função é ligada diretamente a “recusada pela API”. AUDITORIA diz que a cláusula da API é provada por outro teste. A-36 não dispensa 2-G: exige resultado por inteiro. | Retirar a ligação parcial quando outra já prova integralmente a afirmação (por exemplo, rota de T-26), ou criar caracterização que reúna as cláusulas. Se a forma fixa de C59 precisar mudar, devolver a alteração documental ao especificador; não declarar exceção implícita à regra 2-G. |
+| C104 / C114; 2-G (a), condição comum do cenário | As provas de pedido/cobrança/fila de C104 usam FP/R2 com C em 4 reservadas + 4 pendentes, não a situação A=8/C=5 do cenário. Em C114, a segunda ligação usa `test_ocorrencias.py:398`, arranjo AE, obrigação 70,76 e item 60,00, em vez do item 7,99 com parcial 2,00 e saldo 5,99. A atomização não elimina essas pré-condições comuns, como 2-G explicita. | Ligar as afirmações ao cenário concreto completo; retirar ligação de outro arranjo mesmo que prove uma regra geral parecida. Não alterar os valores do requisito para acomodar a prova. |
+
+### Reprodução da guarda e precisão do registro TDD
+
+Executado comparativo independente em diretório temporário: fonte de `conferencia.py` obtida por `git show 54be872:tests/rastreabilidade/conferencia.py`, carregada fora do repositório; sete fontes de `FONTES_DA_CONSTANTE_ALTERADA`, mesma prova de caso `(9, "9.5", False)`, comparadas com `_conferir_prova` atual. Não se alterou a árvore nem a produção.
+
+Resultado: a versão anterior **aceita dois casos** (reatribuição posterior e atribuição somente posterior à definição) e **já recusa cinco** (`+=`, append, índice, global em função e for), com diagnóstico genérico de trecho fora do assert/parametrize. A atual recusa os sete com `MOTIVO_DA_CONSTANTE`. Controles positivos, cinco negativos da auditoria, cobertura entregue e estrutura dos sete resíduos passaram por chamada independente das verificações.
+
+O registro “a conferência atual aceitava todos (`assert []`)” não corresponde à versão-base e ao corpus commitado. Os sete testes podem ter ficado Red, mas em cinco o motivo é o diagnóstico esperado ausente, não aceitação indevida. **Retificar o registro, preservando o texto anterior**, com comando/saída ou identificação do estado intermediário efetivamente usado. A correção funcional da reprodução original está confirmada; não se alega ter presenciado o Red histórico nem se inventa uma violação da ordem do TDD a partir dessa divergência. A guarda continua congelada conforme 2-H; não foram acrescentadas exigências de novas evasões sintéticas.
+
+### Encaminhamento obrigatório da regra 2-I
+
+A sexta amostra encontrou resíduos reais nas referências da matriz. **R05 não está encerrado e A-53 não está atendido.** Ao especificador: receber esta lista, preservar as garantias de negócio e levar ao responsável a escolha já prevista: (1) nova rodada exaustiva; ou (2) corrigir os resíduos apontados e registrar o restante, sem defeito de produção, como melhoria, encerrando R05 somente após revisão das correções apontadas. Nenhum agente está autorizado a escolher essa opção sozinho.
+
+Para sanar as pendências documentais, o especificador deve explicitar o encaminhamento da opção escolhida, resolver eventual necessidade de atomização das afirmações fixas sem admitir ligações parciais e manter no escopo as caracterizações efetivas de ocorrência, caixas e concorrência acima. Não é necessária nova decisão comercial sobre valores, prazos ou permissões. Defeito real revelado por qualquer caracterização segue a devolução normal; não se corrige produção silenciosamente nesta fatia.
+
+Resultados finais da suíte e limites de execução serão consolidados na E16-08 ao término da execução independente desta rodada.
+
+### Fechamento da execução independente
+
+**3690 passed, 1 skipped, 2 xfailed, 18 warnings em 977,37 s**, sobre `8e35589`. O verificador `python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_8e35589.xml` terminou com código 0: todas as referências da matriz passaram. JUnit: 3693 casos, zero falhas e zero erros. Guardas estruturais verdes não eliminam os resíduos semânticos da sexta amostra. Mantido **REPROVADO / R05 importante**, com o encaminhamento de 2-I descrito acima. Consolidado e limites na E16-08.

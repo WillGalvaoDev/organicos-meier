@@ -388,3 +388,45 @@ Suíte concluída sobre **3e8b4ff**: **3669 passed, 1 skipped, 2 xfailed, 18 war
 O skip corresponde ao backup real, por ausência de pg_dump, pg_restore, age e age-keygen. Os dois xfails são os registros de restauração/RTO e de melhorias; não contam como critérios aprovados. A justificativa textual compartilhada desses xfails ainda menciona decisão do responsável, mas as decisões já foram registradas: o que falta é cumprir as entregas e verificações de encerramento. Os 18 avisos são de depreciação de send_default_pii no Sentry.
 
 Os sete testes da E16-09 passaram (um de aceitação e seis técnicos), junto à regressão completa: **E16-09 APROVADA**. Mantido o veredito global **E16 REPROVADA**, pelos achados R05, R08 e pelo bloqueador operacional R07. Os relatórios desta rodada encerram a revisão técnica solicitada; não encerram a etapa.
+
+## Revisão independente das novas correções — 2026-11-19 — 8e35589
+
+**Veredito global: REPROVADO.** Commits `4f84b76` e `8e35589`, a partir do gate `54be872`. A sexta amostra da E16-07 encontrou ligações que ainda não comprovam integralmente as afirmações: detalhes, referências e retorno ao especificador no parecer da fatia. Não foi demonstrado defeito de produção por esses resíduos.
+
+| Item | Situação |
+|---|---|
+| R01 a R04 e R06 | Encerramentos mantidos; sem alteração das implementações correspondentes |
+| E16-09 | Aprovação mantida; nova leitura da prova do histórico na sexta amostra |
+| R05 — importante | Aberto; A-53 não atendido. A regra 2-I exige encaminhar ao responsável a escolha entre nova auditoria exaustiva e correção dos apontados com tratamento do restante como melhoria |
+| E16-10 / R08 | Complemento lido, sem resíduo identificado; conclusão de execução e A-5 no fechamento desta rodada |
+| R07 — bloqueador | Mantido: faltam as contas/pré-requisitos externos e evidências de homologação, suíte no Neon e restauração real pelos caminhos A/B com RTO |
+
+As decisões anteriores sobre melhorias permanecem válidas. Não se repete a solicitação de decisão sobre M-3/M-8; seu fechamento depende somente da conclusão da E16-10. A decisão de 2-I é específica dos resíduos da sexta amostra e não autoriza iniciar homologação antes do gate técnico exigido pela regra 15 da E16-08.
+
+### Verificação independente
+
+Runner temporário fora do repositório, equivalente ao da rodada anterior, com `DJANGO_SETTINGS_MODULE=config.settings.test`, PYTHONPATH da raiz e banco de teste isolado `test_organicos_revisor_e16_8e35589`. Comando da suíte:
+
+```text
+pytest -q -p no:cacheprovider --tb=short --junitxml=<TEMP>/revisor_e16_8e35589.xml
+python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_8e35589.xml
+```
+
+- `python -m ruff check .`: All checks passed.
+- `python -m ruff format --check .`: 475 arquivos formatados.
+- `python -m mypy .`: 568 arquivos sem erros.
+- `python manage.py makemigrations --check --dry-run`: No changes detected.
+- Comparativo da guarda antiga/atual com os sete casos A-47, controles A-48, cinco negativos A-49, chaves A-50 e estrutura A-51: resultado documentado na E16-07. A reprodução distingue recusa por diagnóstico anterior de aceitação indevida e exige retificação do relato histórico.
+- Leitura de 20 cenários/10 técnicos na sexta amostra, sete resíduos anteriores, provas adicionais e diffs desta rodada. Nenhuma alteração de produção ou dos testes pelo revisor.
+
+Não executados CI remoto, banco Neon, deploy, envio a provedores, build ou restauração real. Os três últimos não tiveram implementação alterada nesta rodada; testes locais não substituem os gates operacionais. Resultados finais da suíte serão acrescentados após seu término.
+
+### Fechamento da rodada
+
+Suíte independente sobre **8e35589**: **3690 passed, 1 skipped, 2 xfailed, 18 warnings em 977,37 s (16min17s)**. JUnit: 3693 casos, zero falhas e zero erros. Conferência da matriz pelo JUnit: saída 0, todas as referências passaram. O skip é o teste com ferramentas reais de backup ausentes (pg_dump, pg_restore, age e age-keygen); os dois xfails são restauração/RTO e registro de melhorias. Não são critérios aprovados. Os avisos são a depreciação de `send_default_pii` já registrada como M-14.
+
+**E16-10 APROVADA; R08 encerrado.** A caracterização exigida e os demais testes da fatia passaram; M-3/M-8 são encerradas no registro central após essa aprovação. **E16 permanece REPROVADA:** R05 importante ainda aberto e R07 bloqueador operacional mantido. R01–R04/R06 continuam encerrados, e E16-09 continua aprovada.
+
+Próximo gate: o especificador recebe os resíduos e encaminha ao responsável a decisão prevista em E16-07 2-I; depois, as correções apontadas passam por revisão independente. Nenhum resíduo foi convertido em melhoria sem essa decisão. Não houve push nem alteração de produção ou de testes pelo revisor.
+
+Após mover M-3/M-8, executado o teste documental afetado: `python -m pytest tests/ambiente/test_artefatos_de_implantacao.py::test_as_melhorias_tem_decisao -q -p no:cacheprovider`: **1 xfailed em 2,05 s**, saída 0. A marca e a adequação do registro completo de encerramento continuam sob E16-08; as decisões do responsável já registradas não precisam ser tomadas novamente. Não se declara esse xfail como aprovação operacional.

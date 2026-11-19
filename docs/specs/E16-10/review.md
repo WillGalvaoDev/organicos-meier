@@ -100,3 +100,23 @@ Agente 2. Recebida a regra 2-A e os critérios A-6 e A-7 (gate `54be872`).
 **Execução dos testes da regra 2 junto com o novo:** `pytest tests/tecnicos/test_pedidos_abertura_tela.py tests/tecnicos/test_pedidos_concorrencia.py tests/tecnicos/test_financeiro_telas.py` e `tests/tecnicos/test_interesses_carrinho.py::test_quem_pode_ver_e_quem_pode_gravar`: 3690 passed, 1 skipped, 2 xfailed na suíte completa (mesma rodada da E16-07), com esses arquivos incluídos.
 
 **A-4 (escopo):** além dos dois `acceptance.md` e dos documentos da fatia, só o teste novo e o bloco de comprador novo da E16-07 entraram em `test_pedidos_abertura_tela.py`. `docs/melhorias.md` não foi alterado: M-3 e M-8 só vão para "Encerradas" depois da aprovação do revisor (A-5).
+
+## Revisão independente do complemento 2-A — 2026-11-19 — 8e35589
+
+Revisado o complemento contra o gate `54be872`, regra 2-A e A-6/A-7, com releitura de E02-10 (`comprador_ativo`), E08-02 A-12/A-21 e E09-08 A-3. A decisão final de execução está no fechamento abaixo.
+
+| Critério | Verificação independente |
+|---|---|
+| A-1/A-2 | Redações corrigidas continuam presentes nos dois acceptance.md, com marca e textos anteriores preservados. Nenhuma mudança adicional de regra. |
+| A-3 | Testes de preço continuam exercitando as duas ordens concorrentes, itens 11,00 com aviso para A/B quando o preço antecede a abertura e itens 10,00 sem aviso quando a alteração vem depois. O aporte envia `1000,00`, confere reserva 2000,00 e histórico. O teste do comprador mantém 409/mensagem e o snapshot dos pedidos. |
+| A-4 | A adição específica da E16-10 é o teste e os imports necessários. O bloco adicional de comprador novo no teste anterior está explicitamente identificado pelo implementador como reforço da E16-07; não altera os asserts anteriores nem a política. Não foi tratado como autorização para afrouxar ou substituir testes. Nenhum código de produção mudou. |
+| A-6 | `test_pedidos_abertura_tela.py:217` abre o pagamento do arranjo, usa administrador autenticado, fotografa Pedido/ItemDoPedido/ParcelaDeInteresse e exige que as três coleções existam. POST com produto P1 e quantidade 7; exige 403 exato, ausência de MENSAGEM_INTERESSES e igualdade por conteúdo depois. |
+| A-7 | Registro reconhece primeira execução verde como caracterização e retifica expressamente a conclusão anterior de lacuna sem devolução, preservando o histórico. A correspondência do A-12 passa a incluir o novo teste; não há Red inventado nem comportamento novo em produção. |
+
+Não foi encontrado resíduo de R08 na leitura do complemento. A verificação de execução usa a suíte independente completa com JUnit, sem tomar o resultado declarado pelo implementador como execução do revisor. A-5 será aplicado somente após a confirmação desse resultado.
+
+### Fechamento — APROVADO
+
+**E16-10 APROVADA sobre `8e35589`; R08 encerrado.** Suíte independente: **3690 passed, 1 skipped, 2 xfailed, 18 warnings em 977,37 s**. JUnit sem falhas ou erros; os três arquivos da regra 2 somam **74 testes passados** (18 da tela de abertura, 22 de concorrência e 34 das telas financeiras), mais o teste complementar `test_quem_pode_ver_e_quem_pode_gravar`, também passado. A nova caracterização está presente e passou. Conferência da matriz pelo JUnit: saída 0.
+
+Com a aprovação registrada, M-3 e M-8 são movidas para “Encerradas” em `docs/melhorias.md`, com referência à entrega e ao commit `8e35589`, cumprindo A-5. Isso não encerra os demais achados da E16. Resultados estáticos e limitações operacionais no consolidado E16-08.
