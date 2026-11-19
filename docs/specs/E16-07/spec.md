@@ -171,6 +171,68 @@ Esta fatia cria:
      O `review.md` registra, para cada falha, as entradas encontradas e corrigidas, ou "nenhuma além dos exemplos".
    - **Retificação:** o `review.md` registra que a linha "C96: completada" do registro anterior fica retificada para "pendente: depende da E16-09", sem apagar a linha antiga.
 
+2-G. **Auditoria exaustiva de cada ligação** (quarta correção E16-R05, revisão de 2026-11-18 sobre 3e8b4ff).
+   - **Por que muda o método:** a revisão completa da regra 2-F procurou três falhas específicas, por script. A quinta amostra do revisor achou falhas de outro tipo (C74, C84, C90, T-44, T-47, C86 e T-43): a prova não estabelece o resultado afirmado, ou parte de outra situação. Um script não detecta isso. A partir desta correção, a revisão deixa de ser por tipo de falha e passa a ser a leitura de **cada ligação** da matriz, com o resultado registrado e conferido no CI. O registro do A-45 fica como histórico.
+   - **Arquivo:** `tests/rastreabilidade/auditoria.py` define `AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]]`.
+     - **Chave:** `(entrada, afirmação, referência)`, com a entrada do mesmo tipo da chave da matriz (`74` ou `"T-44"`) e os dois textos idênticos aos da matriz.
+     - **Valor:** os campos `preparacao`, `acao`, `resultado` e `veredito`, todos não vazios e com até 200 caracteres.
+       - `preparacao`: a situação que o teste monta antes da ação, com os elementos concretos e onde estão (corpo, parâmetro ou auxiliar);
+       - `acao`: a ação executada, a interface (serviço, rota e método) e o ator;
+       - `resultado`: o que os asserts conferem, e, quando houver comparação, quando o estado "antes" foi lido;
+       - `veredito`: `"íntegra"` ou `"corrigida: <o que mudou>"`, por exemplo `"corrigida: caracterização nova"` ou `"corrigida: religada"`.
+   - **Uma linha por ligação:** as chaves de `AUDITORIA` são exatamente as ligações da matriz final, sem faltar nem sobrar. Uma ligação que não prova por inteiro sai da matriz, ainda que outra ligação da mesma afirmação prove. Ligação "complementar" parcial não existe. As ligações retiradas ficam listadas no `review.md`.
+   - **As seis perguntas de cada ligação.** O veredito `"íntegra"` exige sim nas seis:
+     - (a) **situação:** o teste monta as pré-condições da afirmação e do cenário de onde ela veio, inclusive a condição comum que a atomização separou (no C90, "depois da mudança de preço");
+     - (b) **ação:** executa a ação afirmada, pela interface afirmada, com o ator e os identificadores reais. Um identificador inexistente não prova a recusa de um identificador existente (T-44);
+     - (c) **resultado:** confere o resultado afirmado. Quando a afirmação diz que algo "não muda", o estado é lido antes da ação e comparado por conteúdo, não só por identificadores (C74);
+     - (d) **objeto:** confere o objeto que a afirmação nomeia. Duas contas distintas não são duas strings distintas (C84), e as caixas formadas não são o progresso da rodada (T-47);
+     - (e) **elementos concretos e casos:** valem a regra 2-F e a citação dos casos de parametrização. Isso inclui o caso que distingue a causa de uma recusa de outras recusas do mesmo teste (C86 e T-43);
+     - (f) **causa da recusa:** num negativo, a recusa conferida é a da causa afirmada, e não uma recusa qualquer.
+   - **Os resíduos apontados pelo revisor:**
+     - **C74, "o pedido congelado não muda":** religar a `tests/tecnicos/test_apuracao_viavel.py::test_o_pedido_congelado_nao_muda`, que fotografa `Pedido`, `ItemDoPedido` e `ParcelaNoPedido` antes de `_iniciar` e exige igualdade depois. `test_unidades_da_caixa_invalidada_voltam_para_a_fila` sai dessa afirmação.
+     - **C84, contas distintas:** a afirmação "`usuario@gmail.com` e `usuario+teste@gmail.com` podem pertencer a contas distintas" exige duas contas criadas pelo cadastro, ou pelo serviço de cadastro, com esses dois e-mails, e a consulta que mostra as duas como contas diferentes. Se nenhum teste existente faz isso, entra a caracterização `test_cenario_84_aliases_com_mais_sao_contas_distintas` (regra 5). `test_normalizar_email_nao_altera_aliases` sai dessa afirmação. A prova do banimento continua separada.
+     - **C90, o cenário inteiro:**
+       - montar um item de 0,25 kg a R$ 7,99/kg, cobrado R$ 2,00, com serviço e frete registrados;
+       - mudar o preço do produto para R$ 8,99/kg depois da cobrança;
+       - registrar uma ocorrência da quantidade inteira desse item;
+       - conferir o reembolso de produtos de R$ 2,00, e o de serviço e frete proporcional sobre os valores registrados, sem usar 8,99.
+
+       Cada afirmação atômica do C90 aponta para esse fluxo, com a condição "depois da mudança de preço" mantida. Se nenhum teste existente faz o fluxo inteiro, entra a caracterização `test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado` (regra 5). `test_o_valor_vem_do_registrado_e_nao_do_catalogo` (outro item e outro preço) e `test_cenarios_90_e_91_integral_devolve_exatamente_o_cobrado` (sem mudança de preço) saem das afirmações do C90 e podem continuar nas do C91, se as provarem por inteiro.
+     - **T-44, as duas entradas recusadas, cada uma com a sua prova:**
+       - **identificador real de um `ItemDoPedido` congelado:** `remover_pendente`, e a rota de remoção quando a afirmação nomeia a rota, recebe o `pk` do item existente e recusa. O pedido, os registros financeiros e as parcelas ficam iguais por conteúdo;
+       - **parcela "em pedido":** a recusa da parcela que está em pedido, com o mesmo conferimento.
+
+       `item_de_a_em_q.pk + 10_000` não prova nenhuma das duas. Faltando prova, entra caracterização (regra 5), seguindo a E11-08 A-9.
+     - **T-47, a formação de caixas:**
+       - o produto tem múltiplo definido, com reservadas e pendentes em quantidade suficiente para completar uma caixa a mais se as pendentes contassem;
+       - a apuração forma só as caixas das reservadas, e as pendentes continuam na fila.
+
+       `test_progresso_e_pedido_so_contam_as_reservadas`, que remove o múltiplo, sai dessa afirmação. Fica nas de progresso e pedido, se as provar.
+     - **C86 e T-43:** as provas citam os casos que nomeiam: `"0"` e `"-1"` no C86, e o caso fora do incremento com `"1.5"` no T-43.
+   - **Caracterizações:** as caracterizações novas seguem a regra 5. Quando passam na primeira execução, o `review.md` registra isso como caracterização de comportamento existente. Se alguma falhar por falta de comportamento, o implementador para e devolve ao especificador, sem corrigir a produção nesta fatia.
+   - **Registro:** o `review.md` traz o método (leitura de cada ligação), o número de ligações lidas, de íntegras e de corrigidas por pergunta (a) a (f), as ligações retiradas, as caracterizações novas, as devoluções, a suíte completa e a saída de `conferir_execucao`.
+
+2-H. **Guarda de parametrização conservadora e congelada** (quarta correção E16-R05, contraexemplo do revisor sobre `conferencia.py:497`).
+   - **Constante aceita:** a conferência só aceita um caso citado de uma constante do módulo, usada pelo nome no `parametrize` do teste, quando todas estas condições valem:
+     - o nome tem uma única ligação no módulo inteiro, que é uma atribuição simples (`=` ou anotada) no nível do módulo;
+     - essa atribuição vem antes, em número de linha, da definição decorada;
+     - em todo o resto do módulo o nome só aparece lido, nunca como alvo de atribuição, `+=`, `del`, `for`, `with ... as`, `import ... as`, `global`, `nonlocal`, índice ou fatia (`NOME[0] = ...`);
+     - o nome nunca aparece como objeto de uma chamada de método (`NOME.append(...)`, `NOME.extend(...)`, `NOME.insert(...)` ou qualquer outra), porque a lista é lida pelo pytest só na coleta.
+   - **O que é acusado:** qualquer outro caso, com a referência e o motivo "constante de casos com mais de uma ligação ou alterada no módulo". A guarda não importa nem executa o módulo.
+   - **O que garante que o caso rodou:** com o caso preso estaticamente ao decorador efetivo, a regra 3-E fecha a execução. Ela exige que todos os casos `[...]` da referência tenham passado no JUnit.
+   - **Congelamento:** a guarda não ganha formas novas além desta. A suficiência das provas é garantida pela auditoria da regra 2-G e pela leitura do revisor, e não por análise estática, que nunca prova semântica por completo.
+     - Uma evasão que só exista em código sintético, fora das referências da matriz, fica fora do escopo da E16-07 e vai para `docs/melhorias.md`.
+     - Uma evasão que ocorra numa referência real da matriz é um resíduo da R05.
+
+2-I. **Critério de encerramento da R05** (decisão do responsável de 2026-11-19).
+   - **Sexta amostra:** o revisor confere uma sexta amostra de pelo menos 20 cenários e 10 testes técnicos, escolhida por ele e diferente das cinco anteriores. Ele relê também as ligações dos sete resíduos da regra 2-G. Em cada ligação, compara a linha de `AUDITORIA` com o corpo do teste.
+   - **Sem resíduo:** a R05 é encerrada.
+   - **Com resíduo:**
+     - o revisor lista cada resíduo e diz se algum deles indica defeito de produção;
+     - um defeito de produção segue o fluxo normal (AGENTS.md §4.6);
+     - para os demais, o especificador leva ao responsável a escolha entre duas opções. A primeira é uma nova rodada exaustiva. A segunda é corrigir os resíduos apontados e registrar o restante, sem defeito de produção, como melhoria em `docs/melhorias.md`, com a R05 encerrada depois da correção dos apontados;
+     - nenhum agente faz essa escolha sozinho.
+
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
    - cada referência aponta para um arquivo existente em `tests/` e para uma função `test_*` (ou método numa classe `Test*`) definida nele. A conferência é feita lendo a árvore de sintaxe do arquivo, sem importar nem rodar o teste;
@@ -279,6 +341,9 @@ Esta fatia cria:
 - **Documento gerado e conferido.** O relatório final precisa de uma tabela legível. Gerar o documento a partir da matriz e conferir a igualdade no CI evita que o documento e a matriz divirjam.
 - **Lista fechada mais execução real (regras 3-D e 3-E).** Uma lista de formas proibidas nunca fecha: cada revisão achou combinações novas. Aceitar só as formas declarativas simples e recusar todo o resto troca o risco de aceitação indevida pelo de recusa a mais, que é visível e se resolve trocando a referência. O relatório JUnit do CI cobre o que a árvore não vê (fixture, `conftest.py`, decorador), sem dependência nova, porque `--junitxml` é do próprio pytest e a leitura usa `xml.etree` da biblioteca padrão.
 - **Atomicidade (regra 2-E).** A prova parcial nasce de afirmações compostas. Dividir o texto em afirmações atômicas torna a leitura do revisor binária: cada afirmação está provada ou não está.
+- **Auditoria por ligação, conferida no CI (regra 2-G).** Cada rodada por amostra achou resíduos de tipos novos, e cada busca por tipo deixou os outros tipos de fora. Uma linha por ligação torna a completude verificável por máquina (as chaves batem com a matriz) e a qualidade verificável por amostra do revisor (a linha bate com o corpo). O dicionário em Python segue o padrão da matriz e não traz dependência nova.
+- **Guarda conservadora e congelada (regra 2-H).** Resolver qual valor uma constante tem no momento do decorador exigiria executar o módulo. Recusar a constante com mais de uma ligação ou alterada troca a aceitação indevida pela recusa a mais, que é visível e se resolve escrevendo o caso no próprio decorador. Congelar a guarda encerra a corrida entre formas novas e contraexemplos sintéticos.
+- **Critério de encerramento combinado antes (regra 2-I).** Ele evita rodadas sem fim e deixa com o responsável a escolha que não é técnica.
 - **Defeito encontrado não é corrigido aqui.** A fatia é de evidência. Corrigir comportamento sem especificação mudaria escopo (AGENTS.md §3).
 
 ## Invariantes
@@ -288,10 +353,12 @@ Esta fatia cria:
 - Toda referência da matriz passou na última execução completa do CI (regra 3-E).
 - A conferência estática só aceita uma referência cujo arquivo tenha apenas as formas da lista fechada (regra 3-D).
 - O documento gerado corresponde à matriz.
+- Cada ligação da matriz tem exatamente uma linha em `AUDITORIA`, e cada linha, uma ligação (regra 2-G).
 - Nenhum código de produção muda nesta fatia.
 
 ## Dependências e decisões em aberto
 
 - Depende das E01 a E15 e, para a afirmação do histórico do cenário 96, da E16-09 (regra 2-F).
 - Nenhuma dependência nova.
-- Nenhuma decisão em aberto.
+- O critério de encerramento da R05 foi decidido pelo responsável em 2026-11-19 (regra 2-I). Se a sexta amostra achar resíduos, a escolha da regra 2-I volta ao responsável.
+- Nenhuma outra decisão em aberto.

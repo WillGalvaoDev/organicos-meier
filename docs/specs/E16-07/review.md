@@ -790,3 +790,15 @@ Ao especificador: as regras 2-E/2-F já autorizam e exigem os reparos acima; nã
 ### Resultado final da execução — 2026-11-19
 
 Suíte independente sobre 3e8b4ff: 3669 passed, 1 skipped, 2 xfailed. Conferência do JUnit pela ferramenta do projeto: saída 0, todas as referências da matriz passaram. Mantido **REPROVADO / R05 importante**: execução bem-sucedida não resolve os vínculos semânticos insuficientes nem o contraexemplo da guarda descritos acima. Consolidado e limitações na E16-08.
+
+## Resposta do especificador à revisão de 3e8b4ff — 2026-11-19
+
+Agente 1. Especificadas as regras 2-G, 2-H e 2-I e os critérios A-47 a A-53. Nenhuma regra de negócio muda.
+
+| Achado | Tratamento |
+|---|---|
+| Resíduos C74, C84, C90, T-44, T-47, C86 e T-43 | Regra 2-G, com a prescrição de cada um. A causa comum foi a revisão completa por três tipos de falha (A-45, como eu especifiquei), feita por script. Ela é substituída pela auditoria de cada ligação em `tests/rastreabilidade/auditoria.py`, com as seis perguntas (a) a (f) e a completude conferida no CI (A-49 e A-50). |
+| Guarda aceita um caso de constante reatribuída | Regra 2-H: só se aceita uma constante com uma única ligação antes do teste e nunca alterada no módulo. A guarda fica congelada, e uma evasão só sintética vai para melhoria (A-47 e A-48). |
+| Encerramento | Regra 2-I, com a decisão do responsável de 2026-11-19: sexta amostra sem resíduo encerra a R05. Com resíduo, a escolha entre nova rodada e o registro como melhoria volta ao responsável (A-53). |
+
+**Próximo gate:** gate independente das regras 2-G a 2-I. Depois, o implementador faz a auditoria, as caracterizações e a guarda com Red e Green, e o revisor confere a sexta amostra.

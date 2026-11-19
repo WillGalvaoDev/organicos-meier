@@ -30,13 +30,14 @@ O responsável decidiu tratar as duas antes do encerramento, numa fatia só de d
 
 **Dentro:**
 - a redação do A-12 e do A-21 em `docs/specs/E08-02/acceptance.md`;
-- a redação do A-3 em `docs/specs/E09-08/acceptance.md`.
+- a redação do A-3 em `docs/specs/E09-08/acceptance.md`;
+- um teste novo de caracterização para a recusa do administrador (regra 2-A, complemento de 2026-11-19 para o achado E16-R08).
 
 Os dois textos novos estão abaixo e foram aplicados pelo especificador neste mesmo commit. Cada linha tem a marca "(redação corrigida na E16-10)", e o texto anterior fica preservado abaixo da tabela.
 
 **Fora:**
 - mudar produção, permissões, notificações ou a regra de entrada de valores;
-- reescrever testes. Os testes atuais já conferem o comportamento descrito na redação nova (regra 2).
+- reescrever ou afrouxar os testes existentes. A única adição permitida é a caracterização da regra 2-A.
 
 ## Regras
 
@@ -50,16 +51,30 @@ Os dois textos novos estão abaixo e foram aplicados pelo especificador neste me
    - `tests/tecnicos/test_financeiro_telas.py::test_aporte_com_passkey_recente_entra_na_reserva_e_no_historico`.
 
    Ele executa esses testes e registra o comando e o resultado no `review.md`. Se algum teste não conferir a redação nova, o implementador para e devolve ao especificador, sem mudar o teste por conta própria.
+2-A. **Complemento da prova do administrador** (achado E16-R08, revisão de 2026-11-18 sobre 3e8b4ff).
+   - **A devolução:** o registro do implementador reconheceu que nenhum dos testes citados afirma a ausência da mensagem da etapa na resposta ao administrador. O revisor apontou que isso devia ter sido devolvido. O especificador recebe a devolução aqui.
+   - **Busca de prova existente:** o especificador procurou nos testes a mensagem `MENSAGEM_INTERESSES` ("Os interesses deste fornecedor não podem ser alterados nesta etapa."). Ela só é afirmada como presente, nas respostas ao comprador (`test_pedidos_abertura_tela.py` e a constante `BLOQUEADO` de `test_interesses_carrinho.py`). Nenhum teste afirma a ausência dela para o administrador. `test_quem_pode_ver_e_quem_pode_gravar` (E05-05 A-14) confere o 403 sem ler o corpo.
+   - **Caracterização:** entra `tests/tecnicos/test_pedidos_abertura_tela.py::test_administrador_e_recusado_pela_politica_sem_a_mensagem_da_etapa`, que:
+     - usa o arranjo do A-12 (`abrir(arranjo)`, com os interesses do fornecedor bloqueados) e o administrador autenticado como no E05-05 A-14;
+     - faz `POST /interesses/` com `produto=<P1>` e `quantidade=7`;
+     - confere `status_code == 403`, exatamente;
+     - confere que `MENSAGEM_INTERESSES` não está no corpo da resposta;
+     - confere que pedidos, itens e parcelas de interesse ficam iguais por conteúdo, lidos antes do `POST`.
+   - **O que não muda:** o teste existente `test_interesse_depois_da_abertura_e_recusado_com_409` continua como está, com a tolerância `in (302, 403)`. A política `comprador_ativo` (E02-10) e a produção também não mudam.
+   - **Se a caracterização falhar:** se o 403 ou a ausência da mensagem não se confirmarem, o implementador para e devolve, com a resposta obtida. Não muda a produção nem o teste.
+
 3. **Encerramento das melhorias:** depois da aprovação do revisor, M-3 e M-8 passam para "Encerradas" em `docs/melhorias.md`, com a entrega E16-10 e o commit.
 
 ## Invariantes
 
-- Nenhum código de produção nem teste muda.
+- Nenhum código de produção muda, e nenhum teste existente muda. Só entra o teste da regra 2-A.
 - O texto anterior dos critérios fica preservado.
 
 ## TDD
 
 Não há comportamento novo, e a fatia é só de documentação. É uma exceção técnica justificada pelo AGENTS.md §3: não há Red possível, porque o comportamento já é o da redação nova. A evidência é a execução dos testes da regra 2.
+
+O teste da regra 2-A é uma caracterização de comportamento existente. Se passar na primeira execução, o `review.md` registra isso como caracterização, sem um Red inventado.
 
 ## Dependências e decisões em aberto
 

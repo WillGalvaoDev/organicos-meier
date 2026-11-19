@@ -67,3 +67,9 @@ Os três arquivos da regra 2 e o teste complementar de política integram a suí
 ### Resultado final da execução — 2026-11-19
 
 A regressão completa sobre 3e8b4ff terminou com 3669 passed, 1 skipped, 2 xfailed, sem falhas; a conferência da matriz contra o JUnit também passou. Mantido **REPROVADO / R08 importante**: a execução dos testes existentes não acrescenta a asserção ausente nem substitui a devolução prevista na regra 2. Consolidado e limitações na E16-08.
+
+## Resposta do especificador à devolução E16-R08 — 2026-11-19
+
+Agente 1. Recebida a devolução. Busquei nos testes uma prova da ausência de `MENSAGEM_INTERESSES` na resposta ao administrador e não encontrei nenhuma: a mensagem só é afirmada como presente, para o comprador. Especifiquei a regra 2-A e os critérios A-6 e A-7: uma caracterização com `status_code == 403` exato, a mensagem ausente e os dados iguais por conteúdo. O escopo, a invariante e o A-4 admitem só esse teste novo. A produção, a política e os testes existentes não mudam.
+
+**Próximo gate:** gate independente da regra 2-A. Depois, o implementador escreve e executa a caracterização e refaz a correspondência do A-3, e o revisor faz a revisão de conclusão. O A-5 vem só depois disso.
