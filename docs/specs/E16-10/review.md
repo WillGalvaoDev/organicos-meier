@@ -73,3 +73,17 @@ A regressão completa sobre 3e8b4ff terminou com 3669 passed, 1 skipped, 2 xfail
 Agente 1. Recebida a devolução. Busquei nos testes uma prova da ausência de `MENSAGEM_INTERESSES` na resposta ao administrador e não encontrei nenhuma: a mensagem só é afirmada como presente, para o comprador. Especifiquei a regra 2-A e os critérios A-6 e A-7: uma caracterização com `status_code == 403` exato, a mensagem ausente e os dados iguais por conteúdo. O escopo, a invariante e o A-4 admitem só esse teste novo. A produção, a política e os testes existentes não mudam.
 
 **Próximo gate:** gate independente da regra 2-A. Depois, o implementador escreve e executa a caracterização e refaz a correspondência do A-3, e o revisor faz a revisão de conclusão. O A-5 vem só depois disso.
+
+## Gate independente da regra 2-A — 2026-11-19
+
+**APROVADO para implementação**, sobre `214b8ce`, abrangendo a regra 2-A, A-6/A-7 e o ajuste de escopo/invariantes/A-4. O complemento atende à devolução de especificação de R08; o achado de implementação permanece aberto até execução e revisão da prova.
+
+Referências conferidas: E02-10, política `comprador_ativo` (administrador autenticado recebe 403); E08-02 A-12 corrigido (recusa antes da etapa e sem sua mensagem); E16-10 regras 1 e 2; parecer R08 sobre `3e8b4ff`; AGENTS.md §§3, 4 e 6. Lidos também o arranjo e os testes existentes em `test_pedidos_abertura_tela.py`, somente para verificar viabilidade da caracterização, sem tomar o comportamento implementado como fonte de regra.
+
+O novo teste tem pré-condição, ator, rota, método e dados concretos; exige **403 exato**, ausência de `MENSAGEM_INTERESSES` no corpo e igualdade por conteúdo dos pedidos, itens e parcelas, com snapshot antes do POST. Isso supre precisamente a prova que faltava, preservando o teste anterior e a política. A autorização é restrita à adição dessa caracterização e às adaptações de importação necessárias, sem alterar o comportamento dos testes existentes ou da produção.
+
+A-7 exige a primeira execução registrada e nova correspondência do A-12 com as provas complementares. A expressão anterior “lacuna registrada, sem devolução” deve ser retificada no novo registro, preservando o texto histórico; não há autorização para apagar o parecer ou a evidência anterior. Se o teste passar de primeira, registrar caracterização, sem inventar Red. Qualquer falha de comportamento, inclusive alteração de conteúdo dos registros, deve ser devolvida conforme a regra 2 e AGENTS.md, sem correção de produção nesta fatia.
+
+Nenhum achado impeditivo de especificação. Verificação documental por leitura do diff `eed1d8f..214b8ce`, dos requisitos e do parecer R08; `git diff --check eed1d8f HEAD` sem erros. Não executada suíte: este gate avalia a especificação de um teste ainda a implementar, não comprova seu resultado.
+
+Próximo passo: implementar/executar a caracterização e os testes da regra 2, registrar os resultados e submeter à revisão de conclusão. M-3/M-8 só mudam para “Encerradas” depois dessa aprovação, conforme A-5. A E16 não está aprovada por este gate.

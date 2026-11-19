@@ -802,3 +802,27 @@ Agente 1. Especificadas as regras 2-G, 2-H e 2-I e os critérios A-47 a A-53. Ne
 | Encerramento | Regra 2-I, com a decisão do responsável de 2026-11-19: sexta amostra sem resíduo encerra a R05. Com resíduo, a escolha entre nova rodada e o registro como melhoria volta ao responsável (A-53). |
 
 **Próximo gate:** gate independente das regras 2-G a 2-I. Depois, o implementador faz a auditoria, as caracterizações e a guarda com Red e Green, e o revisor confere a sexta amostra.
+
+## Gate independente das regras 2-G a 2-I — 2026-11-19
+
+**APROVADO para implementação**, sobre `214b8ce`. Escopo deste gate: regras 2-G, 2-H e 2-I, critérios A-47 a A-53 e compatibilidade com as regras anteriores. Não é aprovação da implementação nem encerramento de R05 ou da E16.
+
+Fontes conferidas antes da avaliação: funcional v1.7 (§§5.2, 7.1 e 16, especialmente C74, C84, C90 e C99), infraestrutura v1.8 (§§7 e 8, T-43, T-44 e T-47), E11-08 A-9, AGENTS.md §§2 a 6 e 8 a 10, e parecer sobre `3e8b4ff`. Versões declaradas compatíveis com os documentos presentes.
+
+| Regra / critérios | Parecer do gate |
+|---|---|
+| 2-G / A-49 e A-50 | O contrato da auditoria é verificável: chave por ligação, igualdade dos conjuntos de chaves, campos obrigatórios, limites e vereditos. Os negativos permitem Red antes da implementação da conferência. A existência da linha não comprova sua veracidade; esta continua sujeita à leitura das seis perguntas e à revisão independente. |
+| 2-G / A-51 e A-52 | Os sete resíduos têm tratamento concreto e compatível com suas fontes: snapshot anterior à ação, contas reais distintas, fluxo integral do C90 após mudança de preço, identificadores reais, caixas com múltiplo e casos parametrizados explícitos. Caracterizações são admitidas somente onde falta prova; falha de comportamento volta ao especificador. A auditoria integral e o registro de ligações retiradas impedem limitar o trabalho aos exemplos. |
+| 2-H / A-47 e A-48 | O contraexemplo da reatribuição tem negativo explícito, junto de seis variantes e controles positivos. A recusa conservadora dispensa executar o módulo e tem diagnóstico observável. O novo comportamento da guarda exige Red/Green; caracterizações do produto podem passar de primeira com registro honesto. A limitação a formas declaradas é técnica e explícita, sem pretensão de provar toda a semântica de Python. |
+| 2-I / A-53 | O fechamento depende da entrega auditada e da sexta amostra sem resíduos, além da releitura dos sete pontos. Com resíduos, o revisor distingue defeito de produção de deficiência de evidência e devolve a escolha indicada ao especificador/responsável. Não há autorização para o implementador ou o revisor converterem unilateralmente um resíduo real em melhoria. |
+
+### Aplicação dos limites já escritos
+
+- A sexta amostra será **um conjunto diferente** dos anteriores, priorizando entradas ainda não amostradas; não significa 20 cenários e 10 técnicos todos inéditos. Cinco amostras principais disjuntas já cobrem 100 dos 119 cenários e 50 dos 55 técnicos: exigir uma sexta inteiramente inédita seria impossível. A seleção e as repetições serão explicitadas no parecer, além da releitura obrigatória dos resíduos. Esta é uma decisão técnica de amostragem, sem mudança do tamanho mínimo ou do critério de qualidade.
+- O congelamento de 2-H limita novas classes de evasão apenas sintéticas, fora das referências reais. Não dispensa implementar corretamente as formas e recusas expressamente exigidas em A-47/A-48, nem permite aprovar ligação real falsa. A regra 3-E comprova a execução dos casos coletados; a correspondência semântica com o caso citado continua a depender da auditoria.
+- Para uma referência existente recusada, usar as alternativas permitidas pela especificação sem afrouxar testes existentes. O resultado final precisa manter a cobertura integral das afirmações e regenerar o documento quando a matriz mudar.
+- “Sem resíduo” em 2-I não dispensa os demais critérios da fatia: auditoria completa, guarda, suíte, JUnit e evidências de TDD aplicáveis. O gate não encerra R07 nem substitui homologação operacional.
+
+Nenhum achado impeditivo de especificação. Verificação documental: leitura integral do diff `eed1d8f..214b8ce`, confronto dos critérios com os requisitos e pareceres anteriores; `git diff --check eed1d8f HEAD` sem erros. Não executada suíte neste gate, pois o commit avaliado altera apenas especificações, critérios e registros; não se reutiliza o verde anterior como prova da correção futura.
+
+Próximo passo: implementação de 2-G/2-H com os registros de A-52, seguida da revisão independente de A-53. R05 continua aberto até essa revisão.
