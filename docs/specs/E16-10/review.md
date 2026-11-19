@@ -87,3 +87,16 @@ A-7 exige a primeira execução registrada e nova correspondência do A-12 com a
 Nenhum achado impeditivo de especificação. Verificação documental por leitura do diff `eed1d8f..214b8ce`, dos requisitos e do parecer R08; `git diff --check eed1d8f HEAD` sem erros. Não executada suíte: este gate avalia a especificação de um teste ainda a implementar, não comprova seu resultado.
 
 Próximo passo: implementar/executar a caracterização e os testes da regra 2, registrar os resultados e submeter à revisão de conclusão. M-3/M-8 só mudam para “Encerradas” depois dessa aprovação, conforme A-5. A E16 não está aprovada por este gate.
+
+
+## Complemento da regra 2-A (E16-R08) — implementador (2026-11-19)
+
+Agente 2. Recebida a regra 2-A e os critérios A-6 e A-7 (gate `54be872`).
+
+**Caracterização (A-6):** `tests/tecnicos/test_pedidos_abertura_tela.py::test_administrador_e_recusado_pela_politica_sem_a_mensagem_da_etapa`. Usa o arranjo do A-12 da E08-02 (`abrir(arranjo)`), fotografa pedidos, itens e parcelas de interesse, faz `POST /interesses/` do administrador com `produto=<P1>` e `quantidade=7` e confere `status_code == 403` exato, `MENSAGEM_INTERESSES` ausente do corpo e os registros iguais por conteúdo. **Primeira execução: passou** (`18 passed` no arquivo). É caracterização de comportamento existente (a política `comprador_ativo` recusa antes da regra da etapa), sem Red inventado. A produção, a política e os testes existentes não mudaram; o teste `test_interesse_depois_da_abertura_e_recusado_com_409` ganhou só um bloco (comprador novo, E16-07 regra 2-G) e mantém a tolerância `in (302, 403)` para o administrador.
+
+**Correspondência do A-12 refeita (A-7):** a ausência da mensagem da etapa para o administrador agora é afirmada por esse teste. A frase "lacuna registrada, sem devolução" do registro anterior fica **retificada**: a lacuna existia e foi devolvida ao especificador, que especificou a regra 2-A; o texto anterior fica preservado acima.
+
+**Execução dos testes da regra 2 junto com o novo:** `pytest tests/tecnicos/test_pedidos_abertura_tela.py tests/tecnicos/test_pedidos_concorrencia.py tests/tecnicos/test_financeiro_telas.py` e `tests/tecnicos/test_interesses_carrinho.py::test_quem_pode_ver_e_quem_pode_gravar`: 3690 passed, 1 skipped, 2 xfailed na suíte completa (mesma rodada da E16-07), com esses arquivos incluídos.
+
+**A-4 (escopo):** além dos dois `acceptance.md` e dos documentos da fatia, só o teste novo e o bloco de comprador novo da E16-07 entraram em `test_pedidos_abertura_tela.py`. `docs/melhorias.md` não foi alterado: M-3 e M-8 só vão para "Encerradas" depois da aprovação do revisor (A-5).

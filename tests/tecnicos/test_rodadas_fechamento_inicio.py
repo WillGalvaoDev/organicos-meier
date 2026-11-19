@@ -13,6 +13,7 @@ from apps.contas.models import Conta
 from apps.fornecedores.models import Fornecedor
 from apps.fornecedores.servicos import alterar_minimo
 from apps.interesses.fila import alocar_pendentes
+from apps.interesses.progresso import progresso_da_rodada
 from apps.interesses.servicos import adicionar_interesse
 from apps.notificacoes.processamento import processar_envios
 from apps.nucleo.auditoria import EntradaAuditoria
@@ -104,6 +105,23 @@ def test_so_conta_a_quantidade_em_caixas_completas() -> None:  # A-3
     adicionar_interesse(b, produto, "1")
     iniciar_fechamento(admin(), rodada)
     assert etapa(rodada) == Etapa.FECHAMENTO
+
+
+@pytest.mark.acceptance
+def test_abaixo_do_minimo_a_rodada_fica_aberta_indefinidamente(
+    relogio: RelogioControlado,
+) -> None:  # cenário 4 (E16-07 regra 2-G)
+    relogio.congelar(T0)
+    rodada, produto, _ = cenario("30", preco=D("10.00"))
+    reservada(ContaFactory.create(), produto, 5)  # R$ 50,00, abaixo do mínimo de R$ 100,00
+    assert progresso_da_rodada(rodada).atingido is False
+    relogio.avancar(timedelta(days=30))
+    processar_envios()
+    with transaction.atomic():
+        alocar_pendentes(rodada.fornecedor)
+    assert etapa(rodada) == Etapa.INTERESSE
+    nada_gravado()
+    assert prazo_do_fechamento(rodada) is None
 
 
 @pytest.mark.acceptance

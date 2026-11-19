@@ -8,7 +8,9 @@ from django.test import Client
 from django.urls import resolve, reverse
 
 from apps.contas.permissoes import Politica, politica_da_view, rotas_sem_politica
+from apps.interesses.models import ParcelaDeInteresse
 from apps.pedidos.models import ItemDoPedido, Pedido
+from apps.rodadas.condicoes import MENSAGEM_INTERESSES
 from apps.rodadas.models import Etapa, Rodada
 from tests.apoio.admin_fluxos import administrador_logado
 from tests.apoio.pedidos import T0, Arranjo, abrir, montar_arranjo
@@ -200,9 +202,33 @@ def test_interesse_depois_da_abertura_e_recusado_com_409(
             "Os interesses deste fornecedor não podem ser alterados nesta etapa."
             in resposta.content.decode()
         )
+    novo = Client()
+    novo.force_login(ContaFactory.create())  # um comprador sem interesse tenta adicionar
+    resposta = novo.post("/interesses/", {"produto": arranjo.p1.pk, "quantidade": "1"})
+    assert resposta.status_code == 409
     resposta = admin_client.post("/interesses/", {"produto": arranjo.p1.pk, "quantidade": "7"})
     assert resposta.status_code in (302, 403)  # o administrador nem tem interesses
     assert (
         list(Pedido.objects.order_by("pk").values()),
         list(ItemDoPedido.objects.order_by("pk").values()),
     ) == antes
+
+
+def test_administrador_e_recusado_pela_politica_sem_a_mensagem_da_etapa(
+    arranjo: Arranjo, admin_client: Client
+) -> None:  # E16-10 A-6, caracterização
+    abrir(arranjo)
+
+    def estado() -> tuple[list[Any], list[Any], list[Any]]:
+        return (
+            list(Pedido.objects.order_by("pk").values()),
+            list(ItemDoPedido.objects.order_by("pk").values()),
+            list(ParcelaDeInteresse.objects.order_by("pk").values()),
+        )
+
+    antes = estado()
+    assert all(antes)
+    resposta = admin_client.post("/interesses/", {"produto": arranjo.p1.pk, "quantidade": "7"})
+    assert resposta.status_code == 403
+    assert MENSAGEM_INTERESSES not in resposta.content.decode()
+    assert estado() == antes

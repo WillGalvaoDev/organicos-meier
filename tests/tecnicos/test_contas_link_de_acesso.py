@@ -140,6 +140,7 @@ def test_banido_ou_removido_nao_recebe_link(
     assert PADRAO in resposta.content.decode()
     assert LinkDeAcesso.objects.count() == 0
     assert len(mail.outbox) == 0
+    assert not _autenticado(client)
 
 
 def test_administrador_nao_recebe_link(client: Client) -> None:  # A-8

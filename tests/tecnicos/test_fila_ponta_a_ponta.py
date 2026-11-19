@@ -35,7 +35,7 @@ from apps.interesses.servicos import (
 )
 from apps.pedidos.abertura import abrir_pagamento
 from apps.pedidos.apuracao import aprovar_resultado, iniciar_apuracao
-from apps.pedidos.models import ItemDoPedido
+from apps.pedidos.models import ItemDoPedido, Pedido
 from apps.rodadas.estoque import alterar_estoque, incluir_produto_na_rodada
 from apps.rodadas.fechamento import TransicaoRecusada, encerrar_fechamento, iniciar_fechamento
 from apps.rodadas.models import EstoqueDaRodada, Etapa, Rodada
@@ -367,6 +367,33 @@ def test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido(
         list(ItemDoPedido.objects.order_by("pk").values()),
         list(Reembolso.objects.order_by("pk").values()),
         _estado(fp.a, fp.q),
+    ) == antes
+
+
+def test_rota_com_o_pk_real_do_item_congelado_e_recusada(
+    relogio: RelogioControlado, sim: Any
+) -> None:  # T-44, E16-07 regra 2-G
+    fp = montar_fp(relogio, sim)
+    item_de_a_em_q = ItemDoPedido.objects.get(pedido__comprador=fp.a, produto=fp.q)
+    assert item_de_a_em_q.pk > 0
+    parcelas_de_a = list(ParcelaDeInteresse.objects.filter(comprador=fp.a).order_by("pk").values())
+    antes = (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(Reembolso.objects.order_by("pk").values()),
+        parcelas_de_a,
+    )
+    cliente = Client()
+    cliente.force_login(fp.a)
+    resposta = cliente.post(
+        "/interesses/pendentes/remover/", {"produto": item_de_a_em_q.pk, "quantidade": "1"}
+    )
+    assert resposta.status_code in (200, 404, 409)
+    assert (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(Reembolso.objects.order_by("pk").values()),
+        list(ParcelaDeInteresse.objects.filter(comprador=fp.a).order_by("pk").values()),
     ) == antes
 
 

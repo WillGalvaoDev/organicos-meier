@@ -43,7 +43,6 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
         },
         "Link com conta banida ou removida não recebe link e não abre a sessão": {
             "tests/tecnicos/test_contas_link_de_acesso.py::test_banido_ou_removido_nao_recebe_link": "nos casos banido e removido não há link nem e-mail: `LinkDeAcesso.objects.count() == 0`; `len(mail.outbox) == 0`",
-            "tests/tecnicos/test_contas_link_de_acesso.py::test_banimento_ou_remocao_depois_do_pedido_bloqueia_o_uso": "o link pedido antes dá 410 e não abre sessão: `resposta.status_code == 410`; `not _autenticado(client)`",
         },
     },
     3: {
@@ -53,10 +52,11 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     4: {
         "Interesse abaixo do mínimo permanece aberto indefinidamente": {
-            "tests/tecnicos/test_rodadas_fechamento_inicio.py::test_atingir_o_minimo_nao_inicia_nada_sozinho": "a etapa segue em interesse e não há ciclo: `etapa(rodada) == Etapa.INTERESSE`; `Ciclo.objects.count() == 0`",
+            "tests/tecnicos/test_rodadas_fechamento_inicio.py::test_abaixo_do_minimo_a_rodada_fica_aberta_indefinidamente": "5 reservadas (R$ 50,00) com mínimo 100,00 e 30 dias depois: `etapa(rodada) == Etapa.INTERESSE`; `prazo_do_fechamento(rodada) is None`",
         },
         "Atingir mínimo não inicia fechamento sozinho": {
             "tests/tecnicos/test_interesses_progresso.py::test_atingir_o_minimo_nao_muda_a_etapa_nem_grava": "a etapa não muda e nada é gravado: `Rodada.objects.get(pk=rodada.pk).etapa == Etapa.INTERESSE`; `escritas == []`",
+            "tests/tecnicos/test_rodadas_fechamento_inicio.py::test_atingir_o_minimo_nao_inicia_nada_sozinho": "mínimo atingido (R$ 200,00) e 30 dias depois: `etapa(rodada) == Etapa.INTERESSE`; `prazo_do_fechamento(rodada) is None`",
         },
     },
     5: {
@@ -118,7 +118,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     11: {
         "Alterar o carrinho na etapa de pagamento não modifica pedidos congelados": {
-            "tests/tecnicos/test_pedidos_abertura.py::test_composicao_fica_congelada_apos_a_abertura": 'o interesse é bloqueado e os itens ficam iguais: `pytest.raises(InteressesBloqueados)`; `list(ItemDoPedido.objects.order_by("pk").values()) == antes`',
+            "tests/tecnicos/test_pedidos_abertura_tela.py::test_interesse_depois_da_abertura_e_recusado_com_409": 'A aumenta (7) e reduz (5) o interesse com pedido aberto: `resposta.status_code == 409`; `list(ItemDoPedido.objects.order_by("pk").values()),`',
         },
         "Novo comprador na etapa de pagamento não modifica pedidos congelados": {
             "tests/tecnicos/test_pedidos_abertura.py::test_composicao_fica_congelada_apos_a_abertura": "o interesse do comprador novo é bloqueado: `pytest.raises(InteressesBloqueados)`",
@@ -144,7 +144,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedidos_prazos.py::test_na_margem_nada_se_reabre": "a tentativa é recusada e nenhuma cobrança nasce: `pytest.raises(PagamentoRecusado)`; `x.tentativas.count() == 0`",
         },
         "A rodada aguarda T0 + 48h": {
-            "tests/tecnicos/test_pedidos_prazos.py::test_depois_de_48_horas_nada_acontece_sozinho": "a rodada continua em pagamento: `Rodada.objects.get(pk=arranjo.rodada.pk).etapa == Etapa.PAGAMENTO`",
+            "tests/tecnicos/test_pedidos_prazos.py::test_na_margem_nada_se_reabre": "em T0+30h as recusas e a etapa: `x.tentativas.count() == 0`; `Rodada.objects.get(pk=arranjo.rodada.pk).etapa == Etapa.PAGAMENTO`",
         },
         "A rodada aguarda a decisão administrativa depois de T0 + 48h": {
             "tests/tecnicos/test_pedidos_prazos.py::test_depois_de_48_horas_nada_acontece_sozinho": 'nenhuma apuração nem cancelamento sozinho: `not [a for a in acoes if a.startswith(("rodada.apurar",`; `_situacao(pedido_de(comprador)).situacao == "aguardando_pagamento"`',
@@ -158,15 +158,15 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_apuracao_viavel.py::test_estorno_proporcional_das_unidades_em_caixa_invalidada": 'produtos 20, serviço 1 e frete 2,59: `(reembolso.produtos, reembolso.servico, reembolso.frete) == ( D("20.00"),`; `obrigacao.devido == D("23.59")`',
         },
         "Compradores pagos na caixa invalidada não são realocados para outra caixa": {
-            "tests/tecnicos/test_apuracao_viavel.py::test_a_restauracao_nao_espera_a_autorizacao_da_devolucao": 'a parcela volta pendente, não para outra caixa: `parcela.situacao == "pendente"`',
+            "tests/tecnicos/test_apuracao_viavel.py::test_a_fila_nao_reserva_na_rodada_apurada": 'as unidades da caixa invalidada não vão para outra caixa: `total_reservado(a.p2) == D("0.000")`; `alocar_pendentes(a.fornecedor) == D("0.000")`',
         },
     },
     14: {
         "Com produtos válidos pagos mantendo o mínimo, a diferença de frete de inadimplentes fica com o administrador": {
-            "tests/tecnicos/test_apuracao_telas.py::test_aprovar_mostra_o_frete_e_esconde_o_botao": 'arrecadado 7,76 e déficit 14,24: `"arrecadado R$ 7,76" in texto`; `"déficit R$ 14,24" in texto`',
+            "tests/tecnicos/test_apuracao_aprovacao.py::test_aprovar_leva_a_apuracao_ao_livro_e_avanca_a_rodada": 'o déficit de frete vira despesa: `deficit.valor == D("14.24")`; `destinos == {"produtos": D("60.00"), "servico": D("3.00"), "frete": D("7.76")}`',
         },
         "A diferença de frete de inadimplentes não altera cobranças concluídas": {
-            "tests/tecnicos/test_apuracao_aprovacao.py::test_aprovar_leva_a_apuracao_ao_livro_e_avanca_a_rodada": 'frete efetivo, arrecadado e déficit em registros próprios: `(no_livro.frete_efetivo, no_livro.frete_arrecadado) ==`; `deficit.valor == D("14.24")`',
+            "tests/tecnicos/test_apuracao_aprovacao.py::test_o_pedido_e_o_pagamento_nao_mudam_e_a_custodia_zera": "pedido e quitação iguais depois da aprovação: `SituacaoDoPedido.objects.get(pedido=x).quitado_por_id,`; `) == antes`",
         },
     },
     15: {
@@ -235,7 +235,6 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     20: {
         "Remoção bloqueia o acesso: login por senha, link e Google não abrem sessão": {
             "tests/tecnicos/test_moderacao_remocao.py::test_conta_removida_nao_entra_por_nenhum_metodo_nem_recebe_convite": 'sem sessão: `"_auth_user_id" not in google.session`',
-            "tests/tecnicos/test_contas_link_de_acesso.py::test_banido_ou_removido_nao_recebe_link": "caso removido: nenhum link nem e-mail: `LinkDeAcesso.objects.count() == 0`; `len(mail.outbox) == 0`",
         },
         "Remoção bloqueia novo cadastro com o e-mail": {
             "tests/tecnicos/test_moderacao_remocao.py::test_conta_removida_nao_entra_por_nenhum_metodo_nem_recebe_convite": "novo convite recusado e nenhum convite criado: `pytest.raises(EmailEmUso)`; `Convite.objects.count() == 0`",
@@ -277,7 +276,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_retirada.py::test_cenario_23_o_tempo_nao_descarta": 'há vencidos e nenhum descarte: `[(v.pedido, v.produto, v.saldo) for v in depois.vencidos] == [ (x.pk, "P1",`; `not _descartes()`',
         },
         "Somente a ação administrativa registra descarte efetivo": {
-            "tests/tecnicos/test_recebimento_e_retirada_telas.py::test_cenario_23_pelas_telas": 'Descarte registrado: 2 unidade de P1: `"Descarte registrado: 2 unidade de P1." in texto`',
+            "tests/tecnicos/test_retirada_ponta_a_ponta.py::test_cenario_23_prazo_e_descarte": "sem descarte só com o tempo e depois do POST do administrador, 2: `not DescarteDeItem.objects.exists()`; `DescarteDeItem.objects.count() == 2`",
         },
     },
     24: {
@@ -307,10 +306,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_apuracao_inicio.py::test_reconsulta_registra_o_pagamento_aprovado_depois_de_48_horas": 'destino devolução e obrigação integral: `_destinos(y) == [("devolucao", "aprovado_apos_a_margem")]`; `obrigacao.integral == y.total`',
         },
         "A devolução do pagamento tardio pode ser feita pela plataforma": {
-            "tests/aceitacao/test_cenarios_20_34_59_t38_atomicos.py::test_cenario_34_depois_do_aporte_a_devolucao_e_concluida_sem_duplicidade": 'o estorno é concluído no simulador: `EstornoSimulado.objects.filter(situacao="concluido").count() == 1`; `ParcelaDeDevolucao.objects.get(obrigacao=obrigacao).situacao == "concluida"`',
+            "tests/aceitacao/test_cenarios_17_25_webhook_e_aprovacao_tardia.py::test_cenario_17_webhook_repetido_nao_duplica_estorno": 'pagamento tardio devolvido no simulador: `EstornoSimulado.objects.filter(situacao="concluido").count() == 1`; `ParcelaDeDevolucao.objects.filter(obrigacao=obrigacao).count() == 1`',
         },
         "A devolução do pagamento tardio pode ser feita pela devolução excepcional": {
-            "tests/aceitacao/test_cenarios_35_36_excepcional.py::test_cenario_35_confirmacao_da_devolucao_excepcional": 'a parcela é concluída fora da plataforma e a obrigação baixa: `parcela.situacao == "concluida_fora_da_plataforma"`; `_liquidado(conta_da_obrigacao(a.o1)) == a.o1.devido`',
+            "tests/aceitacao/test_cenarios_17_25_webhook_e_aprovacao_tardia.py::test_cenario_26_pagamento_tardio_devolvido_pela_devolucao_excepcional": 'pagamento tardio confirmado fora da plataforma: `parcela.situacao == "concluida_fora_da_plataforma"`; `_liquidado(conta_da_obrigacao(obrigacao)) == obrigacao.devido`',
         },
     },
     27: {
@@ -459,7 +458,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedidos_quitacao.py::test_dois_pagamentos_aceitos_so_um_quita": 'um destino quita e o pedido fica pago: `_destino(quem_quita).destino == "quita"`; `situacao.situacao == "pago"`',
         },
         "Com dois pagamentos aceitos, o outro gera obrigação de devolução integral": {
-            "tests/tecnicos/test_pedidos_quitacao.py::test_dois_pagamentos_aceitos_so_um_quita": 'o duplicado vira devolução por duplicidade de 94,35: `(duplicado.destino, duplicado.motivo) == ("devolucao", "duplicidade")`; `duplicado.pagamento.valor == D("94.35")`',
+            "tests/tecnicos/test_financeiro_concorrencia.py::test_dois_pagamentos_do_mesmo_pedido_ao_mesmo_tempo": 'a obrigação do pagamento duplicado é integral: `obrigacao.integral == Decimal("125.00")`; `MovimentoFinanceiro.objects.filter(tipo=T.ENTRADA_PARA_DEVOLUCAO).count() == 1`',
         },
         "Dois pagamentos simultâneos geram uma só entrada para devolução": {
             "tests/tecnicos/test_financeiro_concorrencia.py::test_dois_pagamentos_do_mesmo_pedido_ao_mesmo_tempo": 'uma entrada e obrigação integral: `entradas.count() == 1`; `obrigacao.integral == Decimal("125.00")`',
@@ -559,7 +558,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedidos_abertura_tela.py::test_interesse_depois_da_abertura_e_recusado_com_409": 'aumentar o interesse dá 409: `resposta.status_code == 409`; `( "Os interesses deste fornecedor não podem ser alterados nesta etapa." in`',
         },
         "Administrador não consegue adicionar, remover ou alterar o pedido depois da abertura": {
-            "tests/tecnicos/test_pedidos_abertura_tela.py::test_interesse_depois_da_abertura_e_recusado_com_409": 'a rota do administrador dá 302 ou 403 e os pedidos ficam iguais: `resposta.status_code in (302, 403)`; `( list(Pedido.objects.order_by("pk").values()),`',
+            "tests/tecnicos/test_pedidos_abertura_tela.py::test_administrador_e_recusado_pela_politica_sem_a_mensagem_da_etapa": "POST do administrador recusado pela política, sem a mensagem da etapa: `resposta.status_code == 403`; `MENSAGEM_INTERESSES not in resposta.content.decode()`",
         },
     },
     48: {
@@ -916,7 +915,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_rodadas_estoque.py::test_estoque_congelado_pela_rota": 'a rota do administrador dá 409 e o limite fica igual: `resposta.status_code == 409`; `estoque.limite == D("10.000")`',
         },
         "A recusa vale pela API": {
-            "tests/tecnicos/test_rodadas_fechamento_inicio.py::test_condicoes_congeladas_mas_o_preco_continua_editavel": "o serviço levanta CondicoesCongeladas: `pytest.raises(CondicoesCongeladas)`",
+            "tests/tecnicos/test_catalogo_condicoes.py::test_multiplo_congelado_pela_rota_e_pelo_servico": "a rota HTTP chamada direto recusa: `resposta.status_code == 409`; `MENSAGEM in resposta.content.decode()`",
         },
         "Alterar preço continua permitido no fechamento": {
             "tests/tecnicos/test_catalogo_incremento.py::test_preco_continua_editavel_no_fechamento": 'a alteração para 12,50 passa: `resposta.status_code == 302`; `produto.preco == D("12.50")`',
@@ -944,7 +943,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_apuracao_viavel.py::test_a_restauracao_nao_espera_a_autorizacao_da_devolucao": 'a parcela fica pendente sem devolução: `ParcelaDeDevolucao.objects.count() == 0`; `parcela.situacao == "pendente"`',
         },
         "O pedido congelado não muda": {
-            "tests/tecnicos/test_apuracao_viavel.py::test_unidades_da_caixa_invalidada_voltam_para_a_fila": "a parcela do pedido é a mesma: `(restauracao.parcela_no_pedido_id, restauracao.parcela_id) == (antes.pk, parcela.pk)`",
+            "tests/tecnicos/test_apuracao_viavel.py::test_o_pedido_congelado_nao_muda": "pedido, itens e parcelas fotografados antes de _iniciar e relidos depois: `depois == antes`",
         },
         "Os itens válidos de A não mudam": {
             "tests/tecnicos/test_apuracao_viavel.py::test_unidades_da_caixa_invalidada_voltam_para_a_fila": 'a parcela válida segue em pedido com 6: `(de_p1.situacao, de_p1.quantidade_reservada) == ("em_pedido", D("6.000"))`',
@@ -1057,7 +1056,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     84: {
         "usuario@gmail.com e usuario+teste@gmail.com podem pertencer a contas distintas": {
-            "tests/tecnicos/test_contas_emails.py::test_normalizar_email_nao_altera_aliases": 'o alias não é normalizado para o endereço base: `normalizar_email(entrada) == entrada`; `normalizar_email(entrada) != "usuario@gmail.com"`',
+            "tests/aceitacao/test_cenarios_84_aliases_contas_distintas.py::test_cenario_84_aliases_com_mais_sao_contas_distintas": "duas contas pelo cadastro por convite: `[c.email_normalizado for c in contas] == [BASE, ALIAS]`; `contas[0].pk != contas[1].pk`",
         },
         "Banir um endereço não afeta o outro": {
             "tests/tecnicos/test_moderacao_remocao.py::test_remocao_afeta_so_o_endereco_exato": 'o alias fica ativo e com sessão: `alias.situacao == Situacao.ATIVA`; `"_auth_user_id" in client.session`',
@@ -1086,10 +1085,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     86: {
         "Incremento igual a zero é recusado no cadastro do produto": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_incremento_invalido_na_tela": 'erro de incremento e nenhum produto: `"incremento" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
+            "tests/tecnicos/test_catalogo_quantidades.py::test_incremento_invalido_na_tela": 'caso `"0"` do `parametrize`: `"incremento" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
         },
         "Incremento negativo é recusado no cadastro do produto": {
-            "tests/tecnicos/test_catalogo_quantidades.py::test_incremento_invalido_na_tela": 'erro de incremento e nenhum produto: `"incremento" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
+            "tests/tecnicos/test_catalogo_quantidades.py::test_incremento_invalido_na_tela": 'caso `"-1"` do `parametrize`: `"incremento" in resposta.context["form"].errors`; `Produto.objects.count() == 0`',
         },
     },
     87: {
@@ -1127,13 +1126,13 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     90: {
         "O preço novo do catálogo não altera o valor registrado de R$ 2,00": {
-            "tests/tecnicos/test_devolucoes_reembolso.py::test_o_valor_vem_do_registrado_e_nao_do_catalogo": 'reembolso de 2,00 pelo valor registrado: `registrado.reembolso.produtos == D("2.00")`; `(linha.item_id, linha.quantidade, linha.valor) == (item.pk, D("0.250"),`',
+            "tests/aceitacao/test_cenarios_90_item_inteiro_de_0_25_kg.py::test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado": 'preço do produto 8,99 e item registrado a 7,99: `produto.preco == D("8.99")`; `ItemDoPedido.objects.get(pk=item.pk).preco_unitario == D("7.99")`',
         },
         "A ocorrência da quantidade inteira reembolsa o valor registrado de produtos": {
-            "tests/aceitacao/test_cenarios_90_91_112_117_reembolso.py::test_cenarios_90_e_91_integral_devolve_exatamente_o_cobrado": 'o integral devolve o cobrado: `acumulado_do_pedido(pedido) == (D("100.00"), D("5.00"), D("20.00"))`',
+            "tests/aceitacao/test_cenarios_90_item_inteiro_de_0_25_kg.py::test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado": 'a linha do reembolso é o item inteiro, 0,250 por 2,00: `(linha.item_id, linha.quantidade, linha.valor) == (item.pk, D("0.250"), D("2.00"))`',
         },
         "Serviço e frete do reembolso são proporcionais aos valores registrados": {
-            "tests/aceitacao/test_cenario_116_servico_e_frete_do_parcial.py::test_cenario_116_numeros_do_cenario": 'produtos 2,00, serviço 0,10 e frete 0,40: `componentes(parcial(item, "1")) == (D("2.00"), D("0.10"), D("0.40"))`',
+            "tests/aceitacao/test_cenarios_90_item_inteiro_de_0_25_kg.py::test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado": 'serviço 0,10 e frete 0,40 sobre os registrados: `componentes(registrado) == (D("2.00"), D("0.10"), D("0.40"))`',
         },
     },
     91: {
@@ -1230,10 +1229,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     98: {
         "Remoção de pendente maior que a existente é recusada sem alteração": {
-            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": "RemocaoAcimaDoPendente e nada gravado: `estado(parcela) == (SituacaoParcela.PENDENTE,`; `auditorias(ACAO) == []`; `pytest.raises(RemocaoAcimaDoPendente)`",
+            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": 'caso `"5"` do `parametrize`: `pytest.raises(RemocaoAcimaDoPendente)`; `auditorias(ACAO) == []`',
         },
         "Remoção de pendente fora do incremento é recusada sem alteração": {
-            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": "QuantidadeInvalida e nada gravado: `estado(parcela) == (SituacaoParcela.PENDENTE,`; `auditorias(ACAO) == []`; `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": 'caso `"1.5"` do `parametrize`: `pytest.raises(QuantidadeInvalida)`; `auditorias(ACAO) == []`',
         },
     },
     99: {
@@ -1241,7 +1240,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_interesses_remover_pendente.py::test_parcela_em_pedido_nao_entra_na_remocao": "RemocaoAcimaDoPendente com pendente 0: `pytest.raises(RemocaoAcimaDoPendente)`; `erro.value.pendente == 0`",
         },
         "A rota de remoção não alcança o item do pedido congelado": {
-            "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido": "a resposta é 200, 404 ou 409: `resposta.status_code in (200, 404, 409)`",
+            "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_com_o_pk_real_do_item_congelado_e_recusada": 'POST com o pk real do item de A em Q: `resposta.status_code in (200, 404, 409)`; `list(ItemDoPedido.objects.order_by("pk").values()), list(Reembolso.objects.order_by("pk").values()),`',
         },
         "Pedido e registros financeiros não mudam": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido": 'itens, reembolsos e obrigações iguais: `( list(ItemDoPedido.objects.order_by("pk").values()), list(Reembolso.objects.order_by("pk").values()), _estado(fp.a, fp.q), ) == antes`',
@@ -1309,7 +1308,6 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_catalogo_incremento.py::test_incremento_incompativel_com_reservada_e_recusado": 'IncrementoIncompativel de quantidade: `pytest.raises(IncrementoIncompativel, match=MSG_QUANTIDADE)`; `erro.value.codigo == "quantidade"`',
         },
         "A alteração para 2 kg é recusada porque o múltiplo de 3 kg não é divisível por 2": {
-            "tests/tecnicos/test_catalogo_incremento.py::test_incremento_para_2_no_cenario_106_e_recusado": 'IncrementoIncompativel: `pytest.raises(IncrementoIncompativel)`; `erro.value.codigo == "quantidade"`',
             "tests/tecnicos/test_catalogo_incremento.py::test_incremento_incompativel_com_o_multiplo_e_recusado": 'sem as reservadas, só a pendente de 2,0 em uso: `erro.value.codigo == "multiplo"`; `pytest.raises(IncrementoIncompativel, match=MSG_MULTIPLO)`',
         },
         "Na recusa da alteração para 1 kg, nada é alterado": {
@@ -1447,7 +1445,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/aceitacao/test_cenario_116_servico_e_frete_do_parcial.py::test_cenario_116_numeros_do_cenario": 'produtos 2,00, serviço 0,10 e frete 0,40: `componentes(parcial(item, "1")) == (D("2.00"), D("0.10"), D("0.40"))`',
         },
         "O acumulado de cada componente nunca passa do valor registrado": {
-            "tests/tecnicos/test_devolucoes_reembolso.py::test_centavos_que_nao_fecham_o_ultimo_leva_o_saldo": 'o acumulado do item é 0,09 e o excesso é recusado: `acumulado_do_item(item) == (D("0.600"), D("0.09"))`; `pytest.raises(ReembolsoRecusado, match="passa da quantidade paga")`',
+            "tests/aceitacao/test_cenario_116_servico_e_frete_do_parcial.py::test_cenario_116_numeros_do_cenario": 'o acumulado do pedido depois do parcial e do integral é o registrado: `acumulado_do_pedido(pedido) == (D("100.00"), D("5.00"), D("20.00"))`',
         },
     },
     117: {
@@ -1488,7 +1486,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedidos_tentativas.py::test_fronteira_de_24_horas_para_pedir_pagamento": 'uma tentativa e uma cobrança criada: `len(_tentativas(x)) == 1`; `len(_chamadas("criar_cobranca")) == 1`',
         },
         "Tentativa em T0 + 24h é recusada com a tarefa de bloqueio parada": {
-            "tests/tecnicos/test_pedidos_prazos.py::test_com_o_bloqueio_parado_o_servidor_recusa_a_tentativa": 'PagamentoRecusado prazo_encerrado e nenhuma tentativa: `pytest.raises(PagamentoRecusado)`; `erro.value.codigo == "prazo_encerrado"`; `x.tentativas.count() == 0`',
+            "tests/tecnicos/test_pedidos_tentativas.py::test_fronteira_de_24_horas_para_pedir_pagamento": 'em T0+24h exato a tentativa é recusada: `erro.value.codigo == "prazo_encerrado"`; `len(_tentativas(x)) == 1`',
         },
         "Tentativa em T0 + 24h + 1 ms é recusada com a tarefa de bloqueio parada": {
             "tests/tecnicos/test_pedidos_tentativas.py::test_fronteira_de_24_horas_para_pedir_pagamento": 'PagamentoRecusado prazo_encerrado: `pytest.raises(PagamentoRecusado)`; `erro.value.codigo == "prazo_encerrado"`',
@@ -1499,7 +1497,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedidos_quitacao.py::test_fronteira_de_48_horas_da_margem": 'o pedido fica pago e o destino quita: `_situacao(pedido).situacao == "pago"`; `_destino(id_externo).destino == "quita"`',
         },
         "date_approved em T0 + 48h + 1 ms gera obrigação de devolução": {
-            "tests/tecnicos/test_pedidos_quitacao.py::test_fronteira_de_48_horas_da_margem": 'destino devolução por aprovado_apos_a_margem: `(tardio.destino, tardio.motivo) == ("devolucao", "aprovado_apos_a_margem")`',
+            "tests/tecnicos/test_apuracao_inicio.py::test_reconsulta_registra_o_pagamento_aprovado_depois_de_48_horas": 'aprovado em T0+48h+1 ms: `_destinos(y) == [("devolucao", "aprovado_apos_a_margem")]`; `obrigacao.integral == y.total`',
         },
     },
     "T-3": {
@@ -1512,7 +1510,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_apuracao_inicio.py::test_antes_de_48_horas_e_recusada_sem_consulta_nem_escrita": 'ApuracaoRecusada antes_do_prazo: `pytest.raises(ApuracaoRecusada)`; `recusa.value.codigo == "antes_do_prazo"`',
         },
         "Apuração em T0 + 48h − 1 ms é recusada mesmo com 100% pago": {
-            "tests/tecnicos/test_apuracao_telas.py::test_antes_de_48_horas_a_pagina_so_informa_o_horario": 'a página não oferece Iniciar apuração: `"Iniciar apuração" not in texto`',
+            "tests/tecnicos/test_apuracao_inicio.py::test_antes_de_48_horas_e_recusada_sem_consulta_nem_escrita": 'com X e Y pagos e T0+48h−1 ms a apuração é recusada: `recusa.value.codigo == "antes_do_prazo"`; `consultas == []`',
         },
         "Em T0 + 48h a apuração exige autorização do administrador": {
             "tests/tecnicos/test_apuracao_inicio.py::test_so_o_administrador_apura": "os outros recebem PermissionDenied: `_foto() == antes`; `pytest.raises(PermissionDenied)`",
@@ -1520,7 +1518,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
     },
     "T-5": {
         "Nenhuma rota permite alterar T0": {
-            "tests/tecnicos/test_pedidos_prazos.py::test_o_t0_nao_muda_nem_por_sql": "T0 e margem não mudam nem por SQL: `pytest.raises(RegistroImutavel)`; `(prazo_de_pagamento(atual), fim_da_margem(atual)) == (PRAZO, MARGEM)`",
+            "tests/tecnicos/test_pedidos_prazos.py::test_nenhuma_rota_formulario_ou_servico_altera_os_prazos": "varredura das rotas por t0, margem e prazo: `suspeitas == []`; `_campos_dos_formularios() & NOMES_DE_PRAZO == set()`",
         },
         "Nenhuma rota permite alterar o prazo de pagamento": {
             "tests/tecnicos/test_pedidos_prazos.py::test_nenhuma_rota_formulario_ou_servico_altera_os_prazos": "nenhuma rota nem formulário altera prazo: `suspeitas == []`; `_campos_dos_formularios() & NOMES_DE_PRAZO == set()`",
@@ -1537,6 +1535,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
     "T-7": {
         "Webhook e bloqueio de T0 + 24h concorrendo dão o mesmo resultado em qualquer ordem": {
             "tests/tecnicos/test_pedidos_concorrencia.py::test_bloqueio_e_aviso_de_outra_mudanca_ao_mesmo_tempo": 'pagamento cancelado e pedido aguardando: `PagamentoNoProvedor.objects.get(id_externo=p).situacao == "cancelado"`; `SituacaoDoPedido.objects.get(pedido=x).situacao == "aguardando_pagamento"`',
+            "tests/tecnicos/test_pedidos_concorrencia.py::test_bloqueio_e_aviso_dao_o_mesmo_resultado_nas_duas_ordens": 'nas duas ordens o mesmo resultado: `PagamentoNoProvedor.objects.get(id_externo=p).situacao == "cancelado"`; `DestinoDoPagamento.objects.count() == 0`',
         },
         "Webhook antes da apuração quita o pedido": {
             "tests/tecnicos/test_apuracao_inicio.py::test_aviso_antes_da_apuracao_quita_y": 'Y pago e destino quita: `_situacao(y).situacao == "pago"`; `_destinos(y) == [("quita", "")]`',
@@ -1611,10 +1610,10 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
     },
     "T-14": {
         "O cancelamento com parcial pendente cobre só o saldo restante": {
-            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_integral_depois_de_parcial_concluida_soma_exatamente_o_pago": 'produtos 5,99: `do_cancelamento.produtos == D("5.99")`',
+            "tests/tecnicos/test_cancelamento_com_reembolso.py::test_o_reembolso_anterior_pendente_nao_e_substituido": 'a obrigação de caixa pendente segue e o cancelamento cobre o restante: `de_caixa.devido == D("23.59")`; `not ParcelaDeDevolucao.objects.filter(obrigacao=de_caixa).exists()`',
         },
         "O total devolvido com parcial pendente nunca passa do valor pago": {
-            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_integral_depois_de_parcial_concluida_soma_exatamente_o_pago": 'o estornado é o total pago: `_estornado_de(id_externo) == pedido.total == D("9.99")`',
+            "tests/tecnicos/test_cancelamento_com_reembolso.py::test_o_reembolso_anterior_pendente_nao_e_substituido": 'com a parcial pendente o total devolvido é o valor pago: `total == D("94.35")`',
         },
     },
     "T-15": {
@@ -1742,7 +1741,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_contas_login_senha.py::test_login_de_alias_nao_e_afetado_pelo_banimento_do_endereco_base": "o alias entra: `_autenticado(client)`",
         },
         "A sessão aberta é encerrada no banimento": {
-            "tests/tecnicos/test_moderacao_remocao.py::test_middleware_recusa_sessao_que_o_apagamento_nao_alcancou": 'a sessão perde o login e a tela diz encerrada: `"_auth_user_id" not in cliente.session`; `ENCERRADA in cliente.get("/entrar/").content.decode()`',
+            "tests/tecnicos/test_moderacao_remocao.py::test_remocao_bane_o_email_e_apaga_as_sessoes": "as 2 sessões abertas passam a 0 na remoção: `_sessoes_da_conta(conta) == 0`; `UserSession.objects.filter(user=conta).count() == 0`",
         },
     },
     "T-25": {
@@ -1837,12 +1836,13 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
         },
         "A parcela pendente sem reserva fica fora das caixas e do pedido na abertura": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_progresso_e_pedido_so_contam_as_reservadas": 'só as reservadas contam: `progresso.valor_elegivel == D("200.00")`; `item.quantidade == D("4.000")`',
+            "tests/tecnicos/test_interesses_progresso.py::test_a_formacao_de_caixas_ignora_as_pendentes": 'com múltiplo 10, 7 reservadas e 5 pendentes não se forma caixa: `(resultado.total_reservado, resultado.caixas_completas) == (D("7"), 0)`',
         },
         "A parcela pendente continua pendente na rodada seguinte": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_progresso_e_pedido_so_contam_as_reservadas": 'a parcela segue pendente: `(parcela.situacao, parcela.quantidade_pendente) == ("pendente", D("4.000"))`',
         },
         "O inadimplente fica sem parcelas pendentes": {
-            "tests/tecnicos/test_apuracao_inadimplentes.py::test_inadimplente_perde_as_parcelas_do_fornecedor": 'as parcelas ficam removidas com pendência zero: `[p.situacao for p in depois] == ["removida"] * 3`; `(nova.quantidade_reservada, nova.quantidade_pendente) == (D("0"),`',
+            "tests/tecnicos/test_apuracao_inadimplentes.py::test_pendente_antigo_de_outro_produto_do_fornecedor_tambem_sai": 'a pendente antiga de B sai da fila: `(antigo.situacao, antigo.quantidade_pendente) == ("removida", D("0"))`; `not na_fila.exists()`',
         },
     },
     "T-34": {
@@ -1850,7 +1850,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_convites_cadastro_concorrencia.py::test_dois_convites_com_mesmo_email_normalizado_em_paralelo": "um sucesso e uma conta: `len([r for r in resultados if r.excecao is None]) == 1`; `Conta.objects.filter(email_normalizado=email).count() == 1`",
         },
         "Dois cadastros simultâneos com o mesmo e-mail dão uma recusa pela restrição UNIQUE": {
-            "tests/tecnicos/test_convites_cadastro_concorrencia.py::test_dois_convites_com_mesmo_email_normalizado_em_paralelo": 'um erro email_em_uso: `len(erros) == 1`; `erro.codigo == "email_em_uso"`',
+            "tests/tecnicos/test_contas_modelo.py::test_banco_recusa_segunda_conta_com_o_mesmo_email_pela_restricao_unique": 'o banco recusa pela restrição unique: `pytest.raises(IntegrityError, match="conta_email_unico")`; `Conta.objects.filter(email_normalizado="ana@x.com").count() == 1`',
         },
     },
     "T-35": {
@@ -1991,14 +1991,17 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_comeca_pela_parcela_mais_recente": 'a mais recente é removida e a antiga fica: `estado(recente) == (SituacaoParcela.REMOVIDA, D("0"), D("0"))`; `estado(antiga) == (SituacaoParcela.PENDENTE, D("0"), D("1"))`',
         },
         "Quantidade fora do incremento é recusada sem escrita": {
-            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": "QuantidadeInvalida e nada gravado: `estado(parcela) == (SituacaoParcela.PENDENTE,`; `auditorias(ACAO) == []`; `pytest.raises(QuantidadeInvalida)`",
+            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": 'caso `"1.5"` do `parametrize`: `pytest.raises(QuantidadeInvalida)`; `auditorias(ACAO) == []`',
         },
         "Quantidade acima do pendente é recusada sem escrita": {
-            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": "RemocaoAcimaDoPendente e nada gravado: `estado(parcela) == (SituacaoParcela.PENDENTE,`; `auditorias(ACAO) == []`; `pytest.raises(RemocaoAcimaDoPendente)`",
+            "tests/tecnicos/test_interesses_remover_pendente.py::test_remocao_invalida_nao_grava": 'caso `"5"` do `parametrize`: `pytest.raises(RemocaoAcimaDoPendente)`; `auditorias(ACAO) == []`',
         },
     },
     "T-44": {
         "A remoção com item de pedido congelado é recusada": {
+            "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_com_o_pk_real_do_item_congelado_e_recusada": 'POST da rota com o pk real do item de A em Q: `resposta.status_code in (200, 404, 409)`; `list(ItemDoPedido.objects.order_by("pk").values()), list(Reembolso.objects.order_by("pk").values()),`',
+        },
+        "A remoção com parcela em pedido é recusada pelo serviço": {
             "tests/tecnicos/test_interesses_remover_pendente.py::test_parcela_em_pedido_nao_entra_na_remocao": 'RemocaoAcimaDoPendente e a parcela fica em pedido: `pytest.raises(RemocaoAcimaDoPendente)`; `estado(parcela) == (SituacaoParcela.EM_PEDIDO, D("4"), D("2"))`',
         },
         "A remoção com parcela em pedido é recusada pela rota": {
@@ -2006,6 +2009,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
         },
         "Pedido, trigger e registros financeiros ficam inalterados": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_de_remocao_nao_alcanca_o_que_so_esta_em_pedido": 'itens, reembolsos e obrigações iguais: `( list(ItemDoPedido.objects.order_by("pk").values()), list(Reembolso.objects.order_by("pk").values()), _estado(fp.a, fp.q), ) == antes`',
+            "tests/tecnicos/test_fila_ponta_a_ponta.py::test_rota_com_o_pk_real_do_item_congelado_e_recusada": 'o pedido, os itens, os reembolsos e as parcelas de A ficam iguais: `list(ItemDoPedido.objects.order_by("pk").values()), list(Reembolso.objects.order_by("pk").values()),`',
         },
     },
     "T-45": {
@@ -2032,7 +2036,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_interesses_progresso.py::test_pendentes_nao_entram_no_minimo": 'elegível 80 e pendente 5: `resultado.atingido is False`; `(participacao.reservado, participacao.pendente) == (D("0"), D("5"))`',
         },
         "A formação de caixas ignora a quantidade pendente": {
-            "tests/tecnicos/test_fila_ponta_a_ponta.py::test_progresso_e_pedido_so_contam_as_reservadas": 'o progresso conta só as reservadas: `progresso.valor_elegivel == D("200.00")`',
+            "tests/tecnicos/test_interesses_progresso.py::test_a_formacao_de_caixas_ignora_as_pendentes": 'múltiplo 10, 7 reservadas e 5 pendentes: `(resultado.total_reservado, resultado.caixas_completas) == (D("7"), 0)`; `resultado.quantidade_elegivel == D("0")`',
         },
         "A abertura do pagamento e o pedido ignoram a quantidade pendente": {
             "tests/tecnicos/test_fila_ponta_a_ponta.py::test_progresso_e_pedido_so_contam_as_reservadas": 'o item do pedido tem só as reservadas: `item.quantidade == D("4.000")`',
@@ -2097,12 +2101,12 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_devolucoes_reembolso.py::test_centavos_que_nao_fecham_o_ultimo_leva_o_saldo": '0,02 quatro vezes, 0,01 e 0,00: `[*valores, sexto.reembolso.produtos] == [ D("0.02"), D("0.02"), D("0.02"),`; `acumulado_do_item(item) == (D("0.600"), D("0.09"))`',
         },
         "A mudança do preço de catálogo não altera nenhum valor": {
-            "tests/tecnicos/test_devolucoes_reembolso.py::test_o_valor_vem_do_registrado_e_nao_do_catalogo": 'reembolso pelo valor registrado: `registrado.reembolso.produtos == D("2.00")`; `(linha.item_id, linha.quantidade, linha.valor) == (item.pk, D("0.250"),`',
+            "tests/aceitacao/test_t40_reembolso_do_item_inteiro.py::test_t40_reembolso_do_item_inteiro_depois_de_mudar_o_preco": 'com o catálogo a 9,99 o reembolso é o registrado: `componentes(registrado) == (D("7.99"), D("0.40"), D("1.60"))`; `componentes(registrado)[0] != D("9.99") * item.quantidade`',
         },
     },
     "T-52": {
         "O reembolso acima da quantidade paga é recusado": {
-            "tests/tecnicos/test_devolucoes_reembolso.py::test_quantidade_invalida_e_recusada": 'ReembolsoRecusado e nada gravado: `pytest.raises(ReembolsoRecusado, match="quantidade inválida")`; `_total_de_registros() == antes`',
+            "tests/tecnicos/test_devolucoes_reembolso.py::test_centavos_que_nao_fecham_o_ultimo_leva_o_saldo": 'o sétimo parcial passa do pago e é recusado: `pytest.raises(ReembolsoRecusado, match="passa da quantidade paga")`; `_total_de_registros() == antes`',
         },
         "A devolução integral depois de parciais completa exatamente o saldo": {
             "tests/tecnicos/test_devolucoes_reembolso.py::test_integral_devolve_o_restante_de_cada_item_e_componente": '75,00 3,75 15,00 e acumulado igual ao pedido: `_componentes(registrado) == (D("75.00"), D("3.75"), D("15.00"))`; `acumulado_do_pedido(pedido) == (D("100.00"), D("5.00"), D("20.00"))`',
@@ -2130,7 +2134,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedido_formal_reenvio.py::test_antes_da_primeira_tentativa_automatica_o_reenvio_e_recusado": 'ciclo_em_andamento: `pytest.raises(ReenvioRecusado)`; `erro.value.codigo == "ciclo_em_andamento"`',
         },
         "O reenvio manual é recusado com tentativa automática em execução": {
-            "tests/tecnicos/test_pedido_formal_reenvio.py::test_durante_o_ciclo_automatico_o_reenvio_e_recusado": 'ciclo_em_andamento: `erro.value.codigo == "ciclo_em_andamento"`; `not consultas`',
+            "tests/tecnicos/test_pedido_formal_reenvio.py::test_reenvio_durante_a_tentativa_automatica_e_recusado_sem_esperar": 'o manual durante a automática em execução é recusado: `resultados[1].excecao.codigo == "ciclo_em_andamento"`; `[t.tipo for t in _tentativas()] == ["automatica"] * 3`',
         },
         "O reenvio manual é aceito depois do sucesso": {
             "tests/tecnicos/test_pedido_formal_reenvio.py::test_reenvio_depois_do_sucesso_automatico": 'tentativa 2 com sucesso: `(registrado.tentativa.numero, registrado.tentativa.resultado) == (2, "sucesso")`; `_envio().situacao == "concluido_com_sucesso"`',

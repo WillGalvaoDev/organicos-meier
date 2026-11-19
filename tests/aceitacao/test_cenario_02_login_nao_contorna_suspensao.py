@@ -32,11 +32,12 @@ def _tentar_adicionar_interesse(client: Client) -> int:
 
 @pytest.mark.urls("tests.apoio.urls")
 def test_google_de_conta_suspensa_entra_mas_nao_adiciona_interesse(client: Client) -> None:
-    ContaFactory.create(email_normalizado=EMAIL, suspensa=True)
+    conta = ContaFactory.create(email_normalizado=EMAIL, suspensa=True)
     dados = {"sub": "google-1", "name": "Ana G", "email": EMAIL, "email_verified": True}
     client.post("/teste/retorno-google/", {"extra_data": json.dumps(dados)})
     assert "_auth_user_id" in client.session  # o canal abriu a sessão
     assert _tentar_adicionar_interesse(client) == 403  # a suspensão continua valendo
+    _verificar_sem_reserva(conta)
 
 
 def test_link_de_conta_suspensa_entra_mas_nao_adiciona_interesse(client: Client) -> None:

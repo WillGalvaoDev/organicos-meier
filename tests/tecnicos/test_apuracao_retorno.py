@@ -388,6 +388,7 @@ def test_adicao_espera_o_retorno_e_recebe_o_estoque_livre(
     assert corrida.b_esperou
     (da_c,) = _parcelas(c, a.p1)
     assert (da_c.situacao, da_c.quantidade_reservada) == ("ativa", D("5.000"))
+    assert all(da_c.sequencia > p.sequencia for p in _parcelas(a.a, a.p1))
     assert total_reservado(a.p1) <= D("11")
 
 

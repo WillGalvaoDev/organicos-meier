@@ -8,13 +8,17 @@ existem; estes testes os caracterizam, e por isso passam na primeira execução.
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 
-from apps.financeiro.devolucoes import autorizar_devolucao
+from apps.financeiro.devolucoes import autorizar_devolucao, confirmar_devolucao_excepcional
+from apps.financeiro.livro import conta_da_obrigacao
 from apps.financeiro.models import ObrigacaoComComprador, ParcelaDeDevolucao
+from apps.financeiro.obrigacoes import _liquidado
 from apps.fornecedores.models import Fornecedor
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
@@ -175,3 +179,30 @@ def test_cenario_17_webhook_repetido_antes_da_aprovacao_gera_um_so_pedido_formal
     assert processar(relogio, PRAZO) == 1
     assert TentativaDeEnvioDoPedidoFormal.objects.count() == 1
     assert _emails_do_pedido() == 1
+
+
+def test_cenario_26_pagamento_tardio_devolvido_pela_devolucao_excepcional(
+    cenario: Cenario, relogio: RelogioControlado, settings: Any, tmp_path: Path
+) -> None:  # E16-07 regra 2-G: o pagamento tardio, não o parcial do arranjo de devolução
+    settings.MEDIA_ROOT = tmp_path
+    c = cenario
+    _aprovar_e_receber(c, relogio, T0 + 49 * H, T0 + 50 * H)
+    obrigacao = ObrigacaoComComprador.objects.get(pedido=c.x)
+    assert obrigacao.integral == c.x.total
+    c.sim.recusar_estornos(c.p, "prazo_vencido")
+    parcela = autorizar_devolucao(obrigacao, autor=c.arranjo.admin)
+    processar_chamadas()
+    parcela.refresh_from_db()
+    assert parcela.situacao == "elegivel_excepcional"
+    confirmacao = confirmar_devolucao_excepcional(
+        parcela,
+        autor=c.arranjo.admin,
+        meio="transferencia",
+        identificacao="TED-26",
+        justificativa="Devolvido por transferência",
+        comprovante=SimpleUploadedFile("c.pdf", b"%PDF-1.4 comprovante"),
+    )
+    parcela.refresh_from_db()
+    assert parcela.situacao == "concluida_fora_da_plataforma"
+    assert (confirmacao.pedido_id, confirmacao.comprador_id) == (c.x.pk, c.arranjo.a.pk)
+    assert _liquidado(conta_da_obrigacao(obrigacao)) == obrigacao.devido

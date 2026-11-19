@@ -826,3 +826,49 @@ Fontes conferidas antes da avaliação: funcional v1.7 (§§5.2, 7.1 e 16, espec
 Nenhum achado impeditivo de especificação. Verificação documental: leitura integral do diff `eed1d8f..214b8ce`, confronto dos critérios com os requisitos e pareceres anteriores; `git diff --check eed1d8f HEAD` sem erros. Não executada suíte neste gate, pois o commit avaliado altera apenas especificações, critérios e registros; não se reutiliza o verde anterior como prova da correção futura.
 
 Próximo passo: implementação de 2-G/2-H com os registros de A-52, seguida da revisão independente de A-53. R05 continua aberto até essa revisão.
+
+
+## Quarta correção residual de R05 — implementador (2026-11-19)
+
+Agente 2. Regras 2-G, 2-H e 2-I e critérios A-47 a A-53 (gate `54be872`). A regra 2-I (sexta amostra) é do revisor.
+
+### Red e Green
+
+- **A-47 (guarda, Red):** `test_a_constante_de_casos_alterada_e_acusada` falhou nos 7 módulos (reatribuição depois do decorador, `+=`, `.append`, `CASOS[0] =`, atribuição só depois da definição, `global` em função e `for CASOS in ...`): a conferência atual aceitava todos (`assert []`). **Green:** `_constante_aceita` e `_ligacoes_do_nome` em `tests/rastreabilidade/conferencia.py`. Uma constante só vale se tiver uma única ligação no módulo (atribuição simples no nível do módulo, antes do decorador) e nunca for alterada (`+=`, `del`, `for`, `with ... as`, `import ... as`, `global`, `nonlocal`, parâmetro, `except ... as`, `match`, índice ou fatia, chamada de método). A recusa traz o motivo "constante de casos com mais de uma ligação ou alterada no módulo" e não importa nem executa o módulo. **A-48:** o caso no decorador e a constante `CASOS` de uma ligação continuam aceitos; a matriz entregue passa sem acusações. A guarda não ganhou formas além dessas (regra 2-H).
+- **A-49 (auditoria, Red):** os dois testes falharam por importação (`conferir_auditoria` e `tests/rastreabilidade/auditoria.py` não existiam). **Green:** `conferir_auditoria` (chaves iguais às ligações da matriz, os quatro campos preenchidos com até 200 caracteres, veredito `"íntegra"` ou `"corrigida: ..."`) e `auditoria.py`. **A-50:** a `AUDITORIA` entregue cobre exatamente as 606 ligações.
+- **A-51:** `test_os_sete_residuos_da_regra_2g_estao_corrigidos` confere a estrutura dos sete resíduos.
+
+### Método da auditoria (A-52)
+
+Li o corpo de cada teste ligado (a ação, as asserções, os auxiliares chamados pelo nome e os casos de parametrização), na ordem das 174 entradas, e escrevi uma linha por ligação com `preparacao`, `acao`, `resultado` e `veredito`. Um script só gerou o arquivo `auditoria.py` a partir das minhas linhas e acusou chaves faltantes; a leitura foi minha, ligação por ligação.
+
+- **Ligações lidas:** 606 (596 afirmações, 174 entradas, 284 referências distintas).
+- **Veredito:** 566 íntegras e 40 corrigidas.
+- **Corrigidas por pergunta** (uma pergunta principal por ligação): (a) situação 8; (b) ação ou interface 7; (c) resultado e comparação 17; (d) objeto 4; (e) elementos concretos e casos 1; (f) causa da recusa 3.
+- **Ligações retiradas da matriz (29), cada uma trocada por outra que prova por inteiro:**
+  - C2 (link depois do pedido); C4 (a ligação do mínimo atingido estava na afirmação "abaixo do mínimo"); C11 (carrinho); C12 (T0+48h); C13 (realocação); C14 (duas); C20 (link isolado); C23 (telas); C26 (duas: parcial de outra obrigação); C39 (destino sem obrigação); C47 (admin com 302 ou 403); C72 (API por serviços); C99 (pk inexistente); C106 (causa "quantidade" para a afirmação de múltiplo); C116 (só produtos);
+  - T-1; T-2; T-4; T-5; T-14 (duas); T-24; T-33; T-34; T-51; T-52; T-54.
+- **Resíduos do revisor:** C74 religado a `test_o_pedido_congelado_nao_muda`; C84 com caracterização das duas contas pelo cadastro; C90 com o fluxo inteiro (0,25 kg a 7,99, preço para 8,99, ocorrência da quantidade inteira: 2,00, 0,10 e 0,40); T-44 com o `pk` real do item congelado e a parcela em pedido em provas separadas; T-47 com múltiplo definido; C86, T-43 e C98 citando `"0"`, `"-1"`, `"1.5"` e `"5"`.
+
+### Caracterizações novas e reforços (regra 5)
+
+Todas passaram na primeira execução, porque o comportamento já existia (exceção técnica, sem Red inventado): `test_cenario_84_aliases_com_mais_sao_contas_distintas`, `test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado`, `test_rota_com_o_pk_real_do_item_congelado_e_recusada` (T-44), `test_a_formacao_de_caixas_ignora_as_pendentes` (T-47), `test_abaixo_do_minimo_a_rodada_fica_aberta_indefinidamente` (C4), `test_cenario_26_pagamento_tardio_devolvido_pela_devolucao_excepcional` (C26), `test_bloqueio_e_aviso_dao_o_mesmo_resultado_nas_duas_ordens` (T-7), `test_banco_recusa_segunda_conta_com_o_mesmo_email_pela_restricao_unique` (T-34), mais `test_administrador_e_recusado_pela_politica_sem_a_mensagem_da_etapa` (E16-10). Reforços em testes existentes (só acrescentam asserts ou explicitam pré-condições; nenhum foi afrouxado): sem parcela (C2 Google), sem sessão (C2 e C58, link), foto antes da tentativa (C11), etapa ao fim (C12), todas as demais destinações (C29), obrigações de fornecedor (C30), comprador novo (C47), sequência de C atrás da de A (C55), um só pedido formal (C70, C95), sem escrita (T-48) e mais valores de incremento (T-48), além do que foi feito na rodada anterior. Um teste novo de caso (litro 2,5) vem da rodada anterior.
+
+### Julgamentos declarados (para o revisor ler)
+
+- **Afirmações compostas fixadas pela spec** (A-16, A-36): C59 "no login e no novo cadastro" e C85 e T-26 "no servidor, inclusive pela API" têm uma ligação por cláusula. Cada ligação diz, no campo `resultado`, qual cláusula prova.
+- **C84:** a caracterização usa os endereços literais da afirmação; o negativo "banir um não afeta o outro" usa `ana@x.com` e `ana+1@x.com`, que têm a mesma forma.
+- **T-50 "float na API":** a prova é a interface de serviço (`dinheiro` e `quantidade`); pela rota HTTP não chega float.
+- **C64, C88, C89, C112, C113:** cálculo puro ou item sem produto; o "kg" rotula a quantidade e nenhuma regra lê a unidade.
+- **T-37:** um teste de hypothesis cobre os cinco fluxos; as cinco linhas da auditoria apontam o bloco de cada fluxo.
+- **C12, T-1, T-2:** instantes exatos foram ligados a testes que usam esses instantes (as ligações antigas usavam outros).
+
+### Números e execução
+
+- Matriz: **596 afirmações, 606 ligações, 284 referências distintas** (antes: 595 / 604 / 279). `docs/rastreabilidade-fase1.md` regerado.
+- Suíte completa com `--junitxml`: **3690 passed, 1 skipped, 2 xfailed** (834 s; o skipped é a ferramenta de backup ausente e os 2 xfailed são da E16-08). `conferir_execucao relatorio-pytest.xml`: "Toda referência da matriz passou na execução."
+- `ruff check`, `ruff format`, `mypy apps tests` limpos.
+
+### Devoluções ao especificador
+
+Nenhuma.

@@ -165,6 +165,7 @@ def test_pendente_da_fila_tambem_conta(admin_client: Client) -> None:  # A-4, Q-
     assert erro.value.codigo == "quantidade"
     produto.refresh_from_db()
     assert produto.incremento == D("0.250")
+    assert EntradaAuditoria.objects.count() == 0
 
 
 @pytest.mark.parametrize("valor", ["0", "-1", "0,0001", "abc"])
@@ -199,6 +200,10 @@ def test_incremento_congelado(
     assert MENSAGEM in resposta.content.decode()
     with pytest.raises(CondicoesCongeladas):
         alterar_incremento(_admin(), produto, "0.25")
+    for outro in ("1", "0,125", "0,5"):  # qualquer valor, inclusive o atual
+        assert admin_client.post(_url(produto), {"incremento": outro}).status_code == 409
+        with pytest.raises(CondicoesCongeladas):
+            alterar_incremento(_admin(), produto, outro.replace(",", "."))
     produto.refresh_from_db()
     assert produto.incremento == D("0.500")
     assert EntradaAuditoria.objects.count() == 0

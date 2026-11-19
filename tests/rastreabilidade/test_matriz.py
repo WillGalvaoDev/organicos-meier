@@ -1085,3 +1085,105 @@ def test_a_constante_de_casos_de_uma_ligacao_so_e_aceita(tmp_path: Path) -> None
         "), CASOS)", '), [(1, "0.5", True)])'
     )
     assert _problemas_da_fonte(tmp_path, no_decorador, prova) == []
+
+
+# --- quarta correção E16-R05: a auditoria de cada ligação (A-49 e A-50) --------------------------
+
+
+def _auditoria_de(
+    cenarios: dict[int, Afirmacoes], tecnicos: dict[str, Afirmacoes]
+) -> dict[tuple[int | str, str, str], dict[str, str]]:
+    linha = {"preparacao": "p", "acao": "a", "resultado": "r", "veredito": "íntegra"}
+    return {
+        (chave, afirmacao, ref): dict(linha)
+        for tabela in (cenarios, tecnicos)
+        for chave, afs in tabela.items()
+        for afirmacao, provas in afs.items()
+        for ref in provas
+    }
+
+
+def test_a_auditoria_acusa_as_cinco_falhas() -> None:  # A-49
+    from tests.rastreabilidade.conferencia import conferir_auditoria
+
+    cenarios, tecnicos = _completa()
+    base = _auditoria_de(cenarios, tecnicos)
+    assert conferir_auditoria(base, cenarios, tecnicos) == []
+    chave = (1, "afirmação do cenário 1", REAL)
+
+    sem_linha = {k: v for k, v in base.items() if k != chave}
+    assert any(
+        "sem linha na auditoria" in p for p in conferir_auditoria(sem_linha, cenarios, tecnicos)
+    )
+
+    com_sobra = {**base, (1, "outra afirmação", REAL): dict(base[chave])}
+    assert any(
+        "sem ligação na matriz" in p for p in conferir_auditoria(com_sobra, cenarios, tecnicos)
+    )
+
+    vazio = {**base, chave: {**base[chave], "acao": " "}}
+    assert any(
+        "campo vazio" in p and "acao" in p for p in conferir_auditoria(vazio, cenarios, tecnicos)
+    )
+
+    comprido = {**base, chave: {**base[chave], "resultado": "x" * 201}}
+    assert any("mais de 200" in p for p in conferir_auditoria(comprido, cenarios, tecnicos))
+
+    ok = {**base, chave: {**base[chave], "veredito": "ok"}}
+    assert any("veredito" in p for p in conferir_auditoria(ok, cenarios, tecnicos))
+    corrigida = {**base, chave: {**base[chave], "veredito": "corrigida: religada"}}
+    assert conferir_auditoria(corrigida, cenarios, tecnicos) == []
+
+
+def test_a_auditoria_entregue_cobre_exatamente_as_ligacoes() -> None:  # A-50
+    from tests.rastreabilidade import auditoria
+    from tests.rastreabilidade.conferencia import conferir_auditoria
+
+    assert conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS) == []
+
+
+# --- quarta correção E16-R05: os sete resíduos da regra 2-G (A-51, estrutura) -------------------
+
+FILA = "tests/tecnicos/test_fila_ponta_a_ponta.py"
+VIAVEL = "tests/tecnicos/test_apuracao_viavel.py"
+
+
+def _refs(entrada: dict[str, dict[str, str]], trecho: str) -> list[str]:
+    return list(_afirmacao(entrada, trecho))
+
+
+def test_os_sete_residuos_da_regra_2g_estao_corrigidos() -> None:  # A-51
+    assert _refs(matriz.CENARIOS[74], "O pedido congelado não muda") == [
+        VIAVEL + "::test_o_pedido_congelado_nao_muda"
+    ]
+    assert not any(
+        "test_unidades_da_caixa_invalidada_voltam_para_a_fila" in ref
+        for ref in _refs(matriz.CENARIOS[74], "O pedido congelado não muda")
+    )
+    assert _refs(matriz.CENARIOS[84], "podem pertencer a contas distintas") == [
+        "tests/aceitacao/test_cenarios_84_aliases_contas_distintas.py"
+        "::test_cenario_84_aliases_com_mais_sao_contas_distintas"
+    ]
+    teste_90 = (
+        "tests/aceitacao/test_cenarios_90_item_inteiro_de_0_25_kg.py"
+        "::test_cenario_90_item_inteiro_de_0_25_kg_reembolsa_pelo_registrado"
+    )
+    assert len(matriz.CENARIOS[90]) == 3
+    assert all(list(provas) == [teste_90] for provas in matriz.CENARIOS[90].values())
+    pk_real = _refs(matriz.TECNICOS["T-44"], "item de pedido congelado")
+    assert pk_real == [FILA + "::test_rota_com_o_pk_real_do_item_congelado_e_recusada"]
+    em_pedido = _refs(matriz.TECNICOS["T-44"], "parcela em pedido é recusada pelo serviço")
+    assert em_pedido == [
+        "tests/tecnicos/test_interesses_remover_pendente.py::test_parcela_em_pedido_nao_entra_na_remocao"
+    ]
+    caixas = _refs(matriz.TECNICOS["T-47"], "formação de caixas")
+    assert caixas == [
+        "tests/tecnicos/test_interesses_progresso.py::test_a_formacao_de_caixas_ignora_as_pendentes"
+    ]
+    for trecho, caso in (("igual a zero", '"0"'), ("negativo", '"-1"')):
+        (prova,) = _afirmacao(matriz.CENARIOS[86], trecho).values()
+        assert caso in prova, trecho
+    (fora_do_incremento,) = _afirmacao(matriz.TECNICOS["T-43"], "fora do incremento").values()
+    assert '"1.5"' in fora_do_incremento
+    (acima,) = _afirmacao(matriz.TECNICOS["T-43"], "acima do pendente").values()
+    assert '"5"' in acima

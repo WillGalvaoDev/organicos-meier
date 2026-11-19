@@ -708,6 +708,46 @@ def conferir(
     return problemas
 
 
+CAMPOS_DA_AUDITORIA = ("preparacao", "acao", "resultado", "veredito")
+MAXIMO_DO_CAMPO = 200
+
+
+def conferir_auditoria(
+    auditoria: Mapping[tuple[int | str, str, str], Mapping[str, str]],
+    cenarios: Mapping[int, Afirmacoes],
+    tecnicos: Mapping[str, Afirmacoes],
+) -> list[str]:
+    """Os problemas da auditoria por ligação (regra 2-G): as chaves são exatamente as ligações da
+    matriz, os quatro campos estão preenchidos com até 200 caracteres e o veredito é `"íntegra"` ou
+    começa com `"corrigida: "`."""
+    ligacoes = {
+        (chave, afirmacao, referencia)
+        for tabela in (cenarios, tecnicos)
+        for chave, afirmacoes in tabela.items()
+        for afirmacao, provas in afirmacoes.items()
+        for referencia in provas
+    }
+    problemas: list[str] = []
+    for chave in sorted(ligacoes - set(auditoria), key=str):
+        problemas.append(f"{chave[0]}: ligação sem linha na auditoria: {chave[2]}")
+    for chave in sorted(set(auditoria) - ligacoes, key=str):
+        problemas.append(f"{chave[0]}: linha da auditoria sem ligação na matriz: {chave[2]}")
+    for chave, linha in auditoria.items():
+        onde = f"{chave[0]} {chave[2]}"
+        for campo in CAMPOS_DA_AUDITORIA:
+            valor = linha.get(campo, "")
+            if not valor.strip():
+                problemas.append(f"{onde}: campo vazio na auditoria: {campo}")
+            elif len(valor) > MAXIMO_DO_CAMPO:
+                problemas.append(f"{onde}: {campo} com mais de {MAXIMO_DO_CAMPO} caracteres")
+        veredito = linha.get("veredito", "")
+        if veredito.strip() and veredito != "íntegra" and not veredito.startswith("corrigida: "):
+            problemas.append(
+                f'{onde}: veredito inválido (só "íntegra" ou "corrigida: ..."): {veredito[:30]}'
+            )
+    return problemas
+
+
 def conferir_documento(
     documento: Path,
     cenarios: Mapping[int, Afirmacoes],

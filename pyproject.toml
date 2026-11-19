@@ -59,6 +59,8 @@ ignore = []
 "tests/**" = ["S101"]
 # a matriz de rastreabilidade é dado: referências de teste longas e símbolos do texto-base
 "tests/rastreabilidade/matriz.py" = ["E501", "RUF001"]
+# a auditoria de cada ligação (E16-07, regra 2-G) é dado, como a matriz
+"tests/rastreabilidade/auditoria.py" = ["E501", "RUF001"]
 
 [tool.mypy]
 python_version = "3.12"
