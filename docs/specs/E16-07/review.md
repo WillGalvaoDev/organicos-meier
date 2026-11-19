@@ -947,3 +947,31 @@ Agente 1. Recebidos os resíduos da revisão de `8e35589`. Pela regra 2-I, levei
 **Por que mudou o método:** a auditoria anterior descrevia o auxiliar, e não a ação executada. A regra 2-J acrescenta o campo `caminho`, com as funções de produção alcançadas e conferidas no CI, e as perguntas (g) a (k), que cobrem os cinco padrões da sexta amostra. Todas as linhas são relidas, com uma busca dirigida por esses padrões antes da entrega.
 
 **Próximo gate:** gate independente da regra 2-J. Depois, o implementador faz a releitura, as caracterizações e o `caminho`, e o revisor confere a sétima amostra (A-64).
+
+## Gate independente da regra 2-J — 2026-11-19
+
+Agente 3. Base examinada: `4b781ed`, branch `e16-especificacoes`, árvore inicialmente limpa. Escopo: regra 2-J e A-54 a A-64, comparados com as fontes de verdade, o parecer da sexta amostra e as provas existentes. **Veredito: REPROVADO.** Duas pendências importantes impedem liberar a regra completa para implementação; não são novos defeitos demonstrados na produção.
+
+### G2J-01 — importante — o domínio de `caminho` exclui provas legítimas de configuração
+
+**Referências:** spec.md:244–248 e invariante de `caminho`; acceptance.md A-54/A-55; AGENTS.md §7; infraestrutura T-12.
+
+**Evidência reproduzível:** `tests/rastreabilidade/matriz.py:1598` liga T-12 a `tests/tecnicos/test_configuracao_pagamentos.py::test_producao_com_o_simulador_nao_carrega`. O teste carrega `config.settings.prod` em subprocesso. A recusa ocorre no corpo do módulo `config/settings/prod.py:55–56`, ao importar a configuração; não é uma função/método em `apps/`, nem uma restrição/trigger de banco. A regra exige que todas as linhas tenham exclusivamente essas duas formas. Logo, essa prova correta não tem representação verdadeira no novo campo. Indicar função de `apps` apenas existente não resolve: a ação afirmada não a executa.
+
+**O que o especificador deve fazer:** ampliar explicitamente o domínio para representar configuração executada no corpo de módulo e outros pontos de entrada reais fora de `apps`, mantendo identificação verificável do artefato e sem aceitar auxiliares de teste como produção. Definir a validação estrutural correspondente, com positivo específico para T-12 (`config.settings.prod`, corpo de módulo) e negativos para artefato inexistente/tipo inválido. Ajustar A-54/A-55, a invariante e a justificativa da regra. Distinguir existência estática, verificável por AST, de alcance efetivo pelo teste, que continua dependendo da leitura humana. Conferir se as demais ligações têm representação antes de exigir o preenchimento universal. Não mover nem refatorar produção só para caber no formato da auditoria. A sintaxe concreta é decisão técnica; não demanda nova autorização comercial.
+
+### G2J-02 — importante — igualdade universal no T-7 omite a exceção já aprovada de apuração
+
+**Referências:** spec.md:285–288; acceptance.md A-60; funcional §8.3 (prevalece sobre a formulação resumida da infraestrutura T-7); E11-01 acceptance A-15/A-16; E08-04 spec (exceção de quitação retroativa não se estende à inadimplência).
+
+**Evidência reproduzível:** §8.3 aceita aprovação no prazo desde que identificada na apuração e proíbe alterar pedido já apurado por comunicação tardia. E11-01 A-15 prevê aviso com trava anterior à decisão: pedido pago/destino `quita`. A-16 prevê reconsulta pendente e aviso esperando a apuração que já cancelou: pedido permanece cancelado por inadimplência/destino `devolucao`, obrigação e alerta. As provas correspondentes estão em `tests/tecnicos/test_apuracao_inicio.py:664` e `:693`. A regra 2-J exige, sem delimitar a informação disponível na reconsulta, as duas ordens de webhook × apuração com o mesmo resultado final de pagamento, destino e pedido. Essa redação admite exigir igualdade justamente onde os critérios aprovados exigem preservar resultados distintos. Não se afirma que trocar somente a ordem em um arranjo com aprovação identificável sempre gere divergência; a lacuna é não delimitar esse arranjo e a exceção.
+
+**O que o especificador deve fazer:** delimitar em 2-J/A-60 as pré-condições de equivalência: mesma aprovação e mesma informação consultável pelo provedor antes da classificação; nesse grupo, forçar as duas ordens concorrentes e exigir resultado idêntico. Registrar separadamente o caso de aprovação não identificada na apuração, conforme E11-01 A-16: aviso posterior à decisão mantém cancelamento, registra devolução e alerta, sem editar o pedido apurado. Preservar as provas desses dois comportamentos em afirmações distintas, sem ligar a exceção a uma igualdade universal. Explicitar essa leitura de T-7 pela precedência do §8.3. Não alterar quitação, prazos ou cancelamento para satisfazer uma igualdade indevida. A correção pode ser deduzida das regras aprovadas; só uma proposta de mudar essa regra financeira exigiria decisão do responsável.
+
+### Demais critérios e encaminhamento
+
+A decisão registrada pela nova rodada exaustiva foi considerada autorizada. As perguntas (g) a (k), as correções dirigidas de ocorrências/caixas/remoção/cadastro/API, a atomização de C59, a retificação histórica do Red e o retorno à escolha de 2-I após eventual novo resíduo são adequados como orientação documental, ressalvadas as duas pendências acima. Não se libera a implementação integral de 2-J enquanto elas persistirem. O encaminhamento de C104 admite devolução explícita se o arranjo não puder ser formado por comportamento aprovado; isso não autoriza mudar prioridade da fila ou converter silenciosamente as pendências.
+
+**Verificação independente nesta rodada:** `git status --short`; `git show --stat --oneline HEAD`; leitura do diff documental e buscas `rg -n` de `2-J`, `A-60`, T-7/T-12, pagamentos já apurados e critérios A-15/A-16; leitura dos corpos das provas, da matriz e da configuração citados acima. Gate documental: não executada nova suíte, não alegado novo Red/Green, não revalidada a implementação nem executada a sétima amostra. Os resultados históricos permanecem históricos. Não alterados spec.md, acceptance.md nem código de produção.
+
+**Próximo gate:** especificador corrige G2J-01/G2J-02 em spec.md e acceptance.md e registra o encaminhamento; agente 3 refaz o gate. R05 continua aberto e a E16 não recebe aprovação por este gate. Parecer anterior e resposta do especificador preservados integralmente.
