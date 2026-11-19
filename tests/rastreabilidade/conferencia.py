@@ -494,37 +494,117 @@ def _trechos_de_prova(funcao: ast.AST, auxiliares: dict[str, ast.AST], fonte: st
     return trechos
 
 
-def _decoradores_de_caso(arvore: ast.Module, cadeia: Sequence[ast.AST], fonte: str) -> list[str]:
-    """O texto (normalizado) de cada `parametrize` que vale para o teste (o da função e o das
-    classes que a contêm) e de cada constante do módulo que esse decorador usa pelo nome."""
-    constantes: dict[str, str] = {}
+MOTIVO_DA_CONSTANTE = "constante de casos com mais de uma ligação ou alterada no módulo"
+
+
+def _ligacoes_do_nome(arvore: ast.Module, nome: str) -> list[ast.AST]:
+    """Toda ligação do nome no módulo inteiro e todo uso que o altera: atribuição, `+=`, `del`,
+    `for`, `with ... as`, `import ... as`, `global`, `nonlocal`, parâmetro, `except ... as`,
+    captura de `match`, definição de função ou classe, índice ou fatia no lado esquerdo e
+    qualquer chamada de método do nome (`NOME.append(...)`)."""
+    achadas: list[ast.AST] = []
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Name) and no.id == nome and isinstance(no.ctx, (ast.Store, ast.Del)):
+            achadas.append(no)
+        elif isinstance(no, ast.arg) and no.arg == nome:
+            achadas.append(no)
+        elif isinstance(no, ast.alias) and (no.asname or no.name.split(".")[0]) == nome:
+            achadas.append(no)
+        elif isinstance(no, (ast.Global, ast.Nonlocal)) and nome in no.names:
+            achadas.append(no)
+        elif isinstance(no, ast.ExceptHandler) and no.name == nome:
+            achadas.append(no)
+        elif isinstance(no, (ast.MatchAs, ast.MatchStar)) and no.name == nome:
+            achadas.append(no)
+        elif isinstance(no, ast.MatchMapping) and no.rest == nome:
+            achadas.append(no)
+        elif (
+            isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and no.name == nome
+        ):
+            achadas.append(no)
+        elif (
+            isinstance(no, ast.Subscript)
+            and isinstance(no.ctx, (ast.Store, ast.Del))
+            and isinstance(no.value, ast.Name)
+            and no.value.id == nome
+        ):
+            achadas.append(no)
+        elif (
+            isinstance(no, ast.Attribute) and isinstance(no.value, ast.Name) and no.value.id == nome
+        ):
+            achadas.append(no)
+    return achadas
+
+
+def _constante_aceita(arvore: ast.Module, nome: str, linha_do_decorador: int) -> bool:
+    """Regra 2-H: uma única ligação no módulo, atribuição simples no nível do módulo, antes do
+    decorador, e nunca alterada em outro lugar."""
+    ligacoes = _ligacoes_do_nome(arvore, nome)
+    if len(ligacoes) != 1:
+        return False
     for no in arvore.body:
         if isinstance(no, ast.Assign) and len(no.targets) == 1:
-            alvo, valor = no.targets[0], no.value
+            alvo = no.targets[0]
         elif isinstance(no, ast.AnnAssign) and no.value is not None:
-            alvo, valor = no.target, no.value
+            alvo = no.target
         else:
             continue
-        if isinstance(alvo, ast.Name):
-            constantes[alvo.id] = _normalizar(ast.get_source_segment(fonte, valor) or "")
-    casos: list[str] = []
+        if isinstance(alvo, ast.Name) and alvo.id == nome:
+            return no.lineno < linha_do_decorador
+    return False
+
+
+def _decoradores_de_caso(
+    arvore: ast.Module, cadeia: Sequence[ast.AST], fonte: str
+) -> tuple[list[str], list[str]]:
+    """O texto (normalizado) de cada `parametrize` que vale para o teste (o da função e o das
+    classes que a contêm) e de cada constante do módulo que esse decorador usa pelo nome e que a
+    regra 2-H aceita. Devolve também o texto das constantes recusadas (para o diagnóstico)."""
+    aceitos: list[str] = []
+    recusados: list[str] = []
     for dono in cadeia:
         for decorador in getattr(dono, "decorator_list", []):
             alvo = decorador.func if isinstance(decorador, ast.Call) else decorador
             if getattr(alvo, "attr", "") != "parametrize":
                 continue
-            casos.append(_normalizar(ast.get_source_segment(fonte, decorador) or ""))
-            casos.extend(
-                constantes[nome.id]
-                for nome in ast.walk(decorador)
-                if isinstance(nome, ast.Name) and nome.id in constantes
-            )
-    return casos
+            aceitos.append(_normalizar(ast.get_source_segment(fonte, decorador) or ""))
+            for nome in {n.id for n in ast.walk(decorador) if isinstance(n, ast.Name)}:
+                if _constante_aceita(arvore, nome, decorador.lineno):
+                    for no in arvore.body:
+                        valor = None
+                        if isinstance(no, ast.Assign) and len(no.targets) == 1:
+                            alvo_do_no, valor = no.targets[0], no.value
+                        elif isinstance(no, ast.AnnAssign) and no.value is not None:
+                            alvo_do_no, valor = no.target, no.value
+                        if (
+                            valor is not None
+                            and isinstance(alvo_do_no, ast.Name)
+                            and alvo_do_no.id == nome
+                        ):
+                            aceitos.append(_normalizar(ast.get_source_segment(fonte, valor) or ""))
+                elif _ligacoes_do_nome(arvore, nome):
+                    recusados.extend(_instrucoes_que_citam(arvore, nome, fonte))
+                else:
+                    continue
+    return aceitos, recusados
+
+
+def _instrucoes_que_citam(arvore: ast.Module, nome: str, fonte: str) -> list[str]:
+    """O texto das instruções que ligam ou alteram o nome (para acusar o caso citado)."""
+    textos: list[str] = []
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.stmt) and not isinstance(
+            no, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            if any(isinstance(filho, ast.Name) and filho.id == nome for filho in ast.walk(no)):
+                textos.append(_normalizar(ast.get_source_segment(fonte, no) or ""))
+    return textos
 
 
 def _localizar_funcao(
     raiz: Path, referencia: str
-) -> tuple[ast.AST, dict[str, ast.AST], str, list[str]] | None:
+) -> tuple[ast.AST, dict[str, ast.AST], str, list[str], list[str]] | None:
     """A função de teste, as funções do módulo (por nome), o texto do arquivo e os casos de
     parametrização do teste."""
     caminho, _, resto = referencia.partition("::")
@@ -547,7 +627,8 @@ def _localizar_funcao(
     for no in arvore.body:
         if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
             auxiliares[no.name] = no  # a última definição vale
-    return funcao, auxiliares, fonte, _decoradores_de_caso(arvore, cadeia, fonte)
+    casos, recusados = _decoradores_de_caso(arvore, cadeia, fonte)
+    return funcao, auxiliares, fonte, casos, recusados
 
 
 def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
@@ -565,7 +646,7 @@ def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
     localizada = _localizar_funcao(raiz, referencia)
     if localizada is None:
         return "função não localizada"
-    funcao, auxiliares, fonte, casos = localizada
+    funcao, auxiliares, fonte, casos, recusados = localizada
     asserts = _trechos_de_prova(funcao, auxiliares, fonte)
     achou_assert = False
     for trecho in trechos:
@@ -575,6 +656,8 @@ def _conferir_prova(raiz: Path, referencia: str, prova: str) -> str | None:
         if any(procurado in texto for texto in asserts):
             achou_assert = True
         elif not any(procurado in texto for texto in casos):
+            if any(procurado in texto for texto in recusados):
+                return f"o trecho `{trecho}` vem de uma {MOTIVO_DA_CONSTANTE}"
             return (
                 f"o trecho `{trecho}` aparece no arquivo, mas não num assert, num raises "
                 "nem no parametrize do teste (ou numa constante que ele usa)"

@@ -1034,3 +1034,54 @@ def test_c96_tem_a_afirmacao_do_carrinho_e_a_do_historico() -> None:  # A-44
     assert not any(
         "histórico" in afirmacao.lower() for afirmacao in entrada if "carrinho" in afirmacao
     )
+
+
+# --- quarta correção E16-R05: a guarda conservadora da constante de casos (A-47 e A-48) ----------
+
+_PARAMETRIZE = (
+    "import pytest\n\n"
+    'CASOS = [(1, "0.5", True)]\n\n'
+    '@pytest.mark.parametrize(("u", "x", "ok"), CASOS)\n'
+    "def test_exemplo(u, x, ok):\n"
+    '    assert (u, x, ok) == (1, "0.5", True)\n'
+)
+_CASO_NOVO = '(9, "9.5", False)'
+MOTIVO_DA_CONSTANTE = "constante de casos com mais de uma ligação ou alterada no módulo"
+
+FONTES_DA_CONSTANTE_ALTERADA = {
+    "reatribuída depois do decorador (reprodução do revisor)": _PARAMETRIZE
+    + f"CASOS = [{_CASO_NOVO}]\n",
+    "mais atribuição": _PARAMETRIZE + f"CASOS += [{_CASO_NOVO}]\n",
+    "append": _PARAMETRIZE + f"CASOS.append({_CASO_NOVO})\n",
+    "índice": _PARAMETRIZE + f"CASOS[0] = {_CASO_NOVO}\n",
+    "atribuída só depois da definição": _PARAMETRIZE.replace('CASOS = [(1, "0.5", True)]\n\n', "")
+    + f"CASOS = [{_CASO_NOVO}]\n",
+    "global em função": _PARAMETRIZE
+    + f"\ndef religa():\n    global CASOS\n    CASOS = [{_CASO_NOVO}]\n",
+    "for no módulo": _PARAMETRIZE + f"for CASOS in [[{_CASO_NOVO}]]:\n    pass\n",
+}
+
+
+def _problemas_da_fonte(raiz: Path, fonte: str, prova: str) -> list[str]:
+    ref = _arquivo(raiz, "test_constante.py", fonte)
+    cenarios, tecnicos = _completa()
+    cenarios[1] = {"afirmação": {ref + "test_exemplo": prova}}
+    return [p for p in conferir(cenarios, tecnicos, raiz=raiz) if p.startswith("cenário 1:")]
+
+
+@pytest.mark.parametrize("nome", list(FONTES_DA_CONSTANTE_ALTERADA))
+def test_a_constante_de_casos_alterada_e_acusada(tmp_path: Path, nome: str) -> None:  # A-47
+    prova = f'Caso `{_CASO_NOVO}`; `(u, x, ok) == (1, "0.5", True)`.'
+    problemas = _problemas_da_fonte(tmp_path, FONTES_DA_CONSTANTE_ALTERADA[nome], prova)
+    assert problemas, nome
+    assert "test_constante.py::test_exemplo" in problemas[0]
+    assert MOTIVO_DA_CONSTANTE in problemas[0], problemas
+
+
+def test_a_constante_de_casos_de_uma_ligacao_so_e_aceita(tmp_path: Path) -> None:  # A-48
+    prova = 'Caso `(1, "0.5", True)`; `(u, x, ok) == (1, "0.5", True)`.'
+    assert _problemas_da_fonte(tmp_path, _PARAMETRIZE, prova) == []
+    no_decorador = _PARAMETRIZE.replace('CASOS = [(1, "0.5", True)]\n\n', "").replace(
+        "), CASOS)", '), [(1, "0.5", True)])'
+    )
+    assert _problemas_da_fonte(tmp_path, no_decorador, prova) == []
