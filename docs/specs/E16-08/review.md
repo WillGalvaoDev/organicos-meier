@@ -476,3 +476,19 @@ A decisão do responsável de 2026-11-20 e a M-15 permanecem válidas. Não foi 
 Suíte completa: **3751 passed, 1 skipped, 2 xfailed, 18 warnings em 934,88 s (15min34s)**, saída 0. JUnit com 3754 casos, zero erros e zero falhas; `conferir_execucao` aprovou todas as referências. `tests/rastreabilidade`: **110 passed**. `conferir_alcance --executar`: **407 passed**, 407 nodeids e zero problemas, saída 0. Ruff check/format e mypy passaram (485 arquivos formatados; 578 arquivos verificados pelo mypy). Comandos, runner isolado e nomes dos logs/XML estão no parecer E16-07. O skip por ferramentas de backup ausentes, os dois xfails operacionais e os avisos de Sentry/M-14 são explicitados lá.
 
 **Veredito final: E16 REPROVADA.** A regressão verde não sana R05-K1/R05-K2 nem comprova os requisitos externos de R07. Próximo encaminhamento: correção técnica dos dois resíduos pelo implementador e nova revisão dirigida A-76; mantidos os requisitos de homologação e restauração real. Somente os dois pareceres foram acrescentados pelo revisor, com histórico preservado, sem alteração de especificações, testes ou produção e sem push.
+
+## Revisão consolidada após a0e9ab9 — 2026-11-20
+
+Agente 3. Revalidação dirigida das correções de R05-K1 e R05-K2, conforme regra 2-K/A-76. **E16-07 APROVADA; R05 encerrado. E16 global REPROVADA exclusivamente pelo bloqueador operacional R07.** Detalhes, comandos e limites em `docs/specs/E16-07/review.md`, seção “Revalidação independente de R05-K1 e R05-K2”.
+
+| Item | Resultado |
+|---|---|
+| R05-K1 e R05-K2 | Encerrados: caminho da recusa C42 corrigido; restauração separada dos perfis com testes normal/exceção e reprodução independente das falhas na base. |
+| R05 / E16-07 | Encerrado / APROVADA. Conferências A-76 aprovadas; decisões anteriores e M-15 preservadas. |
+| R07 | Aberto, bloqueador operacional: não foram entregues nesta correção as contas/pré-requisitos externos e as evidências de homologação, suíte no Neon e restaurações reais A/B com RTO. |
+| R01–R04, R06 e R08 | Encerramentos anteriores mantidos. |
+| E16-09 e E16-10 | Aprovações anteriores mantidas. |
+
+**Resultados atuais:** rastreabilidade **112 passed**; execução instrumentada da matriz **407 passed**, zero problemas de alcance; JUnit com zero falhas, erros e pulos e `conferir_execucao` aprovado. Ruff check/format e mypy aprovados (485 arquivos formatados; 578 arquivos verificados pelo mypy). Suíte completa não repetida nesta correção restrita: os 3751 passed, 1 skipped e 2 xfailed da revisão de `7f2f09f` permanecem históricos. Não há nova evidência operacional para R07.
+
+**Próximo gate:** executar e registrar os requisitos operacionais pendentes da E16-08, depois submeter as evidências à revisão independente. Não é necessário novo gate de especificação nem outra correção de R05. Nenhum deploy ou push realizado; somente os dois pareceres foram acrescentados pelo revisor, com histórico preservado.
