@@ -430,3 +430,30 @@ Suíte independente sobre **8e35589**: **3690 passed, 1 skipped, 2 xfailed, 18 w
 Próximo gate: o especificador recebe os resíduos e encaminha ao responsável a decisão prevista em E16-07 2-I; depois, as correções apontadas passam por revisão independente. Nenhum resíduo foi convertido em melhoria sem essa decisão. Não houve push nem alteração de produção ou de testes pelo revisor.
 
 Após mover M-3/M-8, executado o teste documental afetado: `python -m pytest tests/ambiente/test_artefatos_de_implantacao.py::test_as_melhorias_tem_decisao -q -p no:cacheprovider`: **1 xfailed em 2,05 s**, saída 0. A marca e a adequação do registro completo de encerramento continuam sob E16-08; as decisões do responsável já registradas não precisam ser tomadas novamente. Não se declara esse xfail como aprovação operacional.
+
+## Revisão consolidada após 3eb24be — 2026-11-19
+
+Agente 3. Nova revisão da quinta correção residual da E16-07, conforme regra 2-J aprovada no gate `5d2754a`. **E16 REPROVADA.** O parecer detalhado e o encaminhamento ao especificador estão em `docs/specs/E16-07/review.md`, seção “Revisão independente da quinta correção de R05”.
+
+| Item | Resultado desta rodada |
+|---|---|
+| R05 — importante | Aberto. As correções dirigidas avançaram, mas a releitura integral não foi realizada e a sétima amostra contém resíduos de caminhos, cláusulas e comparações. A-63/A-64 não permitem encerramento. Sete grupos R05-J1 a R05-J7 documentados com evidência e encaminhamento. |
+| R07 — bloqueador | Mantido. Não foram entregues nesta correção as contas/pré-requisitos externos nem as evidências de homologação, suíte no Neon, restaurações reais A/B e RTO. |
+| R01–R04, R06 e R08 | Encerramentos mantidos; as respectivas implementações não foram alteradas. |
+| E16-09 e E16-10 | Aprovações anteriores mantidas. |
+
+Nenhum novo defeito de produção foi demonstrado. O diff de `3eb24be` modifica testes e documentação; o revisor não alterou produção nem testes. A sétima amostra tem 20 cenários e 10 técnicos, 90 afirmações, 91 ligações e 57 referências, além da releitura dos resíduos anteriores. A diferença de tratamento do campo `caminho` foi reproduzida contra a base: 16 negativos aceitos antes e recusados agora, com sete positivos aceitos. Ruff passou (479 arquivos formatados); mypy em `apps tests` passou (561 arquivos). O fechamento da suíte completa independente e do JUnit será acrescentado abaixo.
+
+**Próximo gate:** especificador recebe os resíduos, resolve a representação das triggers geradas e encaminha a escolha do responsável prevista em E16-07 2-I. A opção de tratar o restante como melhoria não foi adotada pelo revisor. O gate técnico anterior à homologação permanece exigido; não foram executados deploy, CI remoto, banco Neon nem restaurações reais nesta rodada.
+
+### Fechamento da execução independente — 2026-11-20
+
+Retomada sem novos commits de implementação: HEAD continua `3eb24be`; somente os dois pareceres do revisor estavam modificados. A suíte iniciada em 2026-11-19 terminou nesse dia, e o resultado foi conferido na retomada.
+
+**Resultado: 3720 passed, 1 skipped, 2 xfailed, 18 warnings em 1066,62 s (17min46s).** JUnit: 3723 casos, zero falhas, zero erros. `uv run python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_3eb24be.xml`: saída 0, todas as referências da matriz passaram.
+
+Comando independente: `uv run python <TEMP>/revisor_e16_3eb24be.py -q --junitxml=<TEMP>/revisor_e16_3eb24be.xml -ra`, com PYTHONPATH da raiz. O runner configura `config.settings.test` e o nome isolado `test_organicos_revisor_e16_3eb24be` para o banco de testes, depois chama `pytest.main`. Log e XML preservados no diretório temporário com o mesmo prefixo.
+
+O skip corresponde à ausência de `pg_dump`, `pg_restore`, `age` e `age-keygen`. Os xfails são o registro de restauração/RTO e o registro de decisões de melhorias, em E16-08; não equivalem a aprovação operacional. Os 18 avisos são a depreciação de `send_default_pii`, já registrada anteriormente. Não executados deploy, CI remoto, Neon ou restauração real.
+
+**Veredito final desta revisão: REPROVADO.** R05 continua importante e aberto pelos resíduos descritos no parecer E16-07; R07 continua bloqueador operacional. Próximo encaminhamento: especificador recebe a lista e a escolha prevista em 2-I volta ao responsável. Os testes não demonstraram nova regressão de produção. Entrega limitada aos pareceres E16-07/E16-08, com histórico preservado, sem push.
