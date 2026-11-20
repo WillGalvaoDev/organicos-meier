@@ -457,3 +457,22 @@ Comando independente: `uv run python <TEMP>/revisor_e16_3eb24be.py -q --junitxml
 O skip corresponde à ausência de `pg_dump`, `pg_restore`, `age` e `age-keygen`. Os xfails são o registro de restauração/RTO e o registro de decisões de melhorias, em E16-08; não equivalem a aprovação operacional. Os 18 avisos são a depreciação de `send_default_pii`, já registrada anteriormente. Não executados deploy, CI remoto, Neon ou restauração real.
 
 **Veredito final desta revisão: REPROVADO.** R05 continua importante e aberto pelos resíduos descritos no parecer E16-07; R07 continua bloqueador operacional. Próximo encaminhamento: especificador recebe a lista e a escolha prevista em 2-I volta ao responsável. Os testes não demonstraram nova regressão de produção. Entrega limitada aos pareceres E16-07/E16-08, com histórico preservado, sem push.
+
+## Revisão consolidada após 7f2f09f — 2026-11-20
+
+Agente 3. Revisão da sexta correção residual da E16-07, conforme regra 2-K aprovada em `2cd79eb` e A-76. **E16 REPROVADA.** Evidências e correções exigidas estão em `docs/specs/E16-07/review.md`, seção “Revisão independente da sexta correção de R05”.
+
+| Item | Resultado |
+|---|---|
+| R05 — importante | Continua aberto por R05-K1 (caminho da recusa do C42 atribuído a outras ações do mesmo teste) e R05-K2 (plugin perde o perfil anterior das threads). Correções técnicas voltam diretamente ao implementador sob a regra aprovada. |
+| R07 — bloqueador operacional | Mantido: esta entrega não apresenta contas/pré-requisitos externos nem evidências de homologação, suíte no Neon e restaurações reais A/B com RTO. |
+| R01–R04, R06 e R08 | Encerramentos anteriores mantidos. |
+| E16-09 e E16-10 | Aprovações anteriores mantidas. |
+
+A decisão do responsável de 2026-11-20 e a M-15 permanecem válidas. Não foi feita oitava amostra de linhas inalteradas: a amostra A-76 abrangeu 28 linhas alteradas, 17 referências. Os dois resíduos estão na implementação entregue nesta rodada. Não há alteração de produção pelo implementador nesta correção nem pelo revisor. Os resultados independentes completos são registrados no fechamento a seguir. Nenhum deploy, CI remoto, uso do Neon ou restauração real foi executado nesta revisão.
+
+### Fechamento independente desta rodada
+
+Suíte completa: **3751 passed, 1 skipped, 2 xfailed, 18 warnings em 934,88 s (15min34s)**, saída 0. JUnit com 3754 casos, zero erros e zero falhas; `conferir_execucao` aprovou todas as referências. `tests/rastreabilidade`: **110 passed**. `conferir_alcance --executar`: **407 passed**, 407 nodeids e zero problemas, saída 0. Ruff check/format e mypy passaram (485 arquivos formatados; 578 arquivos verificados pelo mypy). Comandos, runner isolado e nomes dos logs/XML estão no parecer E16-07. O skip por ferramentas de backup ausentes, os dois xfails operacionais e os avisos de Sentry/M-14 são explicitados lá.
+
+**Veredito final: E16 REPROVADA.** A regressão verde não sana R05-K1/R05-K2 nem comprova os requisitos externos de R07. Próximo encaminhamento: correção técnica dos dois resíduos pelo implementador e nova revisão dirigida A-76; mantidos os requisitos de homologação e restauração real. Somente os dois pareceres foram acrescentados pelo revisor, com histórico preservado, sem alteração de especificações, testes ou produção e sem push.

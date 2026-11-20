@@ -1317,3 +1317,57 @@ Nenhuma devolução. Duas observações, sem bloqueio:
 - `conferir_execucao relatorio-pytest.xml`: "Toda referência da matriz passou na execução", saída 0 (rodado sobre o relatório da suíte completa, antes da regeração do documento, que não altera referências).
 - `ruff check` e `ruff format --check`: limpos; `mypy .`: sem problemas em 578 arquivos.
 
+
+## Revisão independente da sexta correção de R05 — 2026-11-20
+
+Agente 3. Base **7f2f09f**, branch `e16-especificacoes`, comparada com o gate aprovado `2cd79eb`; árvore inicialmente limpa. Escopo: regra 2-K, A-65 a A-76, sete resíduos R05-J1 a R05-J7, testes novos/alterados e amostra das linhas alteradas. **Veredito: REPROVADO.** R05 permanece aberto pelos dois resíduos importantes abaixo. Não foi identificado defeito de produção nesses achados, e o diff não modifica `apps/`, `config/` ou migrations.
+
+### R05-K1 — importante — o caminho da recusa do C42 ainda vem de outras ações do teste
+
+**Referências:** regra 2-K, “Correção das linhas” e “Revisão e encerramento”; pergunta (g) da regra 2-J; A-76; funcional §16.42. Linha alterada em `tests/rastreabilidade/auditoria.py:1478`, afirmação “A recusa vale também por acesso direto à rota”, ligada a `tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_a_rota_pelo_cliente_http` (:292).
+
+**Evidência:** a linha atribui à recusa de comprador/fornecedor o caminho `apps.rodadas.views.cancelar; apps.pedidos.abertura.abrir_pagamento`. O teste abre pagamento no preparo e, além dos POST recusados, executa POST do administrador, incluindo um cancelamento bem-sucedido. O corpo de `views.cancelar` é alcançado pelos POST do administrador, mas os dois papéis recusados param em `apps.contas.administracao._barrar`, chamado pelo decorador `exige_reautenticacao_por_passkey`, antes do corpo da view. A execução independente da view decorada, com `RequestFactory().post(...)`, `Conta(papel=Papel.COMPRADOR)` e `Conta(papel=Papel.FORNECEDOR)`, registrando eventos `call`, confirmou para ambos: `PermissionDenied`, chamada de `_barrar` e do wrapper, nenhuma chamada de `views.cancelar` nem de `abrir_pagamento`. A leitura do teste completo confirma que os pontos listados pertencem ao preparo ou às outras ações.
+
+**Impacto:** o registro agregado por teste satisfaz a conferência mecânica, mas não demonstra que o caminho registrado é o da ação negativa afirmada. É justamente a distinção semântica que continua obrigatória na leitura humana. Esta linha foi alterada em `7f2f09f`, portanto não vai para M-15.
+
+**Correção esperada do implementador:** corrigir o `caminho` dessa ligação para incluir a função que efetivamente produz a recusa (`apps.contas.administracao._barrar`), retirando os pontos atribuídos apenas ao preparo ou aos POST administrativos dessa prova negativa; reler a linha inteira com (a) a (k) e atualizar seu veredito. Preservar as provas positivas do cancelamento nas suas próprias ligações. Reexecutar as conferências de matriz, execução e alcance. Não é preciso mudar produção, provocar entrada na view recusada nem criar uma nova regra de negócio. O especificador não precisa abrir novo gate para esta correção derivada da regra já aprovada.
+
+### R05-K2 — importante — a observação não restaura o perfil anterior das threads
+
+**Referências:** regra 2-K, “Registro do alcance”: “No fim de cada fase, restaura o perfil anterior”; A-76 (código novo da conferência); `tests/rastreabilidade/alcance.py:98–116`.
+
+**Evidência:** `_observando` guarda somente `sys.getprofile()` em `anterior` (:106) e, na saída, aplica esse mesmo valor a `threading.setprofile_all_threads(anterior)` (:114). O perfil padrão anterior das novas threads pode ser diferente do perfil da thread principal. Reprodução independente sobre o código entregue: definir `sys.getprofile() == None`, instalar uma função `anterior_thread` por `threading.setprofile(anterior_thread)`, ativar `alcance._registro`, entrar e sair de `_observando(SimpleNamespace(nodeid="prova"))`; ao fim, `sys.getprofile() is None` é verdadeiro, mas `threading.getprofile() is anterior_thread` é falso (ficou `None`). O plugin apaga um estado anterior que prometeu restaurar. Os testes A-68 cobrem registro e ausência da opção, mas não detectam essa perda.
+
+**Impacto:** executar o observador pode alterar a instrumentação das fases/testes seguintes quando já existe perfil de threads. Isso viola o contrato do observador novo; não é uma evasão sintética do registro de alcance nem um achado em linha inalterada para M-15. Não se afirma que o CI atual já tenha esse perfil instalado ou que haja efeito em produção.
+
+**Correção esperada do implementador:** preservar e restaurar separadamente os estados anteriores pertinentes da thread principal e das threads, inclusive o padrão consultável por `threading.getprofile()`. Acrescentar teste que configure perfis diferentes e comprove a restauração ao sair da fase, também quando o corpo lança exceção; registrar Red sobre `7f2f09f` e Green da correção. Manter o registro das threads novas/existentes e a ausência de instalação sem a opção. É correção técnica dentro da regra 2-K, sem necessidade de decisão comercial ou novo gate de especificação.
+
+### Revalidação dos sete resíduos e amostra
+
+| Resíduo | Resultado |
+|---|---|
+| R05-J1 / A-65 | Retificação explícita preserva o registro anterior e reconhece que a releitura integral não ocorreu. Mantida a decisão do responsável e M-15. |
+| R05-J2 / A-66–A-69 | Função pura, registro de chamadas/requisições e passo de CI entregues; Google e C105/T-48 corrigidos. Restam R05-K1 e R05-K2. |
+| R05-J3 / A-74, C2 | Cliente do e-mail sem conta preservado em variável; `_autenticado` verifica `_auth_user_id`, e a nova asserção exige sua ausência. |
+| R05-J4 / A-75, C45 | Nova prova parametrizada com/sem reembolso: pagamentos, ocorrência com estorno concluído e repasse real antes do cancelamento; releitura por pk/conteúdo dos 20 modelos e consulta por identificação/valor nas telas financeiras. |
+| R05-J5 / A-74, T-7/T-55 | T-7 compara a composição de Y e exige apuração final 1/1, sem aprovação nem livro; não faz a etapa opcional. T-55 relê pedido formal/linhas e compara os e-mails com o corpo relido do banco. Corridas mantêm espera comprovada da trava. |
+| R05-J6 / A-70–A-71 | Guarda recusa classes, atribuição, atributo, herdado, repetição e rotas inexatas/indevidas. Reprodução dos 13 negativos: a base aceita 10; a implementação aceita zero. |
+| R05-J7 / A-72–A-73 | Catálogo consulta restrições, índices únicos e triggers não internas; argumento obrigatório, sem bypass padrão. Nomes reais e origens/migrations registrados. |
+
+**Ordem do arranjo C45:** aceito o estorno concluído antes do repasse do saldo. A regra lista três registros que devem existir antes do cancelamento, não exige que o repasse esgote a cobertura antes de autorizar a devolução. A ordem escolhida respeita a cobertura, usa as ações aprovadas e preserva os três registros exigidos. Não altera regra de negócio nem demanda decisão do especificador.
+
+**Amostra A-76:** 28 linhas alteradas, 17 referências distintas, nos grupos C2, C21, C42, C45, C63, C67, C105, T-7, T-23, T-48, T-50 e T-55. Lidos os testes e auxiliares pertinentes, seguindo preparo, ação, resultado, objeto/casos, causa da recusa, caminho, concorrência, cláusulas, arranjo e imutabilidade (a–k). Não é oitava amostra de linhas inalteradas nem releitura exaustiva. O diff contém 120 linhas novas/alteradas da auditoria, todas com veredito `corrigida: ...`, quatro ligações substituídas; total preservado de 612 ligações. A aplicação das perguntas por grupos equivalentes declarada pelo implementador não substitui a coerência de cada linha: R05-K1 é o resíduo demonstrado nesta amostra.
+
+**TDD e limites históricos:** lidos os registros de Red (22 falhas/1 aprovado nas guardas; 5 falhas no alcance/CI) e Green, as caracterizações e seus erros de arranjo explicitados. A comparação independente com a base confirma os dez falsos aceites do A-70; os novos módulos de alcance não existiam nela. Essa reprodução confirma a diferença de comportamento, não recria nem certifica o instante histórico das execuções relatadas. Produção preservada e caracterizações são compatíveis com a exceção técnica da regra 5. R05-K2 requer seu próprio ciclo Red/Green na correção.
+
+**Provas adicionais independentes:** `uv run python <TEMP>/revisor_e16_7f2f09f_probes.py` (saída 0; script e log no TEMP) reproduz R05-K1/R05-K2, a comparação A-70 e os dois caminhos de falha de `conferir_alcance.main`: subprocesso pytest com código não zero e ausência de arquivo, ambos retornam 1. Esses dois últimos caminhos estão corretos. `ruff check .` passou; `ruff format --check .` passou (485 arquivos); `mypy .` passou (578 arquivos). `git diff --check 2cd79eb..7f2f09f` aponta somente linha vazia excedente no fim do registro do implementador; sem efeito funcional. Os resultados da suíte completa e das conferências serão registrados no fechamento abaixo.
+
+### Fechamento das verificações independentes — 2026-11-20
+
+- **Suíte completa:** `uv run python <TEMP>/revisor_e16_7f2f09f.py --junitxml=<TEMP>/revisor_e16_7f2f09f.xml`: **3751 passed, 1 skipped, 2 xfailed, 18 warnings em 934,88 s (15min34s)**, saída 0. O runner configura `config.settings.test`, fixa `TEST.NAME = test_organicos_revisor_e16_7f2f09f` nos aliases e chama `pytest.main(sys.argv[1:])`, com `PYTHONPATH` da raiz. Log, runner e XML preservados no TEMP; nenhuma alteração de configuração do projeto.
+- **JUnit e execução da matriz:** 3754 casos, zero erros e zero falhas. `uv run python -m tests.rastreabilidade.conferir_execucao <TEMP>/revisor_e16_7f2f09f.xml`: saída 0, “Toda referência da matriz passou na execução”.
+- **Rastreabilidade:** `uv run pytest tests/rastreabilidade -q`: **110 passed em 100,30 s**, saída 0; inclui `test_matriz.py`, as guardas estáticas, catálogo e os testes do plugin.
+- **Alcance:** `uv run python -m tests.rastreabilidade.conferir_alcance --executar <TEMP>/revisor_e16_7f2f09f_alcance.json`: **407 passed em 225,71 s**, saída 0; 407 nodeids no JSON, zero problemas de alcance. O registro agregado do teste do C42 contém tanto `views.cancelar` e `abrir_pagamento` quanto `_barrar`, corroborando o limite descrito em R05-K1: a presença no teste inteiro não identifica a ação responsável.
+- **Limitações:** o skip é a ausência de `pg_dump`, `pg_restore`, `age` e `age-keygen`; os dois xfails são os registros de restauração/RTO e decisões de melhorias da E16-08. Os 18 avisos são a depreciação de `send_default_pii`, já registrada em M-14. Não foram executados deploy, CI remoto, Neon ou restaurações reais. Testes verdes não encerram R07 nem os achados semânticos desta revisão.
+
+**Conclusão:** **REPROVADO**, R05 aberto por R05-K1 e R05-K2; R07 continua bloqueador operacional. Os demais avanços listados acima são reconhecidos. Próximo passo: implementador corrige os dois resíduos dentro da regra 2-K e registra suas evidências; depois, revisão dirigida das correções e das conferências A-76. Nenhuma nova decisão do especificador ou do responsável é necessária para os pontos descritos. O revisor alterou apenas os pareceres E16-07/E16-08, por acréscimo, preservando integralmente os registros anteriores; sem push.
