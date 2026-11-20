@@ -103,15 +103,16 @@ def _observando(item: pytest.Item) -> Iterator[None]:
     from django.core.signals import request_started
 
     registro.abrir(item.nodeid)
-    anterior = sys.getprofile()
+    principal = sys.getprofile()
+    das_threads = threading.getprofile()
     request_started.connect(registro.requisicao, weak=False, dispatch_uid="alcance")
     sys.setprofile(registro.perfil)
     threading.setprofile_all_threads(registro.perfil)
     try:
         yield
     finally:
-        sys.setprofile(anterior)
-        threading.setprofile_all_threads(anterior)
+        threading.setprofile_all_threads(das_threads)  # também reinstala na thread principal
+        sys.setprofile(principal)
         request_started.disconnect(dispatch_uid="alcance")
         registro.atual = None
 

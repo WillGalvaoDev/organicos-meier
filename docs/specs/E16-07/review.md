@@ -1371,3 +1371,23 @@ Agente 3. Base **7f2f09f**, branch `e16-especificacoes`, comparada com o gate ap
 - **Limitações:** o skip é a ausência de `pg_dump`, `pg_restore`, `age` e `age-keygen`; os dois xfails são os registros de restauração/RTO e decisões de melhorias da E16-08. Os 18 avisos são a depreciação de `send_default_pii`, já registrada em M-14. Não foram executados deploy, CI remoto, Neon ou restaurações reais. Testes verdes não encerram R07 nem os achados semânticos desta revisão.
 
 **Conclusão:** **REPROVADO**, R05 aberto por R05-K1 e R05-K2; R07 continua bloqueador operacional. Os demais avanços listados acima são reconhecidos. Próximo passo: implementador corrige os dois resíduos dentro da regra 2-K e registra suas evidências; depois, revisão dirigida das correções e das conferências A-76. Nenhuma nova decisão do especificador ou do responsável é necessária para os pontos descritos. O revisor alterou apenas os pareceres E16-07/E16-08, por acréscimo, preservando integralmente os registros anteriores; sem push.
+
+## Correção da revisão da sexta correção de R05 — implementador (2026-11-20)
+
+Agente 2. Base `c870c98` (parecer REPROVADO, R05-K1 e R05-K2). Sem mudança em `apps/`, `config/` nem migrations; sem nova decisão do especificador.
+
+### R05-K1 — caminho da recusa do C42
+
+- Linha `(42, "A recusa vale também por acesso direto à rota", test_a_rota_pelo_cliente_http)` relida com (a) a (k). O corpo da view e `abrir_pagamento` vinham do preparo e dos POST do administrador; os dois papéis recusados param em `apps.contas.administracao._barrar`.
+- `caminho` passou a `apps.contas.administracao._barrar`; a `acao` ficou só com o POST direto de A e do fornecedor; o veredito registra a correção. As provas positivas do cancelamento seguem nas suas ligações.
+- Não há Red mecânico: o defeito é semântico (a conferência por teste inteiro aceitava o ponto). Correção de dado da auditoria, verificada pelas conferências abaixo. `docs/rastreabilidade-fase1.md` regerado.
+
+### R05-K2 — restauração dos perfis em `_observando`
+
+- Red (`test_a_observacao_restaura_os_perfis_da_thread_principal_e_das_threads` e `..._tambem_quando_o_corpo_lanca`, em `tests/rastreabilidade/test_alcance.py`): com `sys.setprofile(A)` e `threading.setprofile(B)`, ao sair `threading.getprofile()` era A, não B (`assert <function _perfil_a> is _perfil_b`), nas duas. Uma terceira falha inicial era erro do próprio teste (`is` num método ligado); trocado por `==`.
+- Green: `_observando` guarda `sys.getprofile()` e `threading.getprofile()` separadamente e, na saída (também com exceção), restaura o padrão das threads com `setprofile_all_threads` e depois o perfil da thread principal. `test_alcance.py`: 7 passed.
+
+### Verificações
+
+- `tests/rastreabilidade`: 112 passed. `conferir_alcance --executar`: 407 passed, 0 problemas, saída 0. `ruff check`, `ruff format --check` e `mypy .` (578 arquivos): limpos.
+- A suíte completa e o `conferir_execucao` não foram repetidos: o diff desde `7f2f09f` toca só `alcance.py`, `test_alcance.py`, uma linha da `auditoria.py` e o documento gerado; a última suíte completa (3749 passed) e a do revisor (3751 passed) cobrem o restante.

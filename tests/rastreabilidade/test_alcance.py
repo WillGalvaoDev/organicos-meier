@@ -4,8 +4,13 @@ import json
 import os
 import subprocess
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
+import pytest
 import yaml
 
 from tests.rastreabilidade.conferencia import RAIZ
@@ -176,3 +181,57 @@ def test_o_ci_confere_o_alcance_depois_da_regra_3e() -> None:  # A-69 (leitura d
     assert execucao
     assert alcance
     assert alcance[0] > execucao[0]
+
+
+def _perfil_a(frame: Any, evento: str, arg: Any) -> None:
+    return None
+
+
+def _perfil_b(frame: Any, evento: str, arg: Any) -> None:
+    return None
+
+
+def _com_perfis_anteriores(corpo: Callable[[], None]) -> tuple[Any, Any]:
+    """Instala um perfil na thread principal e outro como padrão das threads; devolve o que sobrou
+    depois de `corpo` e restaura o estado original do processo."""
+    from tests.rastreabilidade import alcance
+
+    principal, padrao = sys.getprofile(), threading.getprofile()
+    registro = alcance._registro
+    sys.setprofile(_perfil_a)
+    threading.setprofile(_perfil_b)
+    alcance._registro = alcance.Registro(Path("nao-grava.json"))
+    try:
+        corpo()
+        return sys.getprofile(), threading.getprofile()
+    finally:
+        alcance._registro = registro
+        threading.setprofile_all_threads(padrao)
+        sys.setprofile(principal)
+
+
+def test_a_observacao_restaura_os_perfis_da_thread_principal_e_das_threads() -> None:  # A-68
+    from tests.rastreabilidade import alcance
+
+    def corpo() -> None:
+        with alcance._observando(SimpleNamespace(nodeid="prova")):  # type: ignore[arg-type]
+            assert sys.getprofile() == alcance._registro.perfil  # type: ignore[union-attr]
+
+    principal, padrao = _com_perfis_anteriores(corpo)
+    assert principal is _perfil_a
+    assert padrao is _perfil_b
+
+
+def test_a_observacao_restaura_os_perfis_tambem_quando_o_corpo_lanca() -> None:  # A-68
+    from tests.rastreabilidade import alcance
+
+    def corpo() -> None:
+        with (
+            pytest.raises(RuntimeError, match="falha"),
+            alcance._observando(SimpleNamespace(nodeid="prova")),  # type: ignore[arg-type]
+        ):
+            raise RuntimeError("falha")
+
+    principal, padrao = _com_perfis_anteriores(corpo)
+    assert principal is _perfil_a
+    assert padrao is _perfil_b

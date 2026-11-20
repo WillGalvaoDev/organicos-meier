@@ -1479,10 +1479,10 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_a_rota_pelo_cliente_http",
     ): {
         "preparacao": "administrador com passkey; AP com pagamento aberto; A (comprador) e uma conta de fornecedor logadas; invariante financeiro ok",
-        "acao": "POST de cancelamento com compradores=1; POST de A e do fornecedor; POST do administrador sem motivo",
+        "acao": "POST direto à rota de cancelamento, feito por A (comprador) e por uma conta de fornecedor, cada um com a sua sessão",
         "resultado": "o POST direto de A e do fornecedor dá 302 ou 403 e a rodada segue em pagamento",
-        "caminho": "apps.rodadas.views.cancelar; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/, rota:POST /entrar/",
+        "caminho": "apps.contas.administracao._barrar",
+        "veredito": "corrigida: o caminho é a barreira que produz a recusa (R05-K1); views.cancelar e abrir_pagamento vinham do preparo e dos POST do administrador",
     },
     (
         42,
