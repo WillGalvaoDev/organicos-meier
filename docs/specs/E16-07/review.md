@@ -1155,3 +1155,37 @@ Comando independente: `uv run python <TEMP>/revisor_e16_3eb24be.py -q --junitxml
 O skip corresponde à ausência de `pg_dump`, `pg_restore`, `age` e `age-keygen`. Os xfails são o registro de restauração/RTO e o registro de decisões de melhorias, em E16-08; não equivalem a aprovação operacional. Os 18 avisos são a depreciação de `send_default_pii`, já registrada anteriormente. Não executados deploy, CI remoto, Neon ou restauração real.
 
 **Veredito final desta revisão: REPROVADO.** R05 continua importante e aberto pelos resíduos descritos no parecer E16-07; R07 continua bloqueador operacional. Próximo encaminhamento: especificador recebe a lista e a escolha prevista em 2-I volta ao responsável. Os testes não demonstraram nova regressão de produção. Entrega limitada aos pareceres E16-07/E16-08, com histórico preservado, sem push.
+
+## Resposta do especificador à revisão da quinta correção — 2026-11-20
+
+Agente 1. Os sete resíduos procedem. Nenhum indica defeito de produção, e nenhuma regra de negócio muda. Levei ao responsável a escolha da regra 2-I. Em 2026-11-20, ele escolheu a segunda opção: corrigir os resíduos apontados e registrar o restante como melhoria (M-15 em `docs/melhorias.md`). A correção está na regra 2-K da spec e nos critérios A-65 a A-76. O gate aprovado da regra 2-J fica no histórico.
+
+| Resíduo | Correção especificada |
+|---|---|
+| R05-J1 | Retificação fiel do registro de `3eb24be`, sem apagar o texto anterior (A-65). A releitura de todas as linhas deixa de ser exigida e vira a M-15. As perguntas (a) a (k) continuam obrigatórias para toda linha que a correção criar ou alterar. |
+| R05-J2 | O alcance passa a ser conferido pela execução. Um plugin do pytest, ativo só com `--registrar-alcance`, registra em todas as threads as funções de `apps/` e `config/` executadas e as requisições recebidas, por caso. `conferir_alcance --executar` exige cada ponto de função e de rota em cada caso da referência e vira um passo do CI (A-66 a A-69). Prescritas as linhas do Google (o método `pre_social_login` do adaptador real; nem `/entrar/` nem a rota de teste), as do C105/T-48 (sem as views do `Location`) e a releitura das 46 ocorrências de `rota:`. A conferência estática de `rota:` passa a exigir o texto igual ao do `path(...)` e uma view de dependência. Também acusa um ponto repetido (A-70 e A-71). |
+| R05-J3 | O C2 confere a ausência de `_auth_user_id` na sessão do cliente do e-mail sem conta, como caracterização (A-74). |
+| R05-J4 | O C45 ganha um arranjo com o pagamento aprovado, um repasse por `registrar_repasse` e uma devolução anterior por `registrar_ocorrencia` com estorno concluído, cancelado com e sem reembolso. A comparação por `pk` cobre uma lista fechada de modelos. Só `ultima_consulta_em` dos pagamentos aprovados fica de fora, porque o cancelamento consulta o provedor por regra aprovada. Os três registros têm de aparecer nas telas de movimentos e de devoluções. Se uma regra aprovada impedir o arranjo ou mudar um campo, o implementador devolve (A-75). |
+| R05-J5 | O T-7 (A-16) compara a composição de Y antes e depois e confere os registros da apuração: um `ApuracaoFinal` e um `ApuracaoNoLivro` com 1 pago e 1 não pago, e nenhum `PedidoApurado` de Y. O T-55 relê do banco `PedidoFormal` e as linhas, e compara os e-mails com o `corpo` relido (A-74). |
+| R05-J6 | A lista de formas não foi ampliada. A primeira forma aceita só `def` no módulo ou escrito na classe citada. Classe, atribuição, atributo, método herdado e mais de dois nomes são recusados. As 24 ocorrências de classe saem, trocadas pela função que a ação executa (A-70 e A-71). |
+| R05-J7 | `banco:` passa a ser conferido pelo catálogo do banco de testes migrado: restrição, índice único ou trigger não interna, com o nome exato. Tabela, função e fragmento são recusados, e não há valor padrão que pule a forma. O `review.md` registra a função e a migração que montam cada nome. As linhas passam a `pedidos_itemdopedido_so_insercao` e `contas_conta_papel_imutavel`, sem mudar as migrations (A-72 e A-73). |
+
+**Verificações do especificador:**
+
+- O "Red esperado" do A-70 e do A-72 foi conferido executando a conferência atual (`problema_do_caminho`) na versão `83fe8c5`:
+  - ela aceita as três classes, `apps.pagamentos.models.SITUACOES`, o ponto repetido, `rota:GET /`, `rota:POST /ent`, `rota:POST /entrar`, `rota:POST /entrar/link/`, `rota:GET /administracao/financeiro/`, `banco:pedidos_itemdopedido`, `banco:papel_imutavel` e `banco:nucleo_recusar_alteracao`;
+  - ela recusa o atributo `NovaCobranca.chave_idempotencia`, `/teste/retorno-google/` e os nomes reais `pedidos_itemdopedido_so_insercao` e `contas_conta_papel_imutavel`.
+- O levantamento das formas na `AUDITORIA` entregue confere com o parecer: 1667 pontos de função, 46 de `rota:`, 10 de `fonte:`, 7 de `banco:` e 2 de `modulo:`; 24 ocorrências de classe em 18 linhas; nenhuma atribuição.
+- Os nomes das triggers foram derivados do código que os monta: `apps/nucleo/so_insercao.py`, chamada em `apps/pedidos/migrations/0002_restricoes.py`, e `apps/contas/papel_imutavel.py`. O banco local não respondeu nesta sessão, como na anterior. A confirmação no catálogo fica com o implementador (A-73).
+
+**Cenários de nova reprovação antecipados na spec:**
+
+- um ponto executado só na preparação: tratado pela releitura das 46 rotas e pela pergunta (g) nas linhas alteradas;
+- uma função que só roda em subprocesso: a linha usa `modulo:` ou `comando:`;
+- casos parametrizados com caminhos diferentes: o ponto tem de rodar em cada caso;
+- threads já existentes: `setprofile_all_threads`;
+- a tentação de desligar cache, mudar o teste ou mudar produção para um ponto aparecer: proibido;
+- campos do C45 mudados por regra aprovada: devolução, sem exclusão por conta própria;
+- achados novos fora das linhas alteradas: vão para a M-15, sem reabrir a R05.
+
+**Próximo gate:** gate independente da regra 2-K. Se ela for aprovada, o implementador faz a correção, e o revisor aplica o A-76.

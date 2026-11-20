@@ -257,6 +257,8 @@ Esta fatia cria:
        | `fonte:<caminho relativo>` | inspeção estática de um artefato de produção, como a varredura de `float` do T-39 | o arquivo ou a pasta existe e não está em `tests/` nem em `docs/` |
 
        Uma rota cuja view é do projeto usa a primeira forma, com a view. Nenhuma forma aceita algo de `tests/`: auxiliares de teste nunca são produção.
+
+       A regra 2-K estreita as conferências da primeira forma (só `def`), de `rota:` (texto igual e view de dependência) e de `banco:` (nome exato no catálogo). Ela também acrescenta a conferência do alcance pela execução. Onde esta tabela e a regra 2-K diferem, vale a regra 2-K.
      - **Existência estática e alcance efetivo:** o CI confere só que o ponto de entrada existe. Ele não confere que o teste o alcança. O alcance é da leitura humana (pergunta (g)): o implementador segue o auxiliar e o revisor confere na amostra. Indicar uma função que existe, mas que a ação não executa, é resíduo.
      - **Classificação antes do preenchimento:** o especificador conferiu que a lista cobre os tipos de ligação da matriz. A leitura dos módulos de teste ligados achou três que não importam `apps`:
        - `test_configuracao_pagamentos.py` (cenário 38 e T-12), que usa `modulo:` e `comando:`;
@@ -334,6 +336,113 @@ Esta fatia cria:
      - **A amostra:** o revisor confere uma sétima amostra de pelo menos 20 cenários e 10 testes técnicos, diferente das seis anteriores, e relê os resíduos da sexta.
      - **Sem resíduo:** a R05 é encerrada.
      - **Com resíduo:** a escolha da regra 2-I volta ao responsável.
+
+2-K. **Correção dos resíduos da sétima amostra e encerramento da R05** (sexta correção E16-R05; revisão independente de `3eb24be`, resíduos R05-J1 a R05-J7; decisão do responsável de 2026-11-20 pela segunda opção da regra 2-I).
+   - **A decisão e o efeito sobre a regra 2-J:**
+     - o responsável escolheu "corrigir os resíduos apontados e registrar o restante, sem defeito de produção, como melhoria";
+     - deixa de ser exigida a releitura de todas as linhas com as onze perguntas (regra 2-J, item "Releitura de todas as linhas", e o A-63 nessa parte). Ela fica registrada como a melhoria M-15 em `docs/melhorias.md`;
+     - continuam valendo: as perguntas (a) a (k) para toda linha de `AUDITORIA` que esta correção criar ou alterar, o campo `caminho` em todas as linhas e as correções da regra 2-J que o revisor já confirmou;
+     - a sétima amostra (A-64) está feita. Não há oitava amostra. O encerramento segue o item "Revisão e encerramento" abaixo.
+   - **R05-J1, registro fiel:** o implementador acrescenta ao `review.md` uma retificação do registro de `3eb24be`, sem apagar o texto anterior. Ela diz:
+     - que a rodada da regra 2-J não releu o corpo de cada uma das 606 linhas com as perguntas (a) a (k);
+     - o que foi feito de fato: o alcance estático até a profundidade 4, as buscas dirigidas e a leitura dos candidatos;
+     - que os números de "relidas" e "corrigidas por pergunta" daquele registro valem só para as linhas lidas de fato;
+     - que, pela decisão de 2026-11-20, o restante vai para a M-15. A rodada exaustiva não é declarada concluída.
+   - **R05-J2, alcance conferido pela execução:** a existência estática não prova o alcance, e a geração automática pôs no `caminho` pontos que a ação não executa. Por isso, o alcance das formas de função e de rota passa a ser conferido por uma execução instrumentada dos testes ligados. Isso não é uma forma nova da guarda da regra 2-H, que continua congelada. Uma evasão desse registro que só exista em código sintético, fora das referências da matriz, vai para `docs/melhorias.md`.
+     - **Registro do alcance** (`tests/rastreabilidade/alcance.py`, plugin do pytest):
+       - fica ativo só com a opção `--registrar-alcance=<arquivo.json>`. Sem a opção, não instala nada e a suíte normal não muda;
+       - para cada teste coletado (cada caso parametrizado é um `nodeid` próprio), registra o que roda nas fases de preparação (`setup`) e de execução (`call`), em todas as threads: as que já existem (`threading.setprofile_all_threads`), as novas (`threading.setprofile`) e a principal (`sys.setprofile`). No fim de cada fase, restaura o perfil anterior;
+       - registra duas coisas. Os **pontos** são cada função ou método executado (evento `call`) cujo arquivo está em `apps/` ou `config/`, com o nome `<módulo pontuado do arquivo>.<co_qualname>`, como `apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login`. As **requisições** são cada requisição recebida pelo handler do Django (sinal `request_started`), como `"<MÉTODO> <PATH_INFO>"`;
+       - grava `{nodeid: {"pontos": [...], "requisicoes": [...]}}`, em ordem e sem repetição;
+       - não importa nem altera nada de `apps/` ou `config/` além de observar a execução, e não usa dependência nova.
+     - **Conferência do alcance** (`tests/rastreabilidade/conferir_alcance.py`):
+       - a função pura `conferir_alcance(auditoria, registro) -> list[str]` devolve os problemas;
+       - o comando `python -m tests.rastreabilidade.conferir_alcance --executar <arquivo.json>` roda o pytest num subprocesso, só com as referências distintas da matriz e com o plugin ativo. Depois confere o arquivo e sai com 0 só se não houver problema, imprimindo cada um;
+       - **casos:** uma referência `arquivo::nome` (ou `arquivo::Classe::nome`) corresponde ao `nodeid` igual a ela e a cada `nodeid` que começa por ela seguido de `[`. Uma referência sem nenhum `nodeid` registrado é acusada ("referência sem registro de alcance");
+       - **pontos de função:** cada ponto das duas primeiras formas (`apps.` e `config.`) precisa estar nos pontos de **cada** caso da referência;
+       - **rotas:** cada `rota:<MÉTODO> <caminho>` precisa de pelo menos uma requisição, em cada caso, com o mesmo método e um `PATH_INFO` que case por inteiro com o caminho. Um parâmetro `<conversor:nome>` do caminho casa com um segmento não vazio sem `/`;
+       - as formas `modulo:`, `comando:` e `fonte:` não são conferidas pela execução e continuam com a conferência estática e a leitura. A forma `banco:` passa a ser conferida pelo catálogo (R05-J7);
+       - cada problema traz a chave, a referência, o caso e o ponto: `<chave> <referência> [<caso>]: ponto não executado: <ponto>`.
+     - **CI:** o `ci.yml` ganha o passo `uv run python -m tests.rastreabilidade.conferir_alcance --executar alcance.json`, depois do passo da regra 3-E e com o mesmo banco. Ele acompanha a matriz em toda mudança futura.
+     - **Correção das linhas:** a conferência roda sobre as 612 linhas entregues. Cada ponto acusado sai do `caminho` ou é trocado pelo ponto que a ação de fato executa. Toda linha alterada é relida com as perguntas (a) a (k), e o veredito passa a `"corrigida: ..."`. Se, sem o ponto, a linha deixar de ter um ponto que prove a ação da afirmação (pergunta (g)), a ligação sai ou a afirmação ganha uma prova, pela regra 2-G. Nunca se altera produção, nem se desliga cache ou se muda o teste só para fazer um ponto aparecer.
+     - **Função executada em subprocesso:** um ponto que só roda num subprocesso não aparece no registro. A linha usa a forma do que o subprocesso executa (`modulo:` ou `comando:`), como no T-12.
+     - **Casos já apontados:**
+       - **Google** (as ligações de `test_sem_conta_e_sem_convite_nao_cria_nada` e `test_banido_ou_removido_nao_entra_pelo_google`, em todas as entradas em que aparecem, inclusive C2, C82, C83, T-24 e T-35): `rota:POST /entrar/` sai. Entra `apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login`, mais algum outro método do adaptador real que a ação execute. A rota de teste `/teste/retorno-google/` nunca entra no `caminho`, porque é de `tests/apoio/urls.py`;
+       - **C105 e T-48** (`test_incremento_compativel_e_aceito`): `apps.fornecedores.views.detalhe` e `apps.fornecedores.views.lista` saem, porque o POST sem `follow=True` não executa o destino do `Location`. Fica `apps.catalogo.views.incremento`, com o serviço que essa view chama, se registrado;
+       - **as 46 ocorrências de `rota:`:** são relidas uma a uma. A rota só fica quando a requisição faz parte da ação que a afirmação nomeia, como o login recusado, a saída ou a recuperação de acesso. Um login ou uma saída feitos só para preparar o cliente saem do `caminho`, mesmo que apareçam no registro.
+     - **Sem repetição:** um ponto não aparece duas vezes no mesmo `caminho`. A conferência estática acusa a repetição.
+     - **Conferência estática da forma `rota:`:** a conferência por prefixo aceitava `rota:GET /`, que casa com toda rota, e `rota:POST /ent`. Ela passa a exigir duas coisas:
+       - o caminho sem a barra inicial é **igual** ao texto do primeiro argumento de uma chamada `path(...)` de `config/urls.py` ou de um `urls.py` de `apps/`, com os parâmetros escritos como no texto, como em `rota:GET /convite/<str:token>/`;
+       - o segundo argumento dessa chamada é uma view de dependência, ou seja, um nome (ou atributo de um nome) importado de um módulo fora de `apps` e `config`, como `allauth_views.login`.
+
+       Um `include(...)`, uma view do projeto (que usa a primeira forma) ou uma rota só de `tests/apoio/urls.py` são recusados. Os textos de `re_path(...)` não valem para a forma `rota:`.
+   - **R05-J3, C2 "Link sem conta não recebe e-mail nem abre sessão":**
+     - em `test_email_sem_conta_tem_a_mesma_resposta_e_nao_envia` (`tests/tecnicos/test_contas_link_de_acesso.py`), o cliente usado no pedido do e-mail sem conta fica numa variável. Depois do pedido, o teste confere que a sessão desse cliente não tem `_auth_user_id`, além da resposta, dos links e da caixa de saída que já confere;
+     - essa mudança acrescenta uma asserção a um teste existente. Ela é uma caracterização (regra 5): se passar na primeira execução, o `review.md` registra a exceção técnica. Se falhar, o implementador para e devolve, sem corrigir a produção;
+     - a linha da `AUDITORIA` deixa de dizer "não confere a ausência de sessão" e é relida com (a) a (k).
+   - **R05-J4, C45 "pagamentos, repasses, devoluções e demais registros financeiros anteriores continuam consultáveis e inalterados" (funcional §16.45):**
+     - **arranjo:** uma rodada com um pedido X pago e quitado, apuração e aprovação do resultado, e três registros anteriores ao cancelamento, criados pelas ações de produção:
+       - o pagamento aprovado de X;
+       - um repasse registrado por `apps.pedidos.repasse.registrar_repasse`;
+       - uma devolução anterior: uma ocorrência de entrega de X registrada por `apps.pedidos.ocorrencias.registrar_ocorrencia`, com reembolso pontual e o estorno concluído no simulador.
+
+       Depois, o cancelamento da rodada pelo serviço ou pela rota de produção, nos dois casos, com reembolso e sem reembolso (parametrizado);
+     - **"inalterados":** antes do cancelamento, o teste lê por conteúdo (`values()`, todos os campos, por `pk`) todas as linhas existentes destes modelos. Depois do cancelamento e depois de processar as tarefas que ele agenda, relê as mesmas `pk` e exige igualdade:
+       - `PagamentoNoProvedor` dos pagamentos aprovados. Só `ultima_consulta_em` fica de fora, porque o cancelamento consulta o provedor antes de decidir e essa data registra a consulta;
+       - `ConsultaDoPagamento`, `AvisoRecebido`, `DestinoDoPagamento`, `MovimentoFinanceiro`, `TransferenciaFinanceira`, `ObrigacaoComComprador`, `Reembolso`, `ItemReembolsado`, `ParcelaDeDevolucao`, `HistoricoDaDevolucao`, `ApuracaoNoLivro`, `PedidoApurado`, `ApuracaoFinal`, `AprovacaoDoResultado`, `Pedido`, `ItemDoPedido` e `ParcelaNoPedido`;
+       - `SituacaoDoPedido` e `TentativaDePagamento` dos pedidos pagos.
+
+       As linhas novas que o cancelamento cria (a obrigação e a parcela do reembolso, os movimentos e o histórico) são permitidas e ficam fora da igualdade. As cobranças não pagas, que o cancelamento cancela por regra aprovada, não são "pagamentos anteriores" e ficam fora;
+     - **"consultáveis":** depois do cancelamento, o administrador consulta pelas telas aprovadas e vê cada registro anterior, identificado pelo valor e pela identificação do registro:
+       - o recebimento do pagamento e o repasse em `GET /administracao/financeiro/movimentos/`;
+       - a devolução anterior em `GET /administracao/financeiro/devolucoes/` e no detalhe dela;
+     - **ligações:** as duas afirmações do C45 passam a apontar para a prova nova (uma por afirmação, ou um teste que prove as duas por inteiro). `test_cancelamento_depois_da_aprovacao_do_resultado` e `test_cenario_45_os_registros_anteriores_continuam_consultaveis_depois_do_cancelamento` saem do C45 se não provarem a afirmação por inteiro. Elas podem continuar nas afirmações que provam;
+     - **devolução:** se uma regra aprovada impedir o arranjo, como o repasse antes do cancelamento ou a ocorrência depois da apuração, ou se o cancelamento mudar por regra aprovada um campo de um registro anterior da lista, o implementador para e devolve ao especificador com a referência e a saída do teste. Ele não tira o campo nem o modelo da comparação por conta própria.
+   - **R05-J5, comparações de imutabilidade:**
+     - **T-7, afirmação do A-16 da E11-01** (`test_aviso_espera_a_apuracao_que_ja_cancelou_y`). As asserções atuais ficam, e o teste acrescenta:
+       - antes da corrida, a leitura por conteúdo de `Pedido`, `ItemDoPedido` e `ParcelaNoPedido` de Y. Depois das duas operações, a releitura dá igualdade;
+       - depois das duas operações: um único `ApuracaoFinal` e um único `ApuracaoNoLivro` do ciclo, com `pedidos_pagos` 1 e `pedidos_nao_pagos` 1; os `PedidoApurado` são só o de X; nenhum `PedidoApurado` de Y. Isso separa a decisão da apuração do aviso posterior, que não cria nem muda registro de apuração;
+     - **T-55, "Snapshot inalterado"** (`test_tokens_distintos_em_paralelo_se_executam_em_sequencia`). As asserções atuais ficam, e o teste acrescenta:
+       - antes das duas chamadas paralelas, a leitura por conteúdo, do banco, do `PedidoFormal` e das suas `LinhaDoPedidoFormal`. Depois, a releitura dá igualdade;
+       - os dois e-mails têm o corpo igual ao `corpo` relido do banco depois das chamadas, e não ao da instância em memória;
+     - as duas são caracterizações (regra 5), com a primeira execução registrada.
+   - **R05-J6, só funções e métodos na primeira forma:**
+     - a forma `apps.<módulo>.<função>` aceita só um `def` (ou `async def`) no nível do módulo. A forma `apps.<módulo>.<Classe>.<método>` aceita só um `def` escrito diretamente no corpo da classe. Valem as mesmas regras para `config.`;
+     - são recusados: uma classe sozinha (como `apps.pagamentos.provedor.NovaCobranca`), uma atribuição ou constante do módulo, um atributo de classe que não é `def`, um método herdado que não está escrito na classe citada, e mais de dois nomes depois do módulo. A recusa diz "não é função nem método";
+     - as 24 ocorrências de classe em 18 linhas (`CompradorACobrar`, `ItemACobrar` e `NovaCobranca`) saem. Entra a função ou o método que a ação executa com elas, segundo o registro do alcance, como a função de cálculo que recebe `CompradorACobrar` ou o método do provedor que recebe `NovaCobranca`;
+     - a lista de formas não é ampliada.
+   - **R05-J7, nome real da restrição ou trigger:**
+     - **a incompatibilidade:** a forma `banco:` exigia o nome completo e conferia a presença literal do nome nos `.py`. Os nomes das triggers são montados em tempo de migração, como `f"{nome_tabela}_so_insercao"` em `apps/nucleo/so_insercao.py` ou `f"{nome_tabela}_papel_imutavel"` em `apps/contas/papel_imutavel.py`. Por isso, o nome completo não aparece literalmente, e um fragmento ou o nome da tabela passava na conferência;
+     - **a nova conferência:** `banco:<nome>` vale só se `<nome>` for, no banco de testes migrado, o nome exato de um destes objetos:
+       - uma restrição (`pg_constraint.conname`);
+       - um índice único (`pg_class.relname` de um índice com `pg_index.indisunique`);
+       - uma trigger não interna (`pg_trigger.tgname` com `tgisinternal = false`).
+
+       O nome de uma tabela, de uma função, de uma coluna ou um fragmento não vale. A leitura do catálogo fica numa função `nomes_do_banco()` em `tests/rastreabilidade/`, usada por um teste com `django_db`. A conferência recebe esse conjunto como argumento obrigatório, sem um valor padrão que pule a forma `banco:`;
+     - **a construção:** o `review.md` registra, para cada nome `banco:` usado, a função de produção que o monta e a migração que a chama. Por exemplo, `pedidos_itemdopedido_so_insercao` vem de `apps.nucleo.so_insercao.instalar_protecao_so_insercao("pedidos_itemdopedido")`, chamada em `apps/pedidos/migrations/0002_restricoes.py`;
+     - **as linhas:** `banco:pedidos_itemdopedido` passa a `banco:pedidos_itemdopedido_so_insercao` (C99, T-17 e T-44), e `banco:papel_imutavel` passa a `banco:contas_conta_papel_imutavel` (C62), se o catálogo confirmar esses nomes. `banco:conta_email_unico` continua;
+     - nem as migrations nem os nomes do banco mudam.
+   - **Registro:** o `review.md` traz:
+     - a retificação do R05-J1;
+     - a saída de `conferir_alcance --executar` antes da correção das linhas (os pontos acusados, por tipo) e depois (zero problemas);
+     - a lista das linhas alteradas, cada uma relida com (a) a (k), com o veredito novo;
+     - as ligações retiradas e as afirmações atomizadas;
+     - as caracterizações novas ou acrescidas, com a primeira execução;
+     - o Red e o Green das conferências novas (alcance, primeira forma, rota e banco);
+     - a construção de cada nome `banco:`;
+     - as devoluções ao especificador ou "Nenhuma devolução";
+     - as contagens da matriz, a suíte completa, a saída de `conferir_execucao` e a de `conferir_alcance`.
+   - **Revisão e encerramento:**
+     - o revisor confere:
+       - os sete resíduos R05-J1 a R05-J7 corrigidos;
+       - as conferências mecânicas verdes, executadas por ele;
+       - as linhas alteradas nesta correção, por amostra escolhida por ele, com as perguntas (a) a (k);
+       - os testes novos ou alterados;
+       - nenhuma mudança em `apps/` ou `config/`;
+     - um achado numa linha ou num teste criado ou alterado nesta correção é resíduo da correção e volta ao implementador;
+     - um achado novo numa linha não alterada, sem defeito de produção, vai para a M-15 e não reabre a R05;
+     - um defeito de produção segue o fluxo normal (AGENTS.md §4.6);
+     - com as correções aprovadas, a R05 é encerrada.
 
 3. **Conferência automática:** `tests/rastreabilidade/test_matriz.py` verifica que:
    - as chaves são exatamente as da regra 1, sem faltar nem sobrar;
@@ -447,6 +556,9 @@ Esta fatia cria:
 - **Guarda conservadora e congelada (regra 2-H).** Resolver qual valor uma constante tem no momento do decorador exigiria executar o módulo. Recusar a constante com mais de uma ligação ou alterada troca a aceitação indevida pela recusa a mais, que é visível e se resolve escrevendo o caso no próprio decorador. Congelar a guarda encerra a corrida entre formas novas e contraexemplos sintéticos.
 - **Caminho de produção na auditoria (regra 2-J).** O veredito "íntegra" da regra 2-G foi dado a ações que o teste não executava, porque a linha descrevia o nome do auxiliar. Registrar o ponto de entrada de produção alcançado obriga a seguir o auxiliar e torna a pergunta (g) verificável na leitura do revisor. A lista fechada de formas cobre funções, corpo de módulo, comandos, rotas de dependências, banco e inspeção estática, porque nem toda prova correta passa por uma função de `apps/` (o T-12 carrega `config.settings.prod`). A existência é conferida por máquina; o alcance, pela leitura.
 - **Critério de encerramento combinado antes (regra 2-I).** Ele evita rodadas sem fim e deixa com o responsável a escolha que não é técnica.
+- **Alcance pela execução instrumentada (regra 2-K).** A leitura humana do alcance falhou duas vezes. A geração automática do `caminho` pôs pontos que existem mas não rodam. Registrar o que roda, com `sys.setprofile` e o sinal `request_started`, torna o alcance verificável por máquina sem dependência nova e sem tocar a produção. A distinção entre preparação e ação continua sendo da leitura. "Em cada caso" é mais estrito que "em algum caso" e corresponde à regra 3-E, que exige todos os casos.
+- **`banco:` pelo catálogo (regra 2-K).** Os nomes das triggers são montados em tempo de migração. Ler o catálogo do banco migrado prova o nome real, enquanto procurar o texto nos `.py` aceita fragmentos. Ler o catálogo não executa produção além das migrações que o banco de testes já aplica.
+- **Exceção de `ultima_consulta_em` no C45.** O cancelamento consulta o provedor antes de decidir, por regra aprovada, e a data da consulta é um registro dessa consulta, não do pagamento. Todos os outros campos do pagamento são comparados.
 - **Defeito encontrado não é corrigido aqui.** A fatia é de evidência. Corrigir comportamento sem especificação mudaria escopo (AGENTS.md §3).
 
 ## Invariantes
@@ -457,7 +569,7 @@ Esta fatia cria:
 - A conferência estática só aceita uma referência cujo arquivo tenha apenas as formas da lista fechada (regra 3-D).
 - O documento gerado corresponde à matriz.
 - Cada ligação da matriz tem exatamente uma linha em `AUDITORIA`, e cada linha, uma ligação (regra 2-G).
-- Cada linha de `AUDITORIA` nomeia no `caminho` pontos de entrada de produção que existem, numa das formas da lista fechada (regra 2-J). O alcance efetivo é conferido na leitura.
+- Cada linha de `AUDITORIA` nomeia no `caminho` pontos de entrada de produção que existem, numa das formas da lista fechada (regra 2-J), sem repetição. Cada ponto de função e de rota é executado em cada caso da referência (regra 2-K). Cada `banco:` é o nome exato de uma restrição, de um índice único ou de uma trigger não interna do banco migrado.
 - Nenhum código de produção muda nesta fatia.
 
 ## Dependências e decisões em aberto
@@ -465,4 +577,5 @@ Esta fatia cria:
 - Depende das E01 a E15 e, para a afirmação do histórico do cenário 96, da E16-09 (regra 2-F).
 - Nenhuma dependência nova.
 - O critério de encerramento da R05 foi decidido pelo responsável em 2026-11-19 (regra 2-I). Depois da sexta amostra, o responsável escolheu a nova rodada exaustiva (regra 2-J). Se a sétima amostra achar resíduos, a escolha da regra 2-I volta ao responsável.
+- A sétima amostra achou os resíduos R05-J1 a R05-J7, sem defeito de produção. Em 2026-11-20, o responsável escolheu a segunda opção da regra 2-I: corrigir os apontados (regra 2-K) e registrar o restante como a melhoria M-15.
 - Nenhuma outra decisão em aberto.
