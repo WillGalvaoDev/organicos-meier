@@ -1189,3 +1189,34 @@ Agente 1. Os sete resíduos procedem. Nenhum indica defeito de produção, e nen
 - achados novos fora das linhas alteradas: vão para a M-15, sem reabrir a R05.
 
 **Próximo gate:** gate independente da regra 2-K. Se ela for aprovada, o implementador faz a correção, e o revisor aplica o A-76.
+
+## Gate independente da regra 2-K — 2026-11-20
+
+Agente 3. Base: **adc90d0**, branch `e16-especificacoes`, árvore inicialmente limpa. Examinados o diff desde `83fe8c5`, a regra 2-K, A-65 a A-76, a resposta do especificador e a M-15, confrontados com as fontes de verdade e os fluxos aprovados. **Veredito: REPROVADO.** Uma pendência importante impede liberar a regra integral para implementação. Não se trata de defeito de produção.
+
+### G2K-01 — importante — A-74 exige lançamento no livro antes da aprovação administrativa
+
+**Referências:** regra 2-K, R05-J5/T-7, segundo item de asserções; acceptance.md A-74; funcional §8.2, passo 6; E11-01 spec, separação “Iniciar a apuração” / “Aprovar o resultado”; E11-06 spec, regra 5 e decisão técnica “O livro só recebe a apuração na aprovação, e não no início”.
+
+**Evidência:** o teste indicado, `tests/tecnicos/test_apuracao_inicio.py::test_aviso_espera_a_apuracao_que_ja_cancelou_y` (:693), executa `iniciar_apuracao` em paralelo com o aviso. Não executa `aprovar_resultado`. Ao fim dessas duas operações, a regra nova exige um `ApuracaoNoLivro` e um `PedidoApurado` de X, além de `ApuracaoFinal`. Isso contradiz a separação aprovada: a apuração válida aguarda o avanço administrativo; só a aprovação transfere a custódia e registra a apuração no livro. O código corrobora os documentos: `apps/pedidos/apuracao.py::aprovar_resultado` chama `_registrar_a_apuracao_no_livro`; `iniciar_apuracao` não o faz. Ademais, `ApuracaoNoLivro` (`apps/financeiro/models.py:354`) não contém `pedidos_pagos` nem `pedidos_nao_pagos`; esses contadores pertencem a `ApuracaoFinal` (`apps/pedidos/models.py:173`). A redação deve atribuir explicitamente os contadores ao registro correto.
+
+**Impacto:** uma caracterização que siga literalmente A-74 falhará por exigir um efeito que não deveria ter ocorrido. Isso provocaria uma devolução evitável ou induziria a antecipação de um lançamento financeiro sem autorização. A pendência não pode ser transferida à M-15: está no critério novo que orienta a correção de um resíduo já apontado.
+
+**O que o especificador deve fazer:**
+
+1. Corrigir o item T-7 de 2-K, A-74 e o encaminhamento correspondente no review.md. Depois apenas da corrida, exigir um `ApuracaoFinal` do ciclo com 1 pago e 1 não pago, e **ausência** de `AprovacaoDoResultado`, `ApuracaoNoLivro` e `PedidoApurado` desse ciclo. Manter cancelamento de Y, devolução, obrigação, alerta e a comparação por conteúdo de `Pedido`, `ItemDoPedido` e `ParcelaNoPedido`.
+2. Se desejar também verificar o livro após o avanço, escrever uma etapa adicional explícita com `aprovar_resultado` pelo administrador, depois das asserções anteriores. Só após essa ação exigir um `ApuracaoNoLivro`, apenas X nos `PedidoApurado` e nenhum Y, preservando a apuração e a composição congelada. Essa etapa é opcional para sanar a comparação pedida pelo R05-J5; não atribuir seu efeito à corrida original.
+3. Não alterar produção, não criar contadores novos em `ApuracaoNoLivro` e não usar a falha prevista da caracterização como justificativa para antecipar aprovação. A correção decorre das regras existentes; não requer nova decisão comercial.
+
+### Demais pontos examinados
+
+- A decisão de 2026-11-20 pela segunda opção de 2-I está registrada na spec, na resposta e na M-15. Foi considerada autorizada. Não se exige nova rodada exaustiva nem oitava amostra. A-65 retifica o limite real da rodada anterior; A-76 distingue resíduos das linhas alteradas, achados novos nas não alteradas e defeitos de produção.
+- A-66 a A-69 especificam registro por caso, alcance de funções/rotas, ausência de registro, threads e execução no CI. A distinção entre preparação e ação continua sujeita à leitura, expressamente mantida. O subprocesso e as conferências devem propagar falhas de execução; obter pontos registrados não substitui testes aprovados. Isso decorre do critério de pronto e das conferências mecânicas verdes exigidas, sem ampliação de escopo.
+- A-70/A-71 preservam a lista de formas e corrigem classes, atribuições, duplicações e rotas por prefixo. A-72/A-73 resolvem a incompatibilidade das triggers geradas mediante o catálogo migrado e o registro da construção, sem alterar migrations. Os testes distinguem nomes reais de tabelas, funções e fragmentos.
+- As correções do C2 e do snapshot do T-55 são verificáveis. A-75 prepara os registros financeiros de C45 e compara as mesmas identidades antes/depois, permitindo novos lançamentos; a exceção de `ultima_consulta_em` e a devolução de mudanças legítimas estão explícitas. Não se autoriza excluir outros campos silenciosamente.
+
+Não identificado outro impedimento material no escopo documental lido. Isso não certifica o plugin ainda não implementado, o custo de sua execução nem os resultados das futuras caracterizações.
+
+**Verificações:** `git status --short`, `git log -4 --oneline`, diff documental desde `83fe8c5`, `git diff --check 83fe8c5..HEAD` (sem erros), leituras de 2-K/A-65–A-76/M-15, fontes funcionais e E11-01/E11-06; leitura do teste da corrida, dos modelos e dos serviços de início/aprovação; inspeção do CI existente. Gate documental: não executada nova suíte nem alegado novo Red/Green. O resultado de 3720 testes da revisão anterior permanece histórico.
+
+**Próximo gate:** especificador sana G2K-01; revisor refaz o gate da regra 2-K. R05 permanece aberto e R07 continua bloqueador operacional; não há aprovação da E16 neste gate. Alterado somente este parecer por acréscimo, com histórico preservado; sem alteração da especificação ou produção pelo revisor.
