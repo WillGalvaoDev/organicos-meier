@@ -9,13 +9,20 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
 from apps.financeiro.devolucoes import autorizar_devolucao
-from apps.financeiro.models import AlertaFinanceiro, ObrigacaoComComprador
+from apps.financeiro.models import (
+    AlertaFinanceiro,
+    ApuracaoNoLivro,
+    ObrigacaoComComprador,
+    PedidoApurado,
+)
 from apps.nucleo.auditoria import EntradaAuditoria
 from apps.pagamentos.chamadas import processar_chamadas
 from apps.pagamentos.consulta import ConsultaAoProvedorFalhou
 from apps.pagamentos.models import ChamadaAoProvedor
 from apps.pagamentos.provedor import obter_provedor
 from apps.pedidos.models import (
+    AprovacaoDoResultado,
+    ApuracaoFinal,
     DestinoDoPagamento,
     ItemDoPedido,
     ParcelaNoPedido,
@@ -688,6 +695,15 @@ def test_apuracao_espera_o_aviso_que_trava_a_situacao_de_y(
     assert _destinos(y) == [("quita", "")]
 
 
+def _composicao_de(pedido: Pedido) -> tuple[list[dict[str, Any]], ...]:
+    """O conteúdo, relido do banco, do pedido, dos itens e das parcelas (R05-J5)."""
+    return (
+        list(Pedido.objects.filter(pk=pedido.pk).values()),
+        list(ItemDoPedido.objects.filter(pedido=pedido).order_by("pk").values()),
+        list(ParcelaNoPedido.objects.filter(item__pedido=pedido).order_by("pk").values()),
+    )
+
+
 @pytest.mark.concorrencia
 @COM_DOIS_BANCOS
 def test_aviso_espera_a_apuracao_que_ja_cancelou_y(
@@ -700,6 +716,7 @@ def test_aviso_espera_a_apuracao_que_ja_cancelou_y(
     pagar(relogio, simulador_pagamentos, x)
     id_y = cobranca(relogio, y)
     relogio.congelar(PRAZO)
+    composicao_de_y = _composicao_de(y)
 
     def aprovar_e_receber() -> None:
         # o provedor informa, durante a decisão, uma aprovação de T0 + 47h da cobrança que a
@@ -723,3 +740,12 @@ def test_aviso_espera_a_apuracao_que_ja_cancelou_y(
     assert _destinos(y) == [("devolucao", "pedido_cancelado")]
     assert ObrigacaoComComprador.objects.get(pedido=y).integral == D("106.15")
     assert len(_alertas()) == 1
+    # a composição de Y não muda com o aviso posterior (comparação por conteúdo)
+    assert _composicao_de(y) == composicao_de_y
+    # depois só da corrida: uma apuração final, 1 pago e 1 não pago, e nada do livro nem da
+    # aprovação (o livro só recebe a apuração na aprovação administrativa; G2K-01)
+    final = ApuracaoFinal.objects.get()
+    assert (final.pedidos_pagos, final.pedidos_nao_pagos) == (1, 1)
+    assert not AprovacaoDoResultado.objects.filter(apuracao=final).exists()
+    assert not ApuracaoNoLivro.objects.filter(ciclo=final.ciclo).exists()
+    assert not PedidoApurado.objects.exists()

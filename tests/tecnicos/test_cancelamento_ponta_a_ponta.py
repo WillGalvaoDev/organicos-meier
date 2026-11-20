@@ -377,3 +377,136 @@ def test_cancelamento_depois_de_um_retorno_ao_interesse(
     assert ParcelaDeDevolucao.objects.filter(obrigacao__pedido=x).count() <= 1
     assert ObrigacaoComComprador.objects.filter(pedido=x).count() == 1
     _invariante_ok()
+
+
+# --- C45 (R05-J4): os registros financeiros anteriores ficam inalterados e consultáveis ---------
+
+
+def _linhas_anteriores(pedidos: list[Any]) -> dict[str, dict[int, dict[str, Any]]]:
+    """Cada linha existente (por `pk`, todos os campos) dos modelos financeiros e de pedido que o
+    cancelamento não pode alterar. Dos pagamentos aprovados, a `ultima_consulta_em` fica de fora:
+    o cancelamento consulta o provedor antes de decidir e essa data registra a consulta."""
+    from apps.financeiro.models import (
+        ApuracaoNoLivro,
+        HistoricoDaDevolucao,
+        ItemReembolsado,
+        MovimentoFinanceiro,
+        PedidoApurado,
+        TransferenciaFinanceira,
+    )
+    from apps.pagamentos.models import AvisoRecebido, ConsultaDoPagamento, PagamentoNoProvedor
+    from apps.pedidos.models import (
+        AprovacaoDoResultado,
+        ApuracaoFinal,
+        ItemDoPedido,
+        ParcelaNoPedido,
+        Pedido,
+        TentativaDePagamento,
+    )
+
+    consultas: dict[str, Any] = {
+        "PagamentoNoProvedor": PagamentoNoProvedor.objects.filter(situacao="aprovado"),
+        "ConsultaDoPagamento": ConsultaDoPagamento.objects.all(),
+        "AvisoRecebido": AvisoRecebido.objects.all(),
+        "DestinoDoPagamento": DestinoDoPagamento.objects.all(),
+        "MovimentoFinanceiro": MovimentoFinanceiro.objects.all(),
+        "TransferenciaFinanceira": TransferenciaFinanceira.objects.all(),
+        "ObrigacaoComComprador": ObrigacaoComComprador.objects.all(),
+        "Reembolso": Reembolso.objects.all(),
+        "ItemReembolsado": ItemReembolsado.objects.all(),
+        "ParcelaDeDevolucao": ParcelaDeDevolucao.objects.all(),
+        "HistoricoDaDevolucao": HistoricoDaDevolucao.objects.all(),
+        "ApuracaoNoLivro": ApuracaoNoLivro.objects.all(),
+        "PedidoApurado": PedidoApurado.objects.all(),
+        "ApuracaoFinal": ApuracaoFinal.objects.all(),
+        "AprovacaoDoResultado": AprovacaoDoResultado.objects.all(),
+        "Pedido": Pedido.objects.all(),
+        "ItemDoPedido": ItemDoPedido.objects.all(),
+        "ParcelaNoPedido": ParcelaNoPedido.objects.all(),
+        "SituacaoDoPedido": SituacaoDoPedido.objects.filter(pedido__in=pedidos),
+        "TentativaDePagamento": TentativaDePagamento.objects.filter(pedido__in=pedidos),
+    }
+    leitura: dict[str, dict[int, dict[str, Any]]] = {}
+    for nome, consulta in consultas.items():
+        leitura[nome] = {
+            linha["id"]: {
+                campo: valor
+                for campo, valor in linha.items()
+                if not (nome == "PagamentoNoProvedor" and campo == "ultima_consulta_em")
+            }
+            for linha in consulta.values()
+        }
+    return leitura
+
+
+def _linha_da_tabela(texto: str, marca: str) -> str:
+    linhas = [linha for linha in re.findall(r"<tr.*?</tr>", texto, re.S) if marca in linha]
+    assert len(linhas) == 1, (marca, len(linhas))
+    return str(linhas[0])
+
+
+@pytest.mark.parametrize("reembolso", ["sim", "nao"])
+def test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores(
+    client: Client, relogio: RelogioControlado, sim: Any, reembolso: str
+) -> None:
+    from apps.catalogo.templatetags.catalogo import reais
+    from apps.financeiro.devolucoes import autorizar_devolucao
+    from apps.financeiro.livro import conta as conta_do_livro
+    from apps.financeiro.livro import saldo
+    from apps.financeiro.models import Destinacao, MovimentoFinanceiro
+    from apps.pedidos.repasse import registrar_repasse
+    from tests.apoio.entrega import arranjo_ae, item_de, ocorrer
+
+    relogio.congelar(T0)
+    conta, credencial = administrador_com_passkey(client)
+    a, x, y, _pedido_formal = arranjo_ae(relogio, sim, liberacao_horas=0)
+    assert a.admin.pk == conta.pk
+    # os três registros anteriores, criados pelas ações de produção: a devolução da ocorrência
+    # (com o estorno concluído) e o repasse do que o fornecedor tem a receber
+    ocorrencia = ocorrer(a.admin, item_de(x, a.p1), D("2"), "faltante")
+    devolucao_anterior = ocorrencia.reembolso.obrigacao
+    autorizar_devolucao(devolucao_anterior, autor=a.admin)
+    _processar_tudo()
+    assert ParcelaDeDevolucao.objects.get(obrigacao=devolucao_anterior).situacao == "concluida"
+    a_repassar = saldo(
+        conta_do_livro(
+            Destinacao.OBRIGACAO_FORNECEDOR, fornecedor=a.fornecedor.pk, rodada=a.rodada.pk
+        )
+    )
+    assert a_repassar > 0
+    repasse = registrar_repasse(
+        a.admin, a.rodada, valor=a_repassar, identificacao="pix-001", justificativa="Repasse"
+    )
+    entradas = list(MovimentoFinanceiro.objects.filter(tipo="entrada_de_pagamento"))
+    assert len(entradas) == 2  # os pagamentos aprovados de X e de Y
+    antes = _linhas_anteriores([x, y])
+    assert all(antes[nome] for nome in ("PagamentoNoProvedor", "MovimentoFinanceiro", "Reembolso"))
+
+    _cancelar_pela_tela(client, a, credencial, reembolso)
+    assert Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"
+    _processar_tudo()
+
+    depois = _linhas_anteriores([x, y])
+    for nome, linhas in antes.items():
+        for pk, conteudo in linhas.items():
+            assert depois[nome].get(pk) == conteudo, (nome, pk)
+    # consultáveis: o administrador vê cada registro anterior pelo valor e pela identificação
+    entrar_de_novo(client, credencial, a.admin)
+    movimentos = client.get("/administracao/financeiro/movimentos/")
+    assert movimentos.status_code == 200
+    texto = movimentos.content.decode()
+    for entrada in entradas:
+        linha_da_entrada = _linha_da_tabela(texto, f"{entrada.origem_tipo} {entrada.origem_id}<")
+        for transferencia in entrada.transferencias.all():
+            assert reais(transferencia.valor) in linha_da_entrada
+    linha_do_repasse = _linha_da_tabela(texto, f"{repasse.origem_tipo} {repasse.origem_id}<")
+    assert reais(a_repassar) in linha_do_repasse
+    devolucoes = client.get("/administracao/financeiro/devolucoes/")
+    assert devolucoes.status_code == 200
+    linha = _linha_da_tabela(
+        devolucoes.content.decode(), f'data-obrigacao="{devolucao_anterior.pk}"'
+    )
+    assert reais(devolucao_anterior.devido) in linha
+    detalhe = client.get(f"/administracao/financeiro/devolucoes/{devolucao_anterior.pk}/")
+    assert detalhe.status_code == 200
+    assert reais(devolucao_anterior.devido) in detalhe.content.decode()

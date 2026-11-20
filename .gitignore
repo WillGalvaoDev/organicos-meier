@@ -12,3 +12,4 @@ staticfiles/
 media/
 
 relatorio-pytest.xml
+alcance.json

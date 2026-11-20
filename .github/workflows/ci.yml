@@ -53,6 +53,8 @@ jobs:
         run: uv run pytest --junitxml=relatorio-pytest.xml
       - name: Conferir a matriz de rastreabilidade pela execução (E16-07)
         run: uv run python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml
+      - name: Conferir o alcance do caminho da auditoria pela execução instrumentada (E16-07, regra 2-K)
+        run: uv run python -m tests.rastreabilidade.conferir_alcance --executar alcance.json
 
   imagem:
     runs-on: ubuntu-latest

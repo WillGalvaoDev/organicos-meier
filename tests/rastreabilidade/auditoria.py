@@ -6,32 +6,8 @@ que executa, o resultado que confere e o veredito da leitura do corpo do teste:
 são exatamente as ligações da matriz. Veja as seis perguntas (a) a (f) na regra 2-G.
 
 Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura.
-
-Cada linha tem também `caminho`: os pontos de entrada de produção que a ação do teste executa
-(regra 2-J), em uma das sete formas da lista fechada; a existência é conferida pela máquina e o alcance,
-pela leitura."""
+(regra 2-J), em uma das sete formas da lista fechada. A regra 2-K confere o alcance pela execução
+instrumentada (`conferir_alcance`) e `banco:` pelo catálogo do banco migrado."""
 
 AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
     (
@@ -86,8 +62,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "nenhuma conta nem convite; contagens lidas antes",
         "acao": "retorno do Google com nova@x.com",
         "resultado": "`_recusado`: 302 para /entrar/, mensagem de recusa, sem sessão, contagens iguais",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         2,
@@ -96,9 +72,9 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
     ): {
         "preparacao": "conta ana@x.com existe e já pediu link; outbox e links limpos",
         "acao": "pedido de link para ninguem@x.com (sem conta)",
-        "resultado": "mesma resposta (status e corpo) que a conta existente; 0 links; 0 e-mails. Não confere a ausência de sessão: sessão não existe sem link",
+        "resultado": "mesma resposta (status e corpo) que a conta existente; 0 links; 0 e-mails; o cliente sem conta não tem `_auth_user_id` (sem sessão)",
         "caminho": "apps.contas.views.pedir_link_de_acesso; apps.contas.link_de_acesso.pedir_link",
-        "veredito": "íntegra",
+        "veredito": "corrigida: o teste passou a conferir a ausência de sessão do cliente sem conta (2-K, R05-J3)",
     },
     (
         2,
@@ -108,8 +84,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta suspensa com e-mail EMAIL; rodada em interesse com produto (limite 20) criada em `_tentar_adicionar_interesse`",
         "acao": "retorno do Google; depois POST /interesses/ quantidade 3",
         "resultado": "sessão aberta (`_auth_user_id`); POST recebe 403; (R1) nenhuma parcela da conta",
-        "caminho": "apps.interesses.views.definir",
-        "veredito": "corrigida: assert acrescentado (sem parcela)",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.models.Conta.pode_adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem definir; entram pre_social_login, pode_adicionar_interesse",
     },
     (
         2,
@@ -119,8 +95,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta ativa pede link, depois é suspensa; rodada em interesse com produto",
         "acao": "POST do token do link; depois POST /interesses/ quantidade 3",
         "resultado": "sessão aberta; POST de interesse 403; nenhuma parcela da conta (`_verificar_sem_reserva`)",
-        "caminho": "apps.contas.views.pedir_link_de_acesso; apps.contas.views.usar_link_de_acesso; apps.interesses.views.definir",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.views.pedir_link_de_acesso; apps.contas.views.usar_link_de_acesso; apps.contas.models.Conta.pode_adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem definir; entram pode_adicionar_interesse",
     },
     (
         2,
@@ -130,8 +106,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta com e-mail banido (ana@x.com, com espaço e caixa) ou conta removida; contagens antes (2 casos)",
         "acao": "retorno do Google com esse e-mail",
         "resultado": "`_recusado`: 302 para /entrar/, recusa, sem sessão, contagens iguais, nos casos banido e removido",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         2,
@@ -240,8 +216,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "Ovos a R$ 10,00, múltiplo 12, sem mínimo; A adiciona 8 e B adiciona 10 antes do fechamento iniciado em T0",
         "acao": "`encerrar_fechamento(rodada)` em T",
         "resultado": "A fica com 8 reservadas depois do encerramento (a adição foi aceita e não perdeu unidades)",
-        "caminho": "apps.interesses.views.carrinho; apps.interesses.servicos.adicionar_interesse; apps.interesses.servicos.interesse_do_comprador; apps.rodadas.fechamento.encerrar_fechamento",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse; apps.interesses.servicos.interesse_do_comprador; apps.rodadas.fechamento.encerrar_fechamento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem carrinho",
     },
     (
         7,
@@ -284,8 +260,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "Ovos a R$ 10,00, múltiplo 12, sem mínimo; A adiciona 8 e B adiciona 10 antes do fechamento iniciado em T0",
         "acao": "`encerrar_fechamento(rodada)` em T",
         "resultado": "`removidas == {p.pk: 6}`; B fica ativa com 4 reservadas; etapa FECHAMENTO_ENCERRADO",
-        "caminho": "apps.rodadas.fechamento.encerrar_fechamento; apps.rodadas.fechamento.iniciar_fechamento; apps.interesses.views.carrinho; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.fechamento.encerrar_fechamento; apps.rodadas.fechamento.iniciar_fechamento; apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem carrinho",
     },
     (
         8,
@@ -317,8 +293,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "mínimo 150,00; A 15, B 1, C 8 (C zera no fechamento); A e B somam 16 (R$ 120,00 em caixas)",
         "acao": "`encerrar_fechamento` em T",
         "resultado": "etapa final INTERESSE; A com 12 reservadas; B removida; aviso de retorno só a A e B; auditoria do encerramento",
-        "caminho": "apps.rodadas.fechamento.encerrar_fechamento; apps.rodadas.fechamento.iniciar_fechamento; apps.interesses.servicos.interesse_do_comprador; apps.interesses.views.carrinho",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.fechamento.encerrar_fechamento; apps.rodadas.fechamento.iniciar_fechamento; apps.interesses.servicos.interesse_do_comprador",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem carrinho",
     },
     (
         9,
@@ -339,8 +315,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "dois compradores com produtos de R$ 100,00 e R$ 300,00 (itens de 10 unidades) e frete de R$ 40,00",
         "acao": "`calcular_cobranca` (função pura)",
         "resultado": "comprador 1: produtos 100,00, serviço 5,00, frete 10,00, total 115,00",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         10,
@@ -350,8 +326,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "dois compradores com produtos de R$ 100,00 e R$ 300,00 (itens de 10 unidades) e frete de R$ 40,00",
         "acao": "`calcular_cobranca` (função pura)",
         "resultado": "comprador 2: produtos 300,00, serviço 15,00, frete 30,00, total 345,00",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         11,
@@ -713,8 +689,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "pedido recebido e liberado para retirada; A é suspensa direto no banco; login refeito",
         "acao": "A abre o pedido e registra a retirada de 4 unidades de P1",
         "resultado": 'POST de retirada 302; 1 RetiradaDeItem; página do pedido 200 com "Retirada liberada em"; invariantes do congelado',
-        "caminho": "apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.entrega_views.retiradas_registrar; apps.pedidos.entrega_views.ocorrencias_registrar; apps.pedidos.entrega_views.recebimento_registrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.views.detalhe; apps.pedidos.entrega_views.retiradas_registrar; apps.pedidos.entrega_views.ocorrencias_registrar; apps.pedidos.entrega_views.recebimento_registrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         19,
@@ -779,8 +755,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": 'as 9 respostas têm status 403 e a página não traz "Comprador A" nem "8,50"',
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         21,
@@ -801,8 +777,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": "as 9 rotas chamadas direto (inclui o POST de pagar) respondem 403",
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         22,
@@ -812,8 +788,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "recebimento e liberação da retirada da rodada de A; nova rodada aberta por `_com_nova_rodada`; estado inicial fotografado",
         "acao": "retirada registrada depois da nova rodada",
         "resultado": "a nova rodada tem pk diferente e existe depois da liberação; invariantes do congelado e financeiro",
-        "caminho": "apps.fornecedores.views.lista; apps.interesses.views.definir; apps.rodadas.views.abrir; apps.rodadas.views.estoque_incluir; apps.pedidos.entrega_views.retiradas_registrar",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.views.definir; apps.rodadas.views.abrir; apps.rodadas.views.estoque_incluir; apps.pedidos.entrega_views.retiradas_registrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         22,
@@ -834,8 +810,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "recebimento e liberação da retirada da rodada de A; nova rodada aberta por `_com_nova_rodada`; estado inicial fotografado",
         "acao": "retirada registrada depois da nova rodada",
         "resultado": "a única RetiradaDeItem é de um item do pedido X da rodada antiga",
-        "caminho": "apps.fornecedores.views.lista; apps.interesses.views.definir; apps.rodadas.views.abrir; apps.rodadas.views.estoque_incluir; apps.pedidos.entrega_views.retiradas_registrar",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.views.definir; apps.rodadas.views.abrir; apps.rodadas.views.estoque_incluir; apps.pedidos.entrega_views.retiradas_registrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         23,
@@ -845,8 +821,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "recebimento e liberação; nova rodada; relógio em L+8 dias; descartes e reembolsos contados antes",
         "acao": "lê a página de retiradas; o administrador registra descarte de 4 de P2 (X) e 5 de P1 (Y)",
         "resultado": 'a página mostra "Prazo encerrado — pendentes de decisão" e ainda não existe DescarteDeItem',
-        "caminho": "apps.pedidos.entrega_views.descartes_registrar; apps.pedidos.entrega_views.retiradas; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.fornecedores.portal_views.pedido_formal_csv",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.entrega_views.descartes_registrar; apps.pedidos.entrega_views.retiradas; apps.pedidos.views.detalhe; apps.fornecedores.portal_views.pedido_formal_csv",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         23,
@@ -867,8 +843,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "recebimento e liberação; nova rodada; relógio em L+8 dias; descartes e reembolsos contados antes",
         "acao": "lê a página de retiradas; o administrador registra descarte de 4 de P2 (X) e 5 de P1 (Y)",
         "resultado": "nada registrado só com o tempo e a página; depois do POST do administrador há 2 descartes, sem reembolso novo e o saldo do item zerado",
-        "caminho": "apps.pedidos.entrega_views.descartes_registrar; apps.pedidos.entrega_views.retiradas; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.fornecedores.portal_views.pedido_formal_csv",
-        "veredito": "corrigida: religada (reúne o antes e o depois)",
+        "caminho": "apps.pedidos.entrega_views.descartes_registrar; apps.pedidos.entrega_views.retiradas; apps.pedidos.views.detalhe; apps.fornecedores.portal_views.pedido_formal_csv",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         24,
@@ -1494,8 +1470,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AP com pagamento aberto; A e uma conta de fornecedor logadas",
         "acao": "POST de cancelamento e GET da página da rodada",
         "resultado": "POST e GET recusados (302 ou 403) e a etapa segue pagamento",
-        "caminho": "apps.rodadas.views.cancelar; apps.rodadas.views.estoque; rota:POST /sair/; rota:POST /entrar/; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.abertura.abrir_pagamento; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem cancelar, estoque, rota:POST /sair/, rota:POST /entrar/; entram _barrar",
     },
     (
         42,
@@ -1505,8 +1481,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador com passkey; AP com pagamento aberto; A (comprador) e uma conta de fornecedor logadas; invariante financeiro ok",
         "acao": "POST de cancelamento com compradores=1; POST de A e do fornecedor; POST do administrador sem motivo",
         "resultado": "o POST direto de A e do fornecedor dá 302 ou 403 e a rodada segue em pagamento",
-        "caminho": "apps.rodadas.views.cancelar; rota:POST /sair/; rota:POST /entrar/; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.views.cancelar; apps.pedidos.abertura.abrir_pagamento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/, rota:POST /entrar/",
     },
     (
         42,
@@ -1517,17 +1493,6 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "acao": "POST de cancelamento com compradores=1; POST de A e do fornecedor; POST do administrador sem motivo",
         "resultado": "o POST do administrador só com o campo de reembolso (sem motivo) dá 302 e a rodada fica cancelada",
         "caminho": "apps.rodadas.views.cancelar; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
-    },
-    (
-        42,
-        "O cancelamento é aceito sem informação sobre o fornecedor",
-        "tests/tecnicos/test_cancelamento_da_rodada.py::test_a_assinatura_nao_aceita_lista_de_compradores_nem_motivo",
-    ): {
-        "preparacao": "rodada em pagamento; estado fotografado; a assinatura de `cancelar_rodada` lida",
-        "acao": 'chamadas com compradores=[A] e com motivo="x"',
-        "resultado": "parâmetros só autor, rodada, com_reembolso e mensagem (nenhum de fornecedor); TypeError nas duas chamadas e estado igual",
-        "caminho": "apps.pedidos.cancelamento_da_rodada.cancelar_rodada",
         "veredito": "íntegra",
     },
     (
@@ -1615,8 +1580,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AP com X e Y pagos e um segundo pagamento em duplicidade já com destino de devolução; contagens e livro fotografados",
         "acao": "a rodada é cancelada",
         "resultado": "o destino segue devolução por duplicidade; número de obrigações e livro (movimentos e saldos) iguais",
-        "caminho": "apps.pagamentos.avisos.receber_aviso; apps.pagamentos.provedor.NovaCobranca; apps.pedidos.cancelamento_da_rodada.cancelar_rodada; apps.pagamentos.chamadas.processar_chamadas",
-        "veredito": "íntegra",
+        "caminho": "apps.pagamentos.avisos.receber_aviso; apps.pedidos.cancelamento_da_rodada.cancelar_rodada; apps.pagamentos.chamadas.processar_chamadas",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         44,
@@ -1627,28 +1592,6 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "acao": "cancelamento sem reembolso; depois a devolução existente é autorizada e processada",
         "resultado": "autorizada depois, o estornado no simulador de Y é igual à obrigação integral",
         "caminho": "apps.pagamentos.avisos.receber_aviso; apps.rodadas.views.cancelar; apps.pedidos.apuracao.iniciar_apuracao",
-        "veredito": "íntegra",
-    },
-    (
-        45,
-        "Depois do cancelamento, os registros financeiros anteriores continuam inalterados",
-        "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cancelamento_depois_da_aprovacao_do_resultado",
-    ): {
-        "preparacao": "X pago; apuração e aprovação; aporte de 1.000,00; receita da rodada movida para despesas; aprovações fotografadas antes",
-        "acao": "cancelamento com reembolso; cobertura pela reserva; devolução autorizada e processada; conciliação dos dias",
-        "resultado": "aprovações do resultado iguais às lidas antes do cancelamento; nenhuma conciliação divergente; devolução concluída; invariante financeiro ok",
-        "caminho": "apps.pedidos.cancelamento_da_rodada.autorizar_devolucoes_do_cancelamento_agora; apps.rodadas.views.cancelar; apps.financeiro.conciliacao.conciliar_dias_pendentes_agora; apps.financeiro.livro.lancar",
-        "veredito": "íntegra",
-    },
-    (
-        45,
-        "Depois do cancelamento, os registros financeiros anteriores continuam consultáveis",
-        "tests/aceitacao/test_cenarios_15_30_45_56_104_atomicos.py::test_cenario_45_os_registros_anteriores_continuam_consultaveis_depois_do_cancelamento",
-    ): {
-        "preparacao": "X pago; administrador com passkey; rodada cancelada sem reembolso",
-        "acao": "GET /administracao/historico/",
-        "resultado": "200 e o histórico lista pedido.quitar e rodada.cancelar",
-        "caminho": "apps.pedidos.cancelamento_da_rodada.cancelar_rodada; apps.operacao.views.historico; apps.pagamentos.avisos.receber_aviso",
         "veredito": "íntegra",
     },
     (
@@ -1725,8 +1668,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "pagamento aberto; administrador autenticado; pedidos, itens e parcelas fotografados antes",
         "acao": "o administrador faz POST /interesses/ com P1 e quantidade 7",
         "resultado": "status 403 exato; sem a mensagem da etapa; pedidos, itens e parcelas iguais por conteúdo",
-        "caminho": "apps.pedidos.abertura.abrir_pagamento; apps.interesses.views.definir",
-        "veredito": "corrigida: religada (a ligação antiga aceitava 302 ou 403)",
+        "caminho": "apps.pedidos.abertura.abrir_pagamento; apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem definir; entram _checar",
     },
     (
         48,
@@ -1813,8 +1756,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AE com X pago e administrador logado; ocorrência de 2 unidades já registrada; estado fotografado",
         "acao": "POST da tela com ocorrência nao_entregue acima do saldo",
         "resultado": '409 com "A quantidade passa do saldo deste item (4 unidade)." e registros iguais',
-        "caminho": "apps.pedidos.ocorrencias.registrar_ocorrencia; apps.pedidos.entrega_views.ocorrencias_registrar; rota:POST /sair/; apps.pedidos.endereco_de_retirada.definir_endereco_de_retirada",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.ocorrencias.registrar_ocorrencia; apps.pedidos.entrega_views.ocorrencias_registrar; apps.pedidos.endereco_de_retirada.definir_endereco_de_retirada",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/",
     },
     (
         50,
@@ -1824,8 +1767,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AE com X pago; A (comprador) logada; pedidos, itens e registros contados antes",
         "acao": "A envia campos de ocorrência (item, tipo faltante, 2) às rotas do pedido (detalhe e pagar)",
         "resultado": "detalhe responde 405, pagar 302 ou 409 e nenhum registro novo (ocorrência, reembolso, descarte)",
-        "caminho": "apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.pagamentos.avisos.receber_aviso; apps.pedidos.apuracao.aprovar_resultado; apps.pedidos.apuracao.iniciar_apuracao",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.views.pagar; apps.pagamentos.avisos.receber_aviso; apps.pedidos.apuracao.aprovar_resultado; apps.pedidos.apuracao.iniciar_apuracao; apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista; entram _checar",
     },
     (
         50,
@@ -1835,8 +1778,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AE com X pago; A (comprador) logada; pedidos, itens e registros contados antes",
         "acao": "A envia campos de ocorrência (item, tipo faltante, 2) às rotas do pedido (detalhe e pagar)",
         "resultado": "Pedido e ItemDoPedido iguais por conteúdo ao fotografado depois dos envios",
-        "caminho": "apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.pagamentos.avisos.receber_aviso; apps.pedidos.apuracao.aprovar_resultado; apps.pedidos.apuracao.iniciar_apuracao",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.views.pagar; apps.pagamentos.avisos.receber_aviso; apps.pedidos.apuracao.aprovar_resultado; apps.pedidos.apuracao.iniciar_apuracao; apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista; entram _checar",
     },
     (
         51,
@@ -2143,8 +2086,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta ana@x.com com senha, removida pelo administrador",
         "acao": "tenta login por senha, pedido de link e retorno do Google; tenta novo convite com o e-mail",
         "resultado": "o retorno do Google volta a /entrar/ sem sessão",
-        "caminho": "apps.contas.moderacao.remover; rota:POST /entrar/; apps.contas.convites.emitir_convite; apps.contas.views.pedir_link_de_acesso",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.moderacao.remover; apps.contas.convites.emitir_convite; apps.contas.views.pedir_link_de_acesso",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/",
     },
     (
         58,
@@ -2154,8 +2097,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta ana@x.com com senha, removida pelo administrador",
         "acao": "tenta login por senha, pedido de link e retorno do Google; tenta novo convite com o e-mail",
         "resultado": "o convite levanta EmailEmUso e nenhum Convite é criado",
-        "caminho": "apps.contas.convites.emitir_convite; apps.contas.moderacao.remover; rota:POST /entrar/; apps.contas.views.pedir_link_de_acesso",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.convites.emitir_convite; apps.contas.moderacao.remover; apps.contas.views.pedir_link_de_acesso",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/",
     },
     (
         58,
@@ -2176,8 +2119,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "pedido pago de A e conta de A removida; administrador autenticado por passkey",
         "acao": "GET /administracao/historico/",
         "resultado": "a página do histórico lista conta.remover",
-        "caminho": "apps.contas.moderacao.remover; apps.operacao.views.historico; rota:POST /sair/; rota:POST /entrar/; apps.pagamentos.chamadas.processar_chamadas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.moderacao.remover; apps.operacao.views.historico; apps.pagamentos.chamadas.processar_chamadas",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/, rota:POST /entrar/",
     },
     (
         59,
@@ -2242,8 +2185,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta banida com ana@x.com; cliente sem sessão",
         "acao": "login (POST /entrar/) com ANA@x.com",
         "resultado": "o login é recusado e o cliente fica sem sessão (`_auth_user_id` ausente)",
-        "caminho": "rota:POST /entrar/; apps.contas.adaptadores.AdaptadorConta.pre_login",
-        "veredito": "corrigida: a afirmação composta foi atomizada em login e novo cadastro, cada uma com a sua prova (regra 2-J, pergunta (i))",
+        "caminho": "rota:POST /entrar/",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem pre_login",
     },
     (
         59,
@@ -2275,8 +2218,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; comprador ana com sessão aberta",
         "acao": "o administrador suspende ana pela tela",
         "resultado": "302; situação suspensa; nenhum EmailBanido; a sessão de ana segue com /inicio/ 200; 1 auditoria de suspensão",
-        "caminho": "rota:POST /entrar/; apps.contas.views.acao_de_moderacao; apps.contas.views.inicio; apps.contas.views.usuarios_administracao; rota:POST /sair/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.views.acao_de_moderacao; apps.contas.views.inicio",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/, usuarios_administracao, rota:POST /sair/",
     },
     (
         61,
@@ -2297,8 +2240,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de fornecedor logada; rotas de teste do carrinho e do pagamento; com e sem cabeçalho HTMX (2 casos)",
         "acao": "GET e POST do carrinho; POST, PUT, PATCH e DELETE do pagamento",
         "resultado": "todas as chamadas dão 403 e nenhuma view de compra foi executada (`views.CHAMADAS == []`)",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram _checar",
     },
     (
         61,
@@ -2308,8 +2251,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF com A (comprador) logada",
         "acao": "GET do portal, da rodada e do CSV do pedido formal do fornecedor",
         "resultado": "as 3 respostas são 403",
-        "caminho": "apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv; apps.fornecedores.portal_views.rodada; apps.pagamentos.avisos.receber_aviso",
-        "veredito": "íntegra",
+        "caminho": "apps.pagamentos.avisos.receber_aviso; apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem painel, pedido_formal_csv, rodada; entram _checar",
     },
     (
         61,
@@ -2319,8 +2262,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de fornecedor logada; rotas de teste do carrinho e do pagamento; com e sem cabeçalho HTMX (2 casos)",
         "acao": "GET e POST do carrinho; POST, PUT, PATCH e DELETE do pagamento",
         "resultado": "403 em todas as chamadas de compra e nenhuma view executada",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram _checar",
     },
     (
         61,
@@ -2330,8 +2273,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de fornecedor logada; rotas de teste do carrinho e do pagamento; com e sem cabeçalho HTMX (2 casos)",
         "acao": "GET e POST do carrinho; POST, PUT, PATCH e DELETE do pagamento",
         "resultado": "as chamadas diretas HTTP (PUT, PATCH, DELETE, também com HTMX) dão 403 e nenhuma view executada",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram _checar",
     },
     (
         62,
@@ -2352,8 +2295,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de comprador ana e um fornecedor existente",
         "acao": "UPDATE em SQL direto trocando o papel para fornecedor e preenchendo o fornecedor",
         "resultado": "o banco levanta DatabaseError citando papel; depois de reler, a conta segue comprador e sem fornecedor",
-        "caminho": "banco:papel_imutavel",
-        "veredito": "íntegra",
+        "caminho": "banco:contas_conta_papel_imutavel",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem banco:papel_imutavel; entram banco:contas_conta_papel_imutavel",
     },
     (
         62,
@@ -2374,19 +2317,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (KG, 0.5, 1.5): reservado e parcela de 1,5",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
-    },
-    (
-        63,
-        "Produto por peso a R$ 12,00/kg: 1,5 kg custa R$ 18,00",
-        "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos",
-    ): {
-        "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
-        "acao": "`adicionar_interesse` com a entrada do caso",
-        "resultado": "caso (KG, 0.5, 1.5): subtotal de 1,5 a 12,00 igual a 18,00",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         63,
@@ -2396,8 +2328,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (KG, 0.5, 1.2): QuantidadeInvalida, nenhuma parcela e nenhuma auditoria",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         63,
@@ -2418,8 +2350,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "um comprador com um item de 0,350 a 12,99 e frete 0,00 (função pura, sem produto)",
         "acao": "`calcular_cobranca`",
         "resultado": "subtotal 4,55 (de 4,5465), preço unitário 12,99 e quantidade 0,350",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         64,
@@ -2484,8 +2416,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; 4 casos de incremento e múltiplo incompatíveis",
         "acao": "POST do formulário de cadastro de produto com o caso",
         "resultado": "200 com erro no campo múltiplo e nenhum produto, nos 4 casos",
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         67,
@@ -2572,8 +2504,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": "o GET da página e o POST de pagar do pedido de A dão 403, nos 9 acessos",
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         67,
@@ -2583,8 +2515,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": 'as 9 respostas são 403 e a página não traz "Comprador A"',
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         67,
@@ -2594,8 +2526,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": "as telas do financeiro (resumo) respondem 403 ao fornecedor",
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         67,
@@ -2605,8 +2537,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": "a tela da reserva e a de movimentos respondem 403 ao fornecedor",
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         67,
@@ -2649,8 +2581,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; o backend de e-mail falha uma vez; outbox limpo",
         "acao": "processa em PRAZO e em PRAZO+5 min; o portal é lido",
         "resultado": "tentativas (1, falha) e (2, sucesso); exatamente 1 e-mail igual ao pedido formal; sem aviso de falha",
-        "caminho": "apps.fornecedores.portal_views.rodada; apps.catalogo.views.catalogo; apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv; apps.interesses.views.carrinho",
-        "veredito": "íntegra",
+        "caminho": "apps.fornecedores.portal_views.rodada; apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem catalogo, carrinho; entram processar_pedidos_formais",
     },
     (
         68,
@@ -2682,8 +2614,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; backend de e-mail falho; pedido formal fotografado antes",
         "acao": "3 falhas automáticas; durante o envio o POST de reenvio; depois 2 reenvios manuais pela tela",
         "resultado": "a notificação de falha ao administrador existe e tem link; tipos das tentativas 3 automáticas e 2 manuais; envio concluído com falhas",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         69,
@@ -2748,8 +2680,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com o mesmo token, o primeiro pausado dentro do envio",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "os dois dão 302; 1 e-mail; 1 tentativa manual; (R12) continua 1 PedidoFormal da rodada",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "corrigida: assert acrescentado (um só pedido formal)",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         70,
@@ -2759,8 +2691,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com tokens diferentes",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "a segunda tentativa só começa depois de a primeira terminar; 2 e-mails; (R12) continua 1 PedidoFormal",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "corrigida: assert acrescentado (um só pedido formal)",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         71,
@@ -2770,8 +2702,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "fornecedor com mínimo 150,00 e rodada em interesse; administrador logado",
         "acao": 'POST do mínimo "200,00"',
         "resultado": "302 para o fornecedor; mínimo 200,00; auditoria com anterior 150,00",
-        "caminho": "apps.fornecedores.views.detalhe; apps.fornecedores.views.lista; apps.fornecedores.views.minimo",
-        "veredito": "íntegra",
+        "caminho": "apps.fornecedores.views.minimo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista",
     },
     (
         71,
@@ -3210,8 +3142,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "nenhuma conta nem convite; contagens lidas antes",
         "acao": "retorno do Google com nova@x.com",
         "resultado": "`_recusado`: 302 para /entrar/, recusa, sem sessão e contagens iguais",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         83,
@@ -3221,8 +3153,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; conta ana@x.com com 2 sessões abertas por login real",
         "acao": "o administrador remove a conta pela tela",
         "resultado": "antes 2 sessões; depois 0 (Session e UserSession); conta removida; e-mail banido pelo administrador; 1 auditoria de remoção",
-        "caminho": "apps.contas.views.inicio; apps.contas.views.confirmar_remocao; apps.contas.views.usuarios_administracao",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.views.confirmar_remocao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem inicio, usuarios_administracao",
     },
     (
         83,
@@ -3232,8 +3164,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta com 4 sessões; o apagamento de sessões é anulado (monkeypatch) e a conta é removida",
         "acao": "GET nas duas primeiras sessões e POST nas duas últimas",
         "resultado": "nada foi apagado (4 sessões); o GET vai a /entrar/ com a mensagem de sessão encerrada; o POST dá 403; nenhuma view autenticada executou",
-        "caminho": "rota:POST /entrar/; apps.contas.moderacao.remover",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.moderacao.remover",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/",
     },
     (
         83,
@@ -3265,8 +3197,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta com e-mail banido (ana@x.com, com espaço e caixa) ou conta removida; contagens antes (2 casos)",
         "acao": "retorno do Google com esse e-mail",
         "resultado": "banido (com espaço e caixa): `_recusado`, 302 para /entrar/, sem sessão e contagens iguais",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         83,
@@ -3309,8 +3241,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (LITRO, 0.5, 1.5): reservado e parcela de 1,5",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         85,
@@ -3320,8 +3252,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (LITRO, 0.5, 1.2): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         85,
@@ -3331,8 +3263,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 1, 2): reservado e parcela de 2",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         85,
@@ -3342,8 +3274,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 1, 2.5): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         85,
@@ -3353,8 +3285,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (KG, 0.25, 0.75): reservado e parcela de 0,75",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         85,
@@ -3375,8 +3307,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; 4 entradas de incremento (0, -1, 0,0001, abc)",
         "acao": "POST do cadastro do produto com o incremento do caso",
         "resultado": 'caso "0": 200 com erro no campo incremento e nenhum produto',
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         86,
@@ -3386,8 +3318,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; 4 entradas de incremento (0, -1, 0,0001, abc)",
         "acao": "POST do cadastro do produto com o incremento do caso",
         "resultado": 'caso "-1": 200 com erro no campo incremento e nenhum produto',
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         87,
@@ -3397,8 +3329,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; os casos (0,25 e 1) e (2 e 12), unidade kg do formulário",
         "acao": "POST do cadastro do produto com o incremento e o múltiplo do caso",
         "resultado": 'caso ("0,25", "1"): 302 e o produto gravado com múltiplo 1',
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         87,
@@ -3441,8 +3373,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "um comprador com itens de 7,99, 2,50 e 12,99 por 0,250, 0,250 e 0,350 (função pura)",
         "acao": "`calcular_cobranca`",
         "resultado": "os subtotais são 2,00 (7,99 × 0,250), 0,63 e 4,55",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         88,
@@ -3474,8 +3406,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "um comprador com dois itens de 2,50 por 0,250 (função pura)",
         "acao": "`calcular_cobranca`",
         "resultado": "o total de produtos é 1,26 (dois subtotais de 0,63)",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         89,
@@ -3650,8 +3582,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; AF no meio do ciclo automático",
         "acao": "POST de reenvio com um token novo",
         "resultado": "409 com a mensagem de envio em andamento; só a tentativa automática segue registrada",
-        "caminho": "apps.rodadas.views.pedido_formal_reenviar; rota:POST /sair/; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.views.pedido_formal_reenviar; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/, rota:POST /entrar/",
     },
     (
         95,
@@ -3672,8 +3604,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com tokens diferentes",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "duas tentativas manuais executadas em sequência (a segunda só começa quando a primeira termina) e 2 e-mails",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         95,
@@ -3683,8 +3615,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com tokens diferentes",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "(R12) continua 1 PedidoFormal da rodada depois dos dois reenvios",
-        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar; apps.rodadas.views.pedido_formal; apps.pagamentos.provedor.NovaCobranca",
-        "veredito": "corrigida: assert acrescentado",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar; apps.rodadas.views.pedido_formal",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         95,
@@ -3694,8 +3626,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com o mesmo token, o primeiro pausado dentro do envio",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "o único e-mail enviado é igual ao conteúdo original do pedido formal (assunto, corpo e snapshot)",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         96,
@@ -3705,8 +3637,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto com limite 6 e A com parcela de 10 originais, 6 reservadas e 4 pendentes (livre zero)",
         "acao": "A abre o carrinho",
         "resultado": 'A com 10 originais, 6 reservadas e 4 pendentes de um produto com limite 6 (livre zero): o carrinho mostra "Reservado: 6" e "Pendente: 4"',
-        "caminho": "apps.interesses.views.remover_pendentes; apps.interesses.views.carrinho; apps.interesses.views.definir",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.views.carrinho",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem remover_pendentes, definir",
     },
     (
         96,
@@ -3859,8 +3791,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "montar_fp com os pks dos itens afastados dos pks de produto; A tem o item de Q no pedido congelado",
         "acao": "POST /interesses/pendentes/remover/ com o pk real do item de A no campo produto, como A",
         "resultado": "404, sem mensagem de sucesso, e os registros iguais por conteúdo; um UPDATE direto no item é recusado pela trigger",
-        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido",
-        "veredito": "corrigida: status exato 404 em lugar de (200, 404, 409), pk que não é de produto e comparação completa (regra 2-J)",
+        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido_so_insercao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem banco:pedidos_itemdopedido; entram banco:pedidos_itemdopedido_so_insercao",
     },
     (
         99,
@@ -3870,8 +3802,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "montar_fp com os pks dos itens afastados dos pks de produto; A tem o item de Q no pedido congelado",
         "acao": "POST da rota com o pk real do item de A e, depois, um UPDATE direto no item",
         "resultado": "Pedido, ItemDoPedido, ParcelaNoPedido, ObrigacaoComComprador, MovimentoFinanceiro, Reembolso e parcelas iguais por conteúdo",
-        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido",
-        "veredito": "corrigida: a comparação cobre os seis registros que a afirmação nomeia, e não só itens e reembolsos (pergunta (k))",
+        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido_so_insercao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem banco:pedidos_itemdopedido; entram banco:pedidos_itemdopedido_so_insercao",
     },
     (
         99,
@@ -4046,8 +3978,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto em kg do cenário 105 (incremento 0,5, múltiplo 3, reservadas 1,0 e 1,5 e pendente 2,0) em interesse; parcelas fotografadas; administrador logado",
         "acao": 'POST do incremento "0,25"',
         "resultado": "302; incremento 0,250 e auditoria com anterior 0,500 e novo 0,250",
-        "caminho": "apps.fornecedores.views.detalhe; apps.fornecedores.views.lista; apps.catalogo.views.incremento",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.incremento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista",
     },
     (
         105,
@@ -4057,8 +3989,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto em kg do cenário 105 (incremento 0,5, múltiplo 3, reservadas 1,0 e 1,5 e pendente 2,0) em interesse; parcelas fotografadas; administrador logado",
         "acao": 'POST do incremento "0,25"',
         "resultado": "o estado de todas as parcelas é igual ao fotografado antes da alteração",
-        "caminho": "apps.fornecedores.views.detalhe; apps.fornecedores.views.lista; apps.catalogo.views.incremento",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.incremento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista",
     },
     (
         106,
@@ -4167,8 +4099,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 1, 12): reservado e parcela de 12",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4178,8 +4110,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 1, 12.5): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4189,8 +4121,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 2, 4): reservado e parcela de 4",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4200,8 +4132,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 2, 3): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4211,8 +4143,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (KG, 0.25, 1.25): reservado e parcela de 1,25",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4222,8 +4154,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (LITRO, 0.5, 2.5): reservado e parcela de 2,5 (caso acrescentado)",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4233,8 +4165,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (CAIXA, 1, 3): reservado e parcela de 3",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         109,
@@ -4244,8 +4176,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (CAIXA, 1, 1.5): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         110,
@@ -4299,8 +4231,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; os casos (0,25 e 1) e (2 e 12), unidade kg do formulário",
         "acao": "POST do cadastro do produto com o incremento e o múltiplo do caso",
         "resultado": 'caso ("2", "12"): 302 e o produto gravado com múltiplo 12',
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         111,
@@ -4321,8 +4253,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; 4 casos de incremento e múltiplo incompatíveis",
         "acao": "POST do formulário de cadastro de produto com o caso",
         "resultado": 'caso ("2", "5"): 200 com erro no campo múltiplo e nenhum produto',
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         112,
@@ -4585,8 +4517,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com tokens diferentes",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "pelas rotas, a segunda tentativa só começa depois de a primeira concluir; 2 e-mails",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         119,
@@ -4739,8 +4671,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "cobrança pendente aprovada no simulador; 5 avisos iguais",
         "acao": "os 5 POST do webhook em paralelo e o processamento das chamadas",
         "resultado": "5 respostas 200; 1 aviso, 1 chamada, 1 consulta, 1 pagamento aprovado, 1 auditoria de situação e 1 sinal",
-        "caminho": "apps.pagamentos.views.avisos; apps.simulador_pagamentos.controle.corpo_e_cabecalhos; apps.pagamentos.provedor.NovaCobranca; apps.pagamentos.chamadas.processar_chamadas",
-        "veredito": "íntegra",
+        "caminho": "apps.pagamentos.views.avisos; apps.simulador_pagamentos.controle.corpo_e_cabecalhos; apps.pagamentos.chamadas.processar_chamadas",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         "T-7",
@@ -4782,9 +4714,9 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
     ): {
         "preparacao": "AP com X pago; Y aprovado em T0+47h; a reconsulta de Y devolve pendente (dublê); a apuração pausa depois de cancelar Y",
         "acao": "apuração e aviso de Y em paralelo; o aviso espera a trava da situação",
-        "resultado": "Y cancelado por inadimplência, destino devolução, obrigação integral de 106,15, um alerta crítico; pedido apurado intacto",
+        "resultado": "Y cancelado por inadimplência, destino devolução, obrigação de 106,15, alerta; composição de Y igual; 1 apuração final (1 pago, 1 não pago) sem aprovação, livro nem pedido apurado",
         "caminho": "apps.pedidos.apuracao.iniciar_apuracao; apps.pagamentos.avisos.receber_aviso; apps.pedidos.quitacao.decidir_destino",
-        "veredito": "corrigida: afirmação própria (A-16 da E11-01), fora de qualquer afirmação de igualdade entre as ordens (regra 2-J)",
+        "veredito": "corrigida: compara Pedido, ItemDoPedido e ParcelaNoPedido de Y e confere a apuração final sem efeito do livro (2-K, R05-J5, G2K-01)",
     },
     (
         "T-7",
@@ -4970,8 +4902,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela com liberação em 72 h; repasses pelas telas",
         "acao": "repasses até o liberado e um acima dele pela tela; conciliação dos dias",
         "resultado": "o repasse acima do liberado dá 409 com o liberado; 2 repasses registrados; nenhuma conciliação divergente",
-        "caminho": "apps.financeiro.conciliacao.conciliar_dias_pendentes_agora; apps.catalogo.views.catalogo; apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv",
-        "veredito": "íntegra",
+        "caminho": "apps.financeiro.conciliacao.conciliar_dias_pendentes_agora; apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv; apps.pedidos.repasse.registrar_repasse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem catalogo; entram registrar_repasse",
     },
     (
         "T-12",
@@ -5058,8 +4990,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador com passkey; pagamento aberto; dois casos de campo extra (compradores=1 e motivo=x)",
         "acao": "POST de cancelamento com o campo extra",
         "resultado": "caso compradores=1: 400 com a mensagem de só a indicação; o serviço não é chamado e a rodada segue em pagamento",
-        "caminho": "apps.rodadas.views.cancelar; rota:POST /sair/; rota:POST /entrar/; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.views.cancelar; apps.pedidos.abertura.abrir_pagamento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /sair/, rota:POST /entrar/",
     },
     (
         "T-16",
@@ -5080,8 +5012,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AP com pagamento aberto; A e uma conta de fornecedor logadas",
         "acao": "POST de cancelamento e GET da página da rodada",
         "resultado": "POST e GET de A e do fornecedor recusados (302 ou 403) e a etapa segue pagamento",
-        "caminho": "apps.rodadas.views.cancelar; apps.rodadas.views.estoque; rota:POST /sair/; rota:POST /entrar/; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.abertura.abrir_pagamento; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem cancelar, estoque, rota:POST /sair/, rota:POST /entrar/; entram _barrar",
     },
     (
         "T-17",
@@ -5091,8 +5023,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "uma abertura, um pedido, um item e uma parcela do pedido gravados; registros de cada modelo do pedido fotografados",
         "acao": "save, delete, update e delete em lote e SQL direto (UPDATE e DELETE) em cada modelo",
         "resultado": "cada operação levanta RegistroImutavel (ORM, com o log de aviso) ou DatabaseError (SQL direto) e os registros ficam iguais ao fotografado",
-        "caminho": "banco:pedidos_itemdopedido; apps.nucleo.so_insercao.RegistroSoInsercao.save",
-        "veredito": "íntegra",
+        "caminho": "banco:pedidos_itemdopedido_so_insercao; apps.nucleo.so_insercao.RegistroSoInsercao.save",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem banco:pedidos_itemdopedido; entram banco:pedidos_itemdopedido_so_insercao",
     },
     (
         "T-17",
@@ -5289,8 +5221,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "uma condição (mínimo, múltiplo ou estoque) em cada situação fora de interesse (parametrize cruzado); administrador logado; estado fotografado",
         "acao": "POST da rota da condição e a chamada do serviço",
         "resultado": "no caso do múltiplo a rota dá 409 com a mensagem e o serviço levanta CondicoesCongeladas; estado igual e nenhuma auditoria",
-        "caminho": "apps.fornecedores.servicos.alterar_minimo; apps.catalogo.servicos.alterar_multiplo; apps.catalogo.servicos.alterar_incremento; apps.rodadas.estoque.incluir_produto_na_rodada",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.condicoes.travar_condicoes",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem alterar_minimo, alterar_multiplo, alterar_incremento, incluir_produto_na_rodada; entram travar_condicoes",
     },
     (
         "T-23",
@@ -5311,8 +5243,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "uma condição (mínimo, múltiplo ou estoque) em cada situação fora de interesse (parametrize cruzado); administrador logado; estado fotografado",
         "acao": "POST da rota da condição e a chamada do serviço",
         "resultado": "409 e CondicoesCongeladas em cada etapa fora de interesse do parametrize (fechamento, pagamento, margem e seguintes)",
-        "caminho": "apps.fornecedores.servicos.alterar_minimo; apps.catalogo.servicos.alterar_multiplo; apps.catalogo.servicos.alterar_incremento; apps.rodadas.estoque.incluir_produto_na_rodada",
-        "veredito": "íntegra",
+        "caminho": "apps.rodadas.condicoes.travar_condicoes",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem alterar_minimo, alterar_multiplo, alterar_incremento, incluir_produto_na_rodada; entram travar_condicoes",
     },
     (
         "T-23",
@@ -5388,8 +5320,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta com e-mail banido (ana@x.com, com espaço e caixa) ou conta removida; contagens antes (2 casos)",
         "acao": "retorno do Google com esse e-mail",
         "resultado": "banido (com espaço e caixa): recusa, sem sessão e contagens iguais",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         "T-24",
@@ -5421,8 +5353,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; conta ana@x.com com 2 sessões abertas por login real",
         "acao": "o administrador remove a conta pela tela",
         "resultado": "as 2 sessões abertas passam a 0 na remoção e a conta fica removida com o e-mail banido",
-        "caminho": "rota:POST /entrar/; apps.contas.views.inicio; apps.contas.views.confirmar_remocao; apps.contas.views.usuarios_administracao; rota:POST /sair/",
-        "veredito": "corrigida: religada (antes só a recusa pelo middleware com o apagamento anulado)",
+        "caminho": "apps.contas.views.confirmar_remocao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/, inicio, usuarios_administracao, rota:POST /sair/",
     },
     (
         "T-25",
@@ -5432,8 +5364,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de fornecedor logada; rotas de teste do carrinho e do pagamento; com e sem cabeçalho HTMX (2 casos)",
         "acao": "GET e POST do carrinho; POST, PUT, PATCH e DELETE do pagamento",
         "resultado": "GET e POST do carrinho dão 403 ao fornecedor, com e sem HTMX",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram _checar",
     },
     (
         "T-25",
@@ -5443,8 +5375,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta de fornecedor logada; rotas de teste do carrinho e do pagamento; com e sem cabeçalho HTMX (2 casos)",
         "acao": "GET e POST do carrinho; POST, PUT, PATCH e DELETE do pagamento",
         "resultado": "POST, PUT, PATCH e DELETE do pagamento dão 403 ao fornecedor e nenhuma view executa",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram _checar",
     },
     (
         "T-25",
@@ -5454,8 +5386,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF com A (comprador) logada",
         "acao": "GET do portal, da rodada e do CSV do pedido formal do fornecedor",
         "resultado": "o portal, a rodada e o CSV do fornecedor respondem 403 ao comprador",
-        "caminho": "apps.fornecedores.portal_views.painel; apps.fornecedores.portal_views.pedido_formal_csv; apps.fornecedores.portal_views.rodada; apps.pagamentos.avisos.receber_aviso",
-        "veredito": "íntegra",
+        "caminho": "apps.pagamentos.avisos.receber_aviso; apps.contas.permissoes._checar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem painel, pedido_formal_csv, rodada; entram _checar",
     },
     (
         "T-26",
@@ -5509,8 +5441,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "arranjo AF com a conta do fornecedor F logada; pedido X de A",
         "acao": "9 acessos diretos (GET e POST) a pedido de comprador, pagar e telas financeiras",
         "resultado": "os acessos diretos pelo id do pedido do comprador (e do pagar) dão 403 ao fornecedor e a página não traz dados do comprador",
-        "caminho": "apps.contas.views.usuarios_administracao; apps.pedidos.views.detalhe; apps.pedidos.views.lista; apps.pedidos.views.pagar; apps.rodadas.views.pedido_formal; apps.rodadas.views.saidas",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.permissoes._checar; apps.contas.administracao._barrar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem usuarios_administracao, detalhe, lista, pagar, pedido_formal, saidas; entram _checar, _barrar",
     },
     (
         "T-27",
@@ -5542,8 +5474,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; backend de e-mail falho; pedido formal fotografado antes",
         "acao": "3 falhas automáticas; durante o envio o POST de reenvio; depois 2 reenvios manuais pela tela",
         "resultado": "o administrador recebe a notificação de falha com link; envio concluído com falhas",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         "T-28",
@@ -5597,8 +5529,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com o mesmo token, o primeiro pausado dentro do envio",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "o e-mail enviado é igual ao snapshot do pedido formal (assunto e corpo)",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         "T-30",
@@ -5828,8 +5760,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "nenhuma conta nem convite; contagens lidas antes",
         "acao": "retorno do Google com nova@x.com",
         "resultado": "`_recusado`: 302 para /entrar/, recusa, sem sessão e contagens iguais",
-        "caminho": "rota:POST /entrar/",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.adaptadores.AdaptadorContaSocial.pre_social_login; apps.contas.google.recusar_login_google",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/; entram pre_social_login, recusar_login_google",
     },
     (
         "T-36",
@@ -5839,8 +5771,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; conta ana@x.com com 2 sessões abertas por login real",
         "acao": "o administrador remove a conta pela tela",
         "resultado": "as 2 sessões (dois navegadores) passam a 0 e o e-mail fica banido",
-        "caminho": "apps.contas.views.inicio; apps.contas.views.confirmar_remocao; apps.contas.views.usuarios_administracao",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.views.confirmar_remocao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem inicio, usuarios_administracao",
     },
     (
         "T-36",
@@ -5850,8 +5782,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta com 4 sessões; o apagamento de sessões é anulado (monkeypatch) e a conta é removida",
         "acao": "GET nas duas primeiras sessões e POST nas duas últimas",
         "resultado": "com o apagamento anulado, a próxima requisição de cada sessão é recusada pelo middleware (GET 302 e POST 403)",
-        "caminho": "rota:POST /entrar/; apps.contas.moderacao.remover",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.moderacao.remover",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /entrar/",
     },
     (
         "T-36",
@@ -5872,8 +5804,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta existente, conta banida e aliases com + (hypothesis, 15 exemplos)",
         "acao": "cria conta, emite convite, faz login, cadastra, pede link, entra pelo Google e bane com variações de caixa e espaços",
         "resultado": "criar conta com a variação do e-mail levanta EmailEmUso",
-        "caminho": "rota:POST /recuperar-acesso/; apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /recuperar-acesso/",
     },
     (
         "T-37",
@@ -5883,8 +5815,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta existente, conta banida e aliases com + (hypothesis, 15 exemplos)",
         "acao": "cria conta, emite convite, faz login, cadastra, pede link, entra pelo Google e bane com variações de caixa e espaços",
         "resultado": "emitir convite com a variação levanta EmailEmUso e o alias com + é emitido normalmente",
-        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; rota:POST /recuperar-acesso/; apps.contas.emails.email_banido",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /recuperar-acesso/",
     },
     (
         "T-37",
@@ -5894,8 +5826,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta existente, conta banida e aliases com + (hypothesis, 15 exemplos)",
         "acao": "cria conta, emite convite, faz login, cadastra, pede link, entra pelo Google e bane com variações de caixa e espaços",
         "resultado": "o login e o link com a variação entram na conta do endereço base e o alias com + não",
-        "caminho": "rota:POST /entrar/; rota:POST /recuperar-acesso/; apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
-        "veredito": "íntegra",
+        "caminho": "rota:POST /entrar/; apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /recuperar-acesso/",
     },
     (
         "T-37",
@@ -5905,8 +5837,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta existente, conta banida e aliases com + (hypothesis, 15 exemplos)",
         "acao": "cria conta, emite convite, faz login, cadastra, pede link, entra pelo Google e bane com variações de caixa e espaços",
         "resultado": "consumir convite com a variação levanta ConviteInvalido email_em_uso",
-        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; rota:POST /recuperar-acesso/; apps.contas.emails.email_banido",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /recuperar-acesso/",
     },
     (
         "T-37",
@@ -5916,8 +5848,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "conta existente, conta banida e aliases com + (hypothesis, 15 exemplos)",
         "acao": "cria conta, emite convite, faz login, cadastra, pede link, entra pelo Google e bane com variações de caixa e espaços",
         "resultado": "a função de banimento reconhece o e-mail banido com variação de caixa e espaços, a emissão de convite para ele levanta EmailBanidoErro e o alias com + não está banido",
-        "caminho": "rota:POST /recuperar-acesso/; apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
-        "veredito": "íntegra",
+        "caminho": "apps.contas.convites.consumir_convite; apps.contas.convites.emitir_convite; apps.contas.emails.email_banido",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem rota:POST /recuperar-acesso/",
     },
     (
         "T-37",
@@ -5938,8 +5870,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "casos (LITRO, 0.5, 1.5): aceito (reservado e parcela de 1,5) e (LITRO, 0.5, 1.2): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         "T-38",
@@ -5949,8 +5881,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (KG, 0.5, 1.2): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         "T-38",
@@ -5960,8 +5892,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto da unidade e do incremento do caso, a R$ 12,00; comprador novo; 14 casos do parametrize",
         "acao": "`adicionar_interesse` com a entrada do caso",
         "resultado": "caso (UNIDADE, 1, 2.5): QuantidadeInvalida e nenhuma parcela",
-        "caminho": "apps.catalogo.quantidades.calcular_subtotal; apps.interesses.servicos.adicionar_interesse",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.servicos.adicionar_interesse",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem calcular_subtotal",
     },
     (
         "T-38",
@@ -6004,8 +5936,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "administrador logado; fornecedor; 4 casos de incremento e múltiplo incompatíveis",
         "acao": "POST do formulário de cadastro de produto com o caso",
         "resultado": "200 com erro no campo múltiplo e nenhum produto, nos 4 casos",
-        "caminho": "apps.catalogo.views.novo; apps.fornecedores.views.lista",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.novo",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem lista",
     },
     (
         "T-38",
@@ -6059,8 +5991,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "um comprador com dois itens de 2,50 por 0,250 (função pura)",
         "acao": "`calcular_cobranca`",
         "resultado": "o total de produtos de dois itens de 0,63 é 1,26 (soma dos subtotais já arredondados)",
-        "caminho": "apps.pedidos.calculo.calcular_cobranca; apps.pedidos.calculo.CompradorACobrar; apps.pedidos.calculo.ItemACobrar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.calculo.calcular_cobranca",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem CompradorACobrar, ItemACobrar",
     },
     (
         "T-39",
@@ -6169,8 +6101,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto com limite 6 e A com parcela de 10 originais, 6 reservadas e 4 pendentes (livre zero)",
         "acao": "A abre o carrinho",
         "resultado": 'a consulta de A mostra "Reservado: 6" e "Pendente: 4" separados, com o livre zero',
-        "caminho": "apps.interesses.views.remover_pendentes; apps.interesses.views.carrinho; apps.interesses.views.definir",
-        "veredito": "íntegra",
+        "caminho": "apps.interesses.views.carrinho",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem remover_pendentes, definir",
     },
     (
         "T-42",
@@ -6301,8 +6233,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "montar_fp com os pks dos itens afastados; item de A em Q no pedido congelado",
         "acao": "POST da rota com o pk do item e, depois, um UPDATE direto no item pelo banco",
         "resultado": "registros iguais por conteúdo antes e depois; o UPDATE é recusado com `só aceita inserção`: a trigger segue ativa",
-        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido",
-        "veredito": "corrigida: prova da trigger depois da tentativa e comparação completa (regra 2-J, pergunta (k))",
+        "caminho": "apps.interesses.views.remover_pendentes; banco:pedidos_itemdopedido_so_insercao",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem banco:pedidos_itemdopedido; entram banco:pedidos_itemdopedido_so_insercao",
     },
     (
         "T-45",
@@ -6433,8 +6365,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "produto em kg do cenário 105 (incremento 0,5, múltiplo 3, reservadas 1,0 e 1,5 e pendente 2,0) em interesse; parcelas fotografadas; administrador logado",
         "acao": 'POST do incremento "0,25"',
         "resultado": "302; incremento 0,250 e auditoria com anterior 0,500 e novo 0,250",
-        "caminho": "apps.fornecedores.views.detalhe; apps.fornecedores.views.lista; apps.catalogo.views.incremento",
-        "veredito": "íntegra",
+        "caminho": "apps.catalogo.views.incremento",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem detalhe, lista",
     },
     (
         "T-48",
@@ -6543,8 +6475,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "as funções `dinheiro` e `quantidade` (parametrize)",
         "acao": "conversão de 7,99 como float",
         "resultado": "ValorInvalido por tipo nas duas funções (interface de serviço; pela rota HTTP não chega float)",
-        "caminho": "apps.nucleo.valores.dinheiro; apps.nucleo.valores.quantidade",
-        "veredito": "íntegra",
+        "caminho": "apps.nucleo.valores._converter",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem dinheiro, quantidade; entram _converter",
     },
     (
         "T-51",
@@ -6752,8 +6684,8 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
         "preparacao": "AF pela tela; 3 falhas; dois POST em paralelo com tokens diferentes",
         "acao": "os dois POST são executados em paralelo",
         "resultado": "pelas rotas, a segunda tentativa só começa depois de a primeira concluir",
-        "caminho": "apps.pagamentos.provedor.NovaCobranca; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
-        "veredito": "íntegra",
+        "caminho": "apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.rodadas.views.pedido_formal_reenviar",
+        "veredito": "corrigida: alcance conferido pela execução (2-K); saem NovaCobranca",
     },
     (
         "T-55",
@@ -6762,8 +6694,52 @@ AUDITORIA: dict[tuple[int | str, str, str], dict[str, str]] = {
     ): {
         "preparacao": "AF com 3 falhas; dois reenvios em paralelo com tokens diferentes, o primeiro pausado no envio",
         "acao": "os dois reenvios rodam em paralelo pelo serviço",
-        "resultado": "os e-mails das duas tentativas têm o corpo do pedido formal original",
+        "resultado": "pedido formal e linhas relidos do banco iguais antes e depois; os e-mails têm o corpo relido do banco",
         "caminho": "apps.pedidos.reenvio_do_pedido_formal.reenviar_pedido_formal; apps.pedidos.envio_do_pedido_formal.processar_pedidos_formais; apps.pagamentos.avisos.receber_aviso; apps.pedidos.abertura.abrir_pagamento",
-        "veredito": "íntegra",
+        "veredito": "corrigida: relê o banco e compara os e-mails com o corpo relido, não com a instância (2-K, R05-J5)",
+    },
+    (
+        45,
+        "Depois do cancelamento, os registros financeiros anteriores continuam inalterados",
+        "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores",
+    ): {
+        "preparacao": "AE com X e Y pagos, apuração e aprovação; devolução anterior (ocorrência, estorno concluído) e repasse do saldo; 20 modelos lidos por pk",
+        "acao": "cancelamento da rodada pela tela, com e sem reembolso (2 casos), e tarefas processadas",
+        "resultado": "cada linha lida antes tem o mesmo conteúdo depois (só ultima_consulta_em do pagamento fica de fora); 2 entradas; rodada cancelada",
+        "caminho": "apps.rodadas.views.cancelar; apps.pedidos.cancelamento_da_rodada.cancelar_rodada; apps.pedidos.ocorrencias.registrar_ocorrencia; apps.pedidos.repasse.registrar_repasse",
+        "veredito": "corrigida: prova nova do C45 (2-K, R05-J4): comparação por conteúdo dos 20 modelos; a antiga só comparava as aprovações do resultado",
+    },
+    (
+        45,
+        "Depois do cancelamento, os registros financeiros anteriores continuam consultáveis",
+        "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores",
+    ): {
+        "preparacao": "o mesmo arranjo: devolução anterior com estorno concluído, repasse e dois pagamentos aprovados; rodada cancelada",
+        "acao": "o administrador faz GET em /administracao/financeiro/movimentos/, /devolucoes/ e no detalhe da devolução",
+        "resultado": "as linhas do repasse, das entradas e da devolução trazem valor e identificação; o detalhe mostra o devido",
+        "caminho": "apps.rodadas.views.cancelar; apps.financeiro.views.movimentos; apps.financeiro.devolucoes_views.lista; apps.financeiro.devolucoes_views.detalhe",
+        "veredito": "corrigida: prova nova do C45 (2-K, R05-J4): consulta pelas telas de movimentos e devoluções; a antiga só abria o histórico de ações",
+    },
+    (
+        63,
+        "Produto por peso a R$ 12,00/kg: 1,5 kg custa R$ 18,00",
+        "tests/tecnicos/test_interesses_servicos.py::test_um_e_meio_kg_a_12_reais_custa_18_reais",
+    ): {
+        "preparacao": "produto em kg, incremento 0,5, a R$ 12,00; comprador novo",
+        "acao": "`adicionar_interesse` com 1,5 e o cálculo do subtotal da parcela",
+        "resultado": "uma parcela de 1,5 kg com subtotal igual a 18,00",
+        "caminho": "apps.interesses.servicos.adicionar_interesse; apps.catalogo.quantidades.calcular_subtotal",
+        "veredito": "corrigida: prova própria (2-K, R05-J2): o ponto calcular_subtotal rodava só em um dos 15 casos do parametrize",
+    },
+    (
+        42,
+        "O cancelamento é aceito sem informação sobre o fornecedor",
+        "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_a_rota_pelo_cliente_http",
+    ): {
+        "preparacao": "administrador com passkey; AP com pagamento aberto; A (comprador) e uma conta de fornecedor logadas; invariante financeiro ok",
+        "acao": "POST do administrador só com o campo de reembolso, sem nenhuma informação do fornecedor",
+        "resultado": "302 e a rodada fica cancelada",
+        "caminho": "apps.rodadas.views.cancelar; apps.pedidos.cancelamento_da_rodada.cancelar_rodada",
+        "veredito": "corrigida: a prova antiga só lia a assinatura e não executava o cancelamento (2-K, R05-J2); a nova faz o POST de verdade",
     },
 }

@@ -178,6 +178,13 @@ def test_quantidades_e_incrementos(
         assert auditorias("interesse.adicionar") == []
 
 
+def test_um_e_meio_kg_a_12_reais_custa_18_reais() -> None:  # cenário 63 (R05-J2)
+    _, produto, _ = cenario(None, unidade=Unidade.KG, incremento=D("0.5"), preco=D("12.00"))
+    adicionar_interesse(ContaFactory.create(), produto, "1.5")
+    (parcela,) = parcelas(produto)
+    assert calcular_subtotal(produto.preco, parcela.quantidade_reservada) == D("18.00")
+
+
 @pytest.mark.parametrize("entrada", [1.5, "abc", "-1", "0", "1000000000.000"])
 def test_entradas_invalidas_nao_gravam(entrada: Any) -> None:  # A-5
     _, produto, _ = cenario(None, incremento=D("0.5"), unidade=Unidade.KG)

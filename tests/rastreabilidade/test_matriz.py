@@ -1109,43 +1109,52 @@ def _auditoria_de(
     }
 
 
-def test_a_auditoria_acusa_as_cinco_falhas() -> None:  # A-49
+def test_a_auditoria_acusa_as_cinco_falhas(nomes_banco: frozenset[str]) -> None:  # A-49
     from tests.rastreabilidade.conferencia import conferir_auditoria
 
     cenarios, tecnicos = _completa()
     base = _auditoria_de(cenarios, tecnicos)
-    assert conferir_auditoria(base, cenarios, tecnicos) == []
+    assert conferir_auditoria(base, cenarios, tecnicos, nomes_banco) == []
     chave = (1, "afirmação do cenário 1", REAL)
 
     sem_linha = {k: v for k, v in base.items() if k != chave}
     assert any(
-        "sem linha na auditoria" in p for p in conferir_auditoria(sem_linha, cenarios, tecnicos)
+        "sem linha na auditoria" in p
+        for p in conferir_auditoria(sem_linha, cenarios, tecnicos, nomes_banco)
     )
 
     com_sobra = {**base, (1, "outra afirmação", REAL): dict(base[chave])}
     assert any(
-        "sem ligação na matriz" in p for p in conferir_auditoria(com_sobra, cenarios, tecnicos)
+        "sem ligação na matriz" in p
+        for p in conferir_auditoria(com_sobra, cenarios, tecnicos, nomes_banco)
     )
 
     vazio = {**base, chave: {**base[chave], "acao": " "}}
     assert any(
-        "campo vazio" in p and "acao" in p for p in conferir_auditoria(vazio, cenarios, tecnicos)
+        "campo vazio" in p and "acao" in p
+        for p in conferir_auditoria(vazio, cenarios, tecnicos, nomes_banco)
     )
 
     comprido = {**base, chave: {**base[chave], "resultado": "x" * 201}}
-    assert any("mais de 200" in p for p in conferir_auditoria(comprido, cenarios, tecnicos))
+    assert any(
+        "mais de 200" in p for p in conferir_auditoria(comprido, cenarios, tecnicos, nomes_banco)
+    )
 
     ok = {**base, chave: {**base[chave], "veredito": "ok"}}
-    assert any("veredito" in p for p in conferir_auditoria(ok, cenarios, tecnicos))
+    assert any("veredito" in p for p in conferir_auditoria(ok, cenarios, tecnicos, nomes_banco))
     corrigida = {**base, chave: {**base[chave], "veredito": "corrigida: religada"}}
-    assert conferir_auditoria(corrigida, cenarios, tecnicos) == []
+    assert conferir_auditoria(corrigida, cenarios, tecnicos, nomes_banco) == []
 
 
-def test_a_auditoria_entregue_cobre_exatamente_as_ligacoes() -> None:  # A-50
+def test_a_auditoria_entregue_cobre_exatamente_as_ligacoes(
+    nomes_banco: frozenset[str],
+) -> None:  # A-50
     from tests.rastreabilidade import auditoria
     from tests.rastreabilidade.conferencia import conferir_auditoria
 
-    assert conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS) == []
+    assert (
+        conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS, nomes_banco) == []
+    )
 
 
 # --- quarta correção E16-R05: os sete resíduos da regra 2-G (A-51, estrutura) -------------------
@@ -1226,7 +1235,7 @@ CAMINHOS_VALIDOS = [
 ]
 
 
-def test_a_auditoria_acusa_o_caminho_invalido() -> None:  # A-54
+def test_a_auditoria_acusa_o_caminho_invalido(nomes_banco: frozenset[str]) -> None:  # A-54
     from tests.rastreabilidade.conferencia import conferir_auditoria
 
     cenarios, tecnicos = _completa()
@@ -1235,17 +1244,19 @@ def test_a_auditoria_acusa_o_caminho_invalido() -> None:  # A-54
     acusados = []
     for caminho in CAMINHOS_INVALIDOS:
         troca = {**base, chave: {**base[chave], "caminho": caminho}}
-        problemas = conferir_auditoria(troca, cenarios, tecnicos)
+        problemas = conferir_auditoria(troca, cenarios, tecnicos, nomes_banco)
         assert problemas, caminho
         assert all("caminho" in p and REAL in p for p in problemas), (caminho, problemas)
         acusados.append(caminho)
     assert len(acusados) == 15  # o décimo sexto, a linha sem a chave `caminho`, vem abaixo
     sem_campo = {k: v for k, v in base[chave].items() if k != "caminho"}
-    problemas = conferir_auditoria({**base, chave: sem_campo}, cenarios, tecnicos)
+    problemas = conferir_auditoria({**base, chave: sem_campo}, cenarios, tecnicos, nomes_banco)
     assert any("caminho" in p and REAL in p for p in problemas), problemas
 
 
-def test_a_auditoria_aceita_os_caminhos_das_sete_formas() -> None:  # A-55
+def test_a_auditoria_aceita_os_caminhos_das_sete_formas(
+    nomes_banco: frozenset[str],
+) -> None:  # A-55
     from tests.rastreabilidade import auditoria
     from tests.rastreabilidade.conferencia import conferir_auditoria
 
@@ -1254,8 +1265,10 @@ def test_a_auditoria_aceita_os_caminhos_das_sete_formas() -> None:  # A-55
     chave = (1, "afirmação do cenário 1", REAL)
     for caminho in CAMINHOS_VALIDOS:
         troca = {**base, chave: {**base[chave], "caminho": caminho}}
-        assert conferir_auditoria(troca, cenarios, tecnicos) == [], caminho
-    assert conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS) == []
+        assert conferir_auditoria(troca, cenarios, tecnicos, nomes_banco) == [], caminho
+    assert (
+        conferir_auditoria(auditoria.AUDITORIA, matriz.CENARIOS, matriz.TECNICOS, nomes_banco) == []
+    )
 
 
 # --- quinta correção E16-R05: os resíduos da sexta amostra (A-56 a A-62, estrutura e caminho) ---

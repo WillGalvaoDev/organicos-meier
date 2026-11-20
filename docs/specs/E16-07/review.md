@@ -1246,3 +1246,74 @@ Agente 3. Base: **a029e83**, branch `e16-especificacoes`, árvore inicialmente l
 **Verificações e limites:** `git status --short` (limpo na entrada); `git log -3 --oneline`; `git diff b3a809f..HEAD --stat` (somente spec.md, acceptance.md e review.md da E16-07); leitura do diff documental, da regra 2-K/A-74–A-76, da resposta e das referências de E11-01/E11-06; `git diff --check b3a809f..HEAD` (sem erros). Esta é uma revalidação documental: não executada nova suíte nem produzido ou validado novo ciclo Red/Green. Os resultados de testes anteriores continuam históricos. O parecer anterior do revisor permanece preservado; a alteração retrospectiva do especificador foi na própria linha de encaminhamento R05-J5.
 
 **Próximo gate:** implementação da regra 2-K e dos critérios A-65 a A-76, com evidências de TDD para os novos comportamentos e primeira execução das caracterizações conforme a regra 5; depois, revisão independente conforme A-76. **R05 continua aberto até a aprovação dessa implementação; R07 permanece bloqueador operacional. A E16 não está aprovada por este gate.** O revisor acrescentou somente este parecer, sem alterar especificações, testes ou produção.
+
+
+## Sexta correção residual de R05 — implementador (2026-11-20)
+
+Agente 2. Regra 2-K e critérios A-65 a A-76 (gate aprovado em `2cd79eb`). A conferência final é do revisor (A-76). Nenhuma mudança em `apps/` nem em `config/`, nenhuma migration.
+
+### R05-J1: retificação do registro de `3eb24be` (A-65)
+
+O registro da quinta correção, acima, fica como está. Esta retificação o corrige sem apagá-lo:
+
+- A rodada da regra 2-J **não** releu o corpo de cada uma das 606 linhas com as perguntas (a) a (k). O que foi feito de fato: o alcance estático até a profundidade 4 (`candidatos.py`, que lista os pontos de `apps/` alcançados pelas funções auxiliares), as buscas dirigidas e a leitura dos candidatos que elas levantaram.
+- Os números de "relidas" e de "corrigidas por pergunta" daquele registro valem só para as linhas lidas de fato.
+- Pela decisão do responsável de 2026-11-20, o restante vai para a M-15 (`docs/melhorias.md`). A rodada exaustiva **não** é declarada concluída.
+
+### Red e Green das conferências novas
+
+- **Versão-base (`3eb24be`) sobre os casos do A-70 e A-72** (`problema_do_caminho` da época): aceitava `NovaCobranca`, `ItemACobrar`, `AdaptadorContaSocial`, `SITUACOES`, o ponto repetido, `rota:GET /`, `rota:POST /ent`, `rota:POST /entrar`, `rota:POST /entrar/link/`, `rota:GET /administracao/financeiro/`, `banco:pedidos_itemdopedido`, `banco:papel_imutavel` e `banco:nucleo_recusar_alteracao`. Recusava o atributo de classe, o método herdado (`apps.pedidos.models.ItemDoPedido.save`, herdado de `RegistroDoPedido`) e `/teste/retorno-google/`. Os dez aceitos do critério coincidem com esta saída.
+- **A-70, A-71, A-72 (Red):** `tests/rastreabilidade/test_conferencia_2k.py` falhou na primeira execução (22 falhas e 1 aprovado) porque `conferir_auditoria` não recebia `nomes_do_banco` e nenhuma regra nova existia. Green: `conferencia.py` passa a aceitar só `def` (nível do módulo, ou escrito no corpo da classe citada), a exigir texto de `path()` igual com view de dependência (`allauth_views.*`), a acusar ponto repetido e a conferir `banco:` pelo conjunto do catálogo, recebido como argumento obrigatório (`test_a_conferencia_exige_os_nomes_do_banco_como_argumento`). Depois do Green, a única falha era `test_a_auditoria_entregue_passa_pela_conferencia_estrita`: 23 linhas acusadas (12 `NovaCobranca`, 6 `CompradorACobrar`, 4 `banco:pedidos_itemdopedido` e 1 `banco:papel_imutavel`; o `ItemACobrar` não aparece porque a conferência para no primeiro ponto inválido da linha).
+- **A-66 a A-69 (Red):** `tests/rastreabilidade/test_alcance.py` falhou 5 de 5 (os módulos `alcance` e `conferir_alcance` não existiam e o `ci.yml` não tinha o passo). Green: `alcance.py` (plugin com `--registrar-alcance`), `conferir_alcance.py` (função pura e `--executar`) e o passo do CI, depois do da regra 3-E. `alcance.json` entrou no `.gitignore`.
+- **Catálogo (A-72):** `tests/rastreabilidade/catalogo.py` (`nomes_do_banco()`: restrições, índices únicos e triggers não internas) e `tests/rastreabilidade/conftest.py` (fixture `nomes_banco`). `banco:pedidos_itemdopedido_so_insercao`, `banco:contas_conta_papel_imutavel` e `banco:conta_email_unico` são aceitos; tabela, fragmento, função, trigger interna (`RI_ConstraintTrigger...`) e nome inexistente são recusados.
+- **Os testes antigos de A-49, A-50, A-54 e A-55** passaram a receber `nomes_banco` (o argumento é obrigatório); nenhuma asserção foi afrouxada.
+
+### `conferir_alcance --executar`: antes e depois
+
+- **Antes** (auditoria de `3eb24be`, depois de só `conferencia.py` mudar): o pytest do subprocesso passou (407 passed) e a conferência acusou **589 pares ponto-caso em 91 linhas**: 580 de função e 9 de `rota:POST /entrar/`. Os pontos mais acusados: `calcular_subtotal` (247, nos 15 casos de `test_quantidades_e_incrementos`), as quatro funções de serviço do `test_nenhuma_condicao_muda_fora_de_interesse` (48 cada), `fornecedores.views.lista` (30), `pedidos.views.lista`, `contas.views.usuarios_administracao`, `NovaCobranca`, `CompradorACobrar` e `ItemACobrar`. A causa mais comum: a view recusada por decorador ou por middleware não chega ao corpo da função.
+- **Depois:** 407 passed e "Todo ponto de função e de rota foi executado em cada caso." Saída 0. Na primeira tentativa depois da correção, o subprocesso falhou por um erro meu: o `_composicao` novo do T-7 colidiu com um auxiliar do mesmo nome em `test_apuracao_inicio.py` (renomeei para `_composicao_de`). Foi o teste que falhou, não a produção.
+- **Linhas:** 612 (a mesma contagem), das quais 120 têm veredito novo `"corrigida: ..."`. Os 46 `rota:` foram relidos um a um: ficam `rota:POST /entrar/` só onde o login é a ação (C20, C58 por senha, C59, C61 "Cada login...", C83 por senha, T-24 por senha, alias e maiúsculas, T-37 "no login"); todos os `rota:POST /sair/` e `rota:POST /recuperar-acesso/` saíram, porque eram preparação. Hoje há 9 `rota:`, 7 `banco:`, 10 `fonte:` e 2 `modulo:`.
+- **Pontos trocados:** o Google (C2, C82, C83, T-24 e T-35) usa `AdaptadorContaSocial.pre_social_login` e `contas.google.recusar_login_google`; a rota de teste `/teste/retorno-google/` nunca entrou. O C2 "Google com conta suspensa" ganhou `Conta.pode_adicionar_interesse`. As recusas por papel (C21, C47, C50, C61, C67, T-25 e T-27) citam `contas.permissoes._checar` (e `contas.administracao._barrar` onde a recusa é do administrador); o C42 e o T-16 citam `contas.administracao._barrar`. O T-23 cita `rodadas.condicoes.travar_condicoes` e o T-50, `nucleo.valores._converter`. O C105 e o T-48 ficam só com `catalogo.views.incremento`.
+- **Classes e herdados:** as 24 ocorrências em 18 linhas saíram (`CompradorACobrar` e `ItemACobrar` ficam com `calcular_cobranca`, que já constava; `NovaCobranca` não fica porque nenhum caso a constrói na ação, só no preparo).
+- **Limite declarado:** o alcance (g) de cada linha alterada foi relido pelos pontos comuns registrados para cada caso, com as perguntas (a) a (k) aplicadas por grupo (as linhas do mesmo teste e da mesma ação), e não pela leitura do corpo de cada uma das 120 linhas isoladamente. As linhas que não mudaram não foram relidas (M-15).
+
+### Ligações retiradas, novas e afirmações atomizadas
+
+- **Retiradas (4):** C63 "1,5 kg custa R$ 18,00" em `test_quantidades_e_incrementos` (o ponto `calcular_subtotal` só roda em 1 dos 15 casos); C42 "aceito sem informação sobre o fornecedor" em `test_a_assinatura_nao_aceita_lista_de_compradores_nem_motivo` (lê a assinatura e nunca executa o cancelamento: `TypeError` na ligação dos argumentos); C45 "inalterados" em `test_cancelamento_depois_da_aprovacao_do_resultado` e C45 "consultáveis" em `test_cenario_45_os_registros_anteriores_continuam_consultaveis_depois_do_cancelamento`. Os testes continuam existindo e continuam ligados às afirmações que provam.
+- **Novas (4):** C63 em `test_um_e_meio_kg_a_12_reais_custa_18_reais`; C42 em `test_a_rota_pelo_cliente_http` (POST só com `reembolso`, 302 e `etapa == "cancelada"`); C45 (duas afirmações) em `test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores`.
+- **Afirmações atomizadas:** nenhuma. A matriz fica com 601 afirmações, 612 ligações e 287 referências distintas.
+
+### Caracterizações novas e primeira execução (regra 5)
+
+Todas descrevem comportamento que já existia, então passaram sem tocar a produção. Exceção técnica registrada, sem Red inventado:
+
+- **R05-J3, C2:** `test_email_sem_conta_tem_a_mesma_resposta_e_nao_envia` guarda o cliente do e-mail sem conta e confere `not _autenticado(cliente_sem_conta)`. Primeira execução: passou.
+- **R05-J5, T-55:** `test_tokens_distintos_em_paralelo_se_executam_em_sequencia` relê `PedidoFormal` e `LinhaDoPedidoFormal` antes e depois (`_snapshot_do_banco`) e compara os e-mails com o `corpo` relido do banco. Primeira execução: passou.
+- **R05-J5, T-7:** `test_aviso_espera_a_apuracao_que_ja_cancelou_y` compara `Pedido`, `ItemDoPedido` e `ParcelaNoPedido` de Y antes e depois e confere um `ApuracaoFinal` com 1 pago e 1 não pago, sem `AprovacaoDoResultado`, `ApuracaoNoLivro` nem `PedidoApurado` (G2K-01). A etapa opcional de `aprovar_resultado` **não** foi feita. Primeira execução: falhou por erro do próprio teste (`ParcelaNoPedido` liga ao pedido por `item`, e não por `pedido`); corrigida a consulta, passou. A produção não mudou.
+- **R05-J4, C45:** `test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores` (2 casos: com e sem reembolso). Arranjo: AE com X e Y pagos, apuração e aprovação do resultado, `registrar_ocorrencia` de 2 faltantes com devolução autorizada e estorno concluído, depois `registrar_repasse` do saldo da obrigação com o fornecedor. Compara por `pk` e por conteúdo 20 modelos (o `PagamentoNoProvedor` aprovado sem `ultima_consulta_em`; `SituacaoDoPedido` e `TentativaDePagamento` dos pedidos pagos) e confere as telas `/administracao/financeiro/movimentos/`, `/devolucoes/` e o detalhe. Primeiras execuções, todas por erro do arranjo ou da consulta do próprio teste, sem tocar a produção: (1) repasse antes da devolução: `DevolucaoRecusada` ("a obrigação não está coberta"), regra aprovada de cobertura (a devolução anterior pede cobertura, e o repasse de 170,00 a esgota); invertida a ordem (devolução com estorno, depois repasse do saldo), que mantém os três registros pedidos; (2) `conta(...)` sombreado por variável local; (3) `origem_id` da entrada é o pagamento, e não o pedido, e o valor aparece por componente, não somado. Passou nos 2 casos. **Nenhum campo de nenhum modelo da lista mudou com o cancelamento**, e `SituacaoDoPedido` dos pedidos pagos ficou igual.
+
+### Registro da construção dos nomes `banco:` (R05-J7, A-73)
+
+| Nome | Função de produção que o monta | Migração que a chama |
+|---|---|---|
+| `pedidos_itemdopedido_so_insercao` | `apps.nucleo.so_insercao.instalar_protecao_so_insercao("pedidos_itemdopedido")`, com `f"{nome_tabela}_so_insercao"` | `apps/pedidos/migrations/0002_restricoes.py` |
+| `contas_conta_papel_imutavel` | `apps.contas.papel_imutavel.instalar_papel_imutavel()` (tabela padrão `contas_conta`), com `f"{nome_tabela}_papel_imutavel"` | `apps/contas/migrations/0005_papel_imutavel.py` |
+| `conta_email_unico` | `UniqueConstraint(..., name="conta_email_unico")` em `apps/contas/models.py` | `apps/contas/migrations/0001_initial.py` |
+
+As linhas do C99, do T-17 e do T-44 usam o primeiro, a do C62 o segundo e as do T-34 o terceiro. Conferido contra o catálogo do banco migrado (`test_a_auditoria_entregue_passa_pela_conferencia_estrita`).
+
+### Devoluções ao especificador
+
+Nenhuma devolução. Duas observações, sem bloqueio:
+
+- O arranjo do C45 inverte a ordem escrita no critério (A-75 cita o repasse antes da devolução), porque a regra aprovada de cobertura recusa autorizar a devolução depois que o repasse esgota a obrigação. Os três registros anteriores existem, e a prova os cobre; registro para o revisor decidir se a ordem importa.
+- `nomes_do_banco()` lê as restrições de todos os schemas do banco migrado, e não só as do projeto; não há colisão hoje, e a conferência é por nome exato.
+
+### Números e conferências
+
+- Matriz: 601 afirmações, 612 ligações, 287 referências distintas. `AUDITORIA`: 612 linhas, 427 íntegras e 185 corrigidas.
+- `conferir_alcance --executar`: antes, 589 pares acusados em 91 linhas; depois, 0, saída 0.
+- Suíte completa (`uv run pytest --junitxml=relatorio-pytest.xml`): 3749 passed, 1 skipped (ferramentas de backup ausentes), 2 xfailed (E16-08), 2 failed em `test_matriz.py` (`test_o_documento_versionado_esta_em_dia` e `test_todas_as_ligacoes_tem_prova_valida`, ambos pelo mesmo motivo: `docs/rastreabilidade-fase1.md` desatualizado depois do último ajuste da prova do T-7). Corrigido com `python -m tests.rastreabilidade.gerar`; `tests/rastreabilidade` repetido: 110 passed. 11 min 17 s.
+- `conferir_execucao relatorio-pytest.xml`: "Toda referência da matriz passou na execução", saída 0 (rodado sobre o relatório da suíte completa, antes da regeração do documento, que não altera referências).
+- `ruff check` e `ruff format --check`: limpos; `mypy .`: sem problemas em 578 arquivos.
+

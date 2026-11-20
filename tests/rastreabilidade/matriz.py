@@ -30,7 +30,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_contas_google_login.py::test_sem_conta_e_sem_convite_nao_cria_nada": "sem sessão e contagens iguais: `not _autenticado(client)`; `_contagens() == antes`",
         },
         "Link sem conta não recebe e-mail nem abre sessão": {
-            "tests/tecnicos/test_contas_link_de_acesso.py::test_email_sem_conta_tem_a_mesma_resposta_e_nao_envia": "nenhum link e nenhum e-mail: `LinkDeAcesso.objects.count() == 0`; `len(mail.outbox) == 0`",
+            "tests/tecnicos/test_contas_link_de_acesso.py::test_email_sem_conta_tem_a_mesma_resposta_e_nao_envia": "nenhum link, e-mail ou sessão: `LinkDeAcesso.objects.count() == 0`; `len(mail.outbox) == 0`; `not _autenticado(cliente_sem_conta)`",
         },
         "Google com conta suspensa abre a sessão, mas a suspensão continua: sem adição de interesse": {
             "tests/aceitacao/test_cenario_02_login_nao_contorna_suspensao.py::test_google_de_conta_suspensa_entra_mas_nao_adiciona_interesse": 'entra pelo Google e adicionar interesse dá 403: `"_auth_user_id" in client.session`; `_tentar_adicionar_interesse(client) == 403`',
@@ -494,7 +494,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_a_rota_pelo_cliente_http": 'cancelar sem reembolso passa e a rodada fica cancelada: `_cancelar_pela_tela(client, a, credencial, "nao").status_code == 302`; `Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"`',
         },
         "O cancelamento é aceito sem informação sobre o fornecedor": {
-            "tests/tecnicos/test_cancelamento_da_rodada.py::test_a_assinatura_nao_aceita_lista_de_compradores_nem_motivo": 'a assinatura não tem parâmetro de fornecedor: `parametros == ["autor", "rodada", "com_reembolso", "mensagem"]`',
+            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_a_rota_pelo_cliente_http": 'só o campo reembolso é enviado e a rodada fica cancelada: `_cancelar_pela_tela(client, a, credencial, "nao").status_code == 302`; `Rodada.objects.get(pk=a.rodada.pk).etapa == "cancelada"`',
         },
     },
     43: {
@@ -530,10 +530,10 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
     },
     45: {
         "Depois do cancelamento, os registros financeiros anteriores continuam inalterados": {
-            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cancelamento_depois_da_aprovacao_do_resultado": "as aprovações do resultado ficam iguais: `list(AprovacaoDoResultado.objects.values()) == aprovacoes`",
+            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores": "repasse e devolução anteriores, relidos por pk depois do cancelamento (sim e nao): `depois[nome].get(pk) == conteudo`; `len(entradas) == 2`",
         },
         "Depois do cancelamento, os registros financeiros anteriores continuam consultáveis": {
-            "tests/aceitacao/test_cenarios_15_30_45_56_104_atomicos.py::test_cenario_45_os_registros_anteriores_continuam_consultaveis_depois_do_cancelamento": 'o histórico mostra pedido.quitar e rodada.cancelar: `"pedido.quitar" in texto`; `"rodada.cancelar" in texto`',
+            "tests/tecnicos/test_cancelamento_ponta_a_ponta.py::test_cenario_45_o_cancelamento_nao_altera_os_registros_financeiros_anteriores": "o administrador vê repasse e devolução, com valor e identificação: `reais(a_repassar) in linha_do_repasse`; `reais(devolucao_anterior.devido) in linha`",
         },
     },
     46: {
@@ -770,7 +770,7 @@ CENARIOS: dict[int, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'kg, incremento 0,5: `(Unidade.KG, "0.5", "1.5", True)`; `resumo.reservado == D(entrada)`; `parcela.quantidade_reservada == D(entrada)`',
         },
         "Produto por peso a R$ 12,00/kg: 1,5 kg custa R$ 18,00": {
-            "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": 'preço 12,00 no preparo; `(Unidade.KG, "0.5", "1.5", True)`: `calcular_subtotal(produto.preco, parcela.quantidade_reservada) == D("18.00")`',
+            "tests/tecnicos/test_interesses_servicos.py::test_um_e_meio_kg_a_12_reais_custa_18_reais": 'preço 12,00 e 1,5 kg reservados: `calcular_subtotal(produto.preco, parcela.quantidade_reservada) == D("18.00")`',
         },
         "Produto por peso com incremento de 0,5 kg: 1,2 kg é recusado pelo servidor": {
             "tests/tecnicos/test_interesses_servicos.py::test_quantidades_e_incrementos": '`(Unidade.KG, "0.5", "1.2", False)`: `pytest.raises(QuantidadeInvalida)`; `parcelas(produto) == []`',
@@ -1545,7 +1545,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_apuracao_inicio.py::test_aviso_antes_da_apuracao_quita_y": 'Y pago e destino quita: `_situacao(y).situacao == "pago"`; `_destinos(y) == [("quita", "")]`',
         },
         "Com a reconsulta da apuração sem identificar a aprovação, a apuração que cancelou Y antes do aviso o devolve: Y cancelado por inadimplência, destino devolução, obrigação integral e alerta, sem editar o pedido apurado": {
-            "tests/tecnicos/test_apuracao_inicio.py::test_aviso_espera_a_apuracao_que_ja_cancelou_y": 'A-16: `_destinos(y) == [("devolucao", "pedido_cancelado")]`; `ObrigacaoComComprador.objects.get(pedido=y).integral == D("106.15")`; `len(_alertas()) == 1`; `corrida.b_esperou`',
+            "tests/tecnicos/test_apuracao_inicio.py::test_aviso_espera_a_apuracao_que_ja_cancelou_y": 'A-16: `_destinos(y) == [("devolucao", "pedido_cancelado")]`; `_composicao_de(y) == composicao_de_y`; `(final.pedidos_pagos, final.pedidos_nao_pagos) == (1, 1)`; `corrida.b_esperou`',
         },
         "Com a reconsulta da apuração sem identificar a aprovação, o aviso que trava a situação de Y antes da apuração a faz esperar: Y pago e destino quita": {
             "tests/tecnicos/test_apuracao_inicio.py::test_apuracao_espera_o_aviso_que_trava_a_situacao_de_y": 'Y pago e destino quita: `_situacao(y).situacao == "pago"`; `_destinos(y) == [("quita", "")]`',
@@ -2173,7 +2173,7 @@ TECNICOS: dict[str, dict[str, dict[str, str]]] = {
             "tests/tecnicos/test_pedido_formal_ponta_a_ponta.py::test_tokens_distintos_em_dois_post_se_executam_em_sequencia": "a segunda começa depois da primeira: `segunda_t.iniciada_em >= primeira_t.concluida_em`",
         },
         "O snapshot fica inalterado": {
-            "tests/tecnicos/test_pedido_formal_reenvio.py::test_tokens_distintos_em_paralelo_se_executam_em_sequencia": "os dois e-mails são iguais ao corpo do pedido: `(um.body, dois.body) == (pedido.corpo, pedido.corpo)`",
+            "tests/tecnicos/test_pedido_formal_reenvio.py::test_tokens_distintos_em_paralelo_se_executam_em_sequencia": "banco e e-mails iguais ao snapshot: `_snapshot_do_banco(pedido) == antes`; `(um.body, dois.body) == (corpo_do_banco, corpo_do_banco)`",
         },
     },
 }

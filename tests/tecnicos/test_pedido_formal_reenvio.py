@@ -11,6 +11,7 @@ from django.db import transaction
 
 from apps.notificacoes.models import Notificacao
 from apps.nucleo.auditoria import EntradaAuditoria
+from apps.pedidos.models import LinhaDoPedidoFormal, PedidoFormal
 from tests.apoio.pedido_formal import (
     EMAIL_DO_PEDIDO,
     FALHA,
@@ -36,6 +37,15 @@ EVENTO = "falha_no_pedido_formal"
 @pytest.fixture
 def sim(relogio: RelogioControlado, simulador_pagamentos: Any) -> Any:
     return simulador_pagamentos
+
+
+def _snapshot_do_banco(pedido: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """O conteúdo, relido do banco, do pedido formal e de todas as suas linhas."""
+    formal = list(PedidoFormal.objects.filter(pk=pedido.pk).values())
+    linhas = list(
+        LinhaDoPedidoFormal.objects.filter(pedido_formal_id=pedido.pk).order_by("pk").values()
+    )
+    return formal, linhas
 
 
 def _reenviar(autor: Any, pedido: Any, token: Any = None) -> Any:
@@ -349,6 +359,7 @@ def test_tokens_distintos_em_paralelo_se_executam_em_sequencia(
 
     a, _x, _y, pedido = af_falhas(relogio, simulador_pagamentos, settings)
     mail.outbox.clear()
+    antes = _snapshot_do_banco(pedido)
     enviar = modulo.enviar_email
     pausado = Event()
     chamadas: list[int] = []
@@ -378,6 +389,11 @@ def test_tokens_distintos_em_paralelo_se_executam_em_sequencia(
     assert quinta.iniciada_em >= quarta.concluida_em
     um, dois = _enviados()
     assert (um.body, dois.body) == (pedido.corpo, pedido.corpo)
+    # Snapshot inalterado (T-55): a releitura do banco dá os mesmos conteúdos, e o corpo dos
+    # e-mails é o `corpo` relido do banco, não o da instância em memória
+    assert _snapshot_do_banco(pedido) == antes
+    corpo_do_banco = PedidoFormal.objects.get(pk=pedido.pk).corpo
+    assert (um.body, dois.body) == (corpo_do_banco, corpo_do_banco)
 
 
 @pytest.mark.concorrencia

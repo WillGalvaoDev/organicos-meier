@@ -10,7 +10,7 @@ conferido pela execução real em `conferir_execucao.py` (regra 3-E).
 import ast
 import fnmatch
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -732,39 +732,56 @@ def _definicoes(arquivo: Path) -> ast.Module | None:
         return None
 
 
-def _nome_definido(arvore: ast.Module, nomes: Sequence[str]) -> bool:
-    """`nome` é função, classe ou nome ligado no módulo; `Classe.metodo` é método da classe."""
-    corpo: Sequence[ast.stmt] = arvore.body
-    for indice, nome in enumerate(nomes):
-        achado: ast.stmt | None = None
-        for no in corpo:
-            if isinstance(no, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                if no.name == nome:
-                    achado = no
-            elif isinstance(no, ast.Assign | ast.AnnAssign) and indice == 0:
-                alvos = no.targets if isinstance(no, ast.Assign) else [no.target]
-                if any(isinstance(a, ast.Name) and a.id == nome for a in alvos):
-                    achado = no
-        if achado is None:
-            return False
-        if indice + 1 < len(nomes):
-            if not isinstance(achado, ast.ClassDef):
-                return False
-            corpo = achado.body
-    return True
+def _def_no_corpo(corpo: Sequence[ast.stmt], nome: str) -> ast.stmt | None:
+    """O `def` (ou `async def`) escrito diretamente em `corpo`; a última definição vale."""
+    achado: ast.stmt | None = None
+    for no in corpo:
+        if isinstance(no, ast.FunctionDef | ast.AsyncFunctionDef) and no.name == nome:
+            achado = no
+    return achado
+
+
+def _nome_no_corpo(corpo: Sequence[ast.stmt], nome: str) -> bool:
+    """`nome` aparece ligado no corpo (`def`, `class` ou atribuição), de qualquer tipo."""
+    for no in corpo:
+        if isinstance(no, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            if no.name == nome:
+                return True
+        elif isinstance(no, ast.Assign | ast.AnnAssign):
+            alvos = no.targets if isinstance(no, ast.Assign) else [no.target]
+            if any(isinstance(a, ast.Name) and a.id == nome for a in alvos):
+                return True
+    return False
 
 
 def _caminho_de_funcao(raiz: Path, ponto: str) -> str | None:
-    """`apps.<módulo>.<função>`, `apps.<módulo>.<Classe>.<método>` ou `config.<módulo>.<função>`."""
+    """Só funções e métodos (regra 2-K, R05-J6): `apps.<módulo>.<função>` é um `def` do nível do
+    módulo; `apps.<módulo>.<Classe>.<método>` é um `def` escrito no corpo da classe. Valem as
+    mesmas regras para `config.`. Classe, atribuição, atributo de classe e herdado não valem."""
     partes = ponto.split(".")
+    nao_e_def = False
     for corte in range(len(partes) - 1, 0, -1):
         arquivo = _arquivo_do_modulo(raiz, partes[:corte])
         resto = partes[corte:]
-        if arquivo is None or len(resto) > 2:
+        if arquivo is None:
             continue
+        if len(resto) > 2:
+            continue  # mais de dois nomes depois do módulo não é função nem método
         arvore = _definicoes(arquivo)
-        if arvore is not None and _nome_definido(arvore, resto):
-            return None
+        if arvore is None:
+            continue
+        if len(resto) == 1:
+            if _def_no_corpo(arvore.body, resto[0]) is not None:
+                return None
+            nao_e_def = nao_e_def or _nome_no_corpo(arvore.body, resto[0])
+            continue
+        classe = [no for no in arvore.body if isinstance(no, ast.ClassDef) and no.name == resto[0]]
+        if classe:
+            if _def_no_corpo(classe[-1].body, resto[1]) is not None:
+                return None
+            nao_e_def = True  # a classe existe, mas o método não está escrito nela
+    if nao_e_def:
+        return "não é função nem método (classe, atribuição, atributo ou método herdado)"
     return "ponto de entrada de produção que não existe"
 
 
@@ -772,39 +789,65 @@ def _arquivos_de(raiz: Path, pasta: str, padrao: str) -> list[Path]:
     return sorted((raiz / pasta).rglob(padrao)) if (raiz / pasta).is_dir() else []
 
 
+def _modulos_de_dependencia(arvore: ast.Module) -> set[str]:
+    """Os nomes importados de um módulo fora de `apps` e `config` (como `allauth_views`)."""
+    nomes: set[str] = set()
+    for no in arvore.body:
+        if isinstance(no, ast.ImportFrom) and no.module and no.level == 0:
+            if no.module.split(".")[0] not in PASTAS_DE_PRODUCAO:
+                nomes.update(a.asname or a.name for a in no.names)
+        elif isinstance(no, ast.Import):
+            nomes.update(
+                a.asname or a.name.split(".")[0]
+                for a in no.names
+                if a.name.split(".")[0] not in PASTAS_DE_PRODUCAO
+            )
+    return nomes
+
+
+def _e_view_de_dependencia(view: ast.expr, importados: set[str]) -> bool:
+    if isinstance(view, ast.Attribute):
+        view = view.value
+    return isinstance(view, ast.Name) and view.id in importados
+
+
 def _caminho_de_rota(raiz: Path, valor: str) -> str | None:
+    """`rota:<MÉTODO> /<caminho>`: o caminho sem a barra inicial é igual ao primeiro argumento de
+    uma chamada `path(...)` das urls, e a view é de dependência (regra 2-K)."""
     metodo, _, caminho = valor.partition(" ")
     if metodo not in METODOS_HTTP or not caminho.startswith("/"):
         return "rota sem método ou sem caminho iniciado por barra"
-    prefixo = caminho.lstrip("/").split("<", 1)[0]
+    texto = caminho.removeprefix("/")
     arquivos = [raiz / "config" / "urls.py", *_arquivos_de(raiz, "apps", "urls.py")]
+    achou_texto = False
     for arquivo in arquivos:
         arvore = _definicoes(arquivo) if arquivo.is_file() else None
-        for no in ast.walk(arvore) if arvore is not None else []:
+        if arvore is None:
+            continue
+        importados = _modulos_de_dependencia(arvore)
+        for no in ast.walk(arvore):
             if (
                 isinstance(no, ast.Call)
                 and isinstance(no.func, ast.Name)
-                and no.func.id in ("path", "re_path")
-                and no.args
+                and no.func.id == "path"
+                and len(no.args) >= 2
                 and isinstance(no.args[0], ast.Constant)
-                and isinstance(no.args[0].value, str)
-                and no.args[0].value.startswith(prefixo)
+                and no.args[0].value == texto
             ):
-                return None
-    return "rota que não aparece em nenhuma chamada path() das urls"
+                achou_texto = True
+                if _e_view_de_dependencia(no.args[1], importados):
+                    return None
+    if achou_texto:
+        return "rota cuja view não é de dependência (include ou view do projeto usa a 1ª forma)"
+    return "rota cujo texto não é igual ao de nenhuma chamada path() das urls"
 
 
-def _caminho_de_banco(raiz: Path, nome: str) -> str | None:
+def _caminho_de_banco(nome: str, nomes_do_banco: Collection[str]) -> str | None:
     if not nome:
         return "banco sem nome"
-    for pasta in ("apps",):
-        for arquivo in _arquivos_de(raiz, pasta, "*.py"):
-            try:
-                if nome in arquivo.read_text(encoding="utf-8"):
-                    return None
-            except OSError:
-                continue
-    return "nome do banco que não aparece em nenhum .py de apps/"
+    if nome not in nomes_do_banco:
+        return "nome que não é de restrição, índice único nem trigger do banco migrado"
+    return None
 
 
 def _caminho_de_fonte(raiz: Path, relativo: str) -> str | None:
@@ -818,7 +861,7 @@ def _caminho_de_fonte(raiz: Path, relativo: str) -> str | None:
     return None
 
 
-def _problema_de_um_caminho(raiz: Path, ponto: str) -> str | None:
+def _problema_de_um_caminho(raiz: Path, ponto: str, nomes_do_banco: Collection[str]) -> str | None:
     forma, separador, valor = ponto.partition(":")
     if not separador:
         if ponto.split(".")[0] in PASTAS_DE_PRODUCAO and ponto.count(".") >= 2:
@@ -837,20 +880,25 @@ def _problema_de_um_caminho(raiz: Path, ponto: str) -> str | None:
     if forma == "rota":
         return _caminho_de_rota(raiz, valor)
     if forma == "banco":
-        return _caminho_de_banco(raiz, valor)
+        return _caminho_de_banco(valor, nomes_do_banco)
     if forma == "fonte":
         return _caminho_de_fonte(raiz, valor)
     return "forma desconhecida (sem uma das sete formas da regra 2-J)"
 
 
-def problema_do_caminho(caminho: str, raiz: Path = RAIZ) -> str | None:
+def problema_do_caminho(
+    caminho: str, nomes_do_banco: Collection[str], raiz: Path = RAIZ
+) -> str | None:
     """`None` se todo ponto de entrada do `caminho` (separados por "; ") existe numa das sete
     formas da regra 2-J; senão o motivo. Confere a existência, não o alcance (pergunta (g))."""
     pontos = [p.strip() for p in caminho.split("; ")]
     if not caminho.strip() or any(not p for p in pontos):
         return "caminho vazio ou com ponto de entrada vazio"
+    repetido = next((p for p in pontos if pontos.count(p) > 1), None)
+    if repetido is not None:
+        return f"ponto repetido no caminho: {repetido}"
     for ponto in pontos:
-        motivo = _problema_de_um_caminho(raiz, ponto)
+        motivo = _problema_de_um_caminho(raiz, ponto, nomes_do_banco)
         if motivo is not None:
             return f"{motivo}: {ponto}"
     return None
@@ -860,6 +908,7 @@ def conferir_auditoria(
     auditoria: Mapping[tuple[int | str, str, str], Mapping[str, str]],
     cenarios: Mapping[int, Afirmacoes],
     tecnicos: Mapping[str, Afirmacoes],
+    nomes_do_banco: Collection[str],
 ) -> list[str]:
     """Os problemas da auditoria por ligação (regra 2-G): as chaves são exatamente as ligações da
     matriz, os quatro campos estão preenchidos com até 200 caracteres e o veredito é `"íntegra"` ou
@@ -886,7 +935,7 @@ def conferir_auditoria(
                 problemas.append(f"{onde}: {campo} com mais de {MAXIMO_DO_CAMPO} caracteres")
         caminho = linha.get("caminho", "")
         if caminho.strip() and len(caminho) <= MAXIMO_DO_CAMPO:
-            motivo = problema_do_caminho(caminho)
+            motivo = problema_do_caminho(caminho, nomes_do_banco)
             if motivo is not None:
                 problemas.append(f"{onde}: caminho inválido: {motivo}")
         veredito = linha.get("veredito", "")
