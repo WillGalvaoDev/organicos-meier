@@ -112,6 +112,10 @@ def simulador_pagamentos() -> Iterator[Any]:
 BANCOS_DO_SIMULADOR = ["default", "simulador_pagamentos"]
 PREFIXOS_COM_SIMULADOR = (
     "test_pagamentos_",
+    "test_arquivos_no_",
+    "test_observabilidade",
+    "test_backup_externo",
+    "test_conferir_",
     "test_pedidos_",
     "test_simulador_pagamentos_",
     "test_financeiro_",
@@ -120,6 +124,7 @@ PREFIXOS_COM_SIMULADOR = (
     "test_cenario_32_",
     "test_cenario_33_",
     "test_cenario_40_",
+    "test_cenario_96_",
     "test_cenario_39_",
     "test_cenarios_",
     "test_devolucoes_",

@@ -23,3 +23,5 @@ def test_o_aporte_inicial_vai_so_para_a_reserva() -> None:
     assert [c for c in receitas if saldo(c) != 0] == []
     fornecedores = ContaFinanceira.objects.filter(destinacao="obrigacao_fornecedor")
     assert [c for c in fornecedores if saldo(c) != 0] == []
+    outras = ContaFinanceira.objects.exclude(destinacao="reserva")
+    assert [c for c in outras if saldo(c) != 0] == []

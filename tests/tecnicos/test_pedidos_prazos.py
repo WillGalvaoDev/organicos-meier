@@ -234,6 +234,7 @@ def test_na_margem_nada_se_reabre(
     assert erro.value.codigo == "prazo_encerrado"
     assert list(Pedido.objects.order_by("pk").values()) == antes
     assert x.tentativas.count() == 0
+    assert Rodada.objects.get(pk=arranjo.rodada.pk).etapa == Etapa.PAGAMENTO
 
 
 @pytest.mark.acceptance

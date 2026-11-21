@@ -33,6 +33,7 @@ _CATALOGO = (
     ("autorizar_devolucoes_do_cancelamento", "Devoluções dos cancelamentos", 10, 30),
     ("conciliar_dias_pendentes", "Conciliação diária", 60, 180),
     ("verificar_operacao", "Verificação operacional", 5, 15),
+    ("backup_diario", "Backup externo diário", 1440, 1560),
 )
 
 TAREFAS_MONITORADAS: list[TarefaMonitorada] = [

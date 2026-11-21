@@ -111,11 +111,13 @@ def test_email_sem_conta_tem_a_mesma_resposta_e_nao_envia(client: Client) -> Non
     existente = _pedir(client, "ana@x.com")
     mail.outbox.clear()
     LinkDeAcesso.objects.all().delete()
-    inexistente = _pedir(Client(), "ninguem@x.com")
+    cliente_sem_conta = Client()
+    inexistente = _pedir(cliente_sem_conta, "ninguem@x.com")
     assert inexistente.status_code == existente.status_code
     assert inexistente.content == existente.content
     assert LinkDeAcesso.objects.count() == 0
     assert len(mail.outbox) == 0
+    assert not _autenticado(cliente_sem_conta)  # sem `_auth_user_id`: nenhuma sessão aberta
 
 
 @pytest.mark.acceptance
@@ -140,6 +142,7 @@ def test_banido_ou_removido_nao_recebe_link(
     assert PADRAO in resposta.content.decode()
     assert LinkDeAcesso.objects.count() == 0
     assert len(mail.outbox) == 0
+    assert not _autenticado(client)
 
 
 def test_administrador_nao_recebe_link(client: Client) -> None:  # A-8

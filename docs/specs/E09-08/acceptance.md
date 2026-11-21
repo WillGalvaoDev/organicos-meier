@@ -12,7 +12,7 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 |---|---|---|---|---|---|
 | A-1 | §13 | positivo | o arranjo | ADM abre `financeiro_resumo` | 200; mostra `obrigacao_fornecedor` de A com 100,00 e o liberado e a liberar; frete com efetivo 30,00, arrecadado 20,00 e déficit 10,00; reserva 1000,00 / 0,00 / 1000,00; o déficit e O1 nas pendências |
 | A-2 | §13, Infra 3.1 | positivo | o arranjo | ADM abre `financeiro_movimentos` e depois filtra por `destinacao=receita_servico` e pela rodada | os movimentos com tipo, momento no horário de Brasília, autor "Sistema", justificativa e transferências; o filtro mostra só a apuração e a cobertura da tarifa |
-| A-3 | §16 nº 29, Infra 2 | positivo | ADM com passkey recente | `POST financeiro_aporte` com `1.000,00`, `sim-mov-1` e "Aporte inicial" | redireciona com a confirmação; reserva 2000,00; o histórico em `financeiro_reserva` mostra o aporte com autor e identificação |
+| A-3 | §16 nº 29, Infra 2 | positivo | ADM com passkey recente | `POST financeiro_aporte` com `1000,00`, `sim-mov-1` e "Aporte inicial" | redireciona com a confirmação; reserva 2000,00; o histórico em `financeiro_reserva` mostra o aporte com autor e identificação (redação corrigida na E16-10) |
 | A-4 | Infra 2 | negativo | ADM sem passkey recente | `POST financeiro_aporte` e as outras rotas de ação | redireciona para `mfa_reauthenticate_webauthn` com `next`; nada é gravado |
 | A-5 | §2, 17.9, E02-10 | negativo | o arranjo | comprador e fornecedor em todas as rotas `financeiro_*`, GET e POST | 403 sem dados; anônimo vai para o login; nada é gravado |
 | A-6 | T-10 | negativo | reserva com 20,00 livres | `POST financeiro_designar` de O1 com 25,00 | 409; a mensagem "O valor passa do saldo livre da reserva (R$ 20,00)."; nenhuma designação |
@@ -27,6 +27,8 @@ Agente 1 (especificador). Cada critério precisa permitir um teste automatizado 
 | A-15 | Formulários | negativo | ADM com passkey recente | dois `POST financeiro_aporte` com a mesma identificação, um após o outro | o segundo responde 409 com "Este depósito já foi registrado como aporte."; um aporte só |
 
 ## Mapeamento para testes
+
+**Texto anterior, preservado (E16-10, melhoria M-8):** A-3, "Quando": `POST financeiro_aporte` com `1.000,00`, `sim-mov-1` e "Aporte inicial". Os negativos com separador de milhar continuam recusados, como na spec.
 
 | Critério | Arquivo de teste |
 |---|---|

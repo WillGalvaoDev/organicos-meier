@@ -43,6 +43,7 @@ from apps.contas.moderacao import ModeracaoInvalida, reativar, remover, suspende
 from apps.contas.perfil import atualizar_perfil
 from apps.contas.permissoes import exige_login, publica
 from apps.notificacoes.consultas import contar_falhas
+from apps.nucleo.armazenamento import MENSAGEM_DE_FALHA, ArmazenamentoIndisponivel
 
 
 @exige_login
@@ -353,14 +354,18 @@ def perfil(request: HttpRequest) -> HttpResponse:
         },
     )
     if request.method == "POST" and form.is_valid():
-        atualizar_perfil(
-            conta,
-            nome=form.cleaned_data["nome"],
-            telefone=form.telefone_normalizado,
-            whatsapp=form.cleaned_data["whatsapp"],
-            avatar_novo=form.avatar_processado,
-            remover_avatar=form.cleaned_data["remover_avatar"],
-        )
+        try:
+            atualizar_perfil(
+                conta,
+                nome=form.cleaned_data["nome"],
+                telefone=form.telefone_normalizado,
+                whatsapp=form.cleaned_data["whatsapp"],
+                avatar_novo=form.avatar_processado,
+                remover_avatar=form.cleaned_data["remover_avatar"],
+            )
+        except ArmazenamentoIndisponivel:
+            messages.error(request, MENSAGEM_DE_FALHA)
+            return render(request, "contas/perfil.html", {"form": form, "conta": conta}, status=503)
         messages.success(request, "Perfil atualizado.")
         return redirect("perfil")
     return render(request, "contas/perfil.html", {"form": form, "conta": conta})

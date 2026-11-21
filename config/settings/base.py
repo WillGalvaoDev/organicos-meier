@@ -43,6 +43,15 @@ SEGREDO_AVISOS_SIMULADOR = env("SEGREDO_AVISOS_SIMULADOR", default="")
 
 ORIGEM_PUBLICA = env("ORIGEM_PUBLICA", default="http://localhost:8000")
 
+# R2 e backup externo (E16-02 e E16-04). São obrigatórios em prod.py; em dev e nos testes ficam
+# vazios, e o backup falha de forma visível (`BackupFalhou("configuracao", ...)`) sem derrubar o
+# worker.
+R2_ENDPOINT = env("R2_ENDPOINT", default="")
+R2_BUCKET_BACKUPS = env("R2_BUCKET_BACKUPS", default="")
+R2_BACKUP_ACCESS_KEY_ID = env("R2_BACKUP_ACCESS_KEY_ID", default="")
+R2_BACKUP_SECRET_ACCESS_KEY = env("R2_BACKUP_SECRET_ACCESS_KEY", default="")
+BACKUP_CHAVE_PUBLICA_AGE = env("BACKUP_CHAVE_PUBLICA_AGE", default="")
+
 INSTALLED_APPS = [
     "procrastinate.contrib.django",
     "django.contrib.auth",

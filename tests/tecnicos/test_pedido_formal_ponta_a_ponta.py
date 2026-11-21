@@ -284,6 +284,7 @@ def test_mesmo_token_em_dois_post_envia_uma_vez(
     assert [r.valor.status_code for r in resultados] == [302, 302]
     assert len(_emails_iguais_ao_snapshot(pedido)) == 1
     assert TentativaDeEnvioDoPedidoFormal.objects.filter(tipo="manual").count() == 1
+    assert PedidoFormal.objects.filter(rodada=a.rodada).count() == 1
     _invariante_ok()
 
 
@@ -335,6 +336,7 @@ def test_tokens_distintos_em_dois_post_se_executam_em_sequencia(
     )
     assert segunda_t.iniciada_em >= primeira_t.concluida_em
     assert len(_emails_iguais_ao_snapshot(pedido)) == 2
+    assert PedidoFormal.objects.filter(rodada=a.rodada).count() == 1
     _invariante_ok()
 
 

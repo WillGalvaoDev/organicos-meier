@@ -339,6 +339,27 @@ def test_bloqueio_e_aviso_de_outra_mudanca_ao_mesmo_tempo(
     assert DestinoDoPagamento.objects.count() == 0
 
 
+@pytest.mark.parametrize("ordem", ["bloqueio_antes", "aviso_antes"])
+def test_bloqueio_e_aviso_dao_o_mesmo_resultado_nas_duas_ordens(
+    relogio: RelogioControlado, simulador_pagamentos: Any, ordem: str
+) -> None:  # T-7, E16-07 regra 2-G (as duas ordens, em sequência)
+    _, x = pedido_aberto(relogio)
+    p = tentativa_criada(x).id_externo
+    assert p is not None
+    simulador_pagamentos.reemitir_aviso(p)
+    relogio.congelar(T0 + timedelta(hours=24))
+    if ordem == "bloqueio_antes":
+        _bloquear_e_processar()
+        _aviso_e_processar(simulador_pagamentos)
+    else:
+        _aviso_e_processar(simulador_pagamentos)
+        _bloquear_e_processar()
+    processar_chamadas()
+    assert PagamentoNoProvedor.objects.get(id_externo=p).situacao == "cancelado"
+    assert SituacaoDoPedido.objects.get(pedido=x).situacao == "aguardando_pagamento"
+    assert DestinoDoPagamento.objects.count() == 0
+
+
 # --- E08-06: moderação (A-11 e A-12) -------------------------------------------------------
 
 

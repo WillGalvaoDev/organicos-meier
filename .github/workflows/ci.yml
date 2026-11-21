@@ -29,8 +29,17 @@ jobs:
           --health-retries 30
     env:
       DATABASE_URL: postgres://organicos:organicos@localhost:5433/organicos
+      # o teste do backup com as ferramentas reais (E16-04) falha, em vez de pular, se faltarem
+      EXIGIR_FERRAMENTAS_DE_BACKUP: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Instalar o cliente PostgreSQL 17 e o age (backup, E16-04)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17 age
       - uses: astral-sh/setup-uv@v5
       - name: Instalar dependências (lockfile travado)
         run: uv sync --locked
@@ -41,4 +50,26 @@ jobs:
       - name: mypy
         run: uv run mypy .
       - name: pytest
-        run: uv run pytest
+        run: uv run pytest --junitxml=relatorio-pytest.xml
+      - name: Conferir a matriz de rastreabilidade pela execução (E16-07)
+        run: uv run python -m tests.rastreabilidade.conferir_execucao relatorio-pytest.xml
+      - name: Conferir o alcance do caminho da auditoria pela execução instrumentada (E16-07, regra 2-K)
+        run: uv run python -m tests.rastreabilidade.conferir_alcance --executar alcance.json
+
+  imagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir a imagem (sem publicar)
+        run: docker build --tag organicos-meier:ci .
+      - name: Cliente PostgreSQL 17 na imagem
+        run: docker run --rm --entrypoint pg_dump organicos-meier:ci --version | grep -E " 17\."
+      - name: age na imagem
+        run: docker run --rm --entrypoint age organicos-meier:ci --version
+      - name: Usuário sem privilégios
+        run: test "$(docker run --rm --entrypoint id organicos-meier:ci -u)" != "0"
+      - name: Nenhum segredo na configuração da imagem
+        run: |
+          if docker image inspect organicos-meier:ci --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(SECRET_KEY|DATABASE_URL|SENTRY_DSN|R2_|BACKUP_)'; then
+            echo "variável de ambiente fictícia vazou para a imagem final"; exit 1
+          fi

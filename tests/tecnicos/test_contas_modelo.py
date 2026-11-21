@@ -28,6 +28,15 @@ def _inserir(
         )
 
 
+def test_banco_recusa_segunda_conta_com_o_mesmo_email_pela_restricao_unique() -> None:
+    # T-34, E16-07 regra 2-G: a restrição UNIQUE do banco, com INSERT direto (sem o serviço)
+    fornecedor = FornecedorFactory.create()
+    _inserir("ana@x.com")
+    with pytest.raises(IntegrityError, match="conta_email_unico"), transaction.atomic():
+        _inserir("ana@x.com", papel="fornecedor", fornecedor=fornecedor.pk)
+    assert Conta.objects.filter(email_normalizado="ana@x.com").count() == 1
+
+
 def test_conta_recusa_email_em_uso_com_variacao_de_caixa_e_espacos() -> None:  # A-6
     ContaFactory.create(email_normalizado="ana@exemplo.com")
     for papel_extra in ({}, {"fornecedor": True}):

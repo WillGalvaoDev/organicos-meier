@@ -762,3 +762,35 @@ def test_erro_na_leitura_mostra_o_corpo_gravado(
         "chamadas_ao_provedor_atrasadas" in r.getMessage() and "RuntimeError" in r.getMessage()
         for r in caplog.records
     )
+
+
+# --- E16-04: a linha do último backup externo ---------------------------------------------------
+
+
+def test_o_ultimo_backup_no_painel(painel: Painel) -> None:  # A-16
+    from datetime import UTC, datetime
+
+    from apps.operacao.models import BackupExterno
+    from tests.apoio.operacao import INSTANTE
+
+    concluido = datetime(2026, 11, 20, 6, 0, tzinfo=UTC)
+    chave = "banco/homologacao/2026/11/organicos-homologacao-20261120T060000Z.dump.age"
+    BackupExterno.objects.create(
+        iniciado_em=concluido,
+        concluido_em=concluido,
+        ambiente="homologacao",
+        chave=chave,
+        tamanho_bytes=12_345_678,
+        sha256="b" * 64,
+    )
+    resposta = painel.pagina(INSTANTE)
+    secao = _secoes(resposta)["Tarefas periódicas"]
+    assert "Último backup externo: 20/11/2026 03:00 (12,3 MB)" in secao
+    assert chave not in resposta.content.decode()
+    assert "organicos-homologacao" not in resposta.content.decode()
+    # depois da linha da última conciliação
+    assert secao.index("conciliação") < secao.index("Último backup externo")
+
+
+def test_sem_backup_no_painel(painel: Painel) -> None:  # A-17
+    assert "Nenhum backup externo registrado." in _secoes(painel.pagina())["Tarefas periódicas"]

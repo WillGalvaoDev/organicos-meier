@@ -8,6 +8,7 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from tests.apoio.models import ModeloValores
+from tests.tecnicos.test_configuracao_producao import _AMBIENTE_MINIMO
 
 D = Decimal
 
@@ -51,8 +52,11 @@ def test_campos_aceitam_decimal_valido() -> None:
 
 
 def test_app_de_testes_fora_da_producao(monkeypatch: pytest.MonkeyPatch) -> None:  # A-20
-    monkeypatch.setenv("AMBIENTE", "homologacao")  # obrigatórios em prod.py (E07-02)
-    monkeypatch.setenv("SEGREDO_AVISOS_SIMULADOR", "segredo-de-teste")
+    # as variáveis obrigatórias em prod.py (E07-02, E16)
+    for nome, valor in _AMBIENTE_MINIMO.items():
+        monkeypatch.setenv(nome, valor)
+    # `prod.py` inicia o Sentry (E16-03); a suíte nunca o inicia de verdade
+    monkeypatch.setattr("sentry_sdk.init", lambda *args, **kwargs: None)
     for modulo in ("config.settings.base", "config.settings.prod"):
         ja_importado = modulo in sys.modules
         configuracao = importlib.import_module(modulo)

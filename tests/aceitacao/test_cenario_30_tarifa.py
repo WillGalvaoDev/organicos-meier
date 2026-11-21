@@ -7,7 +7,13 @@ from typing import Any
 import pytest
 
 from apps.financeiro.livro import saldo
-from apps.financeiro.models import Componente, Despesa, MovimentoFinanceiro, TipoDeMovimento
+from apps.financeiro.models import (
+    Componente,
+    ContaFinanceira,
+    Despesa,
+    MovimentoFinanceiro,
+    TipoDeMovimento,
+)
 from apps.pedidos.models import ItemDoPedido, Pedido
 from tests.apoio.financeiro import custodia, despesas, pedido_composto
 from tests.apoio.pedidos import T0, sincronizar, tentativa_criada
@@ -42,6 +48,8 @@ def test_a_tarifa_e_registrada_como_despesa_e_nao_chega_ao_comprador(
     assert (despesa.tipo, despesa.valor) == ("tarifa", D("1.25"))
     assert MovimentoFinanceiro.objects.filter(tipo=TipoDeMovimento.TARIFA).count() == 1
     assert saldo(despesas()) == D("-1.25")
+    fornecedores = ContaFinanceira.objects.filter(destinacao="obrigacao_fornecedor")
+    assert [c for c in fornecedores if saldo(c) != 0] == []
     rodada, ciclo = pedido.abertura.rodada, pedido.abertura.ciclo
     assert [
         saldo(custodia(rodada, ciclo, comprador, componente))

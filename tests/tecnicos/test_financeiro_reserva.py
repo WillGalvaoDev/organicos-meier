@@ -197,6 +197,8 @@ def test_desfazer_a_designacao_devolve_o_comprometido(m: Mundo) -> None:  # A-8
 def test_nenhuma_tarefa_periodica_faz_aporte(m: Mundo) -> None:  # A-9, P-4
     from procrastinate.contrib.django import app
 
+    from apps.operacao.backup import BackupFalhou
+
     with transaction.atomic():
         semear(m, reserva(), "10.00")
         obrigacao_de_teste("500.00")
@@ -204,6 +206,11 @@ def test_nenhuma_tarefa_periodica_faz_aporte(m: Mundo) -> None:  # A-9, P-4
     tarefas = list(app.periodic_registry.periodic_tasks.values())
     assert len(tarefas) >= 5
     for periodica in tarefas:
+        if periodica.task.name == "backup_diario":
+            # sem as variáveis do R2 nos testes, o backup (E16-04) falha de forma visível
+            with pytest.raises(BackupFalhou, match="configuracao"):
+                periodica.task.func(timestamp=0)
+            continue
         periodica.task.func(timestamp=0)
     assert MovimentoFinanceiro.objects.filter(tipo=T.APORTE).count() == aportes == 1
     assert saldo(reserva()) == D("10.00")

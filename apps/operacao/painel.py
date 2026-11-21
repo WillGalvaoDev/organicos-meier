@@ -31,6 +31,7 @@ from apps.financeiro.reserva import itens_sem_cobertura
 from apps.interesses.progresso import progresso_da_rodada
 from apps.nucleo.tempo import no_fuso_da_operacao
 from apps.operacao.execucao import ATRASADA, SEM_REGISTRO, situacao_das_tarefas
+from apps.operacao.models import BackupExterno
 from apps.operacao.tipos import CLASSIFICACAO, Natureza, link_do_alerta
 from apps.operacao.verificacao import VERIFICACOES
 from apps.pedidos.endereco_de_retirada import endereco_vigente
@@ -457,6 +458,15 @@ def _ultima_conciliacao() -> str:
     return f"Última conciliação: {ultima.data:%d/%m/%Y} ({rotulo})"
 
 
+def _ultimo_backup() -> str:
+    """A linha do último backup externo. A chave do objeto nunca aparece."""
+    ultimo = BackupExterno.objects.order_by("-concluido_em", "-pk").first()
+    if ultimo is None:
+        return "Nenhum backup externo registrado."
+    megabytes = f"{ultimo.tamanho_bytes / 1_000_000:.1f}".replace(".", ",")
+    return f"Último backup externo: {_data(ultimo.concluido_em)} ({megabytes} MB)"
+
+
 def contexto_do_painel(instante: datetime) -> dict[str, Any]:
     """Tudo o que a página mostra, lido uma vez com o `instante` dado."""
     return {
@@ -466,4 +476,5 @@ def contexto_do_painel(instante: datetime) -> dict[str, Any]:
         "prazos_encerrados": prazos_encerrados(instante),
         "tarefas": _tarefas(instante),
         "ultima_conciliacao": _ultima_conciliacao(),
+        "ultimo_backup": _ultimo_backup(),
     }

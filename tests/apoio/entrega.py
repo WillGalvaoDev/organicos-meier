@@ -64,12 +64,16 @@ def arranjo_unico(
     sim: Any,
     *,
     preco: str = "10.00",
-    quantidade: int = 10,
+    quantidade: int | str = 10,
     frete: str = "20.00",
+    minimo: str = "100.00",
+    unidade: str = "unidade",
+    incremento: str = "1.000",
 ) -> tuple[Any, Any, PedidoFormal]:
     """O AE-48 (preço 10,00, 10 unidades) e o AE-18 (preço 12,50, 8 unidades): um só comprador C
     num fornecedor com mínimo de 100,00, pago e aprovado em `T0 + 48h`. Devolve o arranjo, o pedido
-    de C e o pedido formal. O pedido de C: produtos 100,00, serviço 5,00 e o frete dado."""
+    de C e o pedido formal. O pedido de C: produtos 100,00, serviço 5,00 e o frete dado. `minimo`,
+    `unidade` e `incremento` mudam o fornecedor e o produto, para itens fracionados."""
     from apps.fornecedores.models import Fornecedor
     from apps.pedidos.apuracao import aprovar_resultado, iniciar_apuracao
     from tests.apoio.apuracao import H, pagar
@@ -78,10 +82,12 @@ def arranjo_unico(
 
     relogio.congelar(T0)
     a = montar_arranjo(
-        minimo="100.00",
+        minimo=minimo,
         parcelas_de_p1=(("c", quantidade),),
         parcelas_de_p2=(),
         preco_de_p1=preco,
+        unidade_de_p1=unidade,
+        incremento_de_p1=incremento,
     )
     abrir(a, frete)
     relogio.congelar(T0 + H)

@@ -12,14 +12,14 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-17, with PR #88 (E15) |
+| **Last updated** | 2026-11-20, with PR #89 (E16, technical slices) |
 | **Phase** | Phase 1: complete platform running against a payment **simulator**. No real money and no production deployment yet. |
-| **Progress** | 15 of 16 stages delivered (E01–E15), 110 slices, each approved by an independent review |
+| **Progress** | 15 of 16 stages delivered (E01–E15), plus 9 of the 10 E16 slices approved by an independent review (E16-01 to E16-07, E16-09 and E16-10) |
 | **Last stage delivered** | E15 — Admin dashboard and operational alerts (PR #88) |
-| **Next stage** | E16 — Homologation and Phase 1 closing (not started) |
-| **Test suite** | 3,449 tests passing; ruff, mypy (strict) and migration checks clean; CI green on `main` |
-| **Open blockers** | None |
-| **Non-blocking improvements** | 10 open (2 closed) recorded in [`docs/melhorias.md`](docs/melhorias.md), reviewed at the end of Phase 1 |
+| **Next stage** | E16-08 — Homologation run on Fly.io, timed restore and Phase 1 final report (waiting for the Phase 0 accounts) |
+| **Test suite** | 3,753 tests passing, 1 skipped (local backup tools absent) and 2 expected failures pending R07; ruff, mypy (strict) and migration checks clean |
+| **Open blockers** | E16-R07: E16 cannot close until the homologation, the suite on a Neon branch and the real restores (paths A and B, with RTO) are run and reviewed. The owner authorized this merge with R07 open (2026-11-20). |
+| **Non-blocking improvements** | 9 open (6 closed) in [`docs/melhorias.md`](docs/melhorias.md). The owner decided on each one on 2026-11-18: M-3 and M-8 fixed in E16-10, M-5 discarded, the rest deferred to Phase 2a. M-15 was added on 2026-11-20. |
 
 **Works today (with the simulator):**
 
@@ -38,7 +38,9 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 - Receiving and pickup: receiving per product of the formal order, with partial deliveries; delivery issues per buyer item (missing, incorrect, not delivered), before or after pickup is released, each with a one-off refund funded by the supplier obligation before payout and covered by the administrator after it; the pickup address kept by the administrator and shown in the cart and on the rules page; pickup release only when every unit is received or resolved, with a notice to buyers, a new round for the supplier right away and cancellation refused from then on; pickup per item in several visits, a seven-day deadline and manual disposal after it; admin and buyer screens, the supplier portal unchanged, and the end-to-end scenarios with the simulator.
 - Admin dashboard and operational alerts: a record of when each periodic task last finished or failed, with tolerances; operational alerts for late tasks, unclosed closings, late formal orders, late reconciliation, provider calls and notifications, failed messages, failed provider calls, divergent payment checks, payments without an order or approval time and repeated rejected webhooks, notified to the administrator on the site and by email; alerts that end by themselves when the situation ends, and one-off facts closed by the administrator's acknowledgement; the dashboard at `administracao/` with open alerts, required actions, rounds (minimum, pending boxes and deadlines), expired deadlines and task status; the history of relevant actions with filters; and the end-to-end scenarios, including the worker stopped and resumed.
 
-**Not built yet:** homologation (E16), including an external monitor independent of the worker. Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
+- Ready for homologation (E16): the container image and Fly.io processes; uploaded files on Cloudflare R2; Sentry without personal data and cron monitors independent of the worker; a daily encrypted (`age`) external backup on R2; the restore check `conferir_restauracao` and the timed restore procedure; the complete rules page for the buyer; the reserved and pending items in the buyer's history; and the traceability matrix linking scenarios 1–119 and T-1–T-55 to the tests, checked in CI.
+
+**Not done yet:** the homologation run itself (E16-08): the deployment on Fly.io, the functional script, the timed restore and the final report. Real Pix (Phase 2a), cards (Phase 2b) and WhatsApp (Phase 3) come after Phase 1.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -57,7 +59,7 @@ An invite-only group-buying platform for organic produce. Buyers register intere
 | E13 | Formal order, payout and supplier portal | ✅ Delivered |
 | E14 | Receiving, delivery issues, pickup and disposal | ✅ Delivered |
 | E15 | Admin dashboard and operational alerts | ✅ Delivered |
-| E16 | Homologation and Phase 1 closing | ⏳ Next |
+| E16 | Homologation and Phase 1 closing | 🚧 In progress (blocked by R07) |
 
 <!-- STATUS:END -->
 

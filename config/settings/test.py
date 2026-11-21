@@ -20,6 +20,9 @@ INSTALLED_APPS = [*_APPS_BASE, "tests.apoio"]
 
 CANAL_WHATSAPP = "simulado"
 
+# Nenhum teste envia eventos ao Sentry (E16-03): o DSN fica vazio e o SDK não é iniciado.
+SENTRY_DSN = ""
+
 SEGREDO_AVISOS_SIMULADOR = "segredo-do-simulador-de-teste"
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

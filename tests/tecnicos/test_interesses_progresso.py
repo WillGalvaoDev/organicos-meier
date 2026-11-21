@@ -97,6 +97,27 @@ def test_acrescimo_posterior_fica_com_o_excedente(
     assert (para_b.do_comprador.em_caixas, para_b.do_comprador.excedente) == (D("4"), D("6"))  # type: ignore[union-attr]
 
 
+def test_a_formacao_de_caixas_ignora_as_pendentes() -> None:  # T-47, E16-07 regra 2-G
+    _, produto, _ = cenario(None, multiplo=D("10"), preco=D("10.00"))
+    a, c = ContaFactory.create(), ContaFactory.create()
+    reservada(a, produto, 7)
+    parcela_de_c = pendente(c, produto, 5)  # 7 + 5 completaria uma caixa se as pendentes contassem
+    resultado = so_produto(
+        progresso_da_rodada(Rodada.objects.get(fornecedor=produto.fornecedor), a)
+    )
+    assert (resultado.total_reservado, resultado.caixas_completas) == (D("7"), 0)
+    assert resultado.quantidade_elegivel == D("0")
+    parcela_de_c.refresh_from_db()
+    assert (parcela_de_c.situacao, parcela_de_c.quantidade_pendente) == (
+        SituacaoParcela.PENDENTE,
+        D("5"),
+    )
+    reservada(a, produto, 3)  # as reservadas chegam a 10: uma caixa, e só uma
+    completo = so_produto(progresso_da_rodada(Rodada.objects.get(fornecedor=produto.fornecedor), a))
+    assert (completo.total_reservado, completo.caixas_completas) == (D("10"), 1)
+    assert completo.quantidade_elegivel == D("10")
+
+
 @pytest.mark.acceptance
 def test_pendentes_nao_entram_no_minimo() -> None:  # A-4, cenário 104
     rodada, produto, _ = cenario(None, preco=D("10.00"))

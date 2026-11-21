@@ -20,4 +20,20 @@
   {% else %}
     <p>Você ainda não tem pedidos.</p>
   {% endif %}
+  <h2>Interesses reservados e pendentes</h2>
+  {% for grupo in interesses %}
+    <h3>{{ grupo.fornecedor.nome }}</h3>
+    <ul>
+      {% for linha in grupo.linhas %}
+        <li>
+          <strong>{{ linha.produto.nome }}</strong>
+          <p>Reservado: {{ linha.reservado|quantidade_br }} {{ linha.produto.get_unidade_display }}</p>
+          <p>Pendente: {{ linha.pendente|quantidade_br }} {{ linha.produto.get_unidade_display }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% empty %}
+    <p>Você não tem interesses reservados nem pendentes.</p>
+  {% endfor %}
+  <p><a href="{% url 'carrinho' %}">Alterar no carrinho</a></p>
 {% endblock %}

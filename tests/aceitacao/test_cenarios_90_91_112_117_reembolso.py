@@ -5,9 +5,10 @@ from decimal import Decimal
 
 import pytest
 
+from apps.catalogo.models import Unidade
 from apps.financeiro.models import Reembolso
 from apps.financeiro.reembolsos import ReembolsoRecusado, acumulado_do_pedido
-from apps.pedidos.models import ItemDoPedido
+from apps.pedidos.models import ItemDoPedido, ParcelaNoPedido, Pedido
 from tests.apoio.devolucoes import K, M, N, componentes, integral, parcial, pedido_pago_com_itens
 from tests.conftest import RelogioControlado
 
@@ -18,6 +19,11 @@ D = Decimal
 
 def test_cenario_112_parcial_usa_o_valor_registrado(relogio: RelogioControlado) -> None:
     _, (item,) = pedido_pago_com_itens(K)
+    assert (item.unidade, item.quantidade, item.preco_unitario) == (
+        Unidade.KG,
+        D("1.000"),
+        D("7.99"),
+    )
     assert componentes(parcial(item, "0.25"))[0] == D("2.00")
 
 
@@ -39,6 +45,11 @@ def test_cenario_114_integral_depois_do_parcial_completa_exatamente(
 
 def test_cenario_115_centavos_nao_passam_do_pago(relogio: RelogioControlado) -> None:
     _, (item,) = pedido_pago_com_itens(M)
+    assert (item.unidade, item.quantidade, item.preco_unitario) == (
+        Unidade.KG,
+        D("0.600"),
+        D("0.15"),
+    )
     produtos = [componentes(parcial(item, "0.1"))[0] for _ in range(6)]
     assert sum(produtos, D("0.00")) == D("0.09")
     with pytest.raises(ReembolsoRecusado):
@@ -63,8 +74,23 @@ def test_cenarios_90_e_91_integral_devolve_exatamente_o_cobrado(
 
 def test_cenario_117_cada_devolucao_e_registrada_separadamente(relogio: RelogioControlado) -> None:
     pedido, (item,) = pedido_pago_com_itens(K)
+    assert (item.unidade, item.quantidade, item.preco_unitario) == (
+        Unidade.KG,
+        D("1.000"),
+        D("7.99"),
+    )
+    composicao = (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(ParcelaNoPedido.objects.order_by("pk").values()),
+    )
     for _ in range(4):
         parcial(item, "0.25")
     assert Reembolso.objects.filter(pedido=pedido).count() == 4
     assert ItemDoPedido.objects.get(pk=item.pk).quantidade == D("1.000")
     assert ItemDoPedido.objects.get(pk=item.pk).subtotal == D("7.99")
+    assert (
+        list(Pedido.objects.order_by("pk").values()),
+        list(ItemDoPedido.objects.order_by("pk").values()),
+        list(ParcelaNoPedido.objects.order_by("pk").values()),
+    ) == composicao

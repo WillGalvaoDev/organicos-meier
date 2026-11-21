@@ -109,9 +109,9 @@ def test_o_link_das_regras_na_pagina_inicial(
     client: Client, relogio: RelogioControlado
 ) -> None:  # A-9
     a, conta_f, _s = _mundo(client, relogio)
-    assert "Regras e retirada" in _texto(_como(a.a).get("/inicio/"))
-    assert "Regras e retirada" in _texto(client.get("/inicio/"))
-    assert "Regras e retirada" not in _texto(_como(conta_f).get("/inicio/"))
+    assert "Regras de funcionamento" in _texto(_como(a.a).get("/inicio/"))
+    assert "Regras de funcionamento" in _texto(client.get("/inicio/"))
+    assert "Regras de funcionamento" not in _texto(_como(conta_f).get("/inicio/"))
 
 
 def test_a_pagina_do_administrador(client: Client, relogio: RelogioControlado) -> None:  # A-10

@@ -8,6 +8,7 @@ import pytest
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, connection, transaction
 
+from apps.catalogo.models import Unidade
 from apps.financeiro.livro import conta, saldo
 from apps.financeiro.models import (
     Destinacao,
@@ -297,6 +298,11 @@ def test_cenario_115_centavos_nao_passam_do_pago(
 ) -> None:  # A-16
     a, x, _y, _pf = arranjo_ae(relogio, sim)
     (item_m,) = itens_do_pedido(x, ARRANJO_M[3])
+    assert (item_m.unidade, item_m.quantidade, item_m.preco_unitario) == (
+        Unidade.KG,
+        D("0.600"),
+        D("0.15"),
+    )
     _liberada(a.rodada)  # o item M não tem linha no pedido formal: só valem item, saldo etc.
     produtos = []
     resultados = []

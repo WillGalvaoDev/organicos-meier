@@ -454,10 +454,10 @@ def test_composicao_fica_congelada_apos_a_abertura(arranjo: Arranjo) -> None:
     # A-13, cenário 11 (serviço; a recusa das rotas está no arquivo de telas)
     abrir(arranjo)
     c = ContaFactory.create()
-    with pytest.raises(InteressesBloqueados):
-        adicionar_interesse(c, arranjo.p1, "1")
     antes = list(ItemDoPedido.objects.order_by("pk").values())
     totais = list(Pedido.objects.order_by("pk").values("produtos", "servico", "frete", "total"))
+    with pytest.raises(InteressesBloqueados):
+        adicionar_interesse(c, arranjo.p1, "1")
     editar_produto(arranjo.admin, arranjo.p1, preco="20.00")
     editar_produto(arranjo.admin, arranjo.p2, preco="1.00")
     assert list(ItemDoPedido.objects.order_by("pk").values()) == antes
