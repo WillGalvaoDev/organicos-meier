@@ -12,14 +12,14 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 
 | | |
 |---|---|
-| **Última atualização** | 2026-11-17, com o PR #88 (E15) |
+| **Última atualização** | 2026-11-20, com o PR #89 (E16, fatias técnicas) |
 | **Fase** | Fase 1: plataforma completa rodando contra um **simulador** de pagamentos. Ainda sem dinheiro real e sem implantação em produção. |
-| **Progresso** | 15 de 16 etapas entregues (E01–E15), 110 fatias, cada uma aprovada por revisão independente |
+| **Progresso** | 15 de 16 etapas entregues (E01–E15), mais 9 das 10 fatias da E16 aprovadas por revisão independente (E16-01 a E16-07, E16-09 e E16-10) |
 | **Última etapa entregue** | E15 — Painel administrativo e alertas operacionais (PR #88) |
-| **Próxima etapa** | E16 — Homologação e encerramento da fase 1 (não iniciada) |
-| **Suíte de testes** | 3.449 testes passando; ruff, mypy (estrito) e verificação de migrações limpos; CI verde na `main` |
-| **Bloqueadores abertos** | Nenhum |
-| **Melhorias não impeditivas** | 10 abertas (2 encerradas) registradas em [`docs/melhorias.md`](docs/melhorias.md), revistas no fim da fase 1 |
+| **Próxima etapa** | E16-08 — Homologação no Fly.io, restauração cronometrada e relatório final da fase 1 (aguardando as contas da fase 0) |
+| **Suíte de testes** | 3.753 testes passando, 1 pulado (ferramentas de backup ausentes no ambiente local) e 2 falhas esperadas pendentes do R07; ruff, mypy (estrito) e verificação de migrações limpos |
+| **Bloqueadores abertos** | E16-R07: a E16 não pode ser encerrada enquanto a homologação, a suíte num branch do Neon e as restaurações reais (caminhos A e B, com RTO) não forem executadas e revisadas. O responsável autorizou este merge com o R07 aberto (2026-11-20). |
+| **Melhorias não impeditivas** | 9 abertas (6 encerradas) em [`docs/melhorias.md`](docs/melhorias.md). O responsável decidiu cada uma em 2026-11-18: M-3 e M-8 corrigidas na E16-10, M-5 descartada, as demais adiadas para a fase 2a. A M-15 entrou em 2026-11-20. |
 
 **Funciona hoje (com o simulador):**
 
@@ -38,7 +38,9 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 - Recebimento e retirada: recebimento por produto do pedido formal, com entregas parciais; ocorrências de entrega por item do comprador (faltante, incorreto, não entregue), antes ou depois da liberação, cada uma com reembolso pontual financiado pela obrigação com o fornecedor antes do repasse e coberto pelo administrador depois dele; o endereço de retirada mantido pelo administrador e exibido no carrinho e na página de regras; liberação da retirada só com todas as unidades recebidas ou resolvidas, com aviso aos compradores, nova rodada do fornecedor na hora e cancelamento recusado a partir daí; retirada por item em várias vezes, prazo de sete dias e descarte manual depois dele; as telas do administrador e do comprador, o portal do fornecedor inalterado e os cenários de ponta a ponta com o simulador.
 - Painel administrativo e alertas operacionais: registro de quando cada tarefa periódica terminou ou falhou, com tolerâncias; alertas operacionais de tarefa atrasada, fechamento não encerrado, pedido formal atrasado, conciliação atrasada, chamadas ao provedor e notificações atrasadas, mensagens não entregues, chamada ao provedor que falhou, consulta divergente, pagamento sem pedido ou sem horário de aprovação e avisos recusados em sequência, com aviso ao administrador no site e por e-mail; alertas que se encerram sozinhos quando a situação termina e fatos encerrados pela ciência do administrador; o painel em `administracao/` com alertas abertos, ações necessárias, rodadas (mínimo, caixas pendentes e prazos), prazos encerrados e situação das tarefas; o histórico de ações relevantes com filtros; e os cenários de ponta a ponta, inclusive o worker parado e retomado.
 
-**Ainda não construído:** a homologação (E16), incluindo um monitor externo independente do worker. Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
+- Pronto para a homologação (E16): a imagem do contêiner e os processos no Fly.io; os arquivos enviados no Cloudflare R2; o Sentry sem dados pessoais e os monitores de cron independentes do worker; o backup externo diário cifrado (`age`) no R2; a conferência `conferir_restauracao` e o procedimento de restauração cronometrada; a página de regras completa para o comprador; o reservado e o pendente no histórico do comprador; e a matriz de rastreabilidade que liga os cenários 1–119 e os T-1–T-55 aos testes, conferida no CI.
+
+**Ainda não feito:** a execução da homologação (E16-08): a implantação no Fly.io, o roteiro funcional, a restauração cronometrada e o relatório final. Pix real (fase 2a), cartões (fase 2b) e WhatsApp (fase 3) vêm depois da fase 1.
 
 | Etapa | Escopo | Estado |
 |---|---|---|
@@ -57,7 +59,7 @@ Plataforma de compras coletivas de produtos orgânicos, com acesso por convite. 
 | E13 | Pedido formal, repasse e portal do fornecedor | ✅ Entregue |
 | E14 | Recebimento, ocorrências, retirada e descarte | ✅ Entregue |
 | E15 | Painel administrativo e alertas operacionais | ✅ Entregue |
-| E16 | Homologação e encerramento da fase 1 | ⏳ Próxima |
+| E16 | Homologação e encerramento da fase 1 | 🚧 Em andamento (bloqueada pelo R07) |
 
 <!-- ESTADO:FIM -->
 

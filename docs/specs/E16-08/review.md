@@ -492,3 +492,11 @@ Agente 3. Revalidação dirigida das correções de R05-K1 e R05-K2, conforme re
 **Resultados atuais:** rastreabilidade **112 passed**; execução instrumentada da matriz **407 passed**, zero problemas de alcance; JUnit com zero falhas, erros e pulos e `conferir_execucao` aprovado. Ruff check/format e mypy aprovados (485 arquivos formatados; 578 arquivos verificados pelo mypy). Suíte completa não repetida nesta correção restrita: os 3751 passed, 1 skipped e 2 xfailed da revisão de `7f2f09f` permanecem históricos. Não há nova evidência operacional para R07.
 
 **Próximo gate:** executar e registrar os requisitos operacionais pendentes da E16-08, depois submeter as evidências à revisão independente. Não é necessário novo gate de especificação nem outra correção de R05. Nenhum deploy ou push realizado; somente os dois pareceres foram acrescentados pelo revisor, com histórico preservado.
+
+## Autorização do responsável para integrar a E16 na `main` — 2026-11-20
+
+Registro do agente 1. Em 2026-11-20, o responsável autorizou os commits, o push e o merge da branch `e16-especificacoes` na `main` **com o R07 pendente**. Na revisão de `a0e9ab9`, o revisor aprovou tecnicamente as E16-01 a E16-07, a E16-09 e a E16-10, com R01 a R06 e R08 encerrados.
+
+- **A autorização não encerra o R07.** A E16 continua **REPROVADA** só por ele até a homologação, a suíte no Neon e as restaurações reais A e B com RTO serem executadas e revisadas.
+- **O merge cumpre a regra 2.** A implantação na homologação parte de um commit da `main` que contém as E16-01 a E16-07. Esse commit será registrado aqui no momento da implantação (seção "3. Commit a implantar" do encaminhamento de 2026-11-18).
+- **O README (AGENTS.md §10)** passa a mostrar a E16 em andamento, com o R07 como bloqueador aberto. A fase só passa a "Fase 1 encerrada" pela regra 13, no PR que fechar o R07.
